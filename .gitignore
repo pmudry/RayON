@@ -1,0 +1,38 @@
+# CMake build directories
+build/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# CUDA build artifacts
+*.cu.o
+*.cubin
+*.ptx
+
+# Compiled object files, libraries, executables
+*.o
+*.so
+*.a
+*.out
+*.exe
+
+# IDE/editor files
+*.swp
+*.swo
+*.bak
+*.tmp
+*.user
+*.log
+
+# VS Code settings
+.vscode/
+
+# Generated files
+*.d
+*.mod
+
+# Other
+*.nvcache
+*.nvlog
+*.ppm
