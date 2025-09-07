@@ -26,15 +26,16 @@ void writeImage(const std::vector<unsigned char> &image, int width, int height, 
     }
 }
 
-void writeGradientImage(vector<unsigned char> &image){
-        // Generate a simple gradient
+void writeGradientImage(vector<unsigned char> &image)
+{
+    // Generate a simple gradient
     for (int y = 0; y < height; ++y)
     {
         for (int x = 0; x < width; ++x)
         {
             int index = (y * width + x) * channels;
-            image[index] = static_cast<unsigned char>(255.0 * x / width);      // Red
-            image[index + 1] = static_cast<unsigned char>(255.0 * y / height); // Green
+            image[index] = static_cast<unsigned char>(255.0 * y / width);      // Red
+            image[index + 1] = static_cast<unsigned char>(255.0 * x / height); // Green
             image[index + 2] = 100;                                            // Blue
         }
     }
@@ -44,7 +45,7 @@ void writeGradientImage(vector<unsigned char> &image){
 }
 
 int main()
-{    
+{ 
     // Testing image output
     std::vector<unsigned char> image(width * height * channels);
     writeGradientImage(image);

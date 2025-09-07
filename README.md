@@ -8,14 +8,23 @@ This version is single-threaded, with no GPU acceleration.
 
 It uses [single-file public domain (or MIT licensed) libraries for C/C++](https://github.com/nothings/stb/tree/master).
 
-
 ## How to compile
 
 ## Using CMAKE
 
 ```bash
 cmake .
+make -j 
+./v0_single_threaded
 ```
 
-Then `make` as usual.
+Or, all at once : 
+
+```bash
+cmake . && make -j 24 && ./v0_single_threaded
+```
+
+## Whitin VSCode
+
+Install the `CMake` extension, click here and there and then launch directly with `CTRL + SHIFT + F5`, just like in the old days ;)
 
