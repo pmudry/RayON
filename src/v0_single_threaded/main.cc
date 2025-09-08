@@ -155,11 +155,11 @@ void renderPixels(std::vector<unsigned char> &image)
 
     hittable_list world;
 
-    world.add(make_shared<sphere>(point3(0,0,-1), 0.2));
-    world.add(make_shared<sphere>(point3(1.2,0,-1), 0.2));
-    world.add(make_shared<sphere>(point3(-1.2,0,-1), 0.2));
-    world.add(make_shared<sphere>(point3(-1.2,.8,-1), 0.2));
-    world.add(make_shared<sphere>(point3(1.2,.8,-1), 0.2));
+    for (int x = -5; x <= 5; x += 5) {
+        for (int y = -5; y <= 5; y += 5) {
+            world.add(make_shared<sphere>(point3(x, y, -16), 2));
+        }
+    }
 
     // world.add(make_shared<sphere>(point3(0,-100.5,-1), 100));
 
@@ -173,7 +173,7 @@ void renderPixels(std::vector<unsigned char> &image)
             vec3 ray_direction = pixel_center - camera_center;
             
             // Create a ray from the camera center through the pixel
-            ray r(camera_center, ray_direction);
+            ray r(camera_center, unit_vector(ray_direction));
 
             color pixel_color(ray_color(r, world));
             setPixel(image, x, y, pixel_color);
@@ -210,19 +210,18 @@ int main()
     std::vector<unsigned char> image(image_width * image_height * channels);
     renderPixels(image);
 
+    cout << "📷 Camera settings:" << endl;
+    cout << "\t🎯 camera_center: " << camera_center << endl;
+    cout << "\t📐 viewport_upper_left: " << viewport_upper_left << endl;
+    cout << "\t➡️ viewport_u: " << viewport_u << endl;
+    cout << "\t⬇️ viewport_v: " << viewport_v << endl;
+    cout << "\t📏 viewport_width: " << viewport_width << endl;
+    cout << "\t📏 viewport_height: " << viewport_height << endl;
+
     cout << pixel_delta_u << endl;
     cout << pixel_delta_v << endl;
 
     dumpImageToFile(image, "output.png");
-
-    // Just some vec3 tests
-    auto v1 = vec3(1, 2, 3);
-    auto v2 = vec3(2, 2, 3);
-    auto v3 = v1 + v2;
-    vec3 v4 = cross(v1, v2);
-
-    clog << v3 << endl;
-    clog << v4 << endl;
 
     return 0;
 }
