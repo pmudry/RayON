@@ -1,5 +1,4 @@
-#ifndef SPHERE_H
-#define SPHERE_H
+#pragma once
 
 #include "utils.h"
 #include "hittable.h"
@@ -65,5 +64,3 @@ private:
     point3 center;
     double radius;
 };
-
-#endif

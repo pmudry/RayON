@@ -1,5 +1,4 @@
-#ifndef INTERVAL_H
-#define INTERVAL_H
+#pragma once
 
 #include "utils.h"
 
@@ -28,5 +27,3 @@ class interval {
 
 const interval interval::empty    = interval(+inf, -inf);
 const interval interval::universe = interval(-inf, +inf);
-
-#endif

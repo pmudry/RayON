@@ -2,8 +2,6 @@
 #include "hittable_list.h"
 #include <iostream>
 
-using namespace std;
-
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "external/stb_image_write.h"
 
