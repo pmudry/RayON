@@ -147,8 +147,8 @@ void dumpImageToFile(vector<unsigned char> &image, string name)
 
 int main()
 {
-    const int samples_per_pixel = 4;
-    Camera c(vec3(0, 0, 0), 180, channels, samples_per_pixel);
+    const int samples_per_pixel = 64;
+    Camera c(vec3(0, 0, 0), 1080, channels, samples_per_pixel);
     image_width = c.image_width;
     image_height = c.image_height;
 
@@ -169,40 +169,51 @@ int main()
 
     std::cout << "🖼️ resolution: " << c.image_width << " x " << c.image_height << " pixels" << std::endl;
 
-    std::function<void(int)> renderFrame = [&](int i)
-    {
-        // Create a new scene for this frame
-        hittable_list frameScene;
-        frameScene.add(make_shared<sphere>(point3(0, -100.5, -1), 100));
-        auto rotatedCube = make_shared<cube>(point3(0, 0, -1), 1, vec3(0, 45 + i * 3, 0));
-        frameScene.add(rotatedCube);
-        vector<unsigned char> localImage(image.size());
-        c.renderPixels(frameScene, localImage);
-        dumpImageToFile(localImage, "res/output" + to_string(i) + ".png");
-    };
+    // Create a new scene for this frame
+    int i = 0;
 
-    const int numFrames = 120;
-    const int numThreads = std::thread::hardware_concurrency();
-    std::vector<std::future<void>> futures;
+    hittable_list frameScene;
+    frameScene.add(make_shared<sphere>(point3(0, -100.5, -1), 100));
+    auto rotatedCube = make_shared<cube>(point3(0, 0, -1), 1, vec3(0, 45 + i * 3, 0));
+    frameScene.add(rotatedCube);
+    vector<unsigned char> localImage(image.size());
+    c.renderPixels(frameScene, localImage);
+    dumpImageToFile(localImage, "res/output" + to_string(i) + ".png");
 
-    for (int i = 0; i < numFrames; ++i)
-    {
-        futures.push_back(std::async(std::launch::async, renderFrame, i));
-        if (futures.size() >= numThreads)
-        {
-            for (auto &f : futures)
-            {
-                f.get(); // Wait for all threads to finish
-            }
-            futures.clear();
-        }
-    }
+    // std::function<void(int)> renderFrame = [&](int i)
+    // {
+    //     // Create a new scene for this frame
+    //     hittable_list frameScene;
+    //     frameScene.add(make_shared<sphere>(point3(0, -100.5, -1), 100));
+    //     auto rotatedCube = make_shared<cube>(point3(0, 0, -1), 1, vec3(0, 45 + i * 3, 0));
+    //     frameScene.add(rotatedCube);
+    //     vector<unsigned char> localImage(image.size());
+    //     c.renderPixels(frameScene, localImage);
+    //     dumpImageToFile(localImage, "res/output" + to_string(i) + ".png");
+    // };
 
-    // Wait for any remaining threads
-    for (auto &f : futures)
-    {
-        f.get();
-    }
+    // const int numFrames = 120;
+    // const int numThreads = std::thread::hardware_concurrency();
+    // std::vector<std::future<void>> futures;
+
+    // for (int i = 0; i < numFrames; ++i)
+    // {
+    //     futures.push_back(std::async(std::launch::async, renderFrame, i));
+    //     if (futures.size() >= numThreads)
+    //     {
+    //         for (auto &f : futures)
+    //         {
+    //             f.get(); // Wait for all threads to finish
+    //         }
+    //         futures.clear();
+    //     }
+    // }
+
+    // // Wait for any remaining threads
+    // for (auto &f : futures)
+    // {
+    //     f.get();
+    // }
 
     cout.imbue(std::locale("en_US.UTF-8"));
     cout << "Rays traced: " << std::fixed << c.n_rays << endl;

@@ -1,8 +1,13 @@
 #include "utils.h"
 
+#include <mutex>
+#include <thread>
+#include <vector>
+
 #pragma once
 
-inline double degrees_to_radians(double degrees) {
+inline double degrees_to_radians(double degrees)
+{
     return degrees * M_PI / 180.0;
 }
 
@@ -10,65 +15,87 @@ class Camera
 {
 
 public:
-    const double aspect_ratio = 16.0/9.0;
+    const double aspect_ratio = 16.0 / 9.0;
     const int image_height = -1;
     const int image_width = static_cast<int>(aspect_ratio * image_height);
 
-    double vfov = 45.0; // vertical field of view in degrees
-    point3 lookfrom = point3(0,1,3);   // Point camera is looking from
-    point3 lookat   = point3(0,0,-1);  // Point camera is looking at
-    vec3   vup      = vec3(0,1,0);     // Camera-relative "up" direction
+    double vfov = 45.0;                // vertical field of view in degrees
+    point3 lookfrom = point3(0, 1, 3); // Point camera is looking from
+    point3 lookat = point3(0, 0, -1);  // Point camera is looking at
+    vec3 vup = vec3(0, 1, 0);          // Camera-relative "up" direction
 
     int samples_per_pixel = 1;
 
     int n_rays = 0; // Number of rays traced so far with this cam
 
-    Camera(const point3 &center, const int image_height, const int image_channels, int samples_per_pixel = 1) 
-        : image_height(image_height), samples_per_pixel(samples_per_pixel), image_channels(image_channels), camera_center(center) 
+    Camera(const point3 &center, const int image_height, const int image_channels, int samples_per_pixel = 1)
+        : image_height(image_height), samples_per_pixel(samples_per_pixel), image_channels(image_channels), camera_center(center)
     {
         initialize();
     }
 
     Camera() : Camera(vec3(0, 0, 0), 720, 3, 1) {}
 
-    void set_samples_per_pixel(int new_samples_per_pixel) {
+    void set_samples_per_pixel(int new_samples_per_pixel)
+    {
         samples_per_pixel = new_samples_per_pixel;
     }
 
     void renderPixels(const hittable &scene, vector<unsigned char> &image)
     {
-        for (int y = 0; y < image_height; ++y)
+        const int num_threads = 68;
+        std::vector<std::thread> threads(num_threads);
+        std::mutex progress_mutex;
+
+        auto render_chunk = [&](int start_y, int end_y)
         {
-            for (int x = 0; x < image_width; ++x)
+            for (int y = start_y; y < end_y; ++y)
             {
-                // Progress indicator
-                if (x == 0)
-                    showProgress(y, image_height);
-
-                color pixel_color(0, 0, 0); // The pixel color starts as black
-
-                // Supersampling anti-aliasing by averaging multiple samples per pixel
-                for (int s = 0; s < samples_per_pixel; ++s)
+                for (int x = 0; x < image_width; ++x)
                 {
-                    // Random offsets in the range [0, 1) for jittering within the pixel
-                    double offset_x = RndGen::random_double();
-                    double offset_y = RndGen::random_double();
+                    color pixel_color(0, 0, 0); // The pixel color starts as black
 
-                    // Calculate the direction of the ray for the current pixel
-                    vec3 pixel_center = pixel00_loc + (x + offset_x) * pixel_delta_u + (y + offset_y) * pixel_delta_v;
-                    vec3 ray_direction = pixel_center - camera_center;
+                    // Supersampling anti-aliasing by averaging multiple samples per pixel
+                    for (int s = 0; s < samples_per_pixel; ++s)
+                    {
+                        // Random offsets in the range [0, 1) for jittering within the pixel
+                        double offset_x = RndGen::random_double();
+                        double offset_y = RndGen::random_double();
 
-                    // Create a ray from the camera center through the pixel
-                    ray r(camera_center, unit_vector(ray_direction));
-                    color sample(ray_color(r, scene));
-                    pixel_color += sample;
+                        // Calculate the direction of the ray for the current pixel
+                        vec3 pixel_center = pixel00_loc + (x + offset_x) * pixel_delta_u + (y + offset_y) * pixel_delta_v;
+                        vec3 ray_direction = pixel_center - camera_center;
+
+                        // Create a ray from the camera center through the pixel
+                        ray r(camera_center, unit_vector(ray_direction));
+                        color sample(ray_color(r, scene));
+                        pixel_color += sample;
+                    }
+
+                    pixel_color /= samples_per_pixel; // Average the samples
+
+                    setPixel(image, x, y, pixel_color);
                 }
 
-                pixel_color /= samples_per_pixel; // Average the samples
-
-                setPixel(image, x, y, pixel_color);
+                // Update progress
+                std::lock_guard<std::mutex> lock(progress_mutex);
+                showProgress(y, image_height);
             }
+        };
+
+        int chunk_size = image_height / num_threads;
+        for (int t = 0; t < num_threads; ++t)
+        {
+            int start_y = t * chunk_size;
+            int end_y = (t == num_threads - 1) ? image_height : start_y + chunk_size;
+            threads[t] = std::thread(render_chunk, start_y, end_y);
         }
+
+        for (auto &thread : threads)
+        {
+            thread.join();
+        }
+
         showProgress(image_height - 1, image_height);
         cout << endl;
     }
@@ -87,10 +114,10 @@ private:
         camera_center = lookfrom;
 
         // Determine viewport dimensions.
-        auto focal_length = (lookfrom - lookat).length();        
+        auto focal_length = (lookfrom - lookat).length();
         auto theta = degrees_to_radians(vfov);
-        auto h = tan(theta/2);        
-        
+        auto h = tan(theta / 2);
+
         auto viewport_height = 2 * h * focal_length;
         auto viewport_width = viewport_height * (double(image_width) / image_height);
 
