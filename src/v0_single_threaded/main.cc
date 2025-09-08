@@ -14,7 +14,7 @@ const int channels = 3; // RGB
 
 // Camera setting, where the viewport is what the camera sees
 auto focal_length = 1.0;
-auto viewport_height = 2.0;
+auto viewport_height = 0.3;
 auto viewport_width = (static_cast<double>(image_width) / image_height) * viewport_height;
 auto camera_center = point3(0, 0, 0);
 
@@ -157,7 +157,7 @@ void renderPixels(std::vector<unsigned char> &image)
 
     for (int x = -5; x <= 5; x += 5) {
         for (int y = -5; y <= 5; y += 5) {
-            world.add(make_shared<sphere>(point3(x, y, -16), 2));
+            world.add(make_shared<sphere>(point3(x/5.0, y/5.0, -12), .5));
         }
     }
 
