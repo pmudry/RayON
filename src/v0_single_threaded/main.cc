@@ -64,22 +64,43 @@ inline void setPixel(vector<unsigned char> &viewPort, int x, int y, unsigned cha
     viewPort[index + 2] = b;
 }
 
+/**
+ * @brief Calculates the intersection point of a ray with a sphere
+ * 
+ * This function determines if and where a ray intersects with a sphere by solving
+ * the quadratic equation formed by substituting the ray equation into the sphere equation.
+ * 
+ * **Mathematical Background:**
+ * - Sphere equation: `(C−P)⋅(C−P) = r²` where P is a point on the sphere
+ * - Ray equation: `P = O + t*d` where O is origin, d is direction, t is distance
+ * - Substitution yields quadratic: `at² + bt + c = 0` where:
+ *   - `a = d⋅d` (direction vector dot product)
+ *   - `b = −2*d⋅(C−O)` (relates direction to center-origin vector)
+ *   - `c = (C−O)⋅(C−O) − r²` (distance from origin to center minus radius squared)
+ * 
+ * @param center The center point of the sphere in 3D space
+ * @param radius The radius of the sphere (must be positive)
+ * @param r The ray to test for intersection
+ * 
+ * @return The parameter t for the intersection point along the ray:
+ *         - Returns `-1.0` if no intersection occurs (discriminant < 0)
+ *         - Returns the farther intersection point when two intersections exist
+ *         - The actual intersection point can be computed as `r.origin() + t * r.direction()`
+ * 
+ * @note When the discriminant is non-negative, this function returns the larger t value,
+ *       corresponding to the exit point of the ray from the sphere
+ */
 double hit_sphere(const point3& center, double radius, const ray& r){
-    // The points on the sphere are those who satisfy : (C−P)⋅(C−P)=r^2
-
-    // a=d⋅d
-    // b=−2*d⋅(C−Q)
-    // c=(C−Q)⋅(C−Q)−r2
-
     auto a = r.direction().length_squared(); // Which is like r.dir · r.dir = ||r.dir||^2
-    auto b = -2.0 * dot(r.direction(), r.origin() - center);
+    auto b = -2.0 * dot(r.direction(),center - r.origin());
     auto c = (center - r.origin()).length_squared() - radius * radius;
     auto discriminant = b * b - 4 * a * c;
     
     if(discriminant < 0){
         return -1.0;
-    } else {
-        return (-b + sqrt(discriminant)) / (2.0 * a);
+    }
+    else{
+        return (-b - sqrt(discriminant)) / (2.0 * a); // We return the closest intersection
     }
 }
 
@@ -87,10 +108,14 @@ color ray_color(const ray& r)
 {
     vec3 unit_direction = unit_vector(r.direction());
 
-    auto t = hit_sphere(point3(0,0,-1), 0.5, r);
+    auto sphere_center = point3(0, 0, -1);
 
-    if(t > -1){
-        return color(t,0,0); 
+    auto t = hit_sphere(sphere_center, 0.5, r);
+
+    if(t > 0.0){        
+        // Normal is the vector from the sphere center to the hit point
+        vec3 normal = unit_vector(r.at(t) - sphere_center);
+        return 0.5 * color(normal.x() + 1, normal.y() + 1, normal.z() + 1);
     }
 
     // Le vecteur unit_direction variera entre -1 et +1 en x et y
