@@ -67,11 +67,12 @@ inline void setPixel(vector<unsigned char> &viewPort, int x, int y, unsigned cha
 color ray_color(const ray& r)
 {
     vec3 unit_direction = unit_vector(r.direction());
-    cout << "r: " << r.direction() << ", unit: " << unit_direction << endl;
+    // cout << "r: " << r.direction() << ", unit: " << unit_direction << endl;
 
     // Le vecteur unit_direction variera entre -1 et +1 en x et y
-    double t = 0.5 * (unit_direction.x() + 1.0);
-    exit(-1);
+
+    // A blue to white gradient background
+    double t = 0.5 * (unit_direction.y() + 1.0);    
     return (1.0 - t) * color(1.0, 1.0, 1.0) + t * color(0.5, 0.7, 1.0);    
 }
 
@@ -83,7 +84,7 @@ void renderPixels(std::vector<unsigned char> &image)
         {
             // Calculate the direction of the ray for the current pixel
             vec3 pixel_center = pixel00_loc + x * pixel_delta_u + y * pixel_delta_v;
-            cout << "Pixel[" << x << "," << y << "] at " << pixel_center << endl;
+            // cout << "Pixel[" << x << "," << y << "] at " << pixel_center << endl;
             vec3 ray_direction = pixel_center - camera_center;
             
             // Create a ray from the camera center through the pixel
