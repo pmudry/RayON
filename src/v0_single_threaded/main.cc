@@ -1,5 +1,6 @@
 #include "utils.h"
 #include "hittable_list.h"
+#include "cube.h"
 #include <iostream>
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -113,7 +114,7 @@ void writeImage(const vector<unsigned char> &image, int image_width, int image_h
 // }
 
 int image_width = 0;
-int image_height = 0;
+int image_height = 720;
 const int channels = 3; // RGB
 
 /**
@@ -142,14 +143,17 @@ void dumpImageToFile(vector<unsigned char> &image, string name)
 
 int main()
 {
-    Camera c(vec3(0, 0, 0), channels);
+    const int samples_per_pixel = 1;
+    Camera c(vec3(0, 0, 0), 180, channels, samples_per_pixel);
     image_width = c.image_width;
     image_height = c.image_height;
 
     vector<unsigned char> image(c.image_width * c.image_height * channels);
     hittable_list scene;
-    scene.add(make_shared<sphere>(point3(0, 0, -1), .5));
+    // scene.add(make_shared<sphere>(point3(0, 0, -1), .5));
     scene.add(make_shared<sphere>(point3(0, -100.5, -1), 100));
+    auto theCube = make_shared<cube>(point3(0, 0, -1), 1, vec3(0, 45, 0));
+    scene.add(theCube);
 
     for (int x = -5; x <= 5; x += 5)
     {
@@ -158,12 +162,15 @@ int main()
             scene.add(make_shared<sphere>(point3(x / 5.0, y / 5.0, -10), .3));
         }
     }
-    c.renderPixels(scene, image);
-
+    
     std::cout << "🖼️ resolution: " << c.image_width << " x " << c.image_height << " pixels" << std::endl;
-
-    dumpImageToFile(image, "output.png");
-
+    
+    for(int i=0; i<120; i++){
+        theCube.get()->set_rotation(vec3(0, 45+i*3, 0));
+        c.renderPixels(scene, image);
+        dumpImageToFile(image, "res/output" + to_string(i) + ".png");
+    }
+    
     cout.imbue(std::locale("en_US.UTF-8"));
     cout << "Rays traced: " << std::fixed << c.n_rays << endl;
 

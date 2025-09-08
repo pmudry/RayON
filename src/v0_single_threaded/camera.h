@@ -11,7 +11,7 @@ class Camera
 
 public:
     const double aspect_ratio = 16.0/9.0;
-    const int image_height = 360;
+    const int image_height = -1;
     const int image_width = static_cast<int>(aspect_ratio * image_height);
 
     double vfov = 45.0; // vertical field of view in degrees
@@ -23,12 +23,17 @@ public:
 
     int n_rays = 0; // Number of rays traced so far with this cam
 
-    Camera(const point3 &center, const int image_channels) : image_channels(image_channels), camera_center(center)
+    Camera(const point3 &center, const int image_height, const int image_channels, int samples_per_pixel = 1) 
+        : image_height(image_height), samples_per_pixel(samples_per_pixel), image_channels(image_channels), camera_center(center) 
     {
         initialize();
     }
 
-    Camera() : Camera(vec3(0, 0, 0), 3) {}
+    Camera() : Camera(vec3(0, 0, 0), 720, 3, 1) {}
+
+    void set_samples_per_pixel(int new_samples_per_pixel) {
+        samples_per_pixel = new_samples_per_pixel;
+    }
 
     void renderPixels(const hittable &scene, vector<unsigned char> &image)
     {
