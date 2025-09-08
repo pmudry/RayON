@@ -1,5 +1,6 @@
 #include "utils.h"
 #include "hittable_list.h"
+#include <iostream>
 
 using namespace std;
 
@@ -8,7 +9,7 @@ using namespace std;
 
 // Image dimensions
 const auto aspect_ratio = 16.0 / 9.0;
-const int image_height = 360;
+const int image_height = 1080;
 const int image_width = static_cast<int>(image_height * aspect_ratio);
 const int channels = 3; // RGB
 
@@ -57,6 +58,26 @@ inline void setPixel(vector<unsigned char> &viewPort, int x, int y, unsigned cha
     viewPort[index] = r;
     viewPort[index + 1] = g;
     viewPort[index + 2] = b;
+}
+
+void showProgress(int current, int total) {
+    const int barWidth = 70;
+    static int frame = 0;
+    const char* spinner = "|/-\\";
+    // We add 1 to current to start at 1 instead of 0
+    float progress = (float)(current + 1) / total;
+    int pos = barWidth * progress;
+
+    std::cout << "Rendering: " << spinner[frame++ % 4] << " [";
+    for (int i = 0; i < barWidth; ++i) {
+        if (i < pos) {
+            std::cout << "█";
+        } else {
+            std::cout << "░";
+        }
+    }
+    std::cout << "] " << int(progress * 100.0) << " %\r";
+    std::cout.flush();
 }
 
 /**
@@ -155,18 +176,23 @@ void renderPixels(std::vector<unsigned char> &image)
 
     hittable_list world;
 
-    for (int x = -5; x <= 5; x += 5) {
-        for (int y = -5; y <= 5; y += 5) {
-            world.add(make_shared<sphere>(point3(x/5.0, y/5.0, -12), .5));
-        }
-    }
+    // for (int x = -5; x <= 5; x += 5) {
+    //     for (int y = -5; y <= 5; y += 5) {
+    //         world.add(make_shared<sphere>(point3(x/5.0, y/5.0, -10), .3));
+    //     }
+    // }
 
-    // world.add(make_shared<sphere>(point3(0,-100.5,-1), 100));
+    world.add(make_shared<sphere>(point3(0, 0, -10), .9));
+    world.add(make_shared<sphere>(point3(0,-100.5,-0), 100));
 
     for (int y = 0; y < image_height; ++y)
     {
         for (int x = 0; x < image_width; ++x)
         {
+            // Progress indicator
+            if (x == 0) {
+                showProgress(y, image_height);
+            }
             // Calculate the direction of the ray for the current pixel
             vec3 pixel_center = pixel00_loc + x * pixel_delta_u + y * pixel_delta_v;
             // cout << "Pixel[" << x << "," << y << "] at " << pixel_center << endl;
@@ -179,6 +205,8 @@ void renderPixels(std::vector<unsigned char> &image)
             setPixel(image, x, y, pixel_color);
         }
     }
+    showProgress(image_height -1, image_height);
+    cout << endl;
 }
 
 /**
@@ -211,12 +239,12 @@ int main()
     renderPixels(image);
 
     cout << "📷 Camera settings:" << endl;
-    cout << "\t🎯 camera_center: " << camera_center << endl;
-    cout << "\t📐 viewport_upper_left: " << viewport_upper_left << endl;
-    cout << "\t➡️ viewport_u: " << viewport_u << endl;
-    cout << "\t⬇️ viewport_v: " << viewport_v << endl;
-    cout << "\t📏 viewport_width: " << viewport_width << endl;
-    cout << "\t📏 viewport_height: " << viewport_height << endl;
+    cout << "\t camera_center: " << camera_center << endl;
+    cout << "\t viewport_upper_left: " << viewport_upper_left << endl;
+    cout << "\t viewport_u: " << viewport_u << endl;
+    cout << "\t viewport_v: " << viewport_v << endl;
+    cout << "\t viewport_width: " << viewport_width << endl;
+    cout << "\t viewport_height: " << viewport_height << endl;
 
     cout << pixel_delta_u << endl;
     cout << pixel_delta_v << endl;
