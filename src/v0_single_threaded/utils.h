@@ -18,3 +18,4 @@ const double PI = 3.1415926535897932385;
 #include "hittable.h"
 #include "sphere.h"
 #include "rnd_gen.h"
+#include "camera.h"

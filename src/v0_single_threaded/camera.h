@@ -1,0 +1,157 @@
+#pragma once
+
+#include "utils.h"
+
+class Camera
+{
+
+public:
+    const double aspect_ratio = 16.0 / 9.0;
+    const int image_height = 360;
+    const int image_width = static_cast<int>(aspect_ratio * image_height);
+
+    int n_rays = 0; // Number of rays traced so far with this cam
+
+    Camera(const point3 &center, const int image_channels) : camera_center(center), image_channels(image_channels)
+    {
+        initialize();
+    }
+
+    Camera() : Camera(point3(0, 0, 0), 3) {}
+
+    void renderPixels(const hittable &scene, vector<unsigned char> &image)
+    {
+        // for (int x = -5; x <= 5; x += 5) {
+        //     for (int y = -5; y <= 5; y += 5) {
+        //         world.add(make_shared<sphere>(point3(x/5.0, y/5.0, -10), .3));
+        //     }
+        // }
+
+        int samples_per_pixel = 1;
+
+        for (int y = 0; y < image_height; ++y)
+        {
+            for (int x = 0; x < image_width; ++x)
+            {
+                // Progress indicator
+                if (x == 0)
+                    showProgress(y, image_height);
+
+                color pixel_color(0, 0, 0); // The pixel color starts as black
+
+                // Supersampling anti-aliasing by averaging multiple samples per pixel
+                for (int s = 0; s < samples_per_pixel; ++s)
+                {
+                    // Random offsets in the range [0, 1) for jittering within the pixel
+                    double offset_x = RndGen::random_double();
+                    double offset_y = RndGen::random_double();
+
+                    // Calculate the direction of the ray for the current pixel
+                    vec3 pixel_center = pixel00_loc + (x + offset_x) * pixel_delta_u + (y + offset_y) * pixel_delta_v;
+                    vec3 ray_direction = pixel_center - camera_center;
+
+                    // Create a ray from the camera center through the pixel
+                    ray r(camera_center, unit_vector(ray_direction));
+                    color sample(ray_color(r, scene));
+                    pixel_color += sample;
+                }
+
+                pixel_color /= samples_per_pixel; // Average the samples
+
+                setPixel(image, x, y, pixel_color);
+            }
+        }
+        showProgress(image_height - 1, image_height);
+        cout << endl;
+    }
+
+private:
+    int image_channels; // Number of color channels per pixel (e.g., 3 for RGB)
+
+    point3 camera_center; // Camera center
+    point3 pixel00_loc;   // Location of pixel 0, 0
+    vec3 pixel_delta_u;   // Offset to pixel to the right
+    vec3 pixel_delta_v;   // Offset to pixel below
+
+    void initialize()
+    {
+        camera_center = point3(0, 0, 0);
+
+        // Determine viewport dimensions.
+        auto focal_length = 1.0;
+        auto viewport_height = 2.0;
+        auto viewport_width = viewport_height * (double(image_width) / image_height);
+
+        // Calculate the vectors across the horizontal and down the vertical viewport edges.
+        auto viewport_u = vec3(viewport_width, 0, 0);
+        auto viewport_v = vec3(0, -viewport_height, 0);
+
+        // Calculate the horizontal and vertical delta vectors from pixel to pixel.
+        pixel_delta_u = viewport_u / image_width;
+        pixel_delta_v = viewport_v / image_height;
+
+        // Calculate the location of the upper left pixel.
+        auto viewport_upper_left = camera_center - vec3(0, 0, focal_length) - viewport_u / 2 - viewport_v / 2;
+        pixel00_loc = viewport_upper_left + 0.5 * (pixel_delta_u + pixel_delta_v);
+    }
+
+    /**
+     * Computes the color seen along a ray by tracing it through the scene
+     */
+    inline color ray_color(const ray &r, const hittable &world)
+    {
+        n_rays++;
+
+        hit_record rec;
+
+        if (world.hit(r, interval(0.001, inf), rec))
+        {
+            return 0.5 * (rec.normal + color(1, 1, 1));
+        }
+
+        // Le vecteur unit_direction variera entre -1 et +1 en x et y
+        // A blue to white gradient background
+        vec3 unit_direction = unit_vector(r.direction());
+        double q = 0.5 * (unit_direction.y() + 1.0);
+        return (1.0 - q) * color(.0, .0, .0) + q * color(1.0, 1.0, 1.0);
+    }
+
+    /**
+     * Sets the pixel color in the image buffer
+     */
+    inline void setPixel(vector<unsigned char> &image, int x, int y, color &c)
+    {
+        int index = (y * image_width + x) * image_channels;
+
+        static const interval intensity(0.0, 0.999);
+
+        image[index + 0] = static_cast<int>(intensity.clamp(c.x()) * 256);
+        image[index + 1] = static_cast<int>(intensity.clamp(c.y()) * 256);
+        image[index + 2] = static_cast<int>(intensity.clamp(c.z()) * 256);
+    }
+
+    void showProgress(int current, int total)
+    {
+        const int barWidth = 70;
+        static int frame = 0;
+        const char *spinner = "|/-\\";
+        // We add 1 to current to start at 1 instead of 0
+        float progress = (float)(current + 1) / total;
+        int pos = barWidth * progress;
+
+        std::cout << "Rendering: " << spinner[frame++ % 4] << " [";
+        for (int i = 0; i < barWidth; ++i)
+        {
+            if (i < pos)
+            {
+                std::cout << "█";
+            }
+            else
+            {
+                std::cout << "░";
+            }
+        }
+        std::cout << "] " << int(progress * 100.0) << " %\r";
+        std::cout.flush();
+    }
+};

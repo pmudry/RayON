@@ -28,16 +28,7 @@ set ( SOURCE_V0_SINGLE_THREADED
   src/v0_single_threaded/hittable_list.h
   src/v0_single_threaded/interval.h
   src/v0_single_threaded/rnd_gen.h
-#   src/InOneWeekend/camera.h
-#   src/InOneWeekend/color.h
-#   src/InOneWeekend/hittable.h
-#   src/InOneWeekend/hittable_list.h
-#   src/InOneWeekend/interval.h
-#   src/InOneWeekend/material.h
-#   src/InOneWeekend/ray.h
-#   src/InOneWeekend/rtweekend.h
-#   src/InOneWeekend/sphere.h
-#   src/InOneWeekend/vec3.h
+  src/v0_single_threaded/camera.h
 )
 
 # set ( SOURCE_NEXT_WEEK
