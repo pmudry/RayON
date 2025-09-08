@@ -32,7 +32,7 @@ public:
      * @note When the discriminant is non-negative, this function returns the larger t value,
      *       corresponding to the exit point of the ray from the sphere
      */
-    bool hit(const ray &r, double ray_tmin, double ray_tmax, hit_record &rec) const override
+    bool hit(const ray &r, interval ray_t, hit_record &rec) const override
     {
         vec3 oc = center - r.origin();
         auto a = r.direction().length_squared();
@@ -47,10 +47,10 @@ public:
 
         // Find the nearest root that lies in the acceptable range.
         auto root = (h - sqrtd) / a;
-        if (root <= ray_tmin || ray_tmax <= root)
+        if(ray_t.surrounds(root) == false)
         {
             root = (h + sqrtd) / a;
-            if (root <= ray_tmin || ray_tmax <= root)
+            if (ray_t.surrounds(root) == false)
                 return false;
         }
 

@@ -106,6 +106,7 @@ void showProgress(int current, int total) {
  * @note When the discriminant is non-negative, this function returns the larger t value,
  *       corresponding to the exit point of the ray from the sphere
  */
+[[deprecated("Use the hit_sphere_simplified function instead")]]
 double hit_sphere(const point3& center, double radius, const ray& r){
     auto a = r.direction().length_squared(); // Which is like r.dir · r.dir = ||r.dir||^2
     auto b = -2.0 * dot(r.direction(),center - r.origin());
@@ -120,6 +121,7 @@ double hit_sphere(const point3& center, double radius, const ray& r){
     }
 }
 
+[[deprecated("Use the hit function in sphere instead")]]
 double hit_sphere_simplified(const point3& center, double radius, const ray& r){
     auto oc = center - r.origin();
     auto a = r.direction().length_squared(); // Which is like r.dir · r.dir = ||r.dir||^2
@@ -139,7 +141,7 @@ double hit_sphere_simplified(const point3& center, double radius, const ray& r){
 inline color ray_color(const ray& r, const hittable& world){
     hit_record rec;
 
-    if(world.hit(r, 0.001, inf, rec)){
+    if(world.hit(r, interval(0.001, inf), rec)){
         return 0.5 * (rec.normal + color(1,1,1));
     }
 
@@ -150,6 +152,7 @@ inline color ray_color(const ray& r, const hittable& world){
     return (1.0 - q) * color(1.0, 1.0, 1.0) + q * color(0.5, 0.7, 1.0);    
 }
 
+[[deprecated("Use the ray_color function with hittable instead")]]
 color ray_color_v0(const ray& r)
 {
     vec3 unit_direction = unit_vector(r.direction());
@@ -172,9 +175,8 @@ color ray_color_v0(const ray& r)
 void renderPixels(std::vector<unsigned char> &image)
 {
 
-    // World
-
-    hittable_list world;
+    // All our hittable objects
+    hittable_list scene;
 
     // for (int x = -5; x <= 5; x += 5) {
     //     for (int y = -5; y <= 5; y += 5) {
@@ -182,8 +184,8 @@ void renderPixels(std::vector<unsigned char> &image)
     //     }
     // }
 
-    world.add(make_shared<sphere>(point3(0, 0, -10), .9));
-    world.add(make_shared<sphere>(point3(0,-100.5,-0), 100));
+    scene.add(make_shared<sphere>(point3(0, 0, -10), .9));
+    scene.add(make_shared<sphere>(point3(0,-100.5,-0), 100));
 
     for (int y = 0; y < image_height; ++y)
     {
@@ -201,7 +203,7 @@ void renderPixels(std::vector<unsigned char> &image)
             // Create a ray from the camera center through the pixel
             ray r(camera_center, unit_vector(ray_direction));
 
-            color pixel_color(ray_color(r, world));
+            color pixel_color(ray_color(r, scene));
             setPixel(image, x, y, pixel_color);
         }
     }

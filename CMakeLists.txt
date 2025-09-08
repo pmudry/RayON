@@ -26,6 +26,7 @@ set ( SOURCE_V0_SINGLE_THREADED
   src/v0_single_threaded/sphere.h
   src/v0_single_threaded/hittable.h
   src/v0_single_threaded/hittable_list.h
+  src/v0_single_threaded/interval.h
 #   src/InOneWeekend/camera.h
 #   src/InOneWeekend/color.h
 #   src/InOneWeekend/hittable.h

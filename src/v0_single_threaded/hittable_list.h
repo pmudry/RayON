@@ -18,15 +18,15 @@ class hittable_list : public hittable
 
         void add(shared_ptr<hittable> object) { objects.push_back(object); }
 
-        bool hit(const ray& r, double ray_tmin, double ray_tmax, hit_record& rec) const override {
+        bool hit(const ray& r, interval ray_t, hit_record& rec) const override {
             hit_record tmp;
             bool hitSomething = false;
-            double closestSoFar = ray_tmax;
+            double closestSoFar = ray_t.max;
 
             for (int i = 0; i < objects.size(); i++)
             {
                 // Check if the ray hits this object and if it's the closest hit so far
-                if(objects[i]->hit(r, ray_tmin, closestSoFar, tmp)){
+                if(objects[i]->hit(r, interval(ray_t.min, closestSoFar), tmp)){
                     hitSomething = true;
                     closestSoFar = tmp.t;
                     rec = tmp;
