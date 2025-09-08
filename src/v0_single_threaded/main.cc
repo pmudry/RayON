@@ -1,15 +1,10 @@
-#include <iostream>
-#include <vector>
-#include <cmath>
+#include "utils.h"
+#include "hittable_list.h"
 
 using namespace std;
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "external/stb_image_write.h"
-
-#include "vec3.h"
-#include "ray.h"
-#include "color.h"
 
 // Image dimensions
 const auto aspect_ratio = 16.0 / 9.0;
@@ -104,13 +99,42 @@ double hit_sphere(const point3& center, double radius, const ray& r){
     }
 }
 
-color ray_color(const ray& r)
+double hit_sphere_simplified(const point3& center, double radius, const ray& r){
+    auto oc = center - r.origin();
+    auto a = r.direction().length_squared(); // Which is like r.dir · r.dir = ||r.dir||^2
+    auto h = dot(r.direction(),oc);
+    auto c = (oc).length_squared() - radius * radius;
+    auto discriminant = h*h - a*c;
+    
+    if(discriminant < 0){
+        return -1.0;
+    }
+    else{
+        return (h - sqrt(discriminant)) / a; // We return the closest intersection
+    }
+}
+
+
+inline color ray_color(const ray& r, const hittable& world){
+    hit_record rec;
+
+    if(world.hit(r, 0.001, inf, rec)){
+        return 0.5 * (rec.normal + color(1,1,1));
+    }
+
+    // Le vecteur unit_direction variera entre -1 et +1 en x et y
+    // A blue to white gradient background
+    vec3 unit_direction = unit_vector(r.direction());
+    double q = 0.5 * (unit_direction.y() + 1.0);
+    return (1.0 - q) * color(1.0, 1.0, 1.0) + q * color(0.5, 0.7, 1.0);    
+}
+
+color ray_color_v0(const ray& r)
 {
     vec3 unit_direction = unit_vector(r.direction());
-
     auto sphere_center = point3(0, 0, -1);
 
-    auto t = hit_sphere(sphere_center, 0.5, r);
+    auto t = hit_sphere_simplified(sphere_center, 0.5, r);
 
     if(t > 0.0){        
         // Normal is the vector from the sphere center to the hit point
@@ -126,6 +150,19 @@ color ray_color(const ray& r)
 
 void renderPixels(std::vector<unsigned char> &image)
 {
+
+    // World
+
+    hittable_list world;
+
+    world.add(make_shared<sphere>(point3(0,0,-1), 0.2));
+    world.add(make_shared<sphere>(point3(1.2,0,-1), 0.2));
+    world.add(make_shared<sphere>(point3(-1.2,0,-1), 0.2));
+    world.add(make_shared<sphere>(point3(-1.2,.8,-1), 0.2));
+    world.add(make_shared<sphere>(point3(1.2,.8,-1), 0.2));
+
+    // world.add(make_shared<sphere>(point3(0,-100.5,-1), 100));
+
     for (int y = 0; y < image_height; ++y)
     {
         for (int x = 0; x < image_width; ++x)
@@ -138,7 +175,7 @@ void renderPixels(std::vector<unsigned char> &image)
             // Create a ray from the camera center through the pixel
             ray r(camera_center, ray_direction);
 
-            color pixel_color(ray_color(r));
+            color pixel_color(ray_color(r, world));
             setPixel(image, x, y, pixel_color);
         }
     }
@@ -172,6 +209,9 @@ int main()
 {
     std::vector<unsigned char> image(image_width * image_height * channels);
     renderPixels(image);
+
+    cout << pixel_delta_u << endl;
+    cout << pixel_delta_v << endl;
 
     dumpImageToFile(image, "output.png");
 
