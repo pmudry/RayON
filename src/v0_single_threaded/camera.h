@@ -1,34 +1,37 @@
+#include "utils.h"
+
 #pragma once
 
-#include "utils.h"
+inline double degrees_to_radians(double degrees) {
+    return degrees * M_PI / 180.0;
+}
 
 class Camera
 {
 
 public:
-    const double aspect_ratio = 16.0 / 9.0;
+    const double aspect_ratio = 16.0/9.0;
     const int image_height = 360;
     const int image_width = static_cast<int>(aspect_ratio * image_height);
 
+    double vfov = 45.0; // vertical field of view in degrees
+    point3 lookfrom = point3(0,1,3);   // Point camera is looking from
+    point3 lookat   = point3(0,0,-1);  // Point camera is looking at
+    vec3   vup      = vec3(0,1,0);     // Camera-relative "up" direction
+
+    int samples_per_pixel = 1;
+
     int n_rays = 0; // Number of rays traced so far with this cam
 
-    Camera(const point3 &center, const int image_channels) : camera_center(center), image_channels(image_channels)
+    Camera(const point3 &center, const int image_channels) : image_channels(image_channels), camera_center(center)
     {
         initialize();
     }
 
-    Camera() : Camera(point3(0, 0, 0), 3) {}
+    Camera() : Camera(vec3(0, 0, 0), 3) {}
 
     void renderPixels(const hittable &scene, vector<unsigned char> &image)
     {
-        // for (int x = -5; x <= 5; x += 5) {
-        //     for (int y = -5; y <= 5; y += 5) {
-        //         world.add(make_shared<sphere>(point3(x/5.0, y/5.0, -10), .3));
-        //     }
-        // }
-
-        int samples_per_pixel = 1;
-
         for (int y = 0; y < image_height; ++y)
         {
             for (int x = 0; x < image_width; ++x)
@@ -66,32 +69,41 @@ public:
     }
 
 private:
-    int image_channels; // Number of color channels per pixel (e.g., 3 for RGB)
+    int image_channels = 3; // Number of color channels per pixel (e.g., 3 for RGB)
 
     point3 camera_center; // Camera center
     point3 pixel00_loc;   // Location of pixel 0, 0
     vec3 pixel_delta_u;   // Offset to pixel to the right
     vec3 pixel_delta_v;   // Offset to pixel below
+    vec3 u, v, w;         // Camera frame basis vectors
 
     void initialize()
     {
-        camera_center = point3(0, 0, 0);
+        camera_center = lookfrom;
 
         // Determine viewport dimensions.
-        auto focal_length = 1.0;
-        auto viewport_height = 2.0;
+        auto focal_length = (lookfrom - lookat).length();        
+        auto theta = degrees_to_radians(vfov);
+        auto h = tan(theta/2);        
+        
+        auto viewport_height = 2 * h * focal_length;
         auto viewport_width = viewport_height * (double(image_width) / image_height);
 
+        // Compute camera basis vectors.
+        w = unit_vector(lookfrom - lookat);
+        u = unit_vector(cross(vup, w));
+        v = cross(w, u);
+
         // Calculate the vectors across the horizontal and down the vertical viewport edges.
-        auto viewport_u = vec3(viewport_width, 0, 0);
-        auto viewport_v = vec3(0, -viewport_height, 0);
+        auto viewport_u = viewport_width * u;
+        auto viewport_v = viewport_height * -v;
 
         // Calculate the horizontal and vertical delta vectors from pixel to pixel.
         pixel_delta_u = viewport_u / image_width;
         pixel_delta_v = viewport_v / image_height;
 
         // Calculate the location of the upper left pixel.
-        auto viewport_upper_left = camera_center - vec3(0, 0, focal_length) - viewport_u / 2 - viewport_v / 2;
+        auto viewport_upper_left = camera_center - (focal_length * w) - viewport_u / 2 - viewport_v / 2;
         pixel00_loc = viewport_upper_left + 0.5 * (pixel_delta_u + pixel_delta_v);
     }
 
@@ -113,7 +125,11 @@ private:
         // A blue to white gradient background
         vec3 unit_direction = unit_vector(r.direction());
         double q = 0.5 * (unit_direction.y() + 1.0);
-        return (1.0 - q) * color(.0, .0, .0) + q * color(1.0, 1.0, 1.0);
+        static const color blue(0.5, 0.7, 1.0);
+        static const color white(1.0, 1.0, 1.0);
+        static color c1 = white;
+        static color c2 = blue;
+        return (1.0 - q) * c1 + q * c2;
     }
 
     /**
