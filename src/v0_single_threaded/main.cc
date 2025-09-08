@@ -153,7 +153,7 @@ inline color ray_color(const ray& r, const hittable& world){
 }
 
 [[deprecated("Use the ray_color function with hittable instead")]]
-color ray_color_v0(const ray& r)
+inline color ray_color_v0(const ray& r)
 {
     vec3 unit_direction = unit_vector(r.direction());
     auto sphere_center = point3(0, 0, -1);
