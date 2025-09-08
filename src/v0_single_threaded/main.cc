@@ -64,16 +64,39 @@ inline void setPixel(vector<unsigned char> &viewPort, int x, int y, unsigned cha
     viewPort[index + 2] = b;
 }
 
+double hit_sphere(const point3& center, double radius, const ray& r){
+    // The points on the sphere are those who satisfy : (C−P)⋅(C−P)=r^2
+
+    // a=d⋅d
+    // b=−2*d⋅(C−Q)
+    // c=(C−Q)⋅(C−Q)−r2
+
+    auto a = r.direction().length_squared(); // Which is like r.dir · r.dir = ||r.dir||^2
+    auto b = -2.0 * dot(r.direction(), r.origin() - center);
+    auto c = (center - r.origin()).length_squared() - radius * radius;
+    auto discriminant = b * b - 4 * a * c;
+    
+    if(discriminant < 0){
+        return -1.0;
+    } else {
+        return (-b + sqrt(discriminant)) / (2.0 * a);
+    }
+}
+
 color ray_color(const ray& r)
 {
     vec3 unit_direction = unit_vector(r.direction());
-    // cout << "r: " << r.direction() << ", unit: " << unit_direction << endl;
+
+    auto t = hit_sphere(point3(0,0,-1), 0.5, r);
+
+    if(t > -1){
+        return color(t,0,0); 
+    }
 
     // Le vecteur unit_direction variera entre -1 et +1 en x et y
-
     // A blue to white gradient background
-    double t = 0.5 * (unit_direction.y() + 1.0);    
-    return (1.0 - t) * color(1.0, 1.0, 1.0) + t * color(0.5, 0.7, 1.0);    
+    double q = 0.5 * (unit_direction.y() + 1.0);
+    return (1.0 - q) * color(1.0, 1.0, 1.0) + q * color(0.5, 0.7, 1.0);    
 }
 
 void renderPixels(std::vector<unsigned char> &image)
