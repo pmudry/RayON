@@ -163,5 +163,4 @@ private:
 
     point3 center;
     double side_length;
-    // ...existing code...
 };
