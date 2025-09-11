@@ -145,39 +145,66 @@ void dumpImageToFile(vector<unsigned char> &image, string name)
     writeImage(image, image_width, image_height, name);
 }
 
+using scene = hittable_list;
+
+scene many_spheres()
+{
+    scene s;
+
+    s.add(make_shared<sphere>(point3(0, -500.5, -1), 500));
+    s.add(make_shared<sphere>(point3(0, 0, 0), .5));
+    s.add(make_shared<sphere>(point3(-1, 1, -1), .8));
+    
+    for(int i = 0; i < 10; i++)
+        s.add(make_shared<sphere>(point3(RndGen::random_double(-4, 4), 0, RndGen::random_double(0, -4)), .3));
+    
+    return s;
+}
+
+scene single_cube()
+{
+    scene s;
+    
+    s.add(make_shared<sphere>(point3(0, -500.5, -1), 500));
+    s.add(make_shared<sphere>(point3(-1, 1, -1), .5));
+    auto rotatedCube = make_shared<cube>(point3(0, 0, -1), 1, vec3(0, 45, 0));
+    s.add(rotatedCube);
+    return s;
+}
+
 int main()
 {
-    const int samples_per_pixel = 64;
-    Camera c(vec3(0, 0, 0), 1080, channels, samples_per_pixel);
+    vec3 v1(0.2, 0.2, 0.2);
+    cout << v1 << ": " << v1.length_squared() <<endl;
+    auto l = v1.length_squared();
+
+    // normalizing the vector
+    v1 = unit_vector(v1);
+
+    cout << v1 / sqrt(l) << ": " << v1.length_squared() <<endl;
+
+    const int samples_per_pixel = 32;
+    Camera c(vec3(0, 0, 0), 720, channels, samples_per_pixel);
     image_width = c.image_width;
     image_height = c.image_height;
 
     vector<unsigned char> image(c.image_width * c.image_height * channels);
-    hittable_list scene;
-    // scene.add(make_shared<sphere>(point3(0, 0, -1), .5));
-    scene.add(make_shared<sphere>(point3(0, -100.5, -1), 100));
-    auto theCube = make_shared<cube>(point3(0, 0, -1), 1, vec3(0, 45, 0));
-    scene.add(theCube);
 
-    for (int x = -5; x <= 5; x += 5)
-    {
-        for (int y = -5; y <= 5; y += 5)
-        {
-            scene.add(make_shared<sphere>(point3(x / 5.0, y / 5.0, -10), .3));
-        }
-    }
+    // scene.add(make_shared<sphere>(point3(0, 0, -1), .5));
 
     std::cout << "🖼️ resolution: " << c.image_width << " x " << c.image_height << " pixels" << std::endl;
 
     // Create a new scene for this frame
     int i = 0;
 
-    hittable_list frameScene;
-    frameScene.add(make_shared<sphere>(point3(0, -100.5, -1), 100));
-    auto rotatedCube = make_shared<cube>(point3(0, 0, -1), 1, vec3(0, 45 + i * 3, 0));
-    frameScene.add(rotatedCube);
+    RndGen::set_seed(12);
+
+    scene s = many_spheres();
+    //scene s = single_cube();
+    
+    // frameScene.add(rotatedCube);
     vector<unsigned char> localImage(image.size());
-    c.renderPixels(frameScene, localImage);
+    c.renderPixelsParallel(s, localImage);
     dumpImageToFile(localImage, "res/output" + to_string(i) + ".png");
 
     // std::function<void(int)> renderFrame = [&](int i)

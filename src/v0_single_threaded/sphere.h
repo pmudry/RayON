@@ -8,6 +8,10 @@ class sphere : public hittable
 public:
     sphere(const point3 &center, double radius) : center(center), radius(std::fmax(0, radius)) {}
 
+    void setMirror(bool mirror) { isMirror = mirror; }
+
+    bool isMirror = false;
+
     /**
      * @brief Calculates the intersection point of a ray with a sphere
      *
@@ -46,6 +50,7 @@ public:
 
         // Find the nearest root that lies in the acceptable range.
         auto root = (h - sqrtd) / a;
+        
         if(ray_t.surrounds(root) == false)
         {
             root = (h + sqrtd) / a;

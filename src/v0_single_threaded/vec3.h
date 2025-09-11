@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <iostream>
+#include "rnd_gen.h"
 
 class vec3 {
   public:
@@ -42,6 +43,43 @@ class vec3 {
 
     double length_squared() const {
         return e[0]*e[0] + e[1]*e[1] + e[2]*e[2];
+    }
+
+    static vec3 random() {        
+        return vec3(RndGen::random_double(), RndGen::random_double(), RndGen::random_double());
+    }
+
+    static vec3 random(double min, double max) {        
+        return vec3(RndGen::random_double(min, max), 
+                    RndGen::random_double(min, max),
+                    RndGen::random_double(min, max));
+    }
+
+    friend vec3 unit_vector(const vec3& v);
+    friend double dot(const vec3& u, const vec3& v);
+
+    static vec3 random_unit_vector() {
+        return unit_vector(random(-1,1));
+    }
+
+    static vec3 random_in_unit_sphere() {
+        while (true) {
+            auto p = vec3::random(-1,1);
+            auto l = p.length_squared();
+            
+            // Reject the vectors outside the unit sphere or
+            // too close to zero length
+            if (l >= 1 || l < 1e-160 ) continue;            
+            return p;
+        }
+    }
+
+    static vec3 random_in_hemisphere(const vec3& normal) {
+        vec3 in_unit_sphere = random_in_unit_sphere();
+        if (dot(in_unit_sphere, normal) > 0.0) // In the same hemisphere as the normal
+            return in_unit_sphere;
+        else
+            return -in_unit_sphere;
     }
 };
 

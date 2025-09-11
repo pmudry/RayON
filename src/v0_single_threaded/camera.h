@@ -25,6 +25,7 @@ public:
     vec3 vup = vec3(0, 1, 0);          // Camera-relative "up" direction
 
     int samples_per_pixel = 1;
+    const int max_depth = 64; // Maximum ray bounce depth
 
     int n_rays = 0; // Number of rays traced so far with this cam
 
@@ -43,7 +44,47 @@ public:
 
     void renderPixels(const hittable &scene, vector<unsigned char> &image)
     {
-        const int num_threads = 68;
+
+        for (int y = 0; y < image_height; ++y)
+        {
+            for (int x = 0; x < image_width; ++x)
+            {
+                color pixel_color(0, 0, 0); // The pixel color starts as black
+
+                // Supersampling anti-aliasing by averaging multiple samples per pixel
+                for (int s = 0; s < samples_per_pixel; ++s)
+                {
+                    // Random offsets in the range [0, 1) for jittering within the pixel
+                    double offset_x = RndGen::random_double();
+                    double offset_y = RndGen::random_double();
+
+                    // Calculate the direction of the ray for the current pixel
+                    vec3 pixel_center = pixel00_loc + (x + offset_x) * pixel_delta_u + (y + offset_y) * pixel_delta_v;
+                    vec3 ray_direction = pixel_center - camera_center;
+
+                    // Create a ray from the camera center through the pixel
+                    ray r(camera_center, unit_vector(ray_direction));
+                    
+                    // And launch baby, launch the ray to get the color
+                    color sample(ray_color(r, scene, max_depth));
+                    pixel_color += sample;
+                }
+
+                pixel_color /= samples_per_pixel; // Average the samples
+
+                setPixel(image, x, y, pixel_color);
+            }
+
+            showProgress(y, image_height);
+        }
+
+        showProgress(image_height - 1, image_height);
+        cout << endl;
+    }
+
+    void renderPixelsParallel(const hittable &scene, vector<unsigned char> &image)
+    {
+        const int num_threads = 72;
         std::vector<std::thread> threads(num_threads);
         std::mutex progress_mutex;
 
@@ -68,7 +109,7 @@ public:
 
                         // Create a ray from the camera center through the pixel
                         ray r(camera_center, unit_vector(ray_direction));
-                        color sample(ray_color(r, scene));
+                        color sample(ray_color(r, scene, max_depth));
                         pixel_color += sample;
                     }
 
@@ -142,23 +183,29 @@ private:
     /**
      * Computes the color seen along a ray by tracing it through the scene
      */
-    inline color ray_color(const ray &r, const hittable &world)
+    inline color ray_color(const ray &r, const hittable &world, int depth)
     {
+        if(depth <= 0)
+            return color(0,0,0); // No more light is gathered
+
         n_rays++;
 
         hit_record rec;
 
-        if (world.hit(r, interval(0.001, inf), rec))
-        {
-            return 0.5 * (rec.normal + color(1, 1, 1));
+        if (world.hit(r, interval(0.0001, inf), rec)){  
+            // Display only normal          
+            // return 0.5 * (rec.normal + color(1, 1, 1));
+
+            auto new_ray = vec3::random_in_hemisphere(rec.normal);
+            return 0.5 * ray_color(ray(rec.p, new_ray), world, depth - 1);
         }
 
         // Le vecteur unit_direction variera entre -1 et +1 en x et y
         // A blue to white gradient background
         vec3 unit_direction = unit_vector(r.direction());
-        double q = 0.5 * (unit_direction.y() + 1.0);
+        double q = 0.8 * (unit_direction.y() + 1.0);
         static const color blue(0.5, 0.7, 1.0);
-        static const color white(1.0, 1.0, 1.0);
+        static const color white(1.0, .4, .4);
         static color c1 = white;
         static color c2 = blue;
         return (1.0 - q) * c1 + q * c2;

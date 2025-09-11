@@ -5,6 +5,8 @@
         "iosfwd": "cpp",
         "limits": "cpp",
         "random": "cpp",
-        "algorithm": "cpp"
+        "algorithm": "cpp",
+        "memory": "cpp",
+        "type_traits": "cpp"
     }
 }
