@@ -5,10 +5,8 @@
 
 class sphere : public hittable
 {
-public:
+public:    
     sphere(const point3 &center, double radius) : center(center), radius(std::fmax(0, radius)) {}
-
-    void setMirror(bool mirror) { isMirror = mirror; }
 
     bool isMirror = false;
 
@@ -61,6 +59,7 @@ public:
         rec.t = root;
         rec.p = r.at(rec.t);
         rec.normal = (rec.p - center) / radius;
+        rec.isMirror = isMirror;
 
         return true;
     }

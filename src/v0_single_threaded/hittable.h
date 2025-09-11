@@ -13,6 +13,8 @@ public:
     double t; // The ray distance at the hit point
     bool frontFacing; // True if the ray hits the front face of the object
 
+    bool isMirror = false;
+
     void set_face_normal(const ray &r, const vec3 &outward_normal)
     {
         // Sets the hit record normal vector.

@@ -23,14 +23,14 @@ public:
         return distribution(get_rng());
     }
 
-    static double random_double(double min, double max) {
-        return random_double() * (max - min) + min;
-    }
-
     static double random_normal() {
         // Returns a random real from standard normal distribution (mean=0, stddev=1).
         static thread_local std::normal_distribution<double> dis(0.0, 1.0);
         return dis(get_rng());
+    }
+
+    static double random_double(double min, double max) {
+        return random_double() * (max - min) + min;
     }
 
     static double random_normal(double mean, double stddev) {

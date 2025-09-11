@@ -3,6 +3,7 @@
 #include <mutex>
 #include <thread>
 #include <vector>
+#include <atomic>
 
 #pragma once
 
@@ -19,15 +20,15 @@ public:
     const int image_height = -1;
     const int image_width = static_cast<int>(aspect_ratio * image_height);
 
-    double vfov = 45.0;                // vertical field of view in degrees
-    point3 lookfrom = point3(0, 1, 3); // Point camera is looking from
-    point3 lookat = point3(0, 0, -1);  // Point camera is looking at
+    double vfov = 35.0;                // vertical field of view in degrees
+    point3 lookfrom = point3(2, 2.5, 3); // Point camera is looking from
+    point3 lookat = point3(-1, 0, -1);  // Point camera is looking at
     vec3 vup = vec3(0, 1, 0);          // Camera-relative "up" direction
 
     int samples_per_pixel = 1;
     const int max_depth = 64; // Maximum ray bounce depth
 
-    int n_rays = 0; // Number of rays traced so far with this cam
+    std::atomic<int> n_rays{0}; // Number of rays traced so far with this cam (thread-safe)
 
     Camera(const point3 &center, const int image_height, const int image_channels, int samples_per_pixel = 1)
         : image_height(image_height), samples_per_pixel(samples_per_pixel), image_channels(image_channels), camera_center(center)
@@ -80,6 +81,18 @@ public:
 
         showProgress(image_height - 1, image_height);
         cout << endl;
+    }
+    
+    void renderPixelsParallelWithTiming(const hittable &scene, vector<unsigned char> &image)
+    {
+        auto start_time = std::chrono::high_resolution_clock::now();
+        
+        renderPixelsParallel(scene, image);
+        
+        auto end_time = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+        
+        cout << "Parallel rendering completed in " << duration.count() << " milliseconds" << endl;
     }
 
     void renderPixelsParallel(const hittable &scene, vector<unsigned char> &image)
@@ -188,16 +201,21 @@ private:
         if(depth <= 0)
             return color(0,0,0); // No more light is gathered
 
-        n_rays++;
+        n_rays.fetch_add(1, std::memory_order_relaxed);
 
         hit_record rec;
 
         if (world.hit(r, interval(0.0001, inf), rec)){  
             // Display only normal          
             // return 0.5 * (rec.normal + color(1, 1, 1));
+                        
+            if (rec.isMirror){
+                vec3 reflected = r.direction() - 2 * dot(r.direction(), rec.normal) * rec.normal;
+                return color(.8, 0, 0) * 0.2 + 0.8 * ray_color(ray(rec.p, unit_vector(reflected)), world, depth - 1);
+            }
 
             auto new_ray = vec3::random_in_hemisphere(rec.normal);
-            return 0.5 * ray_color(ray(rec.p, new_ray), world, depth - 1);
+            return 0.7 * ray_color(ray(rec.p, new_ray), world, depth - 1);
         }
 
         // Le vecteur unit_direction variera entre -1 et +1 en x et y
@@ -229,8 +247,7 @@ private:
     {
         const int barWidth = 70;
         static int frame = 0;
-        const char *spinner = "|/-\\";
-        // We add 1 to current to start at 1 instead of 0
+        const char *spinner = "|/-\\";        
         float progress = (float)(current + 1) / total;
         int pos = barWidth * progress;
 
