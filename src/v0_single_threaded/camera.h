@@ -1,9 +1,11 @@
 #include "utils.h"
+#include "camera_cuda.h"
 
 #include <mutex>
 #include <thread>
 #include <vector>
 #include <atomic>
+#include <chrono>
 
 #pragma once
 
@@ -26,9 +28,9 @@ public:
     vec3 vup = vec3(0, 1, 0);          // Camera-relative "up" direction
 
     int samples_per_pixel = 1;
-    const int max_depth = 64; // Maximum ray bounce depth
+    const int max_depth = 16; // Maximum ray bounce depth
 
-    std::atomic<int> n_rays{0}; // Number of rays traced so far with this cam (thread-safe)
+    std::atomic<long long> n_rays{0}; // Number of rays traced so far with this cam (thread-safe)
 
     Camera(const point3 &center, const int image_height, const int image_channels, int samples_per_pixel = 1)
         : image_height(image_height), samples_per_pixel(samples_per_pixel), image_channels(image_channels), camera_center(center)
@@ -81,6 +83,27 @@ public:
 
         showProgress(image_height - 1, image_height);
         cout << endl;
+    }
+
+    void renderPixelsCUDA(vector<unsigned char> &image)
+    {
+        auto start_time = std::chrono::high_resolution_clock::now();
+        
+        // Call CUDA rendering function with expanded parameters and get ray count back
+        unsigned long long cuda_ray_count = ::renderPixelsCUDA(image.data(), image_width, image_height,
+                                                               camera_center.x(), camera_center.y(), camera_center.z(),
+                                                               pixel00_loc.x(), pixel00_loc.y(), pixel00_loc.z(),
+                                                               pixel_delta_u.x(), pixel_delta_u.y(), pixel_delta_u.z(),
+                                                               pixel_delta_v.x(), pixel_delta_v.y(), pixel_delta_v.z(),
+                                                               samples_per_pixel, max_depth);
+        
+        // Add the CUDA ray count to our atomic counter
+        n_rays.fetch_add(cuda_ray_count, std::memory_order_relaxed);
+        
+        auto end_time = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+        
+        cout << "CUDA rendering completed in " << duration.count() << " milliseconds" << endl;
     }
     
     void renderPixelsParallelWithTiming(const hittable &scene, vector<unsigned char> &image)
@@ -251,19 +274,19 @@ private:
         float progress = (float)(current + 1) / total;
         int pos = barWidth * progress;
 
-        std::cout << "Rendering: " << spinner[frame++ % 4] << " [";
+        cout << "Rendering: " << spinner[frame++ % 4] << " [";
         for (int i = 0; i < barWidth; ++i)
         {
             if (i < pos)
             {
-                std::cout << "█";
+                cout << "█";
             }
             else
             {
-                std::cout << "░";
+                cout << "░";
             }
         }
-        std::cout << "] " << int(progress * 100.0) << " %\r";
-        std::cout.flush();
+        cout << "] " << int(progress * 100.0) << " %\r";
+        cout.flush();
     }
 };
