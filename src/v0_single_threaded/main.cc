@@ -9,7 +9,7 @@
 #include <filesystem>
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "external/stb_image_write.h"
+#include "../external/stb_image_write.h"
 
 // Function to write image buffer to PNG file
 void writeImage(const vector<unsigned char> &image, int image_width, int image_height, const std::string &filename)
@@ -190,9 +190,9 @@ scene single_cube()
 
 int main()
 {
-    const int samples_per_pixel = 1024;
+    const int samples_per_pixel = 2048;
 
-    Camera c(vec3(0, 0, 0), 1080, channels, samples_per_pixel);
+    Camera c(vec3(0, 0, 0), 2160, channels, samples_per_pixel);
 
     image_width = c.image_width;
     image_height = c.image_height;
@@ -216,21 +216,27 @@ int main()
     std::cout << "Choose rendering method:" << std::endl;
     std::cout << "1. CPU Parallel" << std::endl;
     std::cout << "2. CUDA GPU" << std::endl;
-    std::cout << "Enter choice (1 or 2): ";
+    std::cout << "3. CUDA GPU with Real-time Display" << std::endl;
+    std::cout << "Enter choice (1, 2, or 3): ";
     
-    // int choice;
-    // std::cin >> choice;
+    int choice = 2; // Default to CUDA
+    std::cin >> choice;
     
+    if (choice == 3) {
+#ifdef SDL2_FOUND
+        std::cout << "Using CUDA GPU rendering with real-time display..." << std::endl;
+        c.renderPixelsCUDART(localImage);
+#else
+        std::cout << "SDL2 not found. Falling back to standard CUDA rendering..." << std::endl;
+        c.renderPixelsCUDA(localImage);
+#endif
+    } else if (choice == 2) {
         std::cout << "Using CUDA GPU rendering..." << std::endl;
         c.renderPixelsCUDA(localImage);
-
-    // if (choice == 2) {
-    //     std::cout << "Using CUDA GPU rendering..." << std::endl;
-    //     c.renderPixelsCUDA(localImage);
-    // } else {
-    //     std::cout << "Using CPU parallel rendering..." << std::endl;
-    //     c.renderPixelsParallelWithTiming(s, localImage);
-    // }
+    } else {
+        std::cout << "Using CPU parallel rendering..." << std::endl;
+        c.renderPixelsParallelWithTiming(s, localImage);
+    }
     
     // Create res directory if it doesn't exist    
     dumpImageToFile(localImage, "res/output" + to_string(i) + ".png");

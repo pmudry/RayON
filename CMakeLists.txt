@@ -99,6 +99,20 @@ endif()
 # Executables
 add_executable(v0_single_threaded ${EXTERNAL} ${SOURCE_V0_SINGLE_THREADED})
 
+# Find and link SDL2 for real-time display (optional)
+find_package(SDL2 QUIET)
+if(SDL2_FOUND)
+    include_directories(${SDL2_INCLUDE_DIRS})
+    target_link_libraries(v0_single_threaded ${SDL2_LIBRARIES})
+    add_definitions(-DSDL2_FOUND)
+    message(STATUS "SDL2 found and linked for real-time display")
+else()
+    message(WARNING "SDL2 not found. Real-time display will be disabled. Install SDL2 to enable real-time rendering.")
+    message(WARNING "On Ubuntu/Debian: sudo apt-get install libsdl2-dev")
+    message(WARNING "On macOS: brew install sdl2")
+    message(WARNING "On Windows: Download from https://www.libsdl.org/download-2.0.php")
+endif()
+
 # Link CUDA libraries if CUDA is found
 # Create res directory in output directory
 file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/res)

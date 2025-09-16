@@ -13,7 +13,7 @@ It uses [single-file public domain (or MIT licensed) libraries for C/C++](https:
 ## Using CMAKE
 
 ```bash
-cmake .
+cmake 
 make -j 
 ./v0_single_threaded
 ```
@@ -21,7 +21,7 @@ make -j
 Or, all at once : 
 
 ```bash
-cmake . && make -j 24 && ./v0_single_threaded
+cmake . && make -j && ./v0_single_threaded
 ```
 
 ## Whitin VSCode

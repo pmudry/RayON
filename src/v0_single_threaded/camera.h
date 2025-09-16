@@ -7,6 +7,10 @@
 #include <atomic>
 #include <chrono>
 
+#ifdef SDL2_FOUND
+#include <SDL2/SDL.h>
+#endif
+
 #pragma once
 
 inline double degrees_to_radians(double degrees)
@@ -23,12 +27,12 @@ public:
     const int image_width = static_cast<int>(aspect_ratio * image_height);
 
     double vfov = 35.0;                // vertical field of view in degrees
-    point3 lookfrom = point3(2, 2.5, 3); // Point camera is looking from
-    point3 lookat = point3(-1, 0, -1);  // Point camera is looking at
+    point3 lookfrom = point3(-2, 2, 5); // Point camera is looking from
+    point3 lookat = point3(-2, -0.5, -1);  // Point camera is looking at
     vec3 vup = vec3(0, 1, 0);          // Camera-relative "up" direction
 
     int samples_per_pixel = 1;
-    const int max_depth = 16; // Maximum ray bounce depth
+    const int max_depth = 24; // Maximum ray bounce depth
 
     std::atomic<long long> n_rays{0}; // Number of rays traced so far with this cam (thread-safe)
 
@@ -105,6 +109,121 @@ public:
         
         cout << "CUDA rendering completed in " << duration.count() << " milliseconds" << endl;
     }
+
+#ifdef SDL2_FOUND
+    void renderPixelsCUDART(vector<unsigned char> &image)
+    {
+        // Initialize SDL
+        if (SDL_Init(SDL_INIT_VIDEO) < 0) {
+            std::cerr << "SDL could not initialize! SDL_Error: " << SDL_GetError() << std::endl;
+            return;
+        }
+
+        // Create window
+        SDL_Window* window = SDL_CreateWindow("CUDA Ray Tracer - Real-time",
+                                              SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+                                              image_width, image_height, SDL_WINDOW_SHOWN);
+        if (window == nullptr) {
+            std::cerr << "Window could not be created! SDL_Error: " << SDL_GetError() << std::endl;
+            SDL_Quit();
+            return;
+        }
+
+        // Create renderer
+        SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+        if (renderer == nullptr) {
+            std::cerr << "Renderer could not be created! SDL_Error: " << SDL_GetError() << std::endl;
+            SDL_DestroyWindow(window);
+            SDL_Quit();
+            return;
+        }
+
+        // Create texture for the image
+        SDL_Texture* texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGB24,
+                                                 SDL_TEXTUREACCESS_STREAMING,
+                                                 image_width, image_height);
+        if (texture == nullptr) {
+            std::cerr << "Texture could not be created! SDL_Error: " << SDL_GetError() << std::endl;
+            SDL_DestroyRenderer(renderer);
+            SDL_DestroyWindow(window);
+            SDL_Quit();
+            return;
+        }
+
+        auto start_time = std::chrono::high_resolution_clock::now();
+
+        // Render in tiles for real-time display
+        const int tile_size = 128; // Size of each tile
+        const int tiles_x = (image_width + tile_size - 1) / tile_size;
+        const int tiles_y = (image_height + tile_size - 1) / tile_size;
+
+        std::cout << "Rendering in " << tiles_x << "x" << tiles_y << " tiles..." << std::endl;
+
+        for (int tile_y = 0; tile_y < tiles_y; ++tile_y) {
+            for (int tile_x = 0; tile_x < tiles_x; ++tile_x) {
+                int start_x = tile_x * tile_size;
+                int start_y = tile_y * tile_size;
+                int end_x = std::min(start_x + tile_size, image_width);
+                int end_y = std::min(start_y + tile_size, image_height);
+
+                // Render this tile
+                unsigned long long cuda_ray_count = ::renderPixelsCUDATile(
+                    image.data(), image_width, image_height,
+                    camera_center.x(), camera_center.y(), camera_center.z(),
+                    pixel00_loc.x(), pixel00_loc.y(), pixel00_loc.z(),
+                    pixel_delta_u.x(), pixel_delta_u.y(), pixel_delta_u.z(),
+                    pixel_delta_v.x(), pixel_delta_v.y(), pixel_delta_v.z(),
+                    samples_per_pixel, max_depth, start_x, start_y, end_x, end_y);
+
+                n_rays.fetch_add(cuda_ray_count, std::memory_order_relaxed);
+
+                // Update texture with the new tile
+                SDL_UpdateTexture(texture, nullptr, image.data(), image_width * 3);
+
+                // Clear and render
+                SDL_RenderClear(renderer);
+                SDL_RenderCopy(renderer, texture, nullptr, nullptr);
+                SDL_RenderPresent(renderer);
+
+                // Handle events to keep window responsive
+                SDL_Event event;
+                while (SDL_PollEvent(&event)) {
+                    if (event.type == SDL_QUIT) {
+                        goto cleanup;
+                    }
+                }
+
+                // Small delay to make the progressive rendering visible
+                SDL_Delay(1);
+            }
+        }
+
+        cleanup:
+        auto end_time = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+
+        std::cout << "Real-time CUDA rendering completed in " << duration.count() << " milliseconds" << std::endl;
+        std::cout << "Press any key to close the window..." << std::endl;
+
+        // Wait for user to close window
+        bool quit = false;
+        while (!quit) {
+            SDL_Event event;
+            while (SDL_PollEvent(&event)) {
+                if (event.type == SDL_QUIT) {
+                    quit = true;
+                }
+            }
+            SDL_Delay(1);
+        }
+
+        // Cleanup
+        SDL_DestroyTexture(texture);
+        SDL_DestroyRenderer(renderer);
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+    }
+#endif
     
     void renderPixelsParallelWithTiming(const hittable &scene, vector<unsigned char> &image)
     {
