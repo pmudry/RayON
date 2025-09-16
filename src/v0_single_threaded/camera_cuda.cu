@@ -134,17 +134,17 @@ __device__ float random_float(curandState *state)
 // Device function for fuzzy reflection (imperfect mirror)
 __device__ float3_simple reflect_fuzzy(const float3_simple &v, const float3_simple &n, float roughness, curandState *state)
 {
-    float3_simple reflected = reflect(v, n);
-
-    // Generate random vector in unit sphere for surface roughness
+    // Perturb the normal with random vector for surface roughness
     float3_simple random_in_sphere;
     do
     {
         random_in_sphere = 2.0f * float3_simple(random_float(state), random_float(state), random_float(state)) - float3_simple(1.0f, 1.0f, 1.0f);
     } while (random_in_sphere.length_squared() >= 1.0f);
 
-    // Add scaled random perturbation to the perfect reflection
-    return reflected + roughness * random_in_sphere;
+    float3_simple perturbed_normal = unit_vector(n + roughness * random_in_sphere);
+
+    // Reflect off the perturbed normal
+    return reflect(v, perturbed_normal);
 }
 
 // Device function for random hemisphere sampling
@@ -356,7 +356,7 @@ __device__ bool hit_world(const ray_simple &r, float t_min, float t_max, hit_rec
         closest_so_far = temp_rec.t;
         rec = temp_rec;
         rec.color = float3_simple(0.34f, 0.6f, .92f); // Slight blue tint (cool metal)
-        rec.material = LAMBERTIAN;        
+        rec.material = ROUGH_MIRROR;        
         rec.roughness = 0.7f; // Higher roughness for ground surface
     }
 
@@ -366,7 +366,7 @@ __device__ bool hit_world(const ray_simple &r, float t_min, float t_max, hit_rec
         hit_anything = true;
         closest_so_far = temp_rec.t;
         rec = temp_rec;
-        rec.material = ROUGH_MIRROR;
+        rec.material = LAMBERTIAN;
         rec.color = float3_simple(1.0f, 0.85f, 0.47f); // Golden tint (brass/gold color)
         rec.roughness = 0.03f;                         // Moderate surface roughness for imperfect reflection
     }
@@ -533,22 +533,12 @@ __device__ float3_simple ray_color(const ray_simple &r, curandState *state, int 
             float3_simple reflected = reflect_fuzzy(unit_vector(r.dir), rec.normal, rec.roughness, state);
             scattered = ray_simple(rec.p, reflected);
 
-            // Check if the scattered ray is absorbed (going into the surface)
-            if (dot(scattered.dir, rec.normal) > 0)
-            {
-                // Rough mirrors use stored color as tint with reduced reflectivity
-                // Base reflectivity is 0.7, modified by the tint color
-                float base_reflectivity = 0.8f;
-                attenuation = float3_simple(
-                    rec.color.x * base_reflectivity,
-                    rec.color.y * base_reflectivity,
-                    rec.color.z * base_reflectivity);
-            }
-            else
-            {
-                // Ray absorbed by surface roughness
-                attenuation = float3_simple(0.0f, 0.0f, 0.0f);
-            }
+            // Rough mirrors use stored color as tint with reduced reflectivity
+            float base_reflectivity = 0.8f;
+            attenuation = float3_simple(
+                rec.color.x * base_reflectivity,
+                rec.color.y * base_reflectivity,
+                rec.color.z * base_reflectivity);
         }
         else if (rec.material == GLASS)
         {
