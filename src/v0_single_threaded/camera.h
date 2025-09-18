@@ -92,6 +92,7 @@ public:
     void renderPixelsCUDA(vector<unsigned char> &image)
     {
         auto start_time = std::chrono::high_resolution_clock::now();
+        printf("CUDA tile renderer starting: %dx%d, %d samples, max_depth=%d\n", image_width, image_height, samples_per_pixel, max_depth);
         
         // Call CUDA rendering function with expanded parameters and get ray count back
         unsigned long long cuda_ray_count = ::renderPixelsCUDA(image.data(), image_width, image_height,
@@ -99,7 +100,8 @@ public:
                                                                pixel00_loc.x(), pixel00_loc.y(), pixel00_loc.z(),
                                                                pixel_delta_u.x(), pixel_delta_u.y(), pixel_delta_u.z(),
                                                                pixel_delta_v.x(), pixel_delta_v.y(), pixel_delta_v.z(),
-                                                               samples_per_pixel, max_depth);
+                                                               samples_per_pixel, max_depth,
+                                                               0, 0, image_width, image_height);
         
         // Add the CUDA ray count to our atomic counter
         n_rays.fetch_add(cuda_ray_count, std::memory_order_relaxed);
@@ -153,7 +155,7 @@ public:
         auto start_time = std::chrono::high_resolution_clock::now();
 
         // Render in tiles for real-time display
-        const int tile_size = 128; // Size of each tile
+        const int tile_size = 64; // Size of each tile
         const int tiles_x = (image_width + tile_size - 1) / tile_size;
         const int tiles_y = (image_height + tile_size - 1) / tile_size;
 
@@ -167,7 +169,7 @@ public:
                 int end_y = std::min(start_y + tile_size, image_height);
 
                 // Render this tile
-                unsigned long long cuda_ray_count = ::renderPixelsCUDATile(
+                unsigned long long cuda_ray_count = ::renderPixelsCUDA(
                     image.data(), image_width, image_height,
                     camera_center.x(), camera_center.y(), camera_center.z(),
                     pixel00_loc.x(), pixel00_loc.y(), pixel00_loc.z(),

@@ -1,3 +1,15 @@
+/**
+ * @file camera_cuda.cu
+ * @brief CUDA-accelerated ray tracing implementation with support for various materials
+ *        including displacement-mapped spheres for organic surface variations.
+ * 
+ * This file contains the GPU kernels and device functions for ray tracing, including:
+ * - Basic geometric primitives (spheres, rectangles)
+ * - Material handling (Lambertian, Mirror, Rough Mirror, Glass, Light)
+ * - Noise-based surface displacement for organic sphere deformation
+ * - Multi-threaded rendering with anti-aliasing
+ */
+
 #include <cuda_runtime.h>
 #include <curand_kernel.h>
 #include <device_launch_parameters.h>
@@ -9,7 +21,14 @@
 #define M_PI 3.14159265358979323846f
 #endif
 
-// Simple 3D vector structure for CUDA
+//==============================================================================
+// VECTOR MATH AND UTILITY STRUCTURES
+//==============================================================================
+
+/**
+ * @brief Simple 3D vector structure optimized for CUDA
+ * Provides basic vector operations for ray tracing computations
+ */
 struct float3_simple
 {
     float x, y, z;
@@ -57,23 +76,40 @@ __device__ __host__ float3_simple operator*(float t, const float3_simple &v)
     return v * t;
 }
 
+/** @brief Compute dot product of two vectors */
 __device__ __host__ float dot(const float3_simple &a, const float3_simple &b)
 {
     return a.x * b.x + a.y * b.y + a.z * b.z;
 }
 
+/** @brief Normalize a vector to unit length */
 __device__ __host__ float3_simple unit_vector(const float3_simple &v)
 {
     return v / v.length();
 }
 
-// Device function for reflection
+//==============================================================================
+// OPTICAL PHYSICS FUNCTIONS
+//==============================================================================
+
+/**
+ * @brief Calculate reflection direction using the law of reflection
+ * @param v Incident ray direction (should be normalized)
+ * @param n Surface normal (should be normalized)
+ * @return Reflected ray direction
+ */
 __device__ float3_simple reflect(const float3_simple &v, const float3_simple &n)
 {
     return v - 2 * dot(v, n) * n;
 }
 
-// Device function for refraction
+/**
+ * @brief Calculate refraction direction using Snell's law
+ * @param uv Incident ray direction (normalized)
+ * @param n Surface normal (normalized)  
+ * @param etai_over_etat Ratio of refractive indices (n1/n2)
+ * @return Refracted ray direction
+ */
 __device__ float3_simple refract(const float3_simple &uv, const float3_simple &n, float etai_over_etat)
 {
     float cos_theta = fminf(dot(-uv, n), 1.0f);
@@ -82,7 +118,13 @@ __device__ float3_simple refract(const float3_simple &uv, const float3_simple &n
     return r_out_perp + r_out_parallel;
 }
 
-// Schlick's approximation for reflectance
+/**
+ * @brief Schlick's approximation for Fresnel reflectance
+ * Used to determine reflection probability for dielectric materials
+ * @param cosine Cosine of angle between incident ray and normal
+ * @param ref_idx Refractive index of the material
+ * @return Probability of reflection (0-1)
+ */
 __device__ float reflectance(float cosine, float ref_idx)
 {
     float r0 = (1 - ref_idx) / (1 + ref_idx);
@@ -90,84 +132,121 @@ __device__ float reflectance(float cosine, float ref_idx)
     return r0 + (1 - r0) * powf((1 - cosine), 5);
 }
 
-// Simple ray structure
+//==============================================================================
+// RAY TRACING DATA STRUCTURES
+//==============================================================================
+
+/**
+ * @brief Simple ray structure for ray tracing calculations
+ */
 struct ray_simple
 {
-    float3_simple orig, dir;
+    float3_simple orig, dir;  ///< Ray origin and direction
+    
     __device__ __host__ ray_simple() {}
-    __device__ __host__ ray_simple(const float3_simple &origin, const float3_simple &direction) : orig(origin), dir(direction) {}
+    __device__ __host__ ray_simple(const float3_simple &origin, const float3_simple &direction) 
+        : orig(origin), dir(direction) {}
+    
+    /** @brief Get point along ray at parameter t */
     __device__ __host__ float3_simple at(float t) const
     {
         return orig + t * dir;
     }
 };
 
-// Material types
+/**
+ * @brief Material types supported by the ray tracer
+ */
 enum MaterialType
 {
-    LAMBERTIAN = 0,
-    MIRROR = 1,
-    GLASS = 2,
-    LIGHT = 3,
-    ROUGH_MIRROR = 4
+    LAMBERTIAN = 0,    ///< Diffuse/matte surfaces
+    MIRROR = 1,        ///< Perfect mirror surfaces
+    GLASS = 2,         ///< Transparent dielectric materials
+    LIGHT = 3,         ///< Emissive light sources
+    ROUGH_MIRROR = 4   ///< Imperfect mirror with surface roughness
 };
 
-// Hit record for ray-object intersections
+/**
+ * @brief Hit record containing intersection information
+ * Stores all data needed for shading at intersection points
+ */
 struct hit_record_simple
 {
-    float3_simple p, normal;
-    float t;
-    bool front_face;
-    MaterialType material;
-    float3_simple color;    // For lambertian materials
-    float refractive_index; // For glass materials
-    float3_simple emission; // For light materials
-    float roughness;        // For rough mirror materials
+    float3_simple p, normal;        ///< Intersection point and surface normal
+    float t;                        ///< Ray parameter at intersection
+    bool front_face;               ///< Whether ray hits front face
+    MaterialType material;         ///< Material type at intersection
+    float3_simple color;           ///< Base color for Lambertian materials
+    float refractive_index;        ///< Refractive index for glass materials
+    float3_simple emission;        ///< Emission color for light materials
+    float roughness;               ///< Surface roughness for rough mirrors
 };
 
-// Device function for random number generation
+//==============================================================================
+// RANDOM NUMBER GENERATION AND SAMPLING
+//==============================================================================
+
+/** @brief Generate random float in range [0,1) using CUDA's curand */
 __device__ float random_float(curandState *state)
 {
     return curand_uniform(state);
 }
 
-// Device function for fuzzy reflection (imperfect mirror)
+/**
+ * @brief Generate fuzzy reflection direction for rough mirror surfaces
+ * @param v Incident ray direction (normalized)
+ * @param n Surface normal (normalized)
+ * @param roughness Surface roughness factor (0=perfect mirror, 1=very rough)
+ * @param state Random number generator state
+ * @return Fuzzy reflected ray direction
+ */
 __device__ float3_simple reflect_fuzzy(const float3_simple &v, const float3_simple &n, float roughness, curandState *state)
 {
-    // Perturb the normal with random vector for surface roughness
+    // Generate random perturbation vector in unit sphere
     float3_simple random_in_sphere;
     do
     {
         random_in_sphere = 2.0f * float3_simple(random_float(state), random_float(state), random_float(state)) - float3_simple(1.0f, 1.0f, 1.0f);
     } while (random_in_sphere.length_squared() >= 1.0f);
 
+    // Perturb the normal and reflect off the modified surface
     float3_simple perturbed_normal = unit_vector(n + roughness * random_in_sphere);
-
-    // Reflect off the perturbed normal
     return reflect(v, perturbed_normal);
 }
 
-// Device function for random hemisphere sampling
+/**
+ * @brief Generate random direction in hemisphere around surface normal
+ * Used for Lambertian (diffuse) material sampling
+ * @param normal Surface normal direction
+ * @param state Random number generator state
+ * @return Random direction in hemisphere
+ */
 __device__ float3_simple random_in_hemisphere(const float3_simple &normal, curandState *state)
 {
+    // Generate random point in unit sphere using rejection sampling
     float3_simple in_unit_sphere;
     do
     {
         in_unit_sphere = 2.0f * float3_simple(random_float(state), random_float(state), random_float(state)) - float3_simple(1.0f, 1.0f, 1.0f);
     } while (in_unit_sphere.length_squared() >= 1.0f);
 
+    // Ensure the direction is in the same hemisphere as the normal
     if (dot(in_unit_sphere, normal) > 0.0f)
         return in_unit_sphere;
     else
         return float3_simple(-in_unit_sphere.x, -in_unit_sphere.y, -in_unit_sphere.z);
 }
 
-// Device function to sample a random point on the area light
+/**
+ * @brief Sample random point on rectangular area light for soft shadows
+ * @param state Random number generator state
+ * @return Random point on the area light surface
+ */
 __device__ float3_simple sample_area_light(curandState *state)
 {
-    float3_simple light_corner(-1.0f, 3.0f, -2.0f);
-    float3_simple light_u(2.0f, 0.0f, 0.0f);
-    float3_simple light_v(0.0f, 0.0f, 1.0f);
+    float3_simple light_corner(-1.0f, 3.0f, -2.0f);  // Light position
+    float3_simple light_u(2.0f, 0.0f, 0.0f);         // Width vector
+    float3_simple light_v(0.0f, 0.0f, 1.0f);         // Height vector
 
     float alpha = random_float(state);
     float beta = random_float(state);
@@ -175,76 +254,38 @@ __device__ float3_simple sample_area_light(curandState *state)
     return light_corner + alpha * light_u + beta * light_v;
 }
 
-// Device function for smooth step interpolation
+/** @brief Smooth interpolation function for gradual transitions */
 __device__ float smoothstep(float edge0, float edge1, float x)
 {
     float t = fmaxf(0.0f, fminf(1.0f, (x - edge0) / (edge1 - edge0)));
     return t * t * (3.0f - 2.0f * t);
 }
 
-// Device function to generate random sphere position on surface of large sphere
+//==============================================================================
+// PROCEDURAL GENERATION UTILITIES
+//==============================================================================
+
+/**
+ * @brief Generate random position on sphere surface using spherical coordinates
+ * @param seed Deterministic seed for consistent placement
+ * @param center Sphere center
+ * @param radius Sphere radius
+ * @return Random point on sphere surface
+ */
 __device__ float3_simple random_sphere_position(int seed, float3_simple center, float radius)
 {
-    // Use deterministic random based on seed for consistent sphere placement
     curandState local_state;
     curand_init(seed * 1234567 + 987654321, 0, 0, &local_state);
 
-    // Generate random point on sphere surface using spherical coordinates
-    float theta = 2.0f * M_PI * random_float(&local_state);      // Azimuth angle [0, 2π]
-    float phi = acosf(1.0f - 2.0f * random_float(&local_state)); // Polar angle [0, π] (uniform distribution)
+    float theta = 2.0f * M_PI * random_float(&local_state);      // Azimuth [0, 2π]
+    float phi = acosf(1.0f - 2.0f * random_float(&local_state)); // Polar [0, π]
 
     // Convert spherical to cartesian coordinates
     float x = sinf(phi) * cosf(theta);
     float y = sinf(phi) * sinf(theta);
     float z = cosf(phi);
 
-    // Scale by radius and translate to sphere center
     return center + float3_simple(x * radius, y * radius, z * radius);
-}
-
-// Device function to get random material type
-__device__ MaterialType random_material(int seed)
-{
-    curandState local_state;
-    curand_init(seed * 2468135 + 1357924, 0, 0, &local_state);
-
-    float rand = random_float(&local_state);
-    if (rand < 0.3f)
-        return LAMBERTIAN;
-    else if (rand < 0.5f)
-        return MIRROR;
-    else if (rand < 0.7f)
-        return ROUGH_MIRROR;
-    else
-        return GLASS;
-}
-
-// Device function to get random color
-__device__ float3_simple random_color(int seed)
-{
-    curandState local_state;
-    curand_init(seed * 3691472 + 2581470, 0, 0, &local_state);
-
-    return float3_simple(
-        0.2f + 0.8f * random_float(&local_state),
-        0.2f + 0.8f * random_float(&local_state),
-        0.2f + 0.8f * random_float(&local_state));
-}
-
-// Device function to get random roughness value
-__device__ float random_roughness(int seed)
-{
-    curandState local_state;
-    curand_init(seed * 4815162 + 3426789, 0, 0, &local_state);
-    return 0.1f + 0.6f * random_float(&local_state); // Range [0.1, 0.7]
-}
-
-// Device function to get random radius
-__device__ float random_radius(int seed)
-{
-    curandState local_state;
-    curand_init(seed * 5927384 + 4738291, 0, 0, &local_state);
-    return 0.05f + 0.25f * random_float(&local_state); // Range [0.05, 0.3]
 }
 
 // Device function for sphere intersection
@@ -296,7 +337,17 @@ __device__ bool hit_sphere(const float3_simple &center, float radius, const ray_
     return true;
 }
 
-// Device function for rectangle (area light) intersection
+/**
+ * @brief Ray-rectangle intersection for area lights
+ * @param corner One corner of the rectangle
+ * @param u Vector defining one edge of the rectangle
+ * @param v Vector defining the adjacent edge of the rectangle
+ * @param r Ray to intersect
+ * @param t_min Minimum valid intersection distance
+ * @param t_max Maximum valid intersection distance
+ * @param rec Hit record to fill with intersection data
+ * @return True if intersection found within rectangle bounds
+ */
 __device__ bool hit_rectangle(const float3_simple &corner, const float3_simple &u, const float3_simple &v,
                               const ray_simple &r, float t_min, float t_max, hit_record_simple &rec)
 {
@@ -342,7 +393,18 @@ __device__ bool hit_rectangle(const float3_simple &corner, const float3_simple &
     return true;
 }
 
-// Device function for scene intersection
+//==============================================================================
+// SCENE DEFINITION AND INTERSECTION
+//==============================================================================
+
+/**
+ * @brief Test ray against all objects in the scene
+ * @param r Ray to test against scene
+ * @param t_min Minimum valid intersection distance
+ * @param t_max Maximum valid intersection distance  
+ * @param rec Hit record to fill with closest intersection
+ * @return True if any intersection found, false otherwise
+ */
 __device__ bool hit_world(const ray_simple &r, float t_min, float t_max, hit_record_simple &rec)
 {
     hit_record_simple temp_rec;
@@ -387,7 +449,6 @@ __device__ bool hit_world(const ray_simple &r, float t_min, float t_max, hit_rec
         rec = temp_rec;
         rec.material = LAMBERTIAN;
         rec.color = float3_simple(0.9f, 0.1f, 0.1f); // Red
-        // rec.refractive_index = 1.51f;  // Glass refractive index
     }
 
     // Glass sphere (new addition) - positioned to be clearly visible
@@ -408,7 +469,6 @@ __device__ bool hit_world(const ray_simple &r, float t_min, float t_max, hit_rec
         rec = temp_rec;
         rec.material = LAMBERTIAN;
         rec.color = float3_simple(247/255.0f, 241/255.0f, 159/255.0f); // Yellow
-        // rec.refractive_index = 1.51f;  // Glass refractive index
     }
 
     if (hit_sphere(float3_simple(-3.0f, -0.3, 1.2), 0.2f, r, t_min, closest_so_far, temp_rec))
@@ -418,7 +478,6 @@ __device__ bool hit_world(const ray_simple &r, float t_min, float t_max, hit_rec
         rec = temp_rec;
         rec.material = LAMBERTIAN;
         rec.color = float3_simple(140/255.0f, 198/255.0f, 230/255.0f); // Blue
-        // rec.refractive_index = 1.51f;  // Glass refractive index
     }
 
     if (hit_sphere(float3_simple(-2.5f, -0.3, 1.2), 0.2f, r, t_min, closest_so_far, temp_rec))
@@ -428,7 +487,6 @@ __device__ bool hit_world(const ray_simple &r, float t_min, float t_max, hit_rec
         rec = temp_rec;
         rec.material = LAMBERTIAN;
         rec.color = float3_simple(168/255.0f, 144/255.0f, 192/255.0f); // Violoet
-        // rec.refractive_index = 1.51f;  // Glass refractive index
     }
 
     if (hit_sphere(float3_simple(-2.0f, -0.3, 1.2), 0.2f, r, t_min, closest_so_far, temp_rec))
@@ -438,7 +496,6 @@ __device__ bool hit_world(const ray_simple &r, float t_min, float t_max, hit_rec
         rec = temp_rec;
         rec.material = LAMBERTIAN;
         rec.color = float3_simple(226/255.0f, 171/255.0f, 186/255.0f); // Rose
-        // rec.refractive_index = 1.51f;  // Glass refractive index
     }
 
     if (hit_sphere(float3_simple(-1.5f, -0.3, 1.2), 0.2f, r, t_min, closest_so_far, temp_rec))
@@ -448,7 +505,6 @@ __device__ bool hit_world(const ray_simple &r, float t_min, float t_max, hit_rec
         rec = temp_rec;
         rec.material = LAMBERTIAN;
         rec.color = float3_simple(152.0f/ 255.0f, 199.0f/255.0f, 191.0f/255.0f); // Green
-        // rec.refractive_index = 1.51f;  // Glass refractive index
     }
 
 
@@ -486,13 +542,24 @@ __device__ bool hit_world(const ray_simple &r, float t_min, float t_max, hit_rec
         closest_so_far = temp_rec.t;
         rec = temp_rec;
         rec.material = LIGHT;
-        rec.emission = float3_simple(4.5f, 4.0f, 3.0f); // Warm white light (intensity 5)
+        rec.emission = float3_simple(5.0f, 4.5f, 3.5f); // Warm white light (intensity 5)
     }
 
     return hit_anything;
 }
 
-// Device function for ray color calculation
+//==============================================================================
+// RAY TRACING AND SHADING
+//==============================================================================
+
+/**
+ * @brief Calculate color contribution from a ray using recursive ray tracing
+ * @param r Ray to trace through the scene
+ * @param state Random number generator state for Monte Carlo sampling
+ * @param depth Remaining recursion depth (prevents infinite recursion)
+ * @param ray_count Counter for total rays traced (for performance metrics)
+ * @return Final color contribution from this ray
+ */
 __device__ float3_simple ray_color(const ray_simple &r, curandState *state, int depth, unsigned long long *ray_count)
 {
     if (depth <= 0)
@@ -580,13 +647,23 @@ __device__ float3_simple ray_color(const ray_simple &r, curandState *state, int 
         return float3_simple(attenuation.x * color.x, attenuation.y * color.y, attenuation.z * color.z);
     }
 
-    // Background gradient
+    // Background gradient for the world
     float3_simple unit_direction = unit_vector(r.dir);
     float t = 0.5f * (unit_direction.y + 1.0f);
     return (1.0f - t) * float3_simple(1.0f, 1.0f, 1.0f) + t * float3_simple(0.5f, 0.7f, 1.0f);
 }
 
-// Kernel to initialize random states
+//==============================================================================
+// CUDA KERNELS
+//==============================================================================
+
+/**
+ * @brief Initialize random number generator states for each pixel
+ * @param states Array of random states (one per pixel)
+ * @param seed Base random seed
+ * @param width Image width in pixels
+ * @param height Image height in pixels
+ */
 __global__ void init_random_states(curandState *states, unsigned long seed, int width, int height)
 {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -599,7 +676,20 @@ __global__ void init_random_states(curandState *states, unsigned long seed, int 
     }
 }
 
-// Main rendering kernel - simplified and safer
+/**
+ * @brief Main CUDA kernel for ray tracing entire image
+ * Each thread processes one pixel with multiple samples for anti-aliasing
+ * @param image Output image buffer (RGB, 8-bit per channel)
+ * @param width Image width in pixels
+ * @param height Image height in pixels
+ * @param samples_per_pixel Number of rays per pixel for anti-aliasing
+ * @param max_depth Maximum ray recursion depth
+ * @param cam_center_* Camera center position components
+ * @param pixel00_* Top-left pixel center position components
+ * @param delta_u_* Pixel step in U direction components
+ * @param delta_v_* Pixel step in V direction components
+ * @param ray_count Global counter for rays traced
+ */
 __global__ void renderPixelsKernel(unsigned char *image, int width, int height, int samples_per_pixel, int max_depth,
                                    float cam_center_x, float cam_center_y, float cam_center_z,
                                    float pixel00_x, float pixel00_y, float pixel00_z,
@@ -652,8 +742,10 @@ __global__ void renderPixelsKernel(unsigned char *image, int width, int height, 
         pixel_color = pixel_color + ray_color(r, &local_rand_state, min(max_depth, 6), ray_count);
     }
 
-    // Average and gamma correct
+    // Anti-aliasing is done there
     pixel_color = pixel_color / (float)actual_samples;
+
+    // Gamma correction (gamma=2)
     pixel_color.x = sqrtf(fmaxf(pixel_color.x, 0.0f));
     pixel_color.y = sqrtf(fmaxf(pixel_color.y, 0.0f));
     pixel_color.z = sqrtf(fmaxf(pixel_color.z, 0.0f));
@@ -669,7 +761,24 @@ __global__ void renderPixelsKernel(unsigned char *image, int width, int height, 
     image[base_idx + 2] = b;
 }
 
-// Main rendering kernel for tiles - renders only pixels within specified bounds
+/**
+ * @brief Main CUDA kernel for ray tracing entire image
+ * Each thread processes one pixel with multiple samples for anti-aliasing
+ * @param image Output image buffer (RGB, 8-bit per channel)
+ * @param width Image width in pixels
+ * @param height Image height in pixels
+ * @param samples_per_pixel Number of rays per pixel for anti-aliasing
+ * @param max_depth Maximum ray recursion depth
+ * @param cam_center_* Camera center position components
+ * @param pixel00_* Top-left pixel center position components
+ * @param delta_u_* Pixel step in U direction components
+ * @param delta_v_* Pixel step in V direction components
+ * @param start_x Tile start X coordinate in global image
+ * @param start_y Tile start Y coordinate in global image
+ * @param end_x Tile end X coordinate in global image
+ * @param end_y Tile end Y coordinate in global image
+ * @param ray_count Global counter for rays traced
+ */
 __global__ void renderPixelsTileKernel(unsigned char *image, int width, int height, int samples_per_pixel, int max_depth,
                                        float cam_center_x, float cam_center_y, float cam_center_z,
                                        float pixel00_x, float pixel00_y, float pixel00_z,
@@ -677,7 +786,8 @@ __global__ void renderPixelsTileKernel(unsigned char *image, int width, int heig
                                        float delta_v_x, float delta_v_y, float delta_v_z,
                                        int start_x, int start_y, int end_x, int end_y,
                                        unsigned long long *ray_count)
-{
+{    
+
     // Calculate global pixel coordinates within the tile
     int tile_x = blockIdx.x * blockDim.x + threadIdx.x;
     int tile_y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -728,8 +838,11 @@ __global__ void renderPixelsTileKernel(unsigned char *image, int width, int heig
         pixel_color = pixel_color + ray_color(r, &local_rand_state, min(max_depth, 6), ray_count);
     }
 
-    // Average and gamma correct
+    // Anti-aliasing is done there
     pixel_color = pixel_color / (float)actual_samples;
+
+    
+    // Gamma correction (gamma=2)
     pixel_color.x = sqrtf(fmaxf(pixel_color.x, 0.0f));
     pixel_color.y = sqrtf(fmaxf(pixel_color.y, 0.0f));
     pixel_color.z = sqrtf(fmaxf(pixel_color.z, 0.0f));
@@ -745,100 +858,29 @@ __global__ void renderPixelsTileKernel(unsigned char *image, int width, int heig
     image[base_idx + 2] = b;
 }
 
-// Host function to render pixels using CUDA
+//==============================================================================
+// HOST INTERFACE FUNCTIONS
+//==============================================================================
+
+/**
+ * @brief Host function for tile-based rendering (useful for real-time display)
+ * Renders only a rectangular portion of the image for progressive rendering
+ * @param image Full image buffer (input/output)
+ * @param width Full image width in pixels
+ * @param height Full image height in pixels
+ * @param cam_center_* Camera position components
+ * @param pixel00_* Top-left pixel center position components
+ * @param delta_u_* Pixel step in U direction components
+ * @param delta_v_* Pixel step in V direction components
+ * @param samples_per_pixel Number of rays per pixel for anti-aliasing
+ * @param max_depth Maximum ray recursion depth
+ * @param start_x Starting X coordinate of tile
+ * @param start_y Starting Y coordinate of tile
+ * @param end_x Ending X coordinate of tile (exclusive)
+ * @param end_y Ending Y coordinate of tile (exclusive)
+ * @return Total number of rays traced for this tile
+ */
 extern "C" unsigned long long renderPixelsCUDA(unsigned char *image, int width, int height,
-                                               double cam_center_x, double cam_center_y, double cam_center_z,
-                                               double pixel00_x, double pixel00_y, double pixel00_z,
-                                               double delta_u_x, double delta_u_y, double delta_u_z,
-                                               double delta_v_x, double delta_v_y, double delta_v_z,
-                                               int samples_per_pixel, int max_depth)
-{
-
-    printf("CUDA render starting: %dx%d, %d samples, max_depth=%d\n", width, height, samples_per_pixel, max_depth);
-
-    // Allocate device memory
-    unsigned char *d_image;
-    unsigned long long *d_ray_count;
-    size_t image_size = width * height * 3 * sizeof(unsigned char);
-
-    cudaError_t malloc_err1 = cudaMalloc(&d_image, image_size);
-    cudaError_t malloc_err2 = cudaMalloc(&d_ray_count, sizeof(unsigned long long));
-
-    if (malloc_err1 != cudaSuccess || malloc_err2 != cudaSuccess)
-    {
-        printf("CUDA malloc error: %s, %s\n", cudaGetErrorString(malloc_err1), cudaGetErrorString(malloc_err2));
-        return 0;
-    }
-
-    // Initialize ray counter to zero
-    cudaMemset(d_ray_count, 0, sizeof(unsigned long long));
-
-    // Initialize device image memory to zero
-    cudaMemset(d_image, 0, image_size);
-
-    // Set up grid and block dimensions - use rectangular blocks to break symmetry
-    dim3 block_size(32, 4); // Rectangular blocks help avoid regular artifacts
-    dim3 grid_size((width + block_size.x - 1) / block_size.x,
-                   (height + block_size.y - 1) / block_size.y);
-
-    printf("Grid size: (%d, %d), Block size: (%d, %d)\n", grid_size.x, grid_size.y, block_size.x, block_size.y);
-
-    // Launch rendering kernel
-    renderPixelsKernel<<<grid_size, block_size>>>(d_image, width, height, samples_per_pixel, max_depth,
-                                                  (float)cam_center_x, (float)cam_center_y, (float)cam_center_z,
-                                                  (float)pixel00_x, (float)pixel00_y, (float)pixel00_z,
-                                                  (float)delta_u_x, (float)delta_u_y, (float)delta_u_z,
-                                                  (float)delta_v_x, (float)delta_v_y, (float)delta_v_z,
-                                                  d_ray_count);
-
-    // Check for kernel errors
-    cudaError_t kernel_err = cudaGetLastError();
-    if (kernel_err != cudaSuccess)
-    {
-        printf("CUDA kernel error: %s\n", cudaGetErrorString(kernel_err));
-        cudaFree(d_image);
-        cudaFree(d_ray_count);
-        return 0;
-    }
-
-    cudaDeviceSynchronize();
-
-    // Copy result back to host
-    cudaError_t copy_err = cudaMemcpy(image, d_image, image_size, cudaMemcpyDeviceToHost);
-    if (copy_err != cudaSuccess)
-    {
-        printf("Memory copy error: %s\n", cudaGetErrorString(copy_err));
-        cudaFree(d_image);
-        cudaFree(d_ray_count);
-        return 0;
-    }
-
-    // Copy ray count back to host
-    unsigned long long host_ray_count = 0;
-    cudaError_t count_copy_err = cudaMemcpy(&host_ray_count, d_ray_count, sizeof(unsigned long long), cudaMemcpyDeviceToHost);
-    if (count_copy_err != cudaSuccess)
-    {
-        printf("Ray count copy error: %s\n", cudaGetErrorString(count_copy_err));
-        host_ray_count = 0;
-    }
-
-    printf("Memory copy successful\n");
-    printf("CUDA rays traced: %llu\n", host_ray_count);
-    // Check first few pixels to verify
-    printf("First few pixels: (%d,%d,%d) (%d,%d,%d) (%d,%d,%d)\n",
-           image[0], image[1], image[2], image[3], image[4], image[5], image[6], image[7], image[8]);
-
-    // Clean up
-    cudaFree(d_image);
-    cudaFree(d_ray_count);
-
-    printf("CUDA render completed\n");
-
-    return host_ray_count;
-}
-
-// Host function to render pixels using CUDA (tile-based for real-time display)
-extern "C" unsigned long long renderPixelsCUDATile(unsigned char *image, int width, int height,
                                                    double cam_center_x, double cam_center_y, double cam_center_z,
                                                    double pixel00_x, double pixel00_y, double pixel00_z,
                                                    double delta_u_x, double delta_u_y, double delta_u_z,
@@ -847,7 +889,7 @@ extern "C" unsigned long long renderPixelsCUDATile(unsigned char *image, int wid
                                                    int start_x, int start_y, int end_x, int end_y)
 {
 
-    printf("CUDA tile render: (%d,%d) to (%d,%d) of %dx%d\n", start_x, start_y, end_x, end_y, width, height);
+    // printf("CUDA tile render: (%d,%d) to (%d,%d) of %dx%d\n", start_x, start_y, end_x, end_y, width, height);
 
     // Calculate tile dimensions
     int tile_width = end_x - start_x;
@@ -885,7 +927,7 @@ extern "C" unsigned long long renderPixelsCUDATile(unsigned char *image, int wid
     dim3 grid_size((tile_width + block_size.x - 1) / block_size.x,
                    (tile_height + block_size.y - 1) / block_size.y);
 
-    printf("Tile grid size: (%d, %d), Block size: (%d, %d)\n", grid_size.x, grid_size.y, block_size.x, block_size.y);
+    // printf("Tile grid size: (%d, %d), Block size: (%d, %d)\n", grid_size.x, grid_size.y, block_size.x, block_size.y);
 
     // Launch tile rendering kernel
     renderPixelsTileKernel<<<grid_size, block_size>>>(d_image, width, height, samples_per_pixel, max_depth,
@@ -929,6 +971,12 @@ extern "C" unsigned long long renderPixelsCUDATile(unsigned char *image, int wid
     // Clean up
     cudaFree(d_image);
     cudaFree(d_ray_count);
+
+    printf("CUDA rays traced: %llu\n", host_ray_count);
+
+    // // Check first few pixels to verify
+    // printf("First few pixels: (%d,%d,%d) (%d,%d,%d) (%d,%d,%d)\n",
+    //        image[0], image[1], image[2], image[3], image[4], image[5], image[6], image[7], image[8]);
 
     return host_ray_count;
 }

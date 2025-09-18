@@ -42,3 +42,5 @@ Install the `CMake` extension, click here and there and then launch directly wit
 
 - C'est très très simple de // la génération d'images, voir dans l'historique (avec future sur les images). A mon avis c'est un truc à montrer aux étudiants comment utiliser 72 cpus d'un coup, c'est assez incroyable en fait.
 - Aussi trivial de // le rendu de la caméra
+
+- Est-ce que l'on demanderait pas de vibecoder aussi AABB optimisation
