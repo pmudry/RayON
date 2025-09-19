@@ -187,35 +187,85 @@ scene single_cube()
     return s;
 }
 
-int main()
+#include <cstdlib>
+#include <cstring>
+
+int main(int argc, char *argv[])
 {
-    Camera c(vec3(0, 0, 0), image_width, image_height, channels, samples_per_pixel);
+    int samples = samples_per_pixel; // Default value
+    // Parse command-line arguments
+    for (int i = 1; i < argc; ++i)
+    {
+        if (std::strcmp(argv[i], "-h") == 0 || std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "/?") == 0)
+        {
+            std::cout << "Usage: " << argv[0] << " [options]\n";
+            std::cout << "Options:\n";
+            std::cout << "  -h, --help, /?  Show this help message\n";
+            std::cout << "  -s <samples>    Set the number of samples per pixel (default: " << samples_per_pixel << ")\n";
+            return 0;
+        }
+        else if (std::strcmp(argv[i], "-s") == 0 && i + 1 < argc)
+        {
+            samples = std::atoi(argv[++i]);
+        }
+        else if (argv[i][0] == '-')
+        {
+            std::cerr << "Unknown argument: " << argv[i] << "\n";
+            std::cout << "Usage: " << argv[0] << " [options]\n";
+            std::cout << "Options:\n";
+            std::cout << "  -h, --help, /?  Show this help message\n";
+            std::cout << "  -s <samples>    Set the number of samples per pixel (default: " << samples_per_pixel << ")\n";
+            return 1;
+        }
+        else
+        {
+            std::cerr << "Unexpected argument: " << argv[i] << "\n";
+            return 1;
+        }
+    }
+
+    Camera c(vec3(0, 0, 0), image_width, image_height, channels, samples);
 
     vector<unsigned char> image(c.image_width * c.image_height * channels);
 
-    cout << "Rendering at resolution: " << c.image_width << " x " << c.image_height << " pixels" << std::endl;
+    cout << endl;
+    cout << "=================================================" << endl;
+    cout << " 302 Ray tracer project -- P.-A. Mudry, ISC 2026" << endl;
+    cout << "=================================================" << endl <<endl;
+    cout << endl;
+    cout << "Rendering at resolution: " << c.image_width << " x " << c.image_height << " pixels" << endl;
+    cout << "Samples per pixel: " << samples << endl <<endl;
 
     // Create a new scene for this frame
     int i = 0;
     RndGen::set_seed(123);
 
-    scene s = many_spheres();
-    //scene s = single_cube();
+    //scene s = many_spheres();
+    scene s = single_cube();
     
-    // frameScene.add(rotatedCube);
     vector<unsigned char> localImage(image.size());
     
     // Choose rendering method
     std::cout << "Choose rendering method:" << std::endl;
-    std::cout << "1. CPU Parallel" << std::endl;
-    std::cout << "2. CUDA GPU" << std::endl;
-    std::cout << "3. CUDA GPU with Real-time Display" << std::endl;
+    std::cout << "\t1. CPU Parallel" << std::endl;
+    std::cout << "\t2. CUDA GPU (default)" << std::endl;
+    std::cout << "\t3. CUDA GPU with Real-time Display" << std::endl;
     std::cout << "Enter choice (1, 2, or 3): ";
     
     int choice = 2; // Default to CUDA
-    std::cin >> choice;
-    
-    if (choice == 3) {
+    std::string input;
+    std::getline(std::cin, input);
+
+    cout << endl;
+
+    if (!input.empty()) {
+        choice = std::stoi(input);
+    }
+
+    if (choice == 1) {
+        std::cout << "Using CPU parallel rendering..." << std::endl;
+        c.renderPixelsParallelWithTiming(s, localImage);
+    } else if (choice == 3) {
 #ifdef SDL2_FOUND
         std::cout << "Using CUDA GPU rendering with real-time display..." << std::endl;
         c.renderPixelsCUDART(localImage);
@@ -223,53 +273,13 @@ int main()
         std::cout << "SDL2 not found. Falling back to standard CUDA rendering..." << std::endl;
         c.renderPixelsCUDA(localImage);
 #endif
-    } else if (choice == 2) {
+    } else {
         std::cout << "Using CUDA GPU rendering..." << std::endl;
         c.renderPixelsCUDA(localImage);
-    } else {
-        std::cout << "Using CPU parallel rendering..." << std::endl;
-        c.renderPixelsParallelWithTiming(s, localImage);
     }
-    
     // Create res directory if it doesn't exist    
     dumpImageToFile(localImage, "res/output" + to_string(i) + ".png");
 
-    // std::function<void(int)> renderFrame = [&](int i)
-    // {
-    //     // Create a new scene for this frame
-    //     hittable_list frameScene;
-    //     frameScene.add(make_shared<sphere>(point3(0, -100.5, -1), 100));
-    //     auto rotatedCube = make_shared<cube>(point3(0, 0, -1), 1, vec3(0, 45 + i * 3, 0));
-    //     frameScene.add(rotatedCube);
-    //     vector<unsigned char> localImage(image.size());
-    //     c.renderPixels(frameScene, localImage);
-    //     dumpImageToFile(localImage, "res/output" + to_string(i) + ".png");
-    // };
-
-    // const int numFrames = 120;
-    // const int numThreads = std::thread::hardware_concurrency();
-    // std::vector<std::future<void>> futures;
-
-    // for (int i = 0; i < numFrames; ++i)
-    // {
-    //     futures.push_back(std::async(std::launch::async, renderFrame, i));
-    //     if (futures.size() >= numThreads)
-    //     {
-    //         for (auto &f : futures)
-    //         {
-    //             f.get(); // Wait for all threads to finish
-    //         }
-    //         futures.clear();
-    //     }
-    // }
-
-    // // Wait for any remaining threads
-    // for (auto &f : futures)
-    // {
-    //     f.get();
-    // }
-
-    //FIXME: does not work for very large numbers
     cout.imbue(std::locale("en_US.UTF-8"));
     cout << "Rays traced: " << std::fixed << c.n_rays << endl;
 

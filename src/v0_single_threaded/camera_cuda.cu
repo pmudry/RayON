@@ -1328,8 +1328,6 @@ extern "C" unsigned long long renderPixelsCUDA(unsigned char *image, int width, 
     cudaFree(d_image);
     cudaFree(d_ray_count);
 
-    printf("CUDA rays traced: %llu\n", host_ray_count);
-
     // // Check first few pixels to verify
     // printf("First few pixels: (%d,%d,%d) (%d,%d,%d) (%d,%d,%d)\n",
     //        image[0], image[1], image[2], image[3], image[4], image[5], image[6], image[7], image[8]);

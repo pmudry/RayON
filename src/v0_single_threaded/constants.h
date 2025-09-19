@@ -9,5 +9,5 @@ const int image_width = (int)(aspect_ratio * SET_IMAGE_HEIGHT);
 const int channels = 3; // RGB
 
 // Renderer specific settings
-int samples_per_pixel = 1024; // Number of samples per pixel for anti-aliasing
+int samples_per_pixel = 16; // Number of samples per pixel for anti-aliasing
 int max_depth = 16; // Maximum recursion depth for ray tracing

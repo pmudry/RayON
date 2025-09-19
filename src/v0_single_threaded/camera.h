@@ -91,7 +91,7 @@ public:
     void renderPixelsCUDA(vector<unsigned char> &image)
     {
         auto start_time = std::chrono::high_resolution_clock::now();
-        printf("CUDA tile renderer starting: %dx%d, %d samples, max_depth=%d\n", image_width, image_height, samples_per_pixel, max_depth);
+        printf("CUDA renderer starting: %dx%d, %d samples, max_depth=%d\n", image_width, image_height, samples_per_pixel, max_depth);
         
         // Call CUDA rendering function with expanded parameters and get ray count back
         unsigned long long cuda_ray_count = ::renderPixelsCUDA(image.data(), image_width, image_height,
@@ -106,9 +106,20 @@ public:
         n_rays.fetch_add(cuda_ray_count, std::memory_order_relaxed);
         
         auto end_time = std::chrono::high_resolution_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+        auto seconds = std::chrono::duration_cast<std::chrono::seconds>(end_time - start_time);
+        auto minutes = std::chrono::duration_cast<std::chrono::minutes>(end_time - start_time);
         
-        cout << "CUDA rendering completed in " << duration.count() << " milliseconds" << endl;
+        cout << "CUDA rendering completed in ";
+        if (minutes.count() > 0) {
+            cout << minutes.count() << " minutes and " << (seconds.count()) << " seconds" << endl;
+        }
+        if (seconds.count() > 0) {
+            cout << seconds.count() << " seconds " << endl;
+        }
+        else {
+            cout << (ms.count() % 1000) << " milliseconds" << endl;
+        }
     }
 
 #ifdef SDL2_FOUND

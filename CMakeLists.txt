@@ -100,7 +100,7 @@ endif()
 add_executable(v0_single_threaded ${EXTERNAL} ${SOURCE_V0_SINGLE_THREADED})
 
 # Find and link SDL2 for real-time display (optional)
-find_package(SDL2 QUIET)
+#find_package(SDL2 QUIET)
 if(SDL2_FOUND)
     include_directories(${SDL2_INCLUDE_DIRS})
     target_link_libraries(v0_single_threaded ${SDL2_LIBRARIES})
