@@ -190,7 +190,7 @@ scene single_cube()
 
 int main()
 {
-    const int samples_per_pixel = 256;
+    const int samples_per_pixel = 1024;
 
     Camera c(vec3(0, 0, 0), 720, channels, samples_per_pixel);
 

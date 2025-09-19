@@ -44,3 +44,5 @@ Install the `CMake` extension, click here and there and then launch directly wit
 - Aussi trivial de // le rendu de la caméra
 
 - Est-ce que l'on demanderait pas de vibecoder aussi AABB optimisation
+
+- Claude n'arrive pas à implémenter les balles de golf correctement

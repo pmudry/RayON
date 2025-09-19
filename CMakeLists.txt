@@ -110,7 +110,8 @@ else()
     message(WARNING "SDL2 not found. Real-time display will be disabled. Install SDL2 to enable real-time rendering.")
     message(WARNING "On Ubuntu/Debian: sudo apt-get install libsdl2-dev")
     message(WARNING "On macOS: brew install sdl2")
-    message(WARNING "On Windows: Download from https://www.libsdl.org/download-2.0.php")
+    message(WARNING "On Windows: Download from https://www.libsdl.org/download-2.0.php")    
+    message(STATUS "Continuing without SDL2...")
 endif()
 
 # Link CUDA libraries if CUDA is found

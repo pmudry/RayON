@@ -21,6 +21,13 @@
 #define M_PI 3.14159265358979323846f
 #endif
 
+// Golf ball debug modes:
+// 0 = off (regular shading)
+// 1 = show normals as colors (0.5*(n+1))
+// 2 = show displacement value (grayscale, brighter = deeper dimple)
+// 3 = show gradient magnitude (grayscale)
+#define DEBUG_GOLF_NORMALS 0
+
 //==============================================================================
 // VECTOR MATH AND UTILITY STRUCTURES
 //==============================================================================
@@ -82,10 +89,31 @@ __device__ __host__ float dot(const float3_simple &a, const float3_simple &b)
     return a.x * b.x + a.y * b.y + a.z * b.z;
 }
 
+/** @brief Compute cross product of two vectors */
+__device__ __host__ float3_simple cross(const float3_simple &a, const float3_simple &b)
+{
+    return float3_simple(
+        a.y * b.z - a.z * b.y,
+        a.z * b.x - a.x * b.z,
+        a.x * b.y - a.y * b.x);
+}
+
 /** @brief Normalize a vector to unit length */
 __device__ __host__ float3_simple unit_vector(const float3_simple &v)
 {
     return v / v.length();
+}
+
+/** @brief Convert a normal to a debug RGB color */
+__device__ __host__ inline float3_simple normal_to_color(const float3_simple &n)
+{
+    return float3_simple(0.5f * (n.x + 1.0f), 0.5f * (n.y + 1.0f), 0.5f * (n.z + 1.0f));
+}
+
+__device__ __host__ inline float3_simple grayscale(float v)
+{
+    v = fmaxf(0.0f, fminf(1.0f, v));
+    return float3_simple(v, v, v);
 }
 
 //==============================================================================
@@ -394,6 +422,233 @@ __device__ bool hit_rectangle(const float3_simple &corner, const float3_simple &
 }
 
 //==============================================================================
+// GOLF BALL SURFACE DISPLACEMENT
+//==============================================================================
+
+/**
+ * @brief Convert 3D point to spherical coordinates with 90-degree rotation around x-axis
+ * @param p 3D point on sphere surface
+ * @param theta Output azimuthal angle (0 to 2π)
+ * @param phi Output polar angle (0 to π)
+ */
+__device__ void cartesianToSpherical(float3_simple p, float &theta, float &phi) {
+    float r = p.length();
+    if (r < 1e-6f) {
+        theta = 0.0f;
+        phi = 0.0f;
+        return;
+    }
+    
+    // Apply 90-degree rotation around x-axis: (x,y,z) -> (x,-z,y)
+    float3_simple rotated = float3_simple(p.x, -p.z, p.y);
+    
+    theta = atan2f(rotated.y, rotated.x);
+    if (theta < 0.0f) theta += 2.0f * M_PI;
+    phi = acosf(rotated.z / r);
+}
+
+/**
+ * @brief Find distance to nearest point in a regular icosahedral distribution
+ * @param p 3D point on unit sphere surface (normalized)
+ * @return Distance to nearest dimple center
+ */
+// Generate i-th point on a Fibonacci sphere with n points
+__device__ inline float3_simple fibonacci_point(int i, int n)
+{
+    // Golden angle in radians
+    const float ga = 2.39996323f; // ~pi * (3 - sqrt(5))
+    float k = (float)i + 0.5f;
+    float v = k / (float)n;
+    float phi = acosf(1.0f - 2.0f * v);
+    float theta = ga * k;
+    float s = sinf(phi);
+    return float3_simple(cosf(theta) * s, sinf(theta) * s, cosf(phi));
+}
+
+// Angular distance (radians) to nearest Fibonacci dimple center
+__device__ float distanceToNearestDimple(float3_simple p)
+{
+    float3_simple q = unit_vector(p);
+    const int N = 150; // number of dimple centers; adjust for density
+    float max_dot = -1.0f;
+    for (int i = 0; i < N; ++i)
+    {
+        float3_simple c = fibonacci_point(i, N);
+        float d = dot(q, c);
+        if (d > max_dot)
+            max_dot = d;
+    }
+    // Angular distance between q and nearest center
+    max_dot = fmaxf(fminf(max_dot, 1.0f), -1.0f);
+    return acosf(max_dot);
+}
+
+/**
+ * @brief Create regular dimple pattern using icosahedral distribution 
+ * @param p 3D point on unit sphere surface (normalized)
+ * @return Dimple depth (negative for inward displacement)
+ */
+__device__ float hexagonalDimplePattern(float3_simple p)
+{
+    // Angular distance to the nearest Fibonacci center
+    float ang = distanceToNearestDimple(unit_vector(p));
+
+    // Dimple size and depth in angular units
+    const float dimple_radius = 0.24f; // ~13.7 degrees
+    const float dimple_depth = 0.35f;
+
+    if (ang < dimple_radius)
+    {
+        float t = ang / dimple_radius; // 0..1
+        float depth = dimple_depth * cosf(t * M_PI * 0.5f);
+        return -depth; // inward displacement
+    }
+    return 0.0f;
+}
+
+/**
+ * @brief Calculate golf ball surface displacement using regular hexagonal dimple pattern
+ * @param p Surface point in world coordinates 
+ * @param center Sphere center in world coordinates
+ * @param radius Sphere radius
+ * @return Displacement amount (negative creates dimples)
+ */
+__device__ float golfBallDisplacement(float3_simple p, float3_simple center, float radius) {
+    // Convert to sphere-local coordinates (relative to sphere center)
+    float3_simple local_point = float3_simple(p.x - center.x, p.y - center.y, p.z - center.z);
+    
+    // Normalize to get position on unit sphere surface
+    float3_simple normalized = unit_vector(local_point);
+    
+    // Get regular hexagonal dimple displacement
+    float displacement = hexagonalDimplePattern(normalized);
+    
+    return displacement;
+}
+
+/**
+ * @brief Ray-sphere intersection with golf ball surface displacement
+ * @param center Sphere center
+ * @param radius Sphere radius
+ * @param r Ray to intersect
+ * @param t_min Minimum intersection distance
+ * @param t_max Maximum intersection distance
+ * @param rec Hit record to fill
+ * @return True if intersection found
+ */
+__device__ bool hit_golf_ball_sphere(float3_simple center, float radius, const ray_simple &r, 
+                                    float t_min, float t_max, hit_record_simple &rec)
+{
+    // First, find intersection with base sphere
+    if (!hit_sphere(center, radius, r, t_min, t_max, rec)) {
+        return false;
+    }
+    
+    // Compute displacement value at the base hit point
+    float3_simple surface_point = rec.p;
+    float base_displacement = golfBallDisplacement(surface_point, center, radius);
+
+    // Strengths
+    const float displacement_scale = 0.2f; // normal perturbation strength (bumped)
+    const float geo_scale = 0.0f;           // disable geometric displacement to avoid self-trapping
+
+    // Outward normal of the base sphere at the hit location (stable reference)
+    float3_simple base_outward = unit_vector(float3_simple(surface_point.x - center.x, surface_point.y - center.y, surface_point.z - center.z));
+
+    // Apply a tiny geometric displacement to enhance rim highlight (safe inward for dimples)
+    // No geometric displacement; keep hit on base sphere surface
+    float geo_disp = 0.0f; (void)geo_disp; // quiet unused warning if any
+    rec.p = surface_point;
+
+    // Base shading normal from displaced position
+    float3_simple base_normal = unit_vector(float3_simple(rec.p.x - center.x, rec.p.y - center.y, rec.p.z - center.z));
+
+    // For actual dimple areas, perturb the normal using tangent-space gradient of the displacement field
+    if (base_displacement < -0.001f) {
+        // Build an orthonormal basis (t1, t2) for the tangent plane at base_normal
+        float3_simple helper = fabsf(base_normal.x) > 0.8f ? float3_simple(0, 1, 0) : float3_simple(1, 0, 0);
+        float3_simple t1 = unit_vector(cross(helper, base_normal));
+        float3_simple t2 = cross(base_normal, t1); // already orthogonal, length ~1
+
+        // Sample displacement on the unit sphere in small angular steps along t1 and t2
+    const float h = 0.015f; // small angle in radians (sharper)
+    float3_simple p_hat = base_normal; // unit direction from center after displacement
+        // Evaluate displacement using the pattern directly in direction space
+        float d0 = hexagonalDimplePattern(p_hat);
+        float d1 = hexagonalDimplePattern(unit_vector(float3_simple(p_hat.x + h * t1.x, p_hat.y + h * t1.y, p_hat.z + h * t1.z)));
+        float d2 = hexagonalDimplePattern(unit_vector(float3_simple(p_hat.x + h * t2.x, p_hat.y + h * t2.y, p_hat.z + h * t2.z)));
+
+        // Tangent gradient of the displacement field on the sphere
+        float dd1 = (d1 - d0) / h;
+        float dd2 = (d2 - d0) / h;
+        float3_simple grad_tan = float3_simple(dd1 * t1.x + dd2 * t2.x,
+                                               dd1 * t1.y + dd2 * t2.y,
+                                               dd1 * t1.z + dd2 * t2.z);
+
+        // Perturbed normal follows the gradient of the implicit surface F(x)=|x-c|- (R + s*d(p_hat))
+        // n ≈ base_normal - s * grad_tan
+        float3_simple delta_n = float3_simple(
+            -displacement_scale * grad_tan.x,
+            -displacement_scale * grad_tan.y,
+            -displacement_scale * grad_tan.z);
+
+        // Silhouette-safe attenuation: reduce perturbation at grazing view angles to avoid black edges
+        float3_simple view_dir = unit_vector(float3_simple(-r.dir.x, -r.dir.y, -r.dir.z));
+        float ndv = fmaxf(0.0f, dot(base_normal, view_dir));
+        float atten = smoothstep(0.1f, 0.4f, ndv); // 0 near silhouette, 1 away from it
+        delta_n = float3_simple(delta_n.x * atten, delta_n.y * atten, delta_n.z * atten);
+
+        // Clamp perturbation to avoid flipping normals (black shading)
+        float max_len = 0.4f; // safe limit
+        float len = delta_n.length();
+        if (len > max_len && len > 1e-6f) {
+            delta_n = (max_len / len) * delta_n;
+        }
+
+        float3_simple perturbed = unit_vector(float3_simple(
+            base_normal.x + delta_n.x,
+            base_normal.y + delta_n.y,
+            base_normal.z + delta_n.z));
+
+        // Ensure normal points outward relative to sphere center
+        if (dot(perturbed, base_normal) < 0.0f) {
+            perturbed = float3_simple(-perturbed.x, -perturbed.y, -perturbed.z);
+        }
+
+        // NaN guard
+        if (!(perturbed.x == perturbed.x) || !(perturbed.y == perturbed.y) || !(perturbed.z == perturbed.z)) {
+            perturbed = base_normal;
+        }
+
+        rec.normal = perturbed;
+    } else {
+        // Use standard outward normal for non-dimple areas
+    rec.normal = base_normal;
+    }
+    
+    // Set front face based on ray direction and flip to oppose incoming ray
+    float ndotv = dot(r.dir, rec.normal);
+    if (!(ndotv == ndotv)) { // NaN guard
+        rec.normal = base_normal;
+        ndotv = dot(r.dir, rec.normal);
+    }
+    rec.front_face = ndotv < 0;
+    if (!rec.front_face) {
+        rec.normal = float3_simple(-rec.normal.x, -rec.normal.y, -rec.normal.z);
+    }
+
+    // Push the hit point slightly along the final normal to avoid self-intersections
+    // and starting the next bounce inside the surface (prevents black artifacts)
+    const float surface_epsilon = 1e-3f; // in world units
+    rec.p = float3_simple(
+        rec.p.x + rec.normal.x * surface_epsilon,
+        rec.p.y + rec.normal.y * surface_epsilon,
+        rec.p.z + rec.normal.z * surface_epsilon);
+    
+    return true;
+}
+
+//==============================================================================
 // SCENE DEFINITION AND INTERSECTION
 //==============================================================================
 
@@ -417,8 +672,8 @@ __device__ bool hit_world(const ray_simple &r, float t_min, float t_max, hit_rec
         hit_anything = true;
         closest_so_far = temp_rec.t;
         rec = temp_rec;
-        rec.color = float3_simple(0.34f, 0.6f, .92f); // Slight blue tint (cool metal)
-        rec.material = ROUGH_MIRROR;        
+        rec.color = float3_simple(0.44f, 0.7f, .95f); // Slight blue tint (cool metal)
+        rec.material = LAMBERTIAN;        
         rec.roughness = 0.7f; // Higher roughness for ground surface
     }
 
@@ -428,21 +683,23 @@ __device__ bool hit_world(const ray_simple &r, float t_min, float t_max, hit_rec
         hit_anything = true;
         closest_so_far = temp_rec.t;
         rec = temp_rec;
-        rec.material = LAMBERTIAN;
+        rec.material = ROUGH_MIRROR;
         rec.color = float3_simple(1.0f, 0.85f, 0.47f); // Golden tint (brass/gold color)
         rec.roughness = 0.03f;                         // Moderate surface roughness for imperfect reflection
     }
 
-    if (hit_sphere(float3_simple(1, 0, -2), 0.5f, r, t_min, closest_so_far, temp_rec))
+    // GOLF BALL - Replace the blue sphere with a golf ball
+    if (hit_golf_ball_sphere(float3_simple(1.2, 0, -2), 0.5f, r, t_min, closest_so_far, temp_rec))
     {
         hit_anything = true;
         closest_so_far = temp_rec.t;
-        rec = temp_rec;
-        rec.color = float3_simple(0.1f, 0.2f, 0.9f); // Blue
-        rec.material = LAMBERTIAN;
+        rec = temp_rec;        
+        rec.material = ROUGH_MIRROR;
+        rec.roughness = 0.3f;                         // Moderate surface roughness for imperfect reflection
+        rec.color = float3_simple(0.3f, 0.3f, 0.91f); // Red        
     }
 
-    if (hit_sphere(float3_simple(-0.5f, 0.18, -5), 0.7f, r, t_min, closest_so_far, temp_rec))
+    if (hit_sphere(float3_simple(-1.3f, 0.18, -5), 0.7f, r, t_min, closest_so_far, temp_rec))
     {
         hit_anything = true;
         closest_so_far = temp_rec.t;
@@ -451,17 +708,16 @@ __device__ bool hit_world(const ray_simple &r, float t_min, float t_max, hit_rec
         rec.color = float3_simple(0.9f, 0.1f, 0.1f); // Red
     }
 
-    // Glass sphere (new addition) - positioned to be clearly visible
-    if (hit_sphere(float3_simple(-.7f, .1, -.3f), 0.5f, r, t_min, closest_so_far, temp_rec))
+    if (hit_sphere(float3_simple(-.7f, .2, -.3f), 0.6f, r, t_min, closest_so_far, temp_rec))
     {
         hit_anything = true;
         closest_so_far = temp_rec.t;
         rec = temp_rec;
-        rec.material = GLASS;
-        rec.refractive_index = 1.49f; // Glass refractive index
+        rec.material = GLASS;        
+        rec.refractive_index = 1.5f; // Typical glass refractive index
     }
 
-    // ISC Logo
+    // ISC Logo spheres
     if (hit_sphere(float3_simple(-3.5f, -0.3, 1.2), 0.2f, r, t_min, closest_so_far, temp_rec))
     {
         hit_anything = true;
@@ -542,7 +798,7 @@ __device__ bool hit_world(const ray_simple &r, float t_min, float t_max, hit_rec
         closest_so_far = temp_rec.t;
         rec = temp_rec;
         rec.material = LIGHT;
-        rec.emission = float3_simple(5.0f, 4.5f, 3.5f); // Warm white light (intensity 5)
+        rec.emission = float3_simple(5.5f, 4.8f, 4.2f); // Warm white light (intensity 5)
     }
 
     return hit_anything;
@@ -576,6 +832,44 @@ __device__ float3_simple ray_color(const ray_simple &r, curandState *state, int 
         {
             return rec.emission;
         }
+
+#if DEBUG_GOLF_NORMALS
+    // Approximate golf ball hit detection by center/radius
+    const float3_simple golf_center(1.0f, 0.0f, -2.0f);
+    const float golf_radius = 0.5f;
+    float3_simple to_golf = float3_simple(rec.p.x - golf_center.x, rec.p.y - golf_center.y, rec.p.z - golf_center.z);
+    float dist = to_golf.length();
+    bool near_golf_surface = fabsf(dist - golf_radius) < 0.25f;
+    if (near_golf_surface)
+    {
+    #if DEBUG_GOLF_NORMALS == 1
+        return normal_to_color(rec.normal);
+    #elif DEBUG_GOLF_NORMALS == 2
+        // Visualize displacement value on unit sphere
+        float3_simple dir = dist > 1e-6f ? (to_golf / dist) : float3_simple(0,0,1);
+        float d = hexagonalDimplePattern(dir); // negative inside dimple
+        // Map: deeper dimple (more negative) -> brighter (abs)
+        return grayscale(fminf(fabsf(d) * 3.0f, 1.0f));
+    #elif DEBUG_GOLF_NORMALS == 3
+        // Visualize gradient magnitude of displacement field
+        float3_simple dir = dist > 1e-6f ? (to_golf / dist) : float3_simple(0,0,1);
+        // Build tangent basis
+        float3_simple helper = fabsf(dir.x) > 0.8f ? float3_simple(0,1,0) : float3_simple(1,0,0);
+        float3_simple t1 = unit_vector(cross(helper, dir));
+        float3_simple t2 = cross(dir, t1);
+        const float h = 0.02f;
+        float d0 = hexagonalDimplePattern(dir);
+        float d1 = hexagonalDimplePattern(unit_vector(float3_simple(dir.x + h*t1.x, dir.y + h*t1.y, dir.z + h*t1.z)));
+        float d2 = hexagonalDimplePattern(unit_vector(float3_simple(dir.x + h*t2.x, dir.y + h*t2.y, dir.z + h*t2.z)));
+        float dd1 = (d1 - d0) / h;
+        float dd2 = (d2 - d0) / h;
+        float mag = sqrtf(dd1*dd1 + dd2*dd2);
+        return grayscale(fminf(mag * 0.5f, 1.0f));
+    #else
+        return normal_to_color(rec.normal);
+    #endif
+    }
+#endif
 
         float3_simple attenuation;
         ray_simple scattered;
