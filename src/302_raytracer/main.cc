@@ -154,11 +154,15 @@ scene demo_scene() {
   scene s;
 
   s.add(make_shared<sphere>(point3(0, -950.5, -1), 950));
-  s.add(make_shared<sphere>(point3(-3.5, 0.45, -1.8), .8));
+  
+  auto mirror = make_shared<sphere>(point3(-3.5, 0.45, -1.8), .8);
+  mirror->isMirror = true;
+  s.add(mirror);
+
   s.add(make_shared<sphere>(point3(1.2, 0, -2), 0.5));
   s.add(make_shared<sphere>(point3(-1.3, 0.18, -5), .7));
   s.add(make_shared<sphere>(point3(-.7, .2, -.3), .6));
-
+  
   // Small spheres at the bottom
   for (int i = 0; i < 5; i++) {
     s.add(make_shared<sphere>(point3(-3.5 + i * 0.5, -0.3, 1.2), 0.2));

@@ -4,8 +4,7 @@
 		{
 			"type": "shell",
 			"label": "CMake: fresh",
-			"command": "cd ${workspaceFolder}/build && cmake .. --fresh -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=1 && cp compile_commands.json ..",
-			"preset": "__defaultBuildPreset__",
+			"command": "cd ${workspaceFolder}/build && cmake .. --fresh -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=1 && cp compile_commands.json ..",			
 			"problemMatcher": [],
 			"detail": "CMake clean eveyrhing",
 			"group": {

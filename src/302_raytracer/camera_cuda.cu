@@ -742,7 +742,7 @@ __device__ bool hit_world(const ray_simple &r, float t_min, float t_max, hit_rec
         rec.color = float3_simple(0.3f, 0.3f, 0.91f); // Red
     }
 
-    // The simple red sphere
+    // The dark-dotted red sphere
     if (hit_sphere(float3_simple(-1.3f, 0.18, -5), 0.7f, r, t_min, closest_so_far, temp_rec))
     {
         hit_anything = true;

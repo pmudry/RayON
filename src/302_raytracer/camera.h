@@ -365,7 +365,7 @@ private:
                         
             if (rec.isMirror){
                 vec3 reflected = r.direction() - 2 * dot(r.direction(), rec.normal) * rec.normal;
-                return color(.8, 0, 0) * 0.2 + 0.8 * ray_color(ray(rec.p, unit_vector(reflected)), world, depth - 1);
+                return color(1, 0.85, .47) * 0.2 + 0.8 * ray_color(ray(rec.p, unit_vector(reflected)), world, depth - 1);
             }
 
             auto new_ray = vec3::random_in_hemisphere(rec.normal);
@@ -373,14 +373,10 @@ private:
         }
 
         // Le vecteur unit_direction variera entre -1 et +1 en x et y
-        // A blue to white gradient background
+        // A blue to white gradient backgroun        
         vec3 unit_direction = unit_vector(r.direction());
-        double q = 0.8 * (unit_direction.y() + 1.0);
-        static const color blue(0.5, 0.7, 1.0);
-        static const color white(1.0, .4, .4);
-        static color c1 = white;
-        static color c2 = blue;
-        return (1.0 - q) * c1 + q * c2;
+        float t = 0.5f * (unit_direction.y() + 1.0f);
+        return (1.0f - t) * vec3(1.0f, 1.0f, 1.0f) + t * vec3(0.5f, 0.7f, 1.0f);
     }
 
     /**
