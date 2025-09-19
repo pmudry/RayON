@@ -33,24 +33,28 @@ set ( EXTERNAL
   src/external/stb_image.h
 )
 
-set ( SOURCE_V0_SINGLE_THREADED
-  src/v0_single_threaded/utils.h
-  src/v0_single_threaded/main.cc
-  src/v0_single_threaded/vec3.h
-  src/v0_single_threaded/color.h
-  src/v0_single_threaded/sphere.h
-  src/v0_single_threaded/cube.h
-  src/v0_single_threaded/rectangle.h
-  src/v0_single_threaded/hittable.h
-  src/v0_single_threaded/hittable_list.h
-  src/v0_single_threaded/interval.h
-  src/v0_single_threaded/rnd_gen.h
-  src/v0_single_threaded/camera.h
-  src/v0_single_threaded/camera_cuda.cu
-  src/v0_single_threaded/camera_cuda.h
+set ( SOURCE_302_RAYTRACER
+  src/302_raytracer/utils.h
+  src/302_raytracer/main.cc
+  src/302_raytracer/vec3.h
+  src/302_raytracer/color.h
+  src/302_raytracer/sphere.h
+  src/302_raytracer/cube.h
+  src/302_raytracer/rectangle.h
+  src/302_raytracer/hittable.h
+  src/302_raytracer/hittable_list.h
+  src/302_raytracer/interval.h
+  src/302_raytracer/rnd_gen.h
+  src/302_raytracer/camera.h
+  src/302_raytracer/camera_cuda.cu
+  src/302_raytracer/camera_cuda.h
 )
 
 include_directories(src)
+
+# Ensure compile_commands.json is generated in the source directory
+set(CMAKE_COMPILE_COMMANDS_OUTPUT_DIR ${CMAKE_SOURCE_DIR})
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Specific compiler flags below. We're not going to add options for all possible compilers, but if
 # you're new to CMake (like we are), the following may be a helpful example if you're using a
@@ -97,13 +101,13 @@ elseif (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 # Executables
-add_executable(v0_single_threaded ${EXTERNAL} ${SOURCE_V0_SINGLE_THREADED})
+add_executable(302_raytracer ${EXTERNAL} ${SOURCE_302_RAYTRACER})
 
 # Find and link SDL2 for real-time display (optional)
-#find_package(SDL2 QUIET)
+find_package(SDL2 QUIET)
 if(SDL2_FOUND)
     include_directories(${SDL2_INCLUDE_DIRS})
-    target_link_libraries(v0_single_threaded ${SDL2_LIBRARIES})
+    target_link_libraries(302_raytracer ${SDL2_LIBRARIES})
     add_definitions(-DSDL2_FOUND)
     message(STATUS "SDL2 found and linked for real-time display")
 else()
@@ -114,8 +118,10 @@ else()
     message(STATUS "Continuing without SDL2...")
 endif()
 
+# Create an empty directory for storing the images
 file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/res)
+
 if(CUDA_FOUND)
-    set_property(TARGET v0_single_threaded PROPERTY CUDA_SEPARABLE_COMPILATION ON)
-    target_link_libraries(v0_single_threaded curand)
+    set_property(TARGET 302_raytracer PROPERTY CUDA_SEPARABLE_COMPILATION ON)
+    target_link_libraries(302_raytracer curand)
 endif()

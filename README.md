@@ -8,33 +8,35 @@ This version is single-threaded, with no GPU acceleration.
 
 It uses [single-file public domain (or MIT licensed) libraries for C/C++](https://github.com/nothings/stb/tree/master).
 
-## How to compile
+## How to compile and environment setup in VSCode
 
 ## Using CMAKE to generate compilation scripts
+
+Either manually via : 
 
 ```bash
 mkdir build
 cd build
-cmake .. --fresh -G Ninja
+cmake .. --fresh -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=1 && cp compile_commands.json ..
 ninja
 ```
 
+Then run via : 
+
 ```bash
-cmake . --G ninja 
-make -j 
-./v0_single_threaded
+./302_raytracer
 ```
 
 Or, all at once : 
 
 ## Running
 ```bash
-ninja && echo "2" | v0_single_threaded
+ninja && echo "2" | ./302_raytracer
 ```
 
 ## Whitin VSCode
 
-Install the `CMake` extension, click here and there and then launch directly with `CTRL + SHIFT + F5`, just like in the old days ;)
+Install extension `clangd` from `LLVM`. This is all you need. There are *tasks* created in the `.vscode` folder that can be launched with `CTRL+P` -> Tasks and then you can build, and run. You can even setup key bindings for that.
 
 # Notes for PA
 

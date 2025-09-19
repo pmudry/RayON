@@ -2,12 +2,48 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
-			"type": "cmake",
-			"label": "CMake: clean",
-			"command": "clean",
+			"type": "shell",
+			"label": "CMake: fresh",
+			"command": "cd ${workspaceFolder}/build && cmake .. --fresh -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=1 && cp compile_commands.json ..",
 			"preset": "__defaultBuildPreset__",
 			"problemMatcher": [],
-			"detail": "CMake template clean task"
+			"detail": "CMake clean eveyrhing",
+			"group": {
+				"kind": "none",
+				"isDefault": true
+			}
 		},
+		{
+			"type": "shell",
+			"label": "Ninja build",
+			"command": "cd ${workspaceFolder}/build && ninja",
+			"problemMatcher": [],
+			"detail": "Build with Ninja",
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			}
+		},
+		{
+			"type": "shell",
+			"label": "Launch",
+			"command": "cd ${workspaceFolder}/build && ./302_raytracer",
+			"problemMatcher": [],
+			"detail": "Launch the program",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": true,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": false
+			},
+			"dependsOn": "Ninja build",
+			"group": {
+				"kind": "build",
+				"isDefault": false
+			}
+		}
+		
 	]
 }

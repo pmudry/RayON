@@ -11,17 +11,5 @@
         "*.cu": "cuda-cpp",
         "*.cuh": "cuda-cpp",
         "iostream": "cpp"
-    },
-    "C_Cpp.default.intelliSenseMode": "gcc-x64",
-    "C_Cpp.default.compilerPath": "/usr/bin/nvcc",
-    "C_Cpp.default.cppStandard": "c++17",
-    "C_Cpp.default.includePath": [
-        "${workspaceFolder}/src/**",
-        "/usr/local/cuda/include",
-        "/opt/cuda/include"
-    ],
-    "C_Cpp.default.defines": [
-        "__CUDACC__",
-        "__NVCC__"
-    ]
+    }
 }
