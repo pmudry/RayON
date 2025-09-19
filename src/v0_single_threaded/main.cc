@@ -7,6 +7,7 @@
 #include <future>
 #include <vector>
 #include <filesystem>
+#include "constants.h"
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "../external/stb_image_write.h"
@@ -118,9 +119,7 @@ void writeImage(const vector<unsigned char> &image, int image_width, int image_h
 //     return (1.0 - q) * color(1.0, 1.0, 1.0) + q * color(0.5, 0.7, 1.0);
 // }
 
-int image_width = 0;
-int image_height = 720;
-const int channels = 3; // RGB
+
 
 /**
  * Just for the sake of putting a gradient in a file
@@ -190,20 +189,14 @@ scene single_cube()
 
 int main()
 {
-    const int samples_per_pixel = 128;
-
-    Camera c(vec3(0, 0, 0), 720, channels, samples_per_pixel);
-
-    image_width = c.image_width;
-    image_height = c.image_height;
+    Camera c(vec3(0, 0, 0), image_width, image_height, channels, samples_per_pixel);
 
     vector<unsigned char> image(c.image_width * c.image_height * channels);
 
-    std::cout << "Rendering at resolution: " << c.image_width << " x " << c.image_height << " pixels" << std::endl;
+    cout << "Rendering at resolution: " << c.image_width << " x " << c.image_height << " pixels" << std::endl;
 
     // Create a new scene for this frame
     int i = 0;
-
     RndGen::set_seed(123);
 
     scene s = many_spheres();

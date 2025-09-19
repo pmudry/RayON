@@ -114,8 +114,6 @@ else()
     message(STATUS "Continuing without SDL2...")
 endif()
 
-# Link CUDA libraries if CUDA is found
-# Create res directory in output directory
 file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/res)
 if(CUDA_FOUND)
     set_property(TARGET v0_single_threaded PROPERTY CUDA_SEPARABLE_COMPILATION ON)

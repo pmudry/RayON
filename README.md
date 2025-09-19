@@ -10,18 +10,26 @@ It uses [single-file public domain (or MIT licensed) libraries for C/C++](https:
 
 ## How to compile
 
-## Using CMAKE
+## Using CMAKE to generate compilation scripts
 
 ```bash
-cmake 
+mkdir build
+cd build
+cmake .. --fresh -G Ninja
+ninja
+```
+
+```bash
+cmake . --G ninja 
 make -j 
 ./v0_single_threaded
 ```
 
 Or, all at once : 
 
+## Running
 ```bash
-cmake . && make -j && ./v0_single_threaded
+ninja && echo "2" | v0_single_threaded
 ```
 
 ## Whitin VSCode

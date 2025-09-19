@@ -1,4 +1,5 @@
 #include "utils.h"
+#include "constants.h"
 #include "camera_cuda.h"
 
 #include <mutex>
@@ -22,10 +23,8 @@ class Camera
 {
 
 public:
-    const double aspect_ratio = 16.0 / 9.0;
-    const int image_height = -1;
-    const int image_width = static_cast<int>(aspect_ratio * image_height);
-
+    int image_width;
+    int image_height;
     double vfov = 35.0;                // vertical field of view in degrees
     point3 lookfrom = point3(-2, 2, 5); // Point camera is looking from
     point3 lookat = point3(-2, -0.5, -1);  // Point camera is looking at
@@ -36,8 +35,8 @@ public:
 
     std::atomic<long long> n_rays{0}; // Number of rays traced so far with this cam (thread-safe)
 
-    Camera(const point3 &center, const int image_height, const int image_channels, int samples_per_pixel = 1)
-        : image_height(image_height), samples_per_pixel(samples_per_pixel), image_channels(image_channels), camera_center(center)
+    Camera(const point3 &center, const int image_width, const int image_height, const int image_channels, int samples_per_pixel = 1)
+        : image_width(image_width), image_height(image_height), samples_per_pixel(samples_per_pixel), image_channels(image_channels), camera_center(center)
     {
         initialize();
     }
