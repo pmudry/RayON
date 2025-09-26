@@ -316,6 +316,10 @@ class Camera
          Ray scattered;
          Color attenuation;
 
+         if (Constant* c = dynamic_cast<Constant*>(rec.mat_ptr.get())) {
+            return c->albedo;
+         }
+
          if (rec.mat_ptr->scatter(r, rec, attenuation, scattered))
          {
             // For constant materials, the scattered ray direction is zero, so we just return the attenuation
