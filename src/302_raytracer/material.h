@@ -23,6 +23,7 @@ class Constant : public Material
    virtual bool scatter(const Ray &r_in, const Hit_record &rec, Color &attenuation, Ray &scattered) const override
    {            
       attenuation = albedo;
+      scattered = Ray(rec.p, Vec3(0,0,0)); // No scattering, the ray is absorbed
       return true;
    }
 

@@ -315,12 +315,15 @@ class Camera
          // }
          Ray scattered;
          Color attenuation;
-         
-         if(rec.mat_ptr == nullptr) 
-            return Color(1,0,0); // No material, no light
 
-         if (rec.mat_ptr->scatter(r, rec, attenuation, scattered))            
-            return attenuation * ray_color(scattered, world, depth-1);
+         if (rec.mat_ptr->scatter(r, rec, attenuation, scattered))
+         {
+            // For constant materials, the scattered ray direction is zero, so we just return the attenuation
+            if (scattered.direction().length() == 0.0)
+               return attenuation;
+            else
+               return attenuation * ray_color(scattered, world, depth-1);
+         }
       }
 
       // A blue to white gradient universe, where unit_direction varies between -1 and +1 in x and y
