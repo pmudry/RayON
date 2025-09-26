@@ -1,0 +1,2 @@
+cd src/302_raytracer && enscript -1G --color=1 --line-numbers -p printed_code.ps --highlight=cpp -c --font=Courier8 *.h *.cc *.cu && ps2pdf printed_code.ps && mv printed_code.pdf ../../printed_code.pdf && rm printed_code.ps
+cd ../..

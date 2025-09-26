@@ -41,6 +41,11 @@ class Sphere : public Hittable{
     * distance
     * - We then solve for t by substituting the ray equation into the sphere
     * equation
+    * - Substitution yields quadratic: `at² + bt + c = 0` where:
+    *   - `a = d⋅d` (direction vector dot product)
+    *   - `b = −2*d⋅(C−O)` (relates direction to center-origin vector)
+    *   - `c = (C−O)⋅(C−O) − r²` (distance from origin to center minus radius
+    * squared) 
     *
     * @param center The center point of the sphere in 3D space
     * @param radius The radius of the sphere (must be positive)
@@ -49,7 +54,6 @@ class Sphere : public Hittable{
     * @return The parameter t for the intersection point along the ray:
     *     - Returns `-1.0` if no intersection occurs (discriminant < 0)
     *     - Returns the farther intersection point when two intersections exist
-    * TODO: check if closer or farther, I think it's wrong
     *     - The actual intersection point can be computed as `r.origin() + t *
     * r.direction()`
     *

@@ -8,7 +8,7 @@ class Cube : public Hittable
 {
  public:
    Cube(const Point3 &center, double side_length, const Vec3 &rotation = Vec3(0, 0, 0))
-       : center(center), rotation(rotation), side_length(std::fmax(0, side_length))
+       : center(center), side_length(std::fmax(0, side_length)), rotation(rotation)
    {
       compute_rotation_matrix();                  
    }
@@ -21,8 +21,10 @@ class Cube : public Hittable
    }
 
  private:
-   // Rotation angles in degrees
-   Vec3 rotation;
+   Point3 center;
+   double side_length;   
+   Vec3 rotation; // in degrees
+   
    // Rotation matrix (3x3)
    double rot_matrix[3][3];
 
@@ -174,7 +176,5 @@ class Cube : public Hittable
       rec.normal = rotate_point(normal, false);
       return true;
    }
-
-   Point3 center;
-   double side_length;
+   
 };
