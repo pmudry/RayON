@@ -31,6 +31,22 @@ class Constant : public Material
    Color albedo;
 };
 
+class ShowNormals : public Material
+{
+ public:
+   ShowNormals(const Color &a) : albedo(a) {}
+
+   virtual bool scatter(const Ray &r_in, const Hit_record &rec, Color &attenuation, Ray &scattered) const override
+   {            
+      attenuation = 0.5 * (rec.normal + Color(1, 1, 1));
+      scattered = Ray(rec.p, Vec3(0,0,0)); // No scattering
+      return true;
+   }
+
+ public:
+   Color albedo;
+};
+
 class Lambertian : public Material
 {
  public:

@@ -320,6 +320,11 @@ class Camera
             return c->albedo;
          }
 
+         if (ShowNormals* c = dynamic_cast<ShowNormals*>(rec.mat_ptr.get())) {
+            auto s = rec.mat_ptr->scatter(r, rec, attenuation, scattered);
+            return attenuation;
+         }
+
          if (rec.mat_ptr->scatter(r, rec, attenuation, scattered))
          {
             // For constant materials, the scattered ray direction is zero, so we just return the attenuation

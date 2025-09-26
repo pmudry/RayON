@@ -62,11 +62,12 @@ scene demo_scene()
 
    auto material_uniform_red = make_shared<Constant>(Color(1, 0.0, 0.0));   
    auto material_uniform_blue = make_shared<Constant>(Color(0, 0.0, 1.0));
+   auto material_normals = make_shared<ShowNormals>(Color(0, 0.0, 0.0));
    auto material_lambert = make_shared<Lambertian>(Color(0.7, 0.7, 0.7));
    auto material_metal = make_shared<Lambertian>(Color(0.7, 0.7, 0.7));   
    
    s.add(make_shared<Sphere>(Point3(0, -950.5, -1), 950, material_uniform_red)); // Ground   
-   s.add(make_shared<Sphere>(Point3(-3.5, 0.45, -1.8), .8, material_uniform_blue));
+   s.add(make_shared<Sphere>(Point3(-3.5, 0.45, -1.8), .8, material_normals));
    s.add(make_shared<Sphere>(Point3(-1.3, 0.18, -5), .7, material_uniform_blue));
    s.add(make_shared<Sphere>(Point3(-.7, .2, -.3), .6, material_uniform_blue));
    s.add(make_shared<Sphere>(Point3(1.2, 0, -2), 0.5, material_uniform_blue));
