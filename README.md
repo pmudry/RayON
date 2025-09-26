@@ -40,6 +40,8 @@ Install extension `clangd` from `LLVM`. This is all you need. There are *tasks* 
 
 # Notes for PA
 
+- Trucs cools : ImGUI à installer ?
+
 - Ce serait probablement une idée qu'ils se fassent la main en regardant comment fonctionne le code pour faire le rendu d'une sphère dans un premier temps, sans vibe code.
 - Ensuite rendu des normales
 - Ajouter l'anti-aliasing, vraiment assez simple

@@ -10,6 +10,7 @@
         "type_traits": "cpp",
         "*.cu": "cuda-cpp",
         "*.cuh": "cuda-cpp",
-        "iostream": "cpp"
+        "iostream": "cpp",
+        "filesystem": "cpp"
     }
 }

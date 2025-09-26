@@ -2,18 +2,19 @@
 
 #include <string>
 
-namespace constants{
+namespace constants
+{
     const std::string ver_major = "1.0";
 
-    const double aspect_ratio = 16.0 / 9.0;
+    const double ASPECT_RATIO = 16.0 / 9.0;
 
-    const int SET_IMAGE_HEIGHT = 720;
+    const int SET_IMAGE_HEIGHT = 1080;
 
-    const int image_height = SET_IMAGE_HEIGHT;
-    const int image_width = (int)(aspect_ratio * SET_IMAGE_HEIGHT);
-    const int channels = 3; // RGB
+    const int IMAGE_HEIGHT = SET_IMAGE_HEIGHT;
+    const int IMAGE_WIDTH = (int)(ASPECT_RATIO * SET_IMAGE_HEIGHT);
+    const int CHANNELS = 3; // RGB
 
     // Renderer specific settings
-    const int samples_per_pixel = 16; // Number of samples per pixel for anti-aliasing
-    int max_depth = 16; // Maximum recursion depth for ray tracing
-};
+    const int SAMPLES_PER_PIXEL = 1; // Number of samples per pixel for anti-aliasing
+    int MAX_DEPTH = 16;              // Maximum recursion depth for ray tracing
+}; 
