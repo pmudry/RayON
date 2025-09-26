@@ -7,9 +7,9 @@
  * with parameters such as field of view, resolution, and sampling for anti-aliasing.
  */
 
+#include "camera_cuda.h"
 #include "constants.h"
 #include "utils.h"
-#include "camera_cuda.h"
 
 #include <atomic>
 #include <chrono>
@@ -31,13 +31,13 @@ class Camera
  public:
    int image_width;
    int image_height;
-   double vfov = 35.0;                   // vertical field of view in degrees
+   double vfov = 35.0;                   // Vertical field of view in degrees
    Point3 lookfrom = Point3(-2, 2, 5);   // Point camera is looking from
    Point3 lookat = Point3(-2, -0.5, -1); // Point camera is looking at
    Vec3 vup = Vec3(0, 1, 0);             // Camera-relative "up" direction
 
-   int samples_per_pixel = 1;
-   const int max_depth = 24; // Maximum ray bounce depth
+   int samples_per_pixel;                      // Number of samples per pixel for anti-aliasing
+   const int max_depth = constants::MAX_DEPTH; // Maximum ray bounce depth
 
    std::atomic<long long> n_rays{0}; // Number of rays traced so far with this cam (thread-safe)
 
@@ -50,8 +50,6 @@ class Camera
    }
 
    Camera() : Camera(Vec3(0, 0, 0), 720, 3, 1) {}
-
-   void set_samples_per_pixel(int new_samples_per_pixel) { samples_per_pixel = new_samples_per_pixel; }
 
    void renderPixels(const Hittable &scene, vector<unsigned char> &image)
    {
@@ -74,10 +72,10 @@ class Camera
                Vec3 ray_direction = pixel_center - camera_center;
 
                // Create a ray from the camera center through the pixel
-               Ray r(camera_center, unit_vector(ray_direction));
+               Ray ray(camera_center, unit_vector(ray_direction));
 
                // And launch baby, launch the ray to get the color
-               Color sample(ray_color(r, scene, max_depth));
+               Color sample(ray_color(ray, scene, max_depth));
                pixel_color += sample;
             }
 
@@ -87,6 +85,69 @@ class Camera
          }
 
          showProgress(y, image_height);
+      }
+
+      showProgress(image_height - 1, image_height);
+      cout << endl;
+   }
+
+   void renderPixelsParallel(const Hittable &scene, vector<unsigned char> &image)
+   {
+      const int num_threads = 72;
+      std::vector<std::thread> threads(num_threads);
+      std::mutex progress_mutex;
+      int completed_rows = 0; // Track globally completed rows
+
+      auto render_chunk = [&](int start_y, int end_y)
+      {
+         for (int y = start_y; y < end_y; ++y)
+         {
+            for (int x = 0; x < image_width; ++x)
+            {
+               Color pixel_color(0, 0, 0); // The pixel color starts as black
+
+               // Supersampling anti-aliasing by averaging multiple samples per pixel
+               for (int s = 0; s < samples_per_pixel; ++s)
+               {
+                  // Random offsets in the range [0, 1) for jittering within the pixel
+                  double offset_x = RndGen::random_double();
+                  double offset_y = RndGen::random_double();
+
+                  // Calculate the direction of the ray for the current pixel
+                  Vec3 pixel_center = pixel00_loc + (x + offset_x) * pixel_delta_u + (y + offset_y) * pixel_delta_v;
+                  Vec3 ray_direction = pixel_center - camera_center;
+
+                  // Create a ray from the camera center through the pixel
+                  Ray ray(camera_center, unit_vector(ray_direction));
+                  Color sample(ray_color(ray, scene, max_depth));
+                  pixel_color += sample;
+               }
+
+               pixel_color /= samples_per_pixel; // Average the samples
+
+               setPixel(image, x, y, pixel_color);
+            }
+
+            // Update progress - increment global counter and show progress
+            {
+               std::lock_guard<std::mutex> lock(progress_mutex);
+               completed_rows++;
+               showProgress(completed_rows - 1, image_height);
+            }
+         }
+      };
+
+      int chunk_size = image_height / num_threads;
+      for (int t = 0; t < num_threads; ++t)
+      {
+         int start_y = t * chunk_size;
+         int end_y = (t == num_threads - 1) ? image_height : start_y + chunk_size;
+         threads[t] = std::thread(render_chunk, start_y, end_y);
+      }
+
+      for (auto &thread : threads)
+      {
+         thread.join();
       }
 
       showProgress(image_height - 1, image_height);
@@ -128,6 +189,20 @@ class Camera
          cout << (ms.count() % 1000) << " milliseconds" << endl;
       }
    }
+
+   void renderPixelsParallelWithTiming(const Hittable &scene, vector<unsigned char> &image)
+   {
+      auto start_time = std::chrono::high_resolution_clock::now();
+
+      renderPixelsParallel(scene, image);
+
+      auto end_time = std::chrono::high_resolution_clock::now();
+      auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+
+      cout << "Parallel rendering completed in " << duration.count() << " milliseconds" << endl;
+   }
+
+   
 
 #ifdef SDL2_FOUND
    void renderPixelsCUDART(vector<unsigned char> &image)
@@ -251,77 +326,6 @@ class Camera
    }
 #endif
 
-   void renderPixelsParallelWithTiming(const Hittable &scene, vector<unsigned char> &image)
-   {
-      auto start_time = std::chrono::high_resolution_clock::now();
-
-      renderPixelsParallel(scene, image);
-
-      auto end_time = std::chrono::high_resolution_clock::now();
-      auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-
-      cout << "Parallel rendering completed in " << duration.count() << " milliseconds" << endl;
-   }
-
-   void renderPixelsParallel(const Hittable &scene, vector<unsigned char> &image)
-   {
-      const int num_threads = 72;
-      std::vector<std::thread> threads(num_threads);
-      std::mutex progress_mutex;
-
-      auto render_chunk = [&](int start_y, int end_y)
-      {
-         for (int y = start_y; y < end_y; ++y)
-         {
-            for (int x = 0; x < image_width; ++x)
-            {
-               Color pixel_color(0, 0, 0); // The pixel color starts as black
-
-               // Supersampling anti-aliasing by averaging multiple samples per pixel
-               for (int s = 0; s < samples_per_pixel; ++s)
-               {
-                  // Random offsets in the range [0, 1) for jittering within the pixel
-                  double offset_x = RndGen::random_double();
-                  double offset_y = RndGen::random_double();
-
-                  // Calculate the direction of the ray for the current pixel
-                  Vec3 pixel_center = pixel00_loc + (x + offset_x) * pixel_delta_u + (y + offset_y) * pixel_delta_v;
-                  Vec3 ray_direction = pixel_center - camera_center;
-
-                  // Create a ray from the camera center through the pixel
-                  Ray r(camera_center, unit_vector(ray_direction));
-                  Color sample(ray_color(r, scene, max_depth));
-                  pixel_color += sample;
-               }
-
-               pixel_color /= samples_per_pixel; // Average the samples
-
-               setPixel(image, x, y, pixel_color);
-            }
-
-            // Update progress
-            std::lock_guard<std::mutex> lock(progress_mutex);
-            showProgress(y, image_height);
-         }
-      };
-
-      int chunk_size = image_height / num_threads;
-      for (int t = 0; t < num_threads; ++t)
-      {
-         int start_y = t * chunk_size;
-         int end_y = (t == num_threads - 1) ? image_height : start_y + chunk_size;
-         threads[t] = std::thread(render_chunk, start_y, end_y);
-      }
-
-      for (auto &thread : threads)
-      {
-         thread.join();
-      }
-
-      showProgress(image_height - 1, image_height);
-      cout << endl;
-   }
-
  private:
    int image_channels = 3; // Number of color channels per pixel (e.g., 3 for RGB)
 
@@ -335,7 +339,7 @@ class Camera
    {
       camera_center = lookfrom;
 
-      // Determine viewport dimensions.
+      // Determine viewport dimensions
       auto focal_length = (lookfrom - lookat).length();
       auto theta = degrees_to_radians(vfov);
       auto h = tan(theta / 2);
@@ -343,20 +347,20 @@ class Camera
       auto viewport_height = 2 * h * focal_length;
       auto viewport_width = viewport_height * (double(image_width) / image_height);
 
-      // Compute camera basis vectors.
+      // Compute camera basis vectors
       w = unit_vector(lookfrom - lookat);
       u = unit_vector(cross(vup, w));
       v = cross(w, u);
 
-      // Calculate the vectors across the horizontal and down the vertical viewport edges.
+      // Calculate the vectors across the horizontal and down the vertical viewport edges
       auto viewport_u = viewport_width * u;
       auto viewport_v = viewport_height * -v;
 
-      // Calculate the horizontal and vertical delta vectors from pixel to pixel.
+      // Calculate the horizontal and vertical delta vectors from pixel to pixel
       pixel_delta_u = viewport_u / image_width;
       pixel_delta_v = viewport_v / image_height;
 
-      // Calculate the location of the upper left pixel.
+      // Calculate the location of the upper left pixel
       auto viewport_upper_left = camera_center - (focal_length * w) - viewport_u / 2 - viewport_v / 2;
       pixel00_loc = viewport_upper_left + 0.5 * (pixel_delta_u + pixel_delta_v);
    }
@@ -376,20 +380,22 @@ class Camera
       if (world.hit(r, Interval(0.0001, inf), rec))
       {
          // Display only normal
-         // return 0.5 * (rec.normal + color(1, 1, 1));
+         return 0.5 * (rec.normal + Color(1, 1, 1));
 
-         if (rec.isMirror)
-         {
-            Vec3 reflected = r.direction() - 2 * dot(r.direction(), rec.normal) * rec.normal;
-            return Color(1, 0.85, .47) * 0.2 + 0.8 * ray_color(Ray(rec.p, unit_vector(reflected)), world, depth - 1);
-         }
+         // if (rec.isMirror)
+         // {
+         //    Vec3 reflected = r.direction() - 2 * dot(r.direction(), rec.normal) * rec.normal;
+         //    return Color(1, 0.85, .47) * 0.2 + 0.8 * ray_color(Ray(rec.p, unit_vector(reflected)), world, depth - 1);
+         // }
 
          auto new_ray = Vec3::random_in_hemisphere(rec.normal);
+
+         // A ray bounces and keeps only 70% of its color. It's a grey object.
+         // If it returns 100%, it's white and if 0% it's black.
          return 0.7 * ray_color(Ray(rec.p, new_ray), world, depth - 1);
       }
 
-      // Le vecteur unit_direction variera entre -1 et +1 en x et y
-      // A blue to white gradient backgroun
+      // A blue to white gradient universe, where unit_direction varies between -1 and +1 in x and y
       Vec3 unit_direction = unit_vector(r.direction());
       float t = 0.5f * (unit_direction.y() + 1.0f);
       return (1.0f - t) * Vec3(1.0f, 1.0f, 1.0f) + t * Vec3(0.5f, 0.7f, 1.0f);

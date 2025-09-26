@@ -4,9 +4,9 @@
 #include "hittable_list.h"
 #include "sphere.h"
 
-#include <iostream>
 #include <filesystem>
 #include <future>
+#include <iostream>
 #include <vector>
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -134,17 +134,18 @@ int main(int argc, char *argv[])
    cout << "=====================================================" << endl << endl;
    cout << "Rendering at resolution: " << c.image_width << " x " << c.image_height << " pixels" << endl;
    cout << "Samples per pixel: " << samples << endl << endl;
-   
+
    RndGen::set_seed(123);
 
    // scene s = many_spheres();
-   scene s = demo_scene();
+   scene scene = demo_scene();
 
    vector<unsigned char> localImage(image.size());
 
    // Choose rendering method
    cout << "Choose rendering method:" << endl;
-   cout << "\t1. CPU Parallel" << endl;
+   cout << "\t0. CPU sequential" << endl;
+   cout << "\t1. CPU parallel" << endl;
    cout << "\t2. CUDA GPU (default)" << endl;
    cout << "\t3. CUDA GPU with Real-time Display" << endl;
    cout << "Enter choice (1, 2, or 3): ";
@@ -160,13 +161,17 @@ int main(int argc, char *argv[])
       choice = stoi(input);
    }
 
-   if (choice == 1)
+   switch (choice)
    {
+   case 0:
+      cout << "Using CPU single threaded..." << endl;
+      c.renderPixels(scene, localImage);
+      break;
+   case 1:
       cout << "Using CPU parallel rendering..." << endl;
-      c.renderPixelsParallelWithTiming(s, localImage);
-   }
-   else if (choice == 3)
-   {
+      c.renderPixelsParallelWithTiming(scene, localImage);
+      break;
+   case 3:
 #ifdef SDL2_FOUND
       cout << "Using CUDA GPU rendering with real-time display..." << endl;
       c.renderPixelsCUDART(localImage);
@@ -174,11 +179,11 @@ int main(int argc, char *argv[])
       cout << "SDL2 not found. Falling back to standard CUDA rendering..." << endl;
       c.renderPixelsCUDA(localImage);
 #endif
-   }
-   else
-   {
+      break;
+   default:
       cout << "Using CUDA GPU rendering..." << endl;
       c.renderPixelsCUDA(localImage);
+      break;
    }
 
    // Create res directory if it doesn't exist
