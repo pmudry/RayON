@@ -21,12 +21,11 @@
 
 #include "hittable.h"
 #include "utils.h"
+#include "material.h"
 
 class Sphere : public Hittable{
  public:
-   Sphere(const Point3 &center, double radius) : center(center), radius(std::fmax(0, radius)) {}
-
-   bool isMirror = false;
+   Sphere(const Point3 &center, double radius, shared_ptr<Material> mat) : center(center), radius(std::fmax(0, radius)), mat(mat) {}
 
    /**
     * @brief Calculates the intersection point of a ray with a sphere
@@ -86,7 +85,7 @@ class Sphere : public Hittable{
       rec.t = root;
       rec.p = r.at(rec.t);
       rec.normal = (rec.p - center) / radius;
-      rec.isMirror = isMirror;
+      rec.mat_ptr = mat;
 
       return true;
    }
@@ -94,4 +93,5 @@ class Sphere : public Hittable{
  private:
    Point3 center;
    double radius;
+   shared_ptr<Material> mat;
 };

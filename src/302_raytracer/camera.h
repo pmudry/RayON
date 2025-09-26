@@ -14,89 +14,102 @@
 #include <atomic>
 #include <chrono>
 #include <mutex>
+#include <sstream>
 #include <thread>
 #include <vector>
 
-#ifdef SDL2_FOUND
-#include <SDL2/SDL.h>
-#endif
-
 #pragma once
-
-inline double degrees_to_radians(double degrees) { return degrees * M_PI / 180.0; }
 
 class Camera
 {
 
  public:
+   // Image parameters
    int image_width;
    int image_height;
+   int image_channels; // Number of color channels per pixel (e.g., 3 for RGB)
+
+   // Camera
    double vfov = 35.0;                   // Vertical field of view in degrees
    Point3 lookfrom = Point3(-2, 2, 5);   // Point camera is looking from
    Point3 lookat = Point3(-2, -0.5, -1); // Point camera is looking at
    Vec3 vup = Vec3(0, 1, 0);             // Camera-relative "up" direction
 
+   // Ray tracing
+   std::atomic<long long> n_rays{0};           // Number of rays traced so far with this cam (thread-safe)
    int samples_per_pixel;                      // Number of samples per pixel for anti-aliasing
    const int max_depth = constants::MAX_DEPTH; // Maximum ray bounce depth
 
-   std::atomic<long long> n_rays{0}; // Number of rays traced so far with this cam (thread-safe)
-
    Camera(const Point3 &center, const int image_width, const int image_height, const int image_channels,
           int samples_per_pixel = 1)
-       : image_width(image_width), image_height(image_height), samples_per_pixel(samples_per_pixel),
-         image_channels(image_channels), camera_center(center)
+       : image_width(image_width), image_height(image_height), image_channels(image_channels),
+         samples_per_pixel(samples_per_pixel), camera_center(center)
    {
       initialize();
    }
 
    Camera() : Camera(Vec3(0, 0, 0), 720, 3, 1) {}
 
+
+   /**
+    * @brief Renders the entire image sequentially pixel by pixel using ray tracing
+    *
+    * This method performs sequential rendering by iterating through each pixel in the image
+    * from top-left to bottom-right.
+    *
+    * @param scene The hittable scene object containing all geometry to render
+    * @param image Vector buffer to store the rendered RGB pixel data (modified in-place)
+    */
    void renderPixels(const Hittable &scene, vector<unsigned char> &image)
    {
+      auto start_time = std::chrono::high_resolution_clock::now();
 
+      // Render each pixel in the image sequentially
       for (int y = 0; y < image_height; ++y)
       {
          for (int x = 0; x < image_width; ++x)
          {
-            Color pixel_color(0, 0, 0); // The pixel color starts as black
+            // Compute the color for this pixel using ray tracing with anti-aliasing
+            Color pixel_color = computePixelColor(scene, x, y);
 
-            // Supersampling anti-aliasing by averaging multiple samples per pixel
-            for (int s = 0; s < samples_per_pixel; ++s)
-            {
-               // Random offsets in the range [0, 1) for jittering within the pixel
-               double offset_x = RndGen::random_double();
-               double offset_y = RndGen::random_double();
-
-               // Calculate the direction of the ray for the current pixel
-               Vec3 pixel_center = pixel00_loc + (x + offset_x) * pixel_delta_u + (y + offset_y) * pixel_delta_v;
-               Vec3 ray_direction = pixel_center - camera_center;
-
-               // Create a ray from the camera center through the pixel
-               Ray ray(camera_center, unit_vector(ray_direction));
-
-               // And launch baby, launch the ray to get the color
-               Color sample(ray_color(ray, scene, max_depth));
-               pixel_color += sample;
-            }
-
-            pixel_color /= samples_per_pixel; // Average the samples
-
+            // Store the computed color in the image buffer
             setPixel(image, x, y, pixel_color);
          }
 
+         // Show progress after completing each row
          showProgress(y, image_height);
       }
 
       showProgress(image_height - 1, image_height);
+
+      auto end_time = std::chrono::high_resolution_clock::now();
+      auto duration = end_time - start_time;
+
       cout << endl;
+      cout << "CPU single thread rendering completed in " << timeStr(end_time - start_time) << endl;
    }
 
+   /**
+    * @brief Renders the entire image using parallel processing for improved performance
+    *
+    * This method divides the image into horizontal chunks and processes them concurrently
+    * using multiple threads. Each thread renders a subset of rows independently, with
+    * thread-safe progress tracking using a mutex. The workload is distributed across
+    * a fixed number of threads with the last thread handling any remaining rows
+    * if the image height doesn't divide evenly.
+    *
+    * @param scene The hittable scene object containing all geometry to render
+    * @param image Vector buffer to store the rendered RGB pixel data (modified in-place)
+    *
+    */
    void renderPixelsParallel(const Hittable &scene, vector<unsigned char> &image)
    {
-      const int num_threads = 72;
+      const int num_threads = std::thread::hardware_concurrency(); // Get the number of available hardware threads
       std::vector<std::thread> threads(num_threads);
       std::mutex progress_mutex;
       int completed_rows = 0; // Track globally completed rows
+
+      auto start_time = std::chrono::high_resolution_clock::now();
 
       auto render_chunk = [&](int start_y, int end_y)
       {
@@ -104,27 +117,10 @@ class Camera
          {
             for (int x = 0; x < image_width; ++x)
             {
-               Color pixel_color(0, 0, 0); // The pixel color starts as black
+               // Compute the color for this pixel using the shared helper method
+               Color pixel_color = computePixelColor(scene, x, y);
 
-               // Supersampling anti-aliasing by averaging multiple samples per pixel
-               for (int s = 0; s < samples_per_pixel; ++s)
-               {
-                  // Random offsets in the range [0, 1) for jittering within the pixel
-                  double offset_x = RndGen::random_double();
-                  double offset_y = RndGen::random_double();
-
-                  // Calculate the direction of the ray for the current pixel
-                  Vec3 pixel_center = pixel00_loc + (x + offset_x) * pixel_delta_u + (y + offset_y) * pixel_delta_v;
-                  Vec3 ray_direction = pixel_center - camera_center;
-
-                  // Create a ray from the camera center through the pixel
-                  Ray ray(camera_center, unit_vector(ray_direction));
-                  Color sample(ray_color(ray, scene, max_depth));
-                  pixel_color += sample;
-               }
-
-               pixel_color /= samples_per_pixel; // Average the samples
-
+               // Store the computed color in the image buffer
                setPixel(image, x, y, pixel_color);
             }
 
@@ -151,9 +147,25 @@ class Camera
       }
 
       showProgress(image_height - 1, image_height);
+
+      auto end_time = std::chrono::high_resolution_clock::now();
+
       cout << endl;
+      cout << "Parallel rendering completed in " << timeStr(end_time - start_time) << endl;
    }
 
+   /**
+    * @brief Renders the image using CUDA for parallel processing.
+    *
+    * This method leverages CUDA to perform ray tracing computations on the GPU,
+    * significantly accelerating the rendering process. It calculates the color
+    * of each pixel in the image buffer and updates the ray count. The method
+    * also measures and displays the time taken for the rendering process.
+    *
+    * @param image A vector of unsigned char representing the image buffer where
+    *              the rendered pixel data will be stored. The buffer must be
+    *              pre-allocated with a size of (image_width * image_height * image_channels).
+    */
    void renderPixelsCUDA(vector<unsigned char> &image)
    {
       auto start_time = std::chrono::high_resolution_clock::now();
@@ -171,164 +183,12 @@ class Camera
       n_rays.fetch_add(cuda_ray_count, std::memory_order_relaxed);
 
       auto end_time = std::chrono::high_resolution_clock::now();
-      auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-      auto seconds = std::chrono::duration_cast<std::chrono::seconds>(end_time - start_time);
-      auto minutes = std::chrono::duration_cast<std::chrono::minutes>(end_time - start_time);
-
-      cout << "CUDA rendering completed in ";
-      if (minutes.count() > 0)
-      {
-         cout << minutes.count() << " minutes and " << (seconds.count()) << " seconds" << endl;
-      }
-      if (seconds.count() > 0)
-      {
-         cout << seconds.count() << " seconds " << endl;
-      }
-      else
-      {
-         cout << (ms.count() % 1000) << " milliseconds" << endl;
-      }
+      auto duration = end_time - start_time;
+      cout << "CUDA rendering completed in " << timeStr(duration) << endl;
    }
 
-   void renderPixelsParallelWithTiming(const Hittable &scene, vector<unsigned char> &image)
-   {
-      auto start_time = std::chrono::high_resolution_clock::now();
-
-      renderPixelsParallel(scene, image);
-
-      auto end_time = std::chrono::high_resolution_clock::now();
-      auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-
-      cout << "Parallel rendering completed in " << duration.count() << " milliseconds" << endl;
-   }
-
-   
-
-#ifdef SDL2_FOUND
-   void renderPixelsCUDART(vector<unsigned char> &image)
-   {
-      // Initialize SDL
-      if (SDL_Init(SDL_INIT_VIDEO) < 0)
-      {
-         std::cerr << "SDL could not initialize! SDL_Error: " << SDL_GetError() << std::endl;
-         return;
-      }
-
-      // Create window
-      SDL_Window *window = SDL_CreateWindow("CUDA Ray Tracer - Real-time", SDL_WINDOWPOS_UNDEFINED,
-                                            SDL_WINDOWPOS_UNDEFINED, image_width, image_height, SDL_WINDOW_SHOWN);
-      if (window == nullptr)
-      {
-         std::cerr << "Window could not be created! SDL_Error: " << SDL_GetError() << std::endl;
-         SDL_Quit();
-         return;
-      }
-
-      // Create renderer
-      SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
-      if (renderer == nullptr)
-      {
-         std::cerr << "Renderer could not be created! SDL_Error: " << SDL_GetError() << std::endl;
-         SDL_DestroyWindow(window);
-         SDL_Quit();
-         return;
-      }
-
-      // Create texture for the image
-      SDL_Texture *texture =
-          SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STREAMING, image_width, image_height);
-      if (texture == nullptr)
-      {
-         std::cerr << "Texture could not be created! SDL_Error: " << SDL_GetError() << std::endl;
-         SDL_DestroyRenderer(renderer);
-         SDL_DestroyWindow(window);
-         SDL_Quit();
-         return;
-      }
-
-      auto start_time = std::chrono::high_resolution_clock::now();
-
-      // Render in tiles for real-time display
-      const int tile_size = 64; // Size of each tile
-      const int tiles_x = (image_width + tile_size - 1) / tile_size;
-      const int tiles_y = (image_height + tile_size - 1) / tile_size;
-
-      std::cout << "Rendering in " << tiles_x << "x" << tiles_y << " tiles..." << std::endl;
-
-      for (int tile_y = 0; tile_y < tiles_y; ++tile_y)
-      {
-         for (int tile_x = 0; tile_x < tiles_x; ++tile_x)
-         {
-            int start_x = tile_x * tile_size;
-            int start_y = tile_y * tile_size;
-            int end_x = std::min(start_x + tile_size, image_width);
-            int end_y = std::min(start_y + tile_size, image_height);
-
-            // Render this tile
-            unsigned long long cuda_ray_count = ::renderPixelsCUDA(
-                image.data(), image_width, image_height, camera_center.x(), camera_center.y(), camera_center.z(),
-                pixel00_loc.x(), pixel00_loc.y(), pixel00_loc.z(), pixel_delta_u.x(), pixel_delta_u.y(),
-                pixel_delta_u.z(), pixel_delta_v.x(), pixel_delta_v.y(), pixel_delta_v.z(), samples_per_pixel,
-                max_depth, start_x, start_y, end_x, end_y);
-
-            n_rays.fetch_add(cuda_ray_count, std::memory_order_relaxed);
-
-            // Update texture with the new tile
-            SDL_UpdateTexture(texture, nullptr, image.data(), image_width * 3);
-
-            // Clear and render
-            SDL_RenderClear(renderer);
-            SDL_RenderCopy(renderer, texture, nullptr, nullptr);
-            SDL_RenderPresent(renderer);
-
-            // Handle events to keep window responsive
-            SDL_Event event;
-            while (SDL_PollEvent(&event))
-            {
-               if (event.type == SDL_QUIT)
-               {
-                  goto cleanup;
-               }
-            }
-
-            // Small delay to make the progressive rendering visible
-            SDL_Delay(1);
-         }
-      }
-
-   cleanup:
-      auto end_time = std::chrono::high_resolution_clock::now();
-      auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-
-      std::cout << "Real-time CUDA rendering completed in " << duration.count() << " milliseconds" << std::endl;
-      std::cout << "Press any key to close the window..." << std::endl;
-
-      // Wait for user to close window
-      bool quit = false;
-      while (!quit)
-      {
-         SDL_Event event;
-         while (SDL_PollEvent(&event))
-         {
-            if (event.type == SDL_QUIT)
-            {
-               quit = true;
-            }
-         }
-         SDL_Delay(1);
-      }
-
-      // Cleanup
-      SDL_DestroyTexture(texture);
-      SDL_DestroyRenderer(renderer);
-      SDL_DestroyWindow(window);
-      SDL_Quit();
-   }
-#endif
 
  private:
-   int image_channels = 3; // Number of color channels per pixel (e.g., 3 for RGB)
-
    Point3 camera_center; // Camera center
    Point3 pixel00_loc;   // Location of pixel 0, 0
    Vec3 pixel_delta_u;   // Offset to pixel to the right
@@ -341,7 +201,7 @@ class Camera
 
       // Determine viewport dimensions
       auto focal_length = (lookfrom - lookat).length();
-      auto theta = degrees_to_radians(vfov);
+      auto theta = utils::degrees_to_radians(vfov);
       auto h = tan(theta / 2);
 
       auto viewport_height = 2 * h * focal_length;
@@ -366,6 +226,72 @@ class Camera
    }
 
    /**
+    * @brief Computes the color for a single pixel using ray tracing with anti-aliasing
+    * This helper method contains the core pixel rendering logic
+    *
+    * @param scene The scene to render
+    * @param x Pixel x coordinate
+    * @param y Pixel y coordinate
+    * @return Color The computed pixel color after anti-aliasing
+    */
+   Color computePixelColor(const Hittable &scene, int x, int y)
+   {
+      Color pixel_color(0, 0, 0); // The pixel color starts as black
+
+      double offset_x = 0;
+      double offset_y = 0;
+
+      // Calculate the direction of the ray for the current pixel with center sampling
+      Vec3 pixel_center = pixel00_loc + (x + offset_x) * pixel_delta_u + (y + offset_y) * pixel_delta_v;
+      Vec3 ray_direction = pixel_center - camera_center;
+
+      // Create a ray from the camera center through the pixel
+      Ray ray(camera_center, unit_vector(ray_direction));
+
+      // And launch baby, launch the ray to get the color
+      Color sample(ray_color(ray, scene, max_depth));
+      pixel_color = sample;
+
+      return pixel_color;
+   }
+
+   /**
+    * @brief Computes the color for a single pixel using ray tracing with anti-aliasing
+    * This helper method contains the core pixel rendering logic
+    *
+    * @param scene The scene to render
+    * @param x Pixel x coordinate
+    * @param y Pixel y coordinate
+    * @return Color The computed pixel color after anti-aliasing
+    */
+   Color computePixelColorSOLUTION(const Hittable &scene, int x, int y)
+   {
+      Color pixel_color(0, 0, 0); // The pixel color starts as black
+
+      // Supersampling anti-aliasing by averaging multiple samples per pixel
+      for (int s = 0; s < samples_per_pixel; ++s)
+      {
+         // Random offsets in the range [0, 1) for jittering within the pixel
+         double offset_x = RndGen::random_double();
+         double offset_y = RndGen::random_double();
+
+         // Calculate the direction of the ray for the current pixel
+         Vec3 pixel_center = pixel00_loc + (x + offset_x) * pixel_delta_u + (y + offset_y) * pixel_delta_v;
+         Vec3 ray_direction = pixel_center - camera_center;
+
+         // Create a ray from the camera center through the pixel
+         Ray ray(camera_center, unit_vector(ray_direction));
+
+         // And launch baby, launch the ray to get the color
+         Color sample(ray_color(ray, scene, max_depth));
+         pixel_color += sample;
+      }
+
+      pixel_color /= samples_per_pixel; // Average the samples
+      return pixel_color;
+   }
+
+   /**
     * Computes the color seen along a ray by tracing it through the scene
     */
    inline Color ray_color(const Ray &r, const Hittable &world, int depth)
@@ -380,19 +306,21 @@ class Camera
       if (world.hit(r, Interval(0.0001, inf), rec))
       {
          // Display only normal
-         return 0.5 * (rec.normal + Color(1, 1, 1));
+         // return 0.5 * (rec.normal + Color(1, 1, 1));
 
          // if (rec.isMirror)
          // {
          //    Vec3 reflected = r.direction() - 2 * dot(r.direction(), rec.normal) * rec.normal;
          //    return Color(1, 0.85, .47) * 0.2 + 0.8 * ray_color(Ray(rec.p, unit_vector(reflected)), world, depth - 1);
          // }
+         Ray scattered;
+         Color attenuation;
+         
+         if(rec.mat_ptr == nullptr) 
+            return Color(1,0,0); // No material, no light
 
-         auto new_ray = Vec3::random_in_hemisphere(rec.normal);
-
-         // A ray bounces and keeps only 70% of its color. It's a grey object.
-         // If it returns 100%, it's white and if 0% it's black.
-         return 0.7 * ray_color(Ray(rec.p, new_ray), world, depth - 1);
+         if (rec.mat_ptr->scatter(r, rec, attenuation, scattered))            
+            return attenuation * ray_color(scattered, world, depth-1);
       }
 
       // A blue to white gradient universe, where unit_direction varies between -1 and +1 in x and y
@@ -415,6 +343,10 @@ class Camera
       image[index + 2] = static_cast<int>(intensity.clamp(c.z()) * 256);
    }
 
+
+   /***
+    * Utility functions
+    */
    void showProgress(int current, int total)
    {
       const int barWidth = 70;
@@ -437,5 +369,29 @@ class Camera
       }
       cout << "] " << int(progress * 100.0) << " %\r";
       cout.flush();
+   }
+
+      string timeStr(std::chrono::nanoseconds duration)
+   {
+      auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(duration);
+      auto seconds = std::chrono::duration_cast<std::chrono::seconds>(duration);
+      auto minutes = std::chrono::duration_cast<std::chrono::minutes>(duration);
+
+      std::ostringstream s;
+
+      if (minutes.count() > 0)
+      {
+         s << minutes.count() << " minutes and " << (seconds.count() % 60) << " seconds";
+      }
+      else if (seconds.count() > 0)
+      {
+         s << seconds.count() << " seconds";
+      }
+      else
+      {
+         s << ms.count() << " milliseconds";
+      }
+
+      return s.str();
    }
 };

@@ -40,6 +40,7 @@ set ( SOURCE_302_RAYTRACER
   src/302_raytracer/color.h
   src/302_raytracer/sphere.h
   src/302_raytracer/cube.h
+  src/302_raytracer/material.h
   src/302_raytracer/rectangle.h
   src/302_raytracer/hittable.h
   src/302_raytracer/hittable_list.h

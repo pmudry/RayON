@@ -1,8 +1,10 @@
-#include "camera.h"
 #include "constants.h"
+#include "utils.h"
+#include "interval.h"
 #include "cube.h"
 #include "hittable_list.h"
 #include "sphere.h"
+#include "camera.h"
 
 #include <filesystem>
 #include <future>
@@ -58,31 +60,35 @@ scene demo_scene()
 {
    scene s;
 
-   s.add(make_shared<Sphere>(Point3(0, -950.5, -1), 950)); // Ground
-   s.add(make_shared<Sphere>(Point3(-3.5, 0.45, -1.8), .8));
-   s.add(make_shared<Sphere>(Point3(-1.3, 0.18, -5), .7));
-   s.add(make_shared<Sphere>(Point3(-.7, .2, -.3), .6));
-   s.add(make_shared<Sphere>(Point3(1.2, 0, -2), 0.5));
+   auto material_uniform = make_shared<Constant>(Color(1, 0.0, 0.0));   
+   auto material_lambert = make_shared<Lambertian>(Color(0.7, 0.7, 0.7));
+   auto material_metal = make_shared<Lambertian>(Color(0.7, 0.7, 0.7));   
+   
+   s.add(make_shared<Sphere>(Point3(0, -950.5, -1), 950, material_lambert)); // Ground   
+   s.add(make_shared<Sphere>(Point3(-3.5, 0.45, -1.8), .8, material_lambert));
+   s.add(make_shared<Sphere>(Point3(-1.3, 0.18, -5), .7, material_lambert));
+   s.add(make_shared<Sphere>(Point3(-.7, .2, -.3), .6, material_lambert));
+   s.add(make_shared<Sphere>(Point3(1.2, 0, -2), 0.5, material_lambert));
 
    // Small "ISC" spheres at the bottom
    for (int i = 0; i < 5; i++)
    {
-      s.add(make_shared<Sphere>(Point3(-3.5 + i * 0.5, -0.3, 1.2), 0.2));
+      s.add(make_shared<Sphere>(Point3(-3.5 + i * 0.5, -0.3, 1.2), 0.2, material_lambert));
    }
 
    return s;
 }
 
-scene single_cube()
-{
-   scene s;
+// scene single_cube()
+// {
+//    scene s;
 
-   s.add(make_shared<Sphere>(Point3(0, -1000.5, -1), 1000));
-   s.add(make_shared<Sphere>(Point3(-1, 1, -1), .5));
-   auto rotatedCube = make_shared<Cube>(Point3(0, 0, -1), 1, Vec3(0, 45, 0));
-   s.add(rotatedCube);
-   return s;
-}
+//    s.add(make_shared<Sphere>(Point3(0, -1000.5, -1), 1000));
+//    s.add(make_shared<Sphere>(Point3(-1, 1, -1), .5));
+//    auto rotatedCube = make_shared<Cube>(Point3(0, 0, -1), 1, Vec3(0, 45, 0));
+//    s.add(rotatedCube);
+//    return s;
+// }
 
 int parseInput(int argc, char *argv[])
 {
@@ -147,8 +153,7 @@ int main(int argc, char *argv[])
    cout << "\t0. CPU sequential" << endl;
    cout << "\t1. CPU parallel" << endl;
    cout << "\t2. CUDA GPU (default)" << endl;
-   cout << "\t3. CUDA GPU with Real-time Display" << endl;
-   cout << "Enter choice (1, 2, or 3): ";
+   cout << "Enter choice (0, 1, or 2): ";
 
    int choice = 2; // Default to CUDA
    string input;
@@ -169,16 +174,7 @@ int main(int argc, char *argv[])
       break;
    case 1:
       cout << "Using CPU parallel rendering..." << endl;
-      c.renderPixelsParallelWithTiming(scene, localImage);
-      break;
-   case 3:
-#ifdef SDL2_FOUND
-      cout << "Using CUDA GPU rendering with real-time display..." << endl;
-      c.renderPixelsCUDART(localImage);
-#else
-      cout << "SDL2 not found. Falling back to standard CUDA rendering..." << endl;
-      c.renderPixelsCUDA(localImage);
-#endif
+      c.renderPixelsParallel(scene, localImage);
       break;
    default:
       cout << "Using CUDA GPU rendering..." << endl;

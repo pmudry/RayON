@@ -1,3 +1,16 @@
+
+/**
+ * @class Hittable_list
+ * @brief Represents a collection of hittable objects in a ray tracer.
+ *
+ * This class is a derived class of `Hittable` and is used to manage a list of
+ * hittable objects. It provides functionality to add objects to the list,
+ * clear the list, and determine if a ray intersects with any of the objects
+ * in the list.
+ *
+ * @note The `hit` method checks for the closest intersection of a ray with
+ *       the objects in the list and updates the hit record accordingly.
+ */
 #pragma once
 
 #include "hittable.h"
