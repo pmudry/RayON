@@ -38,6 +38,12 @@ ninja && echo "2" | ./302_raytracer
 
 Install extension `clangd` from `LLVM`. This is all you need. There are *tasks* created in the `.vscode` folder that can be launched with `CTRL+P` -> Tasks and then you can build, and run. You can even setup key bindings for that.
 
+# TODOs 
+- Prepare basic GPU version rendering pipeline
+- Prepare basic C++ version for students
+- Check tools installation (ninja), libs and stuff
+- Github students
+
 # Notes for PA
 
 - Trucs cools : ImGUI à installer ?
@@ -52,9 +58,9 @@ Install extension `clangd` from `LLVM`. This is all you need. There are *tasks* 
 - Vibe code du checkerboard pour le sol
 - Passer sur GPU
 
+
+
 - C'est très très simple de // la génération d'images, voir dans l'historique (avec future sur les images). A mon avis c'est un truc à montrer aux étudiants comment utiliser 72 cpus d'un coup, c'est assez incroyable en fait.
 - Aussi trivial de // le rendu de la caméra
-
 - Est-ce que l'on demanderait pas de vibecoder aussi AABB optimisation
-
 - Claude n'arrive pas à implémenter les balles de golf correctement

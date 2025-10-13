@@ -238,36 +238,6 @@ class Camera
    {
       Color pixel_color(0, 0, 0); // The pixel color starts as black
 
-      double offset_x = 0;
-      double offset_y = 0;
-
-      // Calculate the direction of the ray for the current pixel with center sampling
-      Vec3 pixel_center = pixel00_loc + (x + offset_x) * pixel_delta_u + (y + offset_y) * pixel_delta_v;
-      Vec3 ray_direction = pixel_center - camera_center;
-
-      // Create a ray from the camera center through the pixel
-      Ray ray(camera_center, unit_vector(ray_direction));
-
-      // And launch baby, launch the ray to get the color
-      Color sample(ray_color(ray, scene, max_depth));
-      pixel_color = sample;
-
-      return pixel_color;
-   }
-
-   /**
-    * @brief Computes the color for a single pixel using ray tracing with anti-aliasing
-    * This helper method contains the core pixel rendering logic
-    *
-    * @param scene The scene to render
-    * @param x Pixel x coordinate
-    * @param y Pixel y coordinate
-    * @return Color The computed pixel color after anti-aliasing
-    */
-   Color computePixelColorSOLUTION(const Hittable &scene, int x, int y)
-   {
-      Color pixel_color(0, 0, 0); // The pixel color starts as black
-
       // Supersampling anti-aliasing by averaging multiple samples per pixel
       for (int s = 0; s < samples_per_pixel; ++s)
       {
@@ -317,7 +287,7 @@ class Camera
          Color attenuation;
 
          if (Constant* c = dynamic_cast<Constant*>(rec.mat_ptr.get())) {
-            return c->albedo;
+            return c->color;
          }
 
          if (ShowNormals* c = dynamic_cast<ShowNormals*>(rec.mat_ptr.get())) {

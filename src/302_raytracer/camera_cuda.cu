@@ -716,7 +716,7 @@ __device__ bool hit_world(const ray_simple &r, float t_min, float t_max, hit_rec
         closest_so_far = temp_rec.t;
         rec = temp_rec;
         rec.color = float3_simple(0.44f, 0.7f, .95f); // Slight blue tint (cool metal)
-        rec.material = LAMBERTIAN;
+        rec.material = ROUGH_MIRROR;
         rec.roughness = 0.7f; // Higher roughness for ground surface
     }
 
@@ -731,7 +731,7 @@ __device__ bool hit_world(const ray_simple &r, float t_min, float t_max, hit_rec
         rec.roughness = 0.03f;                         // Moderate surface roughness for imperfect reflection
     }
 
-    // GOLF BALL
+    // "Golf" ball displaced sphere
     if (hit_golf_ball_sphere(float3_simple(1.2, 0, -2), 0.5f, r, t_min, closest_so_far, temp_rec))
     {
         hit_anything = true;
@@ -742,7 +742,7 @@ __device__ bool hit_world(const ray_simple &r, float t_min, float t_max, hit_rec
         rec.color = float3_simple(0.3f, 0.3f, 0.91f); // Red
     }
 
-    // The dark-dotted red sphere
+    // The red-black dotted sphere
     if (hit_sphere(float3_simple(-1.3f, 0.18, -5), 0.7f, r, t_min, closest_so_far, temp_rec))
     {
         hit_anything = true;
@@ -761,10 +761,10 @@ __device__ bool hit_world(const ray_simple &r, float t_min, float t_max, hit_rec
         float3_simple dir = unit_vector(local);
 
         // Fibonacci grid parameters: relatively big, regularly spaced
-        const int Ndots = 12;            // number of centers (spacing)
+        const int ndots = 12;            // number of centers (spacing)
         const float dot_radius = 0.33f; // angular radius in radians (~13 deg)
 
-        float ang = nearestAngularDistanceFibonacci(dir, Ndots);
+        float ang = nearestAngularDistanceFibonacci(dir, ndots);
         float mask = ang < dot_radius ? 0.0f : 1.0f; // 0 inside dot -> dot color, 1 outside -> base red
         rec.color = float3_simple(
             base_color.x * mask + dot_color.x * (1.0f - mask),
@@ -830,30 +830,10 @@ __device__ bool hit_world(const ray_simple &r, float t_min, float t_max, hit_rec
     // 12 Simple spheres in circle around golden sphere
     float3_simple golden_center = float3_simple(-3.5, 0, -2);
 
-    // Circle of 12 spheres
-    // const int num_spheres = 12;
-    // for (int i = 0; i < num_spheres; i++)
-    // {
-    //     float angle = -M_PI / 4 + (2.0f * M_PI * i) / (float)num_spheres;
-    //     float x = golden_center.x + 1.8f * cosf(angle);
-    //     float z = golden_center.z + 1.8f * sinf(angle);
-    //     // z = fmaxf(z, -0.5f);  // Keep visible
-
-    //     if (hit_sphere(float3_simple(x, -0.21f, z), 0.2f, r, t_min, closest_so_far, temp_rec))
-    //     {
-    //         hit_anything = true;
-    //         closest_so_far = temp_rec.t;
-    //         rec = temp_rec;
-    //         rec.material = ROUGH_MIRROR;
-    //         rec.roughness = 0.5f;
-    //         rec.color = float3_simple(0.31f + 0.5 * (float(i) / (float)(num_spheres - 1)), 0.2f + 0.8 * (float(i) / (float)(num_spheres - 1)), 0.6f + 0.4f * (float(i) / (float)(num_spheres - 1)));
-    //     }
-    // }
-
     // Area light - rectangular light source above the scene
     float3_simple light_corner(-1.0f, 3.0f, -2.0f); // Corner position
-    float3_simple light_u(2.0f, 0.0f, 0.0f);        // Width vector (2 units wide)
-    float3_simple light_v(0.0f, 0.0f, 1.0f);        // Height vector (1 unit tall)
+    float3_simple light_u(2.5f, 0.0f, 0.0f);        // Width vector (2 units wide)
+    float3_simple light_v(0.0f, 0.0f, 1.5f);        // Height vector (1 unit tall)
 
     if (hit_rectangle(light_corner, light_u, light_v, r, t_min, closest_so_far, temp_rec))
     {
@@ -980,6 +960,7 @@ __device__ float3_simple ray_color(const ray_simple &r, curandState *state, int 
             float refraction_ratio = rec.front_face ? (1.0f / rec.refractive_index) : rec.refractive_index;
 
             float3_simple unit_direction = unit_vector(r.dir);
+
             float cos_theta = fminf(dot(-unit_direction, rec.normal), 1.0f);
             float sin_theta = sqrtf(1.0f - cos_theta * cos_theta);
 
