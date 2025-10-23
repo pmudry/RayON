@@ -50,7 +50,6 @@ class Camera
 
    Camera() : Camera(Vec3(0, 0, 0), 720, 3, 1) {}
 
-
    /**
     * @brief Renders the entire image sequentially pixel by pixel using ray tracing
     *
@@ -82,7 +81,7 @@ class Camera
 
       showProgress(image_height - 1, image_height);
 
-      auto end_time = std::chrono::high_resolution_clock::now();      
+      auto end_time = std::chrono::high_resolution_clock::now();
 
       cout << endl;
       cout << "CPU single thread rendering completed in " << timeStr(end_time - start_time) << endl;
@@ -150,7 +149,8 @@ class Camera
       auto end_time = std::chrono::high_resolution_clock::now();
 
       cout << endl;
-      cout << "Parallel rendering (using " << num_threads << " threads) completed in " << timeStr(end_time - start_time) << endl;
+      cout << "Parallel rendering (using " << num_threads << " threads) completed in " << timeStr(end_time - start_time)
+           << endl;
    }
 
    /**
@@ -185,7 +185,6 @@ class Camera
       auto duration = end_time - start_time;
       cout << "CUDA rendering completed in " << timeStr(duration) << endl;
    }
-
 
  private:
    Point3 camera_center; // Camera center
@@ -286,11 +285,13 @@ class Camera
          Ray scattered;
          Color attenuation;
 
-         if (Constant* c = dynamic_cast<Constant*>(rec.mat_ptr.get())) {
+         if (Constant *c = dynamic_cast<Constant *>(rec.mat_ptr.get()))
+         {
             return c->color;
          }
 
-         if (ShowNormals* c = dynamic_cast<ShowNormals*>(rec.mat_ptr.get())) {
+         if (ShowNormals *c = dynamic_cast<ShowNormals *>(rec.mat_ptr.get()))
+         {
             rec.mat_ptr->scatter(r, rec, attenuation, scattered);
             return attenuation;
          }
@@ -301,7 +302,7 @@ class Camera
             if (scattered.direction().length() == 0.0)
                return attenuation;
             else
-               return attenuation * ray_color(scattered, world, depth-1);
+               return attenuation * ray_color(scattered, world, depth - 1);
          }
       }
 
@@ -324,7 +325,6 @@ class Camera
       image[index + 1] = static_cast<int>(intensity.clamp(c.y()) * 256);
       image[index + 2] = static_cast<int>(intensity.clamp(c.z()) * 256);
    }
-
 
    /***
     * Utility functions
@@ -353,7 +353,7 @@ class Camera
       cout.flush();
    }
 
-      string timeStr(std::chrono::nanoseconds duration)
+   string timeStr(std::chrono::nanoseconds duration)
    {
       auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(duration);
       auto seconds = std::chrono::duration_cast<std::chrono::seconds>(duration);

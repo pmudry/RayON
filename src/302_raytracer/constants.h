@@ -16,5 +16,5 @@ namespace constants
 
     // Renderer specific settings
     const int SAMPLES_PER_PIXEL = 16; // Number of samples per pixel for anti-aliasing
-    int MAX_DEPTH = 24;              // Maximum recursion depth for ray tracing
+    int MAX_DEPTH = 8;               // Maximum recursion depth for ray tracing
 }; 
