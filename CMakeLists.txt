@@ -6,7 +6,24 @@
 
 cmake_minimum_required ( VERSION 3.1.0...4.0.0 )
 
+# Option to choose compiler (set before project())
+# Usage: cmake .. -DUSE_CLANG=OFF
+option(USE_CLANG "Use Clang compiler instead of GCC" ON)
+
+if(USE_CLANG)
+    set(CMAKE_C_COMPILER "clang")
+    set(CMAKE_CXX_COMPILER "clang++")
+    message(STATUS "Using Clang compiler")
+endif()
+
 project ( 302_RAYTRACE LANGUAGES CXX CUDA )
+
+# Set default build type to Release if not specified
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build (Debug or Release)" FORCE)
+endif()
+
+message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 
 set ( CMAKE_CXX_STANDARD          17 )
 set ( CMAKE_CXX_STANDARD_REQUIRED ON )
@@ -20,6 +37,10 @@ if(CMAKE_CUDA_COMPILER)
     set(CMAKE_CUDA_STANDARD 17)
     set(CMAKE_CUDA_STANDARD_REQUIRED ON)
     set(CMAKE_CUDA_SEPARABLE_COMPILATION ON)
+    
+    # Enable parallel CUDA compilation for faster builds
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -t 0")
+    
     message(STATUS "CUDA found and enabled")
     set(CUDA_FOUND TRUE)
 else()
@@ -58,7 +79,7 @@ set(CMAKE_COMPILE_COMMANDS_OUTPUT_DIR ${CMAKE_SOURCE_DIR})
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Specific compiler flags below. We're not going to add options for all possible compilers, but if
-# you're new to CMake (like we are), the following may be a helpful example if you're using a
+# you're new to CMake, the following may be a helpful example if you're using a
 # different compiler or want to set different compiler options.
 message (STATUS "Compiler ID: " ${CMAKE_CXX_COMPILER_ID})
 message (STATUS "Release flags: " ${CMAKE_CXX_FLAGS_RELEASE})
@@ -90,15 +111,17 @@ if(CMAKE_GENERATOR STREQUAL "Ninja")
 endif()
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    add_compile_options(-Wnon-virtual-dtor) # Class has virtual functions, but its destructor is not virtual
-    add_compile_options(-Wreorder) # Data member will be initialized after [other] data member
-    add_compile_options(-Wmaybe-uninitialized) # Variable improperly initialized
-    add_compile_options(-Wunused-variable) # Variable is defined but unused
+    # Apply these warnings only to C++ files, not CUDA
+    add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-Wnon-virtual-dtor>") # Class has virtual functions, but its destructor is not virtual
+    add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-Wreorder>") # Data member will be initialized after [other] data member
+    add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-Wmaybe-uninitialized>") # Variable improperly initialized
+    add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-Wunused-variable>") # Variable is defined but unused
 elseif (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    add_compile_options(-Wnon-virtual-dtor) # Class has virtual functions, but its destructor is not virtual
-    #add_compile_options(-Wreorder) # Data member will be initialized after [other] data member
-    # add_compile_options(-Wsometimes-uninitialized) # Variable improperly initialized
-    add_compile_options(-Wunused-variable) # Variable is defined but unused
+    # Apply these warnings only to C++ files, not CUDA
+    add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-Wnon-virtual-dtor>") # Class has virtual functions, but its destructor is not virtual
+    add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-Wreorder>") # Data member will be initialized after [other] data member
+    add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-Wsometimes-uninitialized>") # Variable improperly initialized
+    add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-Wunused-variable>") # Variable is defined but unused
 endif()
 
 # Executables
@@ -125,4 +148,36 @@ file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/res)
 if(CUDA_FOUND)
     set_property(TARGET 302_raytracer PROPERTY CUDA_SEPARABLE_COMPILATION ON)
     target_link_libraries(302_raytracer curand)
+    
+    # CUDA optimization flags
+    # Set CUDA architectures (adjust based on your GPU - this covers common GPUs)
+    # sm_52 = GTX 9xx, sm_60 = GTX 10xx, sm_70 = V100, sm_75 = RTX 20xx, sm_80 = A100, sm_86 = RTX 30xx
+    set(CMAKE_CUDA_ARCHITECTURES "52;60;70;75;80;86")
+    
+    # CUDA compiler flags for optimization and warning suppression
+    target_compile_options(302_raytracer PRIVATE
+        $<$<COMPILE_LANGUAGE:CUDA>:            
+            -Xcompiler=-fno-strict-aliasing  # Optimize memory access
+            --expt-relaxed-constexpr     # Allow relaxed constexpr
+            --expt-extended-lambda       # Enable extended lambda support
+            #-w                           # Suppress all CUDA warnings
+            $<$<CONFIG:Release>:-O3>     # Maximum optimization for Release
+            #$<$<CONFIG:Release>:--use_fast_math>  # Fast math for Release only
+            $<$<CONFIG:Debug>:-O0>       # No optimization for Debug
+            $<$<CONFIG:Debug>:-g>        # Generate host debug info
+            $<$<CONFIG:Debug>:-lineinfo> # Generate line-number information (safer than -G)
+        >
+    )
+    
+    # Set device link options to suppress nvlink warnings
+    set_target_properties(302_raytracer PROPERTIES
+        CUDA_RESOLVE_DEVICE_SYMBOLS ON
+        CUDA_SEPARABLE_COMPILATION ON
+        CUDA_LINK_OPTIONS_INIT "-Xnvlink=--suppress-stack-size-warning,-w"
+    )
+    
+    # Additional nvlink flags to suppress all warnings
+    target_link_options(302_raytracer PRIVATE
+        $<DEVICE_LINK:-Xnvlink=--suppress-stack-size-warning,-w>
+    )
 endif()

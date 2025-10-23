@@ -81,17 +81,6 @@ scene demo_scene()
    return s;
 }
 
-// scene single_cube()
-// {
-//    scene s;
-
-//    s.add(make_shared<Sphere>(Point3(0, -1000.5, -1), 1000));
-//    s.add(make_shared<Sphere>(Point3(-1, 1, -1), .5));
-//    auto rotatedCube = make_shared<Cube>(Point3(0, 0, -1), 1, Vec3(0, 45, 0));
-//    s.add(rotatedCube);
-//    return s;
-// }
-
 int parseInput(int argc, char *argv[])
 {
    // Parse command-line arguments

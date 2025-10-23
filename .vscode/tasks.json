@@ -4,7 +4,7 @@
 		{
 			"type": "shell",
 			"label": "CMake: fresh",
-			"command": "cd ${workspaceFolder}/build && cmake .. --fresh -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=1 && cp compile_commands.json ..",			
+			"command": "cd ${workspaceFolder}/build && cmake .. --fresh -DCMAKE_EXPORT_COMPILE_COMMANDS=1 && cp compile_commands.json ..",			
 			"problemMatcher": [],
 			"detail": "CMake clean eveyrhing",
 			"group": {
@@ -14,10 +14,10 @@
 		},
 		{
 			"type": "shell",
-			"label": "Ninja build",
-			"command": "cd ${workspaceFolder}/build && ninja",
+			"label": "Make build",
+			"command": "cd ${workspaceFolder}/build && make -j 8",
 			"problemMatcher": [],
-			"detail": "Build with Ninja",
+			"detail": "Build with make",
 			"group": {
 				"kind": "build",
 				"isDefault": true
@@ -37,7 +37,7 @@
 				"showReuseMessage": false,
 				"clear": false
 			},
-			"dependsOn": "Ninja build",
+			"dependsOn": "Make build",
 			"group": {
 				"kind": "build",
 				"isDefault": false

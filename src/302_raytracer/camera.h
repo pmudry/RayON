@@ -82,8 +82,7 @@ class Camera
 
       showProgress(image_height - 1, image_height);
 
-      auto end_time = std::chrono::high_resolution_clock::now();
-      auto duration = end_time - start_time;
+      auto end_time = std::chrono::high_resolution_clock::now();      
 
       cout << endl;
       cout << "CPU single thread rendering completed in " << timeStr(end_time - start_time) << endl;
@@ -151,7 +150,7 @@ class Camera
       auto end_time = std::chrono::high_resolution_clock::now();
 
       cout << endl;
-      cout << "Parallel rendering completed in " << timeStr(end_time - start_time) << endl;
+      cout << "Parallel rendering (using " << num_threads << " threads) completed in " << timeStr(end_time - start_time) << endl;
    }
 
    /**
@@ -283,6 +282,7 @@ class Camera
          //    Vec3 reflected = r.direction() - 2 * dot(r.direction(), rec.normal) * rec.normal;
          //    return Color(1, 0.85, .47) * 0.2 + 0.8 * ray_color(Ray(rec.p, unit_vector(reflected)), world, depth - 1);
          // }
+
          Ray scattered;
          Color attenuation;
 
@@ -291,7 +291,7 @@ class Camera
          }
 
          if (ShowNormals* c = dynamic_cast<ShowNormals*>(rec.mat_ptr.get())) {
-            auto s = rec.mat_ptr->scatter(r, rec, attenuation, scattered);
+            rec.mat_ptr->scatter(r, rec, attenuation, scattered);
             return attenuation;
          }
 

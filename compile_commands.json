@@ -1,14 +1,14 @@
 [
 {
   "directory": "/home/pmudry/git/ray_tracer_cpp/build",
-  "command": "/usr/bin/c++ -DSDL2_FOUND -I/home/pmudry/git/ray_tracer_cpp/src -isystem /usr/include/SDL2 -std=c++17 -fdiagnostics-color=always -Wnon-virtual-dtor -Wreorder -Wmaybe-uninitialized -Wunused-variable -o CMakeFiles/v0_single_threaded.dir/src/v0_single_threaded/main.cc.o -c /home/pmudry/git/ray_tracer_cpp/src/v0_single_threaded/main.cc",
-  "file": "/home/pmudry/git/ray_tracer_cpp/src/v0_single_threaded/main.cc",
-  "output": "CMakeFiles/v0_single_threaded.dir/src/v0_single_threaded/main.cc.o"
+  "command": "/usr/bin/clang++ -DSDL2_FOUND -I/home/pmudry/git/ray_tracer_cpp/src -isystem /usr/include/SDL2 -g -std=c++17 -Wnon-virtual-dtor -Wreorder -Wsometimes-uninitialized -Wunused-variable -o CMakeFiles/302_raytracer.dir/src/302_raytracer/main.cc.o -c /home/pmudry/git/ray_tracer_cpp/src/302_raytracer/main.cc",
+  "file": "/home/pmudry/git/ray_tracer_cpp/src/302_raytracer/main.cc",
+  "output": "CMakeFiles/302_raytracer.dir/src/302_raytracer/main.cc.o"
 },
 {
   "directory": "/home/pmudry/git/ray_tracer_cpp/build",
-  "command": "/usr/bin/nvcc -forward-unknown-to-host-compiler -DSDL2_FOUND -I/home/pmudry/git/ray_tracer_cpp/src -isystem /usr/include/SDL2 -std=c++17 \"--generate-code=arch=compute_52,code=[compute_52,sm_52]\" -Wnon-virtual-dtor -Wreorder -Wmaybe-uninitialized -Wunused-variable -x cu -rdc=true -c /home/pmudry/git/ray_tracer_cpp/src/v0_single_threaded/camera_cuda.cu -o CMakeFiles/v0_single_threaded.dir/src/v0_single_threaded/camera_cuda.cu.o",
-  "file": "/home/pmudry/git/ray_tracer_cpp/src/v0_single_threaded/camera_cuda.cu",
-  "output": "CMakeFiles/v0_single_threaded.dir/src/v0_single_threaded/camera_cuda.cu.o"
+  "command": "/usr/bin/nvcc -forward-unknown-to-host-compiler -DSDL2_FOUND --options-file CMakeFiles/302_raytracer.dir/includes_CUDA.rsp  -t 0 -g -std=c++17 \"--generate-code=arch=compute_52,code=[compute_52,sm_52]\" -Xcompiler=-fno-strict-aliasing --expt-relaxed-constexpr --expt-extended-lambda -O0 -g -lineinfo -x cu -rdc=true -c /home/pmudry/git/ray_tracer_cpp/src/302_raytracer/camera_cuda.cu -o CMakeFiles/302_raytracer.dir/src/302_raytracer/camera_cuda.cu.o",
+  "file": "/home/pmudry/git/ray_tracer_cpp/src/302_raytracer/camera_cuda.cu",
+  "output": "CMakeFiles/302_raytracer.dir/src/302_raytracer/camera_cuda.cu.o"
 }
 ]
