@@ -734,7 +734,7 @@ __device__ bool hit_world(const ray_simple &r, float t_min, float t_max, hit_rec
         closest_so_far = temp_rec.t;
         rec = temp_rec;
         rec.color = float3_simple(0.44f, 0.7f, .95f); // Slight blue tint (cool metal)
-        rec.material = ROUGH_MIRROR;
+        rec.material = LAMBERTIAN;
         rec.roughness = 0.7f; // Higher roughness for ground surface
     }
 
