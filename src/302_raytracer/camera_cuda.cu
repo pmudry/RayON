@@ -290,23 +290,41 @@ __device__ float smoothstep(float edge0, float edge1, float x)
 }
 
 //==============================================================================
+// RANDOM STATE INITIALIZATION
+//==============================================================================
+
+/**
+ * @brief Initialize random states for all threads
+ * This kernel should be called once at startup to initialize the shared random state array
+ * @param rand_states Array of random states (one per thread/pixel)
+ * @param num_states Total number of states to initialize
+ * @param seed Base seed for random number generation
+ */
+__global__ void init_random_states(curandState *rand_states, int num_states, unsigned long long seed)
+{
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < num_states)
+    {
+        // Initialize each state with a unique seed based on index
+        curand_init(seed + idx, 0, 0, &rand_states[idx]);
+    }
+}
+
+//==============================================================================
 // PROCEDURAL GENERATION UTILITIES
 //==============================================================================
 
 /**
  * @brief Generate random position on sphere surface using spherical coordinates
- * @param seed Deterministic seed for consistent placement
+ * @param state Random state for random number generation
  * @param center Sphere center
  * @param radius Sphere radius
  * @return Random point on sphere surface
  */
-__device__ float3_simple random_sphere_position(int seed, float3_simple center, float radius)
+__device__ float3_simple random_sphere_position(curandState *state, float3_simple center, float radius)
 {
-    curandState local_state;
-    curand_init(seed * 1234567 + 987654321, 0, 0, &local_state);
-
-    float theta = 2.0f * M_PI * random_float(&local_state);      // Azimuth [0, 2π]
-    float phi = acosf(1.0f - 2.0f * random_float(&local_state)); // Polar [0, π]
+    float theta = 2.0f * M_PI * random_float(state);      // Azimuth [0, 2π]
+    float phi = acosf(1.0f - 2.0f * random_float(state)); // Polar [0, π]
 
     // Convert spherical to cartesian coordinates
     float x = sinf(phi) * cosf(theta);
@@ -841,7 +859,7 @@ __device__ bool hit_world(const ray_simple &r, float t_min, float t_max, hit_rec
         closest_so_far = temp_rec.t;
         rec = temp_rec;
         rec.material = LIGHT;
-        rec.emission = float3_simple(5.5f, 4.8f, 4.2f); // Warm white light (intensity 5)
+        rec.emission = float3_simple(4.8f, 4.1f, 3.7f); // Warm white light
     }
 
     return hit_anything;
@@ -996,25 +1014,6 @@ __device__ float3_simple ray_color(const ray_simple &r, curandState *state, int 
 //==============================================================================
 
 /**
- * @brief Initialize random number generator states for each pixel
- * @param states Array of random states (one per pixel)
- * @param seed Base random seed
- * @param width Image width in pixels
- * @param height Image height in pixels
- */
-__global__ void init_random_states(curandState *states, unsigned long seed, int width, int height)
-{
-    int x = blockIdx.x * blockDim.x + threadIdx.x;
-    int y = blockIdx.y * blockDim.y + threadIdx.y;
-
-    if (x < width && y < height)
-    {
-        int idx = y * width + x;
-        curand_init(seed + idx, idx, 0, &states[idx]);
-    }
-}
-
-/**
  * @brief Main CUDA kernel for ray tracing entire image
  * Each thread processes one pixel with multiple samples for anti-aliasing
  * @param image Output image buffer (RGB, 8-bit per channel)
@@ -1027,18 +1026,22 @@ __global__ void init_random_states(curandState *states, unsigned long seed, int 
  * @param delta_u_* Pixel step in U direction components
  * @param delta_v_* Pixel step in V direction components
  * @param ray_count Global counter for rays traced
+ * @param rand_states Shared array of random states (one per thread/pixel)
  */
-__global__ void renderPixelsKernel(unsigned char *image, int width, int height, int samples_per_pixel, int max_depth,
-                                   float cam_center_x, float cam_center_y, float cam_center_z,
-                                   float pixel00_x, float pixel00_y, float pixel00_z,
-                                   float delta_u_x, float delta_u_y, float delta_u_z,
-                                   float delta_v_x, float delta_v_y, float delta_v_z,
-                                   unsigned long long *ray_count)
+__global__ void renderKernel(unsigned char *image, int width, int height, int samples_per_pixel, int max_depth,
+                                       float cam_center_x, float cam_center_y, float cam_center_z,
+                                       float pixel00_x, float pixel00_y, float pixel00_z,
+                                       float delta_u_x, float delta_u_y, float delta_u_z,
+                                       float delta_v_x, float delta_v_y, float delta_v_z,
+                                       unsigned long long *ray_count,
+                                       curandState *rand_states)
 {
+
+    // Calculate global pixel coordinates within the tile
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
 
-    // Strict bounds checking
+    // Check if we're within the tile bounds and image bounds
     if (x >= width || y >= height)
         return;
 
@@ -1051,10 +1054,8 @@ __global__ void renderPixelsKernel(unsigned char *image, int width, int height, 
         return;
     }
 
-    // Initialize local random state with unique seed per pixel to avoid artifacts
-    curandState local_rand_state;
-    curand_init((blockIdx.x * blockDim.x + threadIdx.x) * 1000 + (blockIdx.y * blockDim.y + threadIdx.y) * 2000 + clock(),
-                pixel_idx, 0, &local_rand_state);
+    // Use the pre-initialized random state for this pixel
+    curandState *local_rand_state = &rand_states[pixel_idx];
 
     // Convert parameters to float3_simple
     float3_simple camera_center(cam_center_x, cam_center_y, cam_center_z);
@@ -1070,110 +1071,14 @@ __global__ void renderPixelsKernel(unsigned char *image, int width, int height, 
     for (int s = 0; s < actual_samples; s++)
     {
         // Random offset within pixel for anti-aliasing
-        float offset_u = random_float(&local_rand_state) - 0.5f;
-        float offset_v = random_float(&local_rand_state) - 0.5f;
+        float offset_u = random_float(local_rand_state) - 0.5f;
+        float offset_v = random_float(local_rand_state) - 0.5f;
 
         float3_simple pixel_center = pixel00_loc + ((float)x + offset_u) * pixel_delta_u + ((float)y + offset_v) * pixel_delta_v;
         float3_simple ray_direction = pixel_center - camera_center;
         ray_simple r(camera_center, ray_direction);
 
-        pixel_color = pixel_color + ray_color(r, &local_rand_state, min(max_depth, 6), ray_count);
-    }
-
-    // Anti-aliasing is done there
-    pixel_color = pixel_color / (float)actual_samples;
-
-    // Gamma correction (gamma=2)
-    pixel_color.x = sqrtf(fmaxf(pixel_color.x, 0.0f));
-    pixel_color.y = sqrtf(fmaxf(pixel_color.y, 0.0f));
-    pixel_color.z = sqrtf(fmaxf(pixel_color.z, 0.0f));
-
-    // Convert to bytes with clamping
-    unsigned char r = (unsigned char)(255.0f * fminf(fmaxf(pixel_color.x, 0.0f), 1.0f));
-    unsigned char g = (unsigned char)(255.0f * fminf(fmaxf(pixel_color.y, 0.0f), 1.0f));
-    unsigned char b = (unsigned char)(255.0f * fminf(fmaxf(pixel_color.z, 0.0f), 1.0f));
-
-    // Store in image buffer - each thread writes to its own unique location
-    image[base_idx] = r;
-    image[base_idx + 1] = g;
-    image[base_idx + 2] = b;
-}
-
-/**
- * @brief Main CUDA kernel for ray tracing entire image
- * Each thread processes one pixel with multiple samples for anti-aliasing
- * @param image Output image buffer (RGB, 8-bit per channel)
- * @param width Image width in pixels
- * @param height Image height in pixels
- * @param samples_per_pixel Number of rays per pixel for anti-aliasing
- * @param max_depth Maximum ray recursion depth
- * @param cam_center_* Camera center position components
- * @param pixel00_* Top-left pixel center position components
- * @param delta_u_* Pixel step in U direction components
- * @param delta_v_* Pixel step in V direction components
- * @param start_x Tile start X coordinate in global image
- * @param start_y Tile start Y coordinate in global image
- * @param end_x Tile end X coordinate in global image
- * @param end_y Tile end Y coordinate in global image
- * @param ray_count Global counter for rays traced
- */
-__global__ void renderPixelsTileKernel(unsigned char *image, int width, int height, int samples_per_pixel, int max_depth,
-                                       float cam_center_x, float cam_center_y, float cam_center_z,
-                                       float pixel00_x, float pixel00_y, float pixel00_z,
-                                       float delta_u_x, float delta_u_y, float delta_u_z,
-                                       float delta_v_x, float delta_v_y, float delta_v_z,
-                                       int start_x, int start_y, int end_x, int end_y,
-                                       unsigned long long *ray_count)
-{
-
-    // Calculate global pixel coordinates within the tile
-    int tile_x = blockIdx.x * blockDim.x + threadIdx.x;
-    int tile_y = blockIdx.y * blockDim.y + threadIdx.y;
-
-    // Convert tile coordinates to global image coordinates
-    int x = start_x + tile_x;
-    int y = start_y + tile_y;
-
-    // Check if we're within the tile bounds and image bounds
-    if (x >= end_x || y >= end_y || x >= width || y >= height)
-        return;
-
-    int pixel_idx = y * width + x;
-    int base_idx = pixel_idx * 3;
-
-    // Double check bounds for memory access
-    if (pixel_idx >= width * height || base_idx + 2 >= width * height * 3)
-    {
-        return;
-    }
-
-    // Initialize local random state with unique seed per pixel
-    curandState local_rand_state;
-    curand_init((blockIdx.x * blockDim.x + threadIdx.x) * 1000 + (blockIdx.y * blockDim.y + threadIdx.y) * 2000 + clock(),
-                pixel_idx, 0, &local_rand_state);
-
-    // Convert parameters to float3_simple
-    float3_simple camera_center(cam_center_x, cam_center_y, cam_center_z);
-    float3_simple pixel00_loc(pixel00_x, pixel00_y, pixel00_z);
-    float3_simple pixel_delta_u(delta_u_x, delta_u_y, delta_u_z);
-    float3_simple pixel_delta_v(delta_v_x, delta_v_y, delta_v_z);
-
-    float3_simple pixel_color(0, 0, 0);
-
-    // Use full samples but ensure each pixel is completely independent
-    int actual_samples = samples_per_pixel;
-
-    for (int s = 0; s < actual_samples; s++)
-    {
-        // Random offset within pixel for anti-aliasing
-        float offset_u = random_float(&local_rand_state) - 0.5f;
-        float offset_v = random_float(&local_rand_state) - 0.5f;
-
-        float3_simple pixel_center = pixel00_loc + ((float)x + offset_u) * pixel_delta_u + ((float)y + offset_v) * pixel_delta_v;
-        float3_simple ray_direction = pixel_center - camera_center;
-        ray_simple r(camera_center, ray_direction);
-
-        pixel_color = pixel_color + ray_color(r, &local_rand_state, min(max_depth, 6), ray_count);
+        pixel_color = pixel_color + ray_color(r, local_rand_state, min(max_depth, 6), ray_count);
     }
 
     // Anti-aliasing is done there
@@ -1211,10 +1116,6 @@ __global__ void renderPixelsTileKernel(unsigned char *image, int width, int heig
  * @param delta_v_* Pixel step in V direction components
  * @param samples_per_pixel Number of rays per pixel for anti-aliasing
  * @param max_depth Maximum ray recursion depth
- * @param start_x Starting X coordinate of tile
- * @param start_y Starting Y coordinate of tile
- * @param end_x Ending X coordinate of tile (exclusive)
- * @param end_y Ending Y coordinate of tile (exclusive)
  * @return Total number of rays traced for this tile
  */
 extern "C" unsigned long long renderPixelsCUDA(unsigned char *image, int width, int height,
@@ -1222,57 +1123,59 @@ extern "C" unsigned long long renderPixelsCUDA(unsigned char *image, int width, 
                                                double pixel00_x, double pixel00_y, double pixel00_z,
                                                double delta_u_x, double delta_u_y, double delta_u_z,
                                                double delta_v_x, double delta_v_y, double delta_v_z,
-                                               int samples_per_pixel, int max_depth,
-                                               int start_x, int start_y, int end_x, int end_y)
-{
-
-    // printf("CUDA tile render: (%d,%d) to (%d,%d) of %dx%d\n", start_x, start_y, end_x, end_y, width, height);
-
-    // Calculate tile dimensions
-    int tile_width = end_x - start_x;
-    int tile_height = end_y - start_y;
-
+                                               int samples_per_pixel, int max_depth){
+    
     // Allocate device memory for the full image (we need to maintain the full buffer)
     unsigned char *d_image;
     unsigned long long *d_ray_count;
+    curandState *d_rand_states;
+
     size_t image_size = width * height * 3 * sizeof(unsigned char);
+    int num_pixels = width * height;
 
     cudaError_t malloc_err1 = cudaMalloc(&d_image, image_size);
     cudaError_t malloc_err2 = cudaMalloc(&d_ray_count, sizeof(unsigned long long));
+    cudaError_t malloc_err3 = cudaMalloc(&d_rand_states, num_pixels * sizeof(curandState));
 
-    if (malloc_err1 != cudaSuccess || malloc_err2 != cudaSuccess)
+    if (malloc_err1 != cudaSuccess || malloc_err2 != cudaSuccess || malloc_err3 != cudaSuccess)
     {
-        printf("CUDA malloc error: %s, %s\n", cudaGetErrorString(malloc_err1), cudaGetErrorString(malloc_err2));
-        return 0;
-    }
-
-    // Copy current image data to device (to preserve already rendered tiles)
-    cudaError_t copy_to_err = cudaMemcpy(d_image, image, image_size, cudaMemcpyHostToDevice);
-    if (copy_to_err != cudaSuccess)
-    {
-        printf("Memory copy to device error: %s\n", cudaGetErrorString(copy_to_err));
-        cudaFree(d_image);
-        cudaFree(d_ray_count);
+        printf("CUDA malloc error: %s, %s, %s\n", cudaGetErrorString(malloc_err1), cudaGetErrorString(malloc_err2), cudaGetErrorString(malloc_err3));
         return 0;
     }
 
     // Initialize ray counter to zero
     cudaMemset(d_ray_count, 0, sizeof(unsigned long long));
 
+    // Initialize random states for all pixels
+    int threads_per_block = 256;
+    int num_blocks = (num_pixels + threads_per_block - 1) / threads_per_block;
+    init_random_states<<<num_blocks, threads_per_block>>>(d_rand_states, num_pixels, 1984);
+    
+    cudaError_t init_err = cudaGetLastError();
+    if (init_err != cudaSuccess)
+    {
+        printf("CUDA random state init error: %s\n", cudaGetErrorString(init_err));
+        cudaFree(d_image);
+        cudaFree(d_ray_count);
+        cudaFree(d_rand_states);
+        return 0;
+    }
+    
+    cudaDeviceSynchronize();
+
     // Set up grid and block dimensions for the tile
-    dim3 block_size(32, 4);
-    dim3 grid_size((tile_width + block_size.x - 1) / block_size.x,
-                   (tile_height + block_size.y - 1) / block_size.y);
+    dim3 block_size(32, 4); // A grid of 32x4 threads, 128 threads per block. They share fast shared memory, can synchronize and execute on the same SM
+    dim3 grid_size((width + block_size.x -1) / block_size.x, // We need 60x270 blocks to cover the whole image at 1920x1080
+                   (height + block_size.y -1)  / block_size.y);
 
-    // printf("Tile grid size: (%d, %d), Block size: (%d, %d)\n", grid_size.x, grid_size.y, block_size.x, block_size.y);
-
-    // Launch tile rendering kernel
-    renderPixelsTileKernel<<<grid_size, block_size>>>(d_image, width, height, samples_per_pixel, max_depth,
+    // Launch tile rendering kernel, with a total of 2'073'600 threads
+    renderKernel<<<grid_size, block_size>>>(d_image, width, height, samples_per_pixel, max_depth,
                                                       (float)cam_center_x, (float)cam_center_y, (float)cam_center_z,
                                                       (float)pixel00_x, (float)pixel00_y, (float)pixel00_z,
                                                       (float)delta_u_x, (float)delta_u_y, (float)delta_u_z,
                                                       (float)delta_v_x, (float)delta_v_y, (float)delta_v_z,
-                                                      start_x, start_y, end_x, end_y, d_ray_count);
+                                                      d_ray_count,
+                                                      d_rand_states);
 
     // Check for kernel errors
     cudaError_t kernel_err = cudaGetLastError();
@@ -1281,6 +1184,7 @@ extern "C" unsigned long long renderPixelsCUDA(unsigned char *image, int width, 
         printf("CUDA kernel error: %s\n", cudaGetErrorString(kernel_err));
         cudaFree(d_image);
         cudaFree(d_ray_count);
+        cudaFree(d_rand_states);
         return 0;
     }
 
@@ -1293,6 +1197,7 @@ extern "C" unsigned long long renderPixelsCUDA(unsigned char *image, int width, 
         printf("Memory copy error: %s\n", cudaGetErrorString(copy_err));
         cudaFree(d_image);
         cudaFree(d_ray_count);
+        cudaFree(d_rand_states);
         return 0;
     }
 
@@ -1308,10 +1213,7 @@ extern "C" unsigned long long renderPixelsCUDA(unsigned char *image, int width, 
     // Clean up
     cudaFree(d_image);
     cudaFree(d_ray_count);
-
-    // // Check first few pixels to verify
-    // printf("First few pixels: (%d,%d,%d) (%d,%d,%d) (%d,%d,%d)\n",
-    //        image[0], image[1], image[2], image[3], image[4], image[5], image[6], image[7], image[8]);
+    cudaFree(d_rand_states);
 
     return host_ray_count;
 }

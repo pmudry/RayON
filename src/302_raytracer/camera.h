@@ -176,7 +176,7 @@ class Camera
           ::renderPixelsCUDA(image.data(), image_width, image_height, camera_center.x(), camera_center.y(),
                              camera_center.z(), pixel00_loc.x(), pixel00_loc.y(), pixel00_loc.z(), pixel_delta_u.x(),
                              pixel_delta_u.y(), pixel_delta_u.z(), pixel_delta_v.x(), pixel_delta_v.y(),
-                             pixel_delta_v.z(), samples_per_pixel, max_depth, 0, 0, image_width, image_height);
+                             pixel_delta_v.z(), samples_per_pixel, max_depth);
 
       // Add the CUDA ray count to our atomic counter
       n_rays.fetch_add(cuda_ray_count, std::memory_order_relaxed);

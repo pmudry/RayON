@@ -1,7 +1,4 @@
 #include "constants.h"
-#include "utils.h"
-#include "interval.h"
-#include "cube.h"
 #include "hittable_list.h"
 #include "sphere.h"
 #include "camera.h"
