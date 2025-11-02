@@ -239,9 +239,10 @@ class Camera
       // Supersampling anti-aliasing by averaging multiple samples per pixel
       for (int s = 0; s < samples_per_pixel; ++s)
       {
-         // Random offsets in the range [0, 1) for jittering within the pixel
-         double offset_x = RndGen::random_double();
-         double offset_y = RndGen::random_double();
+         // Random offsets in the range [-0.5, 0.5) for jittering around the pixel center
+         // but remaining within the pixel area
+         double offset_x = RndGen::random_double() - 0.5;
+         double offset_y = RndGen::random_double() - 0.5;
 
          // Calculate the direction of the ray for the current pixel
          Vec3 pixel_center = pixel00_loc + (x + offset_x) * pixel_delta_u + (y + offset_y) * pixel_delta_v;
