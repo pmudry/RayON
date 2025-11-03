@@ -4,11 +4,11 @@
 
 namespace constants
 {
-    const std::string ver_major = "1.0";
+    const char* const ver_major = "1.1";
 
     const double ASPECT_RATIO = 16.0 / 9.0;
 
-    const int SET_IMAGE_HEIGHT = 1080;
+    const int SET_IMAGE_HEIGHT = 720;
 
     const int IMAGE_HEIGHT = SET_IMAGE_HEIGHT;
     const int IMAGE_WIDTH = (int)(ASPECT_RATIO * SET_IMAGE_HEIGHT);

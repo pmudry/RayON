@@ -1,0 +1,18 @@
+CompileFlags:
+  Remove:
+    - -W*
+    - -forward-unknown-to-host-compiler
+    - --options-file
+    - --generate-code=*
+    - -Xcompiler=*
+    - --expt-relaxed-constexpr
+    - --expt-extended-lambda
+    - -rdc=true
+    - -rdc
+    - --relocatable-device-code=*
+  Add:
+    - --cuda-path=/usr/local/cuda
+    - --cuda-gpu-arch=sm_75,sm_50,sm_90
+
+Diagnostics:
+  UnusedIncludes: None

@@ -151,13 +151,12 @@ if(CUDA_FOUND)
     
     # CUDA optimization flags
     # Set CUDA architectures (adjust based on your GPU - this covers common GPUs)
-    # sm_52 = GTX 9xx, sm_60 = GTX 10xx, sm_70 = V100, sm_75 = RTX 20xx, sm_80 = A100, sm_86 = RTX 30xx
-    set(CMAKE_CUDA_ARCHITECTURES "52;60;70;75;80;86")
+    set(CMAKE_CUDA_ARCHITECTURES "all-major")
     
     # CUDA compiler flags for optimization and warning suppression
     target_compile_options(302_raytracer PRIVATE
         $<$<COMPILE_LANGUAGE:CUDA>:            
-            -Xcompiler=-fno-strict-aliasing  # Optimize memory access
+            -Xcompiler=-fno-strict-aliasing -rdynamic -lineinfo # Optimize memory access
             --expt-relaxed-constexpr     # Allow relaxed constexpr
             --expt-extended-lambda       # Enable extended lambda support
             #-w                           # Suppress all CUDA warnings
