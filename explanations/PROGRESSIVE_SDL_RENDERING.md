@@ -2,7 +2,7 @@
 
 ## Overview
 
-This branch adds an interactive SDL2-based progressive rendering mode to the raytracer. This feature allows you to see your render in real-time as it progressively improves in quality through multiple sample stages.
+This branch adds an interactive SDL2-based progressive rendering mode to the raytracer with **real-time camera controls**. This feature allows you to see your render in real-time as it progressively improves in quality through multiple sample stages, while also being able to interactively adjust the camera position, rotation, and zoom.
 
 ## What is Progressive Rendering?
 
@@ -12,8 +12,34 @@ Progressive rendering displays the image while it's being rendered, starting wit
 - **Stop early**: If the preview looks wrong, you can stop and adjust parameters
 - **Watch progress**: See the image quality improve in real-time
 - **Interactive experience**: Get visual feedback during the rendering process
+- **Adjust camera**: Rotate, pan, and zoom the camera to explore different angles
 
 ## Features
+
+### Interactive Camera Controls 🎮
+
+The SDL window provides full interactive camera control:
+
+- **Left Mouse Button (LMB)**: Rotate camera (orbit around the look-at point)
+  - Drag horizontally to rotate around the scene
+  - Drag vertically to change elevation angle
+  - Camera maintains its distance from the look-at point
+  
+- **Right Mouse Button (RMB)**: Pan camera (move the look-at point)
+  - Move the entire camera and look-at point together
+  - Useful for centering on different parts of the scene
+  
+- **Mouse Wheel**: Zoom in/out
+  - Scroll up to zoom in (move camera closer)
+  - Scroll down to zoom out (move camera further away)
+  - Maintains current viewing angles
+
+- **Space Bar**: Re-render with current camera position
+  - Triggers a new progressive render from stage 1
+  - Useful after making multiple camera adjustments
+  - Automatically interrupts any ongoing render
+
+- **ESC Key / Close Window**: Exit the interactive session
 
 ### Sample Stages
 
@@ -29,10 +55,21 @@ Each stage is displayed immediately in the SDL window, so you can see the qualit
 
 ### Interactive Controls
 
-- **ESC key**: Stop rendering at the current quality level
-- **Close window**: Stop rendering at the current quality level
-- **Wait**: Let it complete all stages for the highest quality
-- **After completion**: Press any key or close window to save and continue
+- **Left Mouse Button (LMB)**: Rotate camera (orbit around the look-at point)
+- **Right Mouse Button (RMB)**: Pan camera (move the look-at point)
+- **Mouse Wheel**: Zoom in/out (change camera distance)
+- **Space Bar**: Re-render with current camera position
+- **ESC key**: Stop rendering and exit
+- **Close window**: Stop rendering and exit
+
+### Camera Behavior
+
+The camera system uses an orbit model:
+- The camera orbits around a "look-at" point (center of interest)
+- Rotation keeps the camera at a constant distance from the look-at point
+- Panning moves both the camera and look-at point together
+- Zooming changes the distance while maintaining viewing angles
+- Real-time re-rendering shows the scene from new camera positions
 
 ## How to Use
 
@@ -150,6 +187,22 @@ c.renderPixelsSDLProgressive(localImage, {1, 4, 16});
 3. **Quality control**: Stop when quality is sufficient for your needs
 4. **Visual satisfaction**: Watch the rendering improve in real-time
 5. **Flexibility**: Adjust quality vs. speed tradeoff interactively
+6. **Interactive exploration**: Rotate, pan, and zoom to find the perfect camera angle
+7. **Real-time adjustment**: Change camera position and immediately see results
+8. **Iterative workflow**: Quickly test multiple camera positions without restarting
+
+## Typical Workflow
+
+1. **Start the program** with option 3 (SDL progressive rendering)
+2. **Initial render** begins automatically showing progressive quality stages
+3. **Explore the scene**:
+   - Use left mouse to rotate and view from different angles
+   - Use right mouse to pan and focus on different areas
+   - Use mouse wheel to get closer or further from objects
+4. **Re-render as needed**: Press Space to trigger new render with current camera
+5. **Find the perfect shot**: Iterate until satisfied with composition
+6. **Wait for final quality**: Let the highest sample stage complete
+7. **Exit and save**: Close window to save the final render to disk
 
 ## Troubleshooting
 

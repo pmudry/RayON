@@ -13,6 +13,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <iomanip>
 #include <mutex>
 #include <sstream>
@@ -197,7 +198,12 @@ class Camera
     * 
     * This method displays the image in an SDL window while rendering with increasing sample rates.
     * It starts with low sample counts for quick preview and progressively increases quality.
-    * User can close the window at any time or wait for the final quality render.
+    * Interactive camera controls:
+    * - Left mouse button: Rotate camera (orbit around lookat point)
+    * - Right mouse button: Pan camera (move lookat point)
+    * - Mouse wheel: Zoom in/out (change camera distance)
+    * - ESC/Close window: Stop rendering
+    * - Space: Re-render with current camera position
     * 
     * @param image The final image buffer to store the highest quality render
     * @param sample_stages Vector of sample counts for progressive rendering (e.g., {1, 4, 16, 64, 256})
@@ -212,8 +218,9 @@ class Camera
       }
 
       // Create window
-      SDL_Window *window = SDL_CreateWindow("Ray Tracer - Progressive Rendering", SDL_WINDOWPOS_CENTERED,
-                                             SDL_WINDOWPOS_CENTERED, image_width, image_height, SDL_WINDOW_SHOWN);
+      SDL_Window *window = SDL_CreateWindow("Ray Tracer - Interactive Camera (LMB:Rotate RMB:Pan Wheel:Zoom Space:Render)", 
+                                             SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 
+                                             image_width, image_height, SDL_WINDOW_SHOWN);
       if (!window)
       {
          cerr << "Window creation failed: " << SDL_GetError() << endl;
@@ -243,82 +250,213 @@ class Camera
          return;
       }
 
-      cout << "\n=== Progressive SDL Rendering ===" << endl;
-      cout << "Close window or press ESC to stop at current quality\n" << endl;
+      cout << "\n=== Interactive Progressive SDL Rendering ===" << endl;
+      cout << "Controls:" << endl;
+      cout << "  Left Mouse Button:  Rotate camera (orbit)" << endl;
+      cout << "  Right Mouse Button: Pan camera" << endl;
+      cout << "  Mouse Wheel:        Zoom in/out" << endl;
+      cout << "  Space:              Re-render with current camera" << endl;
+      cout << "  ESC:                Exit\n" << endl;
 
       bool running = true;
+      bool camera_changed = true; // Trigger initial render
       SDL_Event event;
       vector<unsigned char> stage_image(image_width * image_height * image_channels);
 
+      // Camera control state
+      bool left_button_down = false;
+      bool right_button_down = false;
+      int last_mouse_x = 0, last_mouse_y = 0;
+      
+      // Camera orbit parameters
+      double camera_distance = (lookfrom - lookat).length();
+      double camera_azimuth = 0.0;   // Horizontal rotation angle
+      double camera_elevation = 0.0; // Vertical rotation angle
+      
+      // Calculate initial angles from current camera position
+      Vec3 to_camera = lookfrom - lookat;
+      camera_distance = to_camera.length();
+      camera_azimuth = atan2(to_camera.x(), to_camera.z());
+      camera_elevation = asin(to_camera.y() / camera_distance);
+
       auto total_start = std::chrono::high_resolution_clock::now();
 
-      // Progressive rendering through sample stages
-      for (size_t stage = 0; stage < sample_stages.size() && running; stage++)
+      // Main interaction loop
+      while (running)
       {
-         int current_samples = sample_stages[stage];
-         int original_samples = samples_per_pixel;
-         samples_per_pixel = current_samples;
-
-         cout << "Rendering stage " << (stage + 1) << "/" << sample_stages.size() << " with " << current_samples
-              << " samples per pixel..." << flush;
-
-         auto stage_start = std::chrono::high_resolution_clock::now();
-
-         // Render with CUDA for this stage
-         unsigned long long cuda_ray_count =
-             ::renderPixelsCUDA(stage_image.data(), image_width, image_height, camera_center.x(), camera_center.y(),
-                                camera_center.z(), pixel00_loc.x(), pixel00_loc.y(), pixel00_loc.z(), pixel_delta_u.x(),
-                                pixel_delta_u.y(), pixel_delta_u.z(), pixel_delta_v.x(), pixel_delta_v.y(),
-                                pixel_delta_v.z(), current_samples, max_depth);
-
-         n_rays.fetch_add(cuda_ray_count, std::memory_order_relaxed);
-
-         auto stage_end = std::chrono::high_resolution_clock::now();
-         cout << " completed in " << timeStr(stage_end - stage_start) << endl;
-
-         // Update SDL texture and display
-         SDL_UpdateTexture(texture, nullptr, stage_image.data(), image_width * image_channels);
-         SDL_RenderClear(renderer);
-         SDL_RenderCopy(renderer, texture, nullptr, nullptr);
-         SDL_RenderPresent(renderer);
-
-         // Copy to final image buffer
-         image = stage_image;
-
-         // Check for SDL events (window close, ESC key, etc.)
+         // Handle SDL events
          while (SDL_PollEvent(&event))
          {
             if (event.type == SDL_QUIT || (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE))
             {
                running = false;
-               cout << "\nRendering stopped by user at stage " << (stage + 1) << "/" << sample_stages.size() << endl;
-               break;
+            }
+            else if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_SPACE)
+            {
+               camera_changed = true;
+               cout << "\nRe-rendering with new camera position..." << endl;
+            }
+            else if (event.type == SDL_MOUSEBUTTONDOWN)
+            {
+               if (event.button.button == SDL_BUTTON_LEFT)
+               {
+                  left_button_down = true;
+                  last_mouse_x = event.button.x;
+                  last_mouse_y = event.button.y;
+               }
+               else if (event.button.button == SDL_BUTTON_RIGHT)
+               {
+                  right_button_down = true;
+                  last_mouse_x = event.button.x;
+                  last_mouse_y = event.button.y;
+               }
+            }
+            else if (event.type == SDL_MOUSEBUTTONUP)
+            {
+               if (event.button.button == SDL_BUTTON_LEFT)
+               {
+                  left_button_down = false;
+               }
+               else if (event.button.button == SDL_BUTTON_RIGHT)
+               {
+                  right_button_down = false;
+               }
+            }
+            else if (event.type == SDL_MOUSEMOTION)
+            {
+               int mouse_x = event.motion.x;
+               int mouse_y = event.motion.y;
+               int dx = mouse_x - last_mouse_x;
+               int dy = mouse_y - last_mouse_y;
+
+               if (left_button_down)
+               {
+                  // Rotate camera (orbit around lookat point)
+                  camera_azimuth += dx * 0.01;
+                  camera_elevation -= dy * 0.01;
+                  
+                  // Clamp elevation to avoid gimbal lock
+                  const double max_elevation = 1.5;
+                  if (camera_elevation > max_elevation) camera_elevation = max_elevation;
+                  if (camera_elevation < -max_elevation) camera_elevation = -max_elevation;
+                  
+                  // Calculate new camera position
+                  double cos_elev = cos(camera_elevation);
+                  lookfrom.e[0] = lookat.x() + camera_distance * cos_elev * sin(camera_azimuth);
+                  lookfrom.e[1] = lookat.y() + camera_distance * sin(camera_elevation);
+                  lookfrom.e[2] = lookat.z() + camera_distance * cos_elev * cos(camera_azimuth);
+                  
+                  camera_changed = true;
+               }
+               else if (right_button_down)
+               {
+                  // Pan camera (move both lookfrom and lookat)
+                  Vec3 right = unit_vector(cross(lookfrom - lookat, vup));
+                  Vec3 up = unit_vector(cross(right, lookfrom - lookat));
+                  
+                  double pan_speed = camera_distance * 0.001;
+                  Vec3 pan_offset = right * (-dx * pan_speed) + up * (dy * pan_speed);
+                  
+                  lookfrom = lookfrom + pan_offset;
+                  lookat = lookat + pan_offset;
+                  
+                  camera_changed = true;
+               }
+
+               last_mouse_x = mouse_x;
+               last_mouse_y = mouse_y;
+            }
+            else if (event.type == SDL_MOUSEWHEEL)
+            {
+               // Zoom in/out (change camera distance)
+               double zoom_factor = event.wheel.y > 0 ? 0.9 : 1.1;
+               camera_distance *= zoom_factor;
+               
+               // Recalculate camera position maintaining angles
+               double cos_elev = cos(camera_elevation);
+               lookfrom.e[0] = lookat.x() + camera_distance * cos_elev * sin(camera_azimuth);
+               lookfrom.e[1] = lookat.y() + camera_distance * sin(camera_elevation);
+               lookfrom.e[2] = lookat.z() + camera_distance * cos_elev * cos(camera_azimuth);
+               
+               camera_changed = true;
             }
          }
 
-         samples_per_pixel = original_samples;
+         // Render if camera has changed
+         if (camera_changed)
+         {
+            camera_changed = false;
+            initialize(); // Recalculate camera parameters
+            
+            // Progressive rendering through sample stages
+            for (size_t stage = 0; stage < sample_stages.size() && !camera_changed && running; stage++)
+            {
+               int current_samples = sample_stages[stage];
+               int original_samples = samples_per_pixel;
+               samples_per_pixel = current_samples;
+
+               cout << "Rendering stage " << (stage + 1) << "/" << sample_stages.size() << " with " << current_samples
+                    << " samples per pixel..." << flush;
+
+               auto stage_start = std::chrono::high_resolution_clock::now();
+
+               // Render with CUDA for this stage
+               unsigned long long cuda_ray_count =
+                   ::renderPixelsCUDA(stage_image.data(), image_width, image_height, camera_center.x(), camera_center.y(),
+                                      camera_center.z(), pixel00_loc.x(), pixel00_loc.y(), pixel00_loc.z(), pixel_delta_u.x(),
+                                      pixel_delta_u.y(), pixel_delta_u.z(), pixel_delta_v.x(), pixel_delta_v.y(),
+                                      pixel_delta_v.z(), current_samples, max_depth);
+
+               n_rays.fetch_add(cuda_ray_count, std::memory_order_relaxed);
+
+               auto stage_end = std::chrono::high_resolution_clock::now();
+               cout << " completed in " << timeStr(stage_end - stage_start) << endl;
+
+               // Update SDL texture and display
+               SDL_UpdateTexture(texture, nullptr, stage_image.data(), image_width * image_channels);
+               SDL_RenderClear(renderer);
+               SDL_RenderCopy(renderer, texture, nullptr, nullptr);
+               SDL_RenderPresent(renderer);
+
+               // Copy to final image buffer
+               image = stage_image;
+
+               // Check for events during rendering (to allow interruption)
+               while (SDL_PollEvent(&event))
+               {
+                  if (event.type == SDL_QUIT || (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE))
+                  {
+                     running = false;
+                     cout << "\nRendering stopped by user at stage " << (stage + 1) << "/" << sample_stages.size() << endl;
+                     break;
+                  }
+                  else if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_SPACE)
+                  {
+                     camera_changed = true;
+                     cout << "\nRe-rendering interrupted, starting new render..." << endl;
+                     break;
+                  }
+                  // Handle camera controls even during rendering
+                  else if (event.type == SDL_MOUSEBUTTONDOWN || event.type == SDL_MOUSEMOTION || 
+                           event.type == SDL_MOUSEWHEEL || event.type == SDL_MOUSEBUTTONUP)
+                  {
+                     // Re-queue the event for next loop iteration
+                     SDL_PushEvent(&event);
+                  }
+               }
+
+               samples_per_pixel = original_samples;
+            }
+         }
+         else
+         {
+            // Just wait for events when not rendering
+            SDL_Delay(16); // ~60 FPS event polling
+         }
       }
 
       auto total_end = std::chrono::high_resolution_clock::now();
-      cout << "\nTotal progressive rendering time: " << timeStr(total_end - total_start) << endl;
-
-      if (running)
-      {
-         cout << "Press any key or close window to continue..." << endl;
-         // Wait for user to close window or press a key
-         while (running)
-         {
-            while (SDL_PollEvent(&event))
-            {
-               if (event.type == SDL_QUIT || event.type == SDL_KEYDOWN)
-               {
-                  running = false;
-                  break;
-               }
-            }
-            SDL_Delay(100);
-         }
-      }
+      cout << "\nTotal session time: " << timeStr(total_end - total_start) << endl;
 
       // Cleanup
       SDL_DestroyTexture(texture);
