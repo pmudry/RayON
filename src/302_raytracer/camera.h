@@ -13,6 +13,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <iomanip>
 #include <mutex>
 #include <sstream>
 #include <thread>
@@ -366,9 +367,14 @@ class Camera
       {
          s << minutes.count() << " minutes and " << (seconds.count() % 60) << " seconds";
       }
-      else if (seconds.count() > 0)
+      else if (seconds.count() >= 10)
       {
          s << seconds.count() << " seconds";
+      }
+      else if (seconds.count() >= 1)
+      {
+         double sec_with_decimal = ms.count() / 1000.0;
+         s << std::fixed << std::setprecision(2) << sec_with_decimal << " seconds";
       }
       else
       {
