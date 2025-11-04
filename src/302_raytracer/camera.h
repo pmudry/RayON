@@ -198,17 +198,22 @@ class Camera
     * 
     * This method displays the image in an SDL window while rendering with increasing sample rates.
     * It starts with low sample counts for quick preview and progressively increases quality.
-    * Interactive camera controls:
+    * Interactive camera controls with automatic re-rendering:
     * - Left mouse button: Rotate camera (orbit around lookat point)
     * - Right mouse button: Pan camera (move lookat point)
     * - Mouse wheel: Zoom in/out (change camera distance)
-    * - ESC/Close window: Stop rendering
-    * - Space: Re-render with current camera position
+    * - Any camera movement automatically triggers re-rendering from 4 samples
+    * - ESC/Close window: Exit
+    *
+    * The interactive mode starts rendering from 4 samples (not 1) for faster response.
+    * Any camera movement interrupts current rendering and immediately starts a new render.
+    * Maximum sample count capped at 128 for interactive responsiveness (256 takes too long).
+    * For highest quality renders, use the regular CUDA rendering mode.
     * 
     * @param image The final image buffer to store the highest quality render
-    * @param sample_stages Vector of sample counts for progressive rendering (e.g., {1, 4, 16, 64, 256})
+    * @param sample_stages Vector of sample counts for progressive rendering (default: {1, 4, 16, 64, 128})
     */
-   void renderPixelsSDLProgressive(vector<unsigned char> &image, const vector<int> &sample_stages = {1, 4, 16, 64, 256})
+   void renderPixelsSDLProgressive(vector<unsigned char> &image, const vector<int> &sample_stages = {1, 4, 16, 64, 128})
    {
       // Initialize SDL
       if (SDL_Init(SDL_INIT_VIDEO) < 0)
@@ -218,7 +223,7 @@ class Camera
       }
 
       // Create window
-      SDL_Window *window = SDL_CreateWindow("Ray Tracer - Interactive Camera (LMB:Rotate RMB:Pan Wheel:Zoom Space:Render)", 
+      SDL_Window *window = SDL_CreateWindow("Ray Tracer - Interactive (LMB:Rotate RMB:Pan Wheel:Zoom - Auto re-render)", 
                                              SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 
                                              image_width, image_height, SDL_WINDOW_SHOWN);
       if (!window)
@@ -255,11 +260,15 @@ class Camera
       cout << "  Left Mouse Button:  Rotate camera (orbit)" << endl;
       cout << "  Right Mouse Button: Pan camera" << endl;
       cout << "  Mouse Wheel:        Zoom in/out" << endl;
-      cout << "  Space:              Re-render with current camera" << endl;
-      cout << "  ESC:                Exit\n" << endl;
+      cout << "  ESC:                Exit" << endl;
+      cout << "\nCamera movements automatically trigger re-rendering" << endl;
+      cout << "Progressive quality stages: 4 → 16 → 64 → 128 samples" << endl;
+      cout << "Tip: Move camera during high-sample stages to restart at lower quality\n" << endl;
 
       bool running = true;
       bool camera_changed = true; // Trigger initial render
+      bool rendering = false; // Track if currently rendering
+      size_t current_stage = 0; // Track current rendering stage
       SDL_Event event;
       vector<unsigned char> stage_image(image_width * image_height * image_channels);
 
@@ -267,6 +276,17 @@ class Camera
       bool left_button_down = false;
       bool right_button_down = false;
       int last_mouse_x = 0, last_mouse_y = 0;
+      
+      // Find starting stage (first stage with >= 4 samples for quick preview)
+      size_t quick_start_stage = 0;
+      for (size_t i = 0; i < sample_stages.size(); i++)
+      {
+         if (sample_stages[i] >= 4)
+         {
+            quick_start_stage = i;
+            break;
+         }
+      }
       
       // Camera orbit parameters
       double camera_distance = (lookfrom - lookat).length();
@@ -290,11 +310,6 @@ class Camera
             if (event.type == SDL_QUIT || (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE))
             {
                running = false;
-            }
-            else if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_SPACE)
-            {
-               camera_changed = true;
-               cout << "\nRe-rendering with new camera position..." << endl;
             }
             else if (event.type == SDL_MOUSEBUTTONDOWN)
             {
@@ -346,6 +361,7 @@ class Camera
                   lookfrom.e[1] = lookat.y() + camera_distance * sin(camera_elevation);
                   lookfrom.e[2] = lookat.z() + camera_distance * cos_elev * cos(camera_azimuth);
                   
+                  // Trigger re-render immediately
                   camera_changed = true;
                }
                else if (right_button_down)
@@ -360,6 +376,7 @@ class Camera
                   lookfrom = lookfrom + pan_offset;
                   lookat = lookat + pan_offset;
                   
+                  // Trigger re-render immediately
                   camera_changed = true;
                }
 
@@ -378,6 +395,7 @@ class Camera
                lookfrom.e[1] = lookat.y() + camera_distance * sin(camera_elevation);
                lookfrom.e[2] = lookat.z() + camera_distance * cos_elev * cos(camera_azimuth);
                
+               // Trigger re-render immediately
                camera_changed = true;
             }
          }
@@ -386,71 +404,58 @@ class Camera
          if (camera_changed)
          {
             camera_changed = false;
+            rendering = true;
             initialize(); // Recalculate camera parameters
             
-            // Progressive rendering through sample stages
-            for (size_t stage = 0; stage < sample_stages.size() && !camera_changed && running; stage++)
+            // Start from quick preview stage when camera moves
+            current_stage = quick_start_stage;
+            cout << "\n[Camera changed - restarting from stage 1]" << endl;
+         }
+         
+         // Continue progressive rendering through stages
+         if (rendering && current_stage < sample_stages.size() && !camera_changed && running)
+         {
+            int current_samples = sample_stages[current_stage];
+            int original_samples = samples_per_pixel;
+            samples_per_pixel = current_samples;
+
+            cout << "Rendering stage " << (current_stage - quick_start_stage + 1) << " with " << current_samples << " samples..." << flush;
+
+            // Render with CUDA for this stage
+            unsigned long long cuda_ray_count =
+                ::renderPixelsCUDA(stage_image.data(), image_width, image_height, camera_center.x(), camera_center.y(),
+                                   camera_center.z(), pixel00_loc.x(), pixel00_loc.y(), pixel00_loc.z(), pixel_delta_u.x(),
+                                   pixel_delta_u.y(), pixel_delta_u.z(), pixel_delta_v.x(), pixel_delta_v.y(),
+                                   pixel_delta_v.z(), current_samples, max_depth);
+
+            n_rays.fetch_add(cuda_ray_count, std::memory_order_relaxed);
+
+            cout << " done" << endl;
+
+            // Update SDL texture and display
+            SDL_UpdateTexture(texture, nullptr, stage_image.data(), image_width * image_channels);
+            SDL_RenderClear(renderer);
+            SDL_RenderCopy(renderer, texture, nullptr, nullptr);
+            SDL_RenderPresent(renderer);
+
+            // Copy to final image buffer
+            image = stage_image;
+
+            samples_per_pixel = original_samples;
+            
+            // Move to next stage for next iteration
+            current_stage++;
+            
+            // If we've completed all stages, stop rendering
+            if (current_stage >= sample_stages.size())
             {
-               int current_samples = sample_stages[stage];
-               int original_samples = samples_per_pixel;
-               samples_per_pixel = current_samples;
-
-               cout << "Rendering stage " << (stage + 1) << "/" << sample_stages.size() << " with " << current_samples
-                    << " samples per pixel..." << flush;
-
-               auto stage_start = std::chrono::high_resolution_clock::now();
-
-               // Render with CUDA for this stage
-               unsigned long long cuda_ray_count =
-                   ::renderPixelsCUDA(stage_image.data(), image_width, image_height, camera_center.x(), camera_center.y(),
-                                      camera_center.z(), pixel00_loc.x(), pixel00_loc.y(), pixel00_loc.z(), pixel_delta_u.x(),
-                                      pixel_delta_u.y(), pixel_delta_u.z(), pixel_delta_v.x(), pixel_delta_v.y(),
-                                      pixel_delta_v.z(), current_samples, max_depth);
-
-               n_rays.fetch_add(cuda_ray_count, std::memory_order_relaxed);
-
-               auto stage_end = std::chrono::high_resolution_clock::now();
-               cout << " completed in " << timeStr(stage_end - stage_start) << endl;
-
-               // Update SDL texture and display
-               SDL_UpdateTexture(texture, nullptr, stage_image.data(), image_width * image_channels);
-               SDL_RenderClear(renderer);
-               SDL_RenderCopy(renderer, texture, nullptr, nullptr);
-               SDL_RenderPresent(renderer);
-
-               // Copy to final image buffer
-               image = stage_image;
-
-               // Check for events during rendering (to allow interruption)
-               while (SDL_PollEvent(&event))
-               {
-                  if (event.type == SDL_QUIT || (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE))
-                  {
-                     running = false;
-                     cout << "\nRendering stopped by user at stage " << (stage + 1) << "/" << sample_stages.size() << endl;
-                     break;
-                  }
-                  else if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_SPACE)
-                  {
-                     camera_changed = true;
-                     cout << "\nRe-rendering interrupted, starting new render..." << endl;
-                     break;
-                  }
-                  // Handle camera controls even during rendering
-                  else if (event.type == SDL_MOUSEBUTTONDOWN || event.type == SDL_MOUSEMOTION || 
-                           event.type == SDL_MOUSEWHEEL || event.type == SDL_MOUSEBUTTONUP)
-                  {
-                     // Re-queue the event for next loop iteration
-                     SDL_PushEvent(&event);
-                  }
-               }
-
-               samples_per_pixel = original_samples;
+               rendering = false;
             }
          }
-         else
+         
+         // Small delay when idle to avoid busy-waiting
+         if (!rendering && !camera_changed)
          {
-            // Just wait for events when not rendering
             SDL_Delay(16); // ~60 FPS event polling
          }
       }
