@@ -22,6 +22,11 @@
 
 #ifdef SDL2_FOUND
 #include <SDL.h>
+#define STB_IMAGE_STATIC
+#define STB_IMAGE_IMPLEMENTATION
+#include "../external/stb_image.h"
+#define STB_IMAGE_RESIZE_IMPLEMENTATION
+#include "../external/stb_image_resize2.h"
 #endif
 
 #pragma once
@@ -194,6 +199,191 @@ class Camera
 
 #ifdef SDL2_FOUND
    /**
+    * @brief Render image in tiles with event checking between tiles for responsiveness
+    * 
+    * Breaks the image into horizontal strips (tiles) and renders each tile separately.
+    * Checks for SDL events between tiles, allowing camera movement to interrupt rendering.
+    * 
+    * @param image Output buffer for the rendered image
+    * @param tile_height Height of each tile in pixels (smaller = more responsive, but more overhead)
+    * @param renderer SDL renderer for displaying progress
+    * @param texture SDL texture to update
+    * @param running Reference to running flag (set to false on quit events)
+    * @param camera_changed Reference to camera_changed flag (set to true on camera movement)
+    * @return true if rendering completed, false if interrupted by camera movement
+    */
+   /**
+    * @brief Render image in rectangular block tiles with event checking between tiles for responsiveness
+    * 
+    * Breaks the image into a grid of rectangular tiles and renders each block separately.
+    * Checks for SDL events between tiles, allowing camera movement to interrupt rendering.
+    * 
+    * @param image Output buffer for the rendered image
+    * @param tiles_x Number of tiles horizontally
+    * @param tiles_y Number of tiles vertically
+    * @param renderer SDL renderer for displaying progress
+    * @param texture SDL texture to update
+    * @param logo_texture Logo texture to overlay (can be nullptr)
+    * @param logo_rect Rectangle for logo positioning
+    * @param running Reference to running flag (set to false on quit events)
+    * @param camera_changed Reference to camera_changed flag (set to true on camera movement)
+    * @return true if rendering completed, false if interrupted by camera movement
+    */
+   bool renderTiled(vector<unsigned char> &image, int tiles_x, int tiles_y, SDL_Renderer *renderer, 
+                    SDL_Texture *texture, SDL_Texture *logo_texture, const SDL_Rect &logo_rect,
+                    bool &running, bool &camera_changed)
+   {
+      int tile_width = (image_width + tiles_x - 1) / tiles_x;
+      int tile_height = (image_height + tiles_y - 1) / tiles_y;
+      
+      // Render tiles in a grid pattern
+      for (int tile_y = 0; tile_y < tiles_y; tile_y++)
+      {
+         for (int tile_x = 0; tile_x < tiles_x; tile_x++)
+         {
+            // Check for events before rendering each tile
+            SDL_Event event;
+            while (SDL_PollEvent(&event))
+            {
+               if (event.type == SDL_QUIT || (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE))
+               {
+                  running = false;
+                  return false;
+               }
+               
+               // Handle camera movement events
+               if (event.type == SDL_MOUSEBUTTONDOWN)
+               {
+                  if (event.button.button == SDL_BUTTON_LEFT)
+                  {
+                     left_button_down = true;
+                     last_mouse_x = event.button.x;
+                     last_mouse_y = event.button.y;
+                  }
+                  else if (event.button.button == SDL_BUTTON_RIGHT)
+                  {
+                     right_button_down = true;
+                     last_mouse_x = event.button.x;
+                     last_mouse_y = event.button.y;
+                  }
+               }
+               else if (event.type == SDL_MOUSEBUTTONUP)
+               {
+                  if (event.button.button == SDL_BUTTON_LEFT) left_button_down = false;
+                  if (event.button.button == SDL_BUTTON_RIGHT) right_button_down = false;
+               }
+               else if (event.type == SDL_MOUSEMOTION)
+               {
+                  int mouse_x = event.motion.x;
+                  int mouse_y = event.motion.y;
+                  int dx = mouse_x - last_mouse_x;
+                  int dy = mouse_y - last_mouse_y;
+
+                  if (left_button_down)
+                  {
+                     camera_azimuth += dx * 0.01;
+                     camera_elevation -= dy * 0.01;
+                     
+                     const double max_elevation = 1.5;
+                     if (camera_elevation > max_elevation) camera_elevation = max_elevation;
+                     if (camera_elevation < -max_elevation) camera_elevation = -max_elevation;
+                     
+                     double cos_elev = cos(camera_elevation);
+                     lookfrom.e[0] = lookat.x() + camera_distance * cos_elev * sin(camera_azimuth);
+                     lookfrom.e[1] = lookat.y() + camera_distance * sin(camera_elevation);
+                     lookfrom.e[2] = lookat.z() + camera_distance * cos_elev * cos(camera_azimuth);
+                     
+                     camera_changed = true;
+                     return false; // Interrupt rendering
+                  }
+                  else if (right_button_down)
+                  {
+                     Vec3 right = unit_vector(cross(lookfrom - lookat, vup));
+                     Vec3 up = unit_vector(cross(right, lookfrom - lookat));
+                     
+                     double pan_speed = camera_distance * 0.001;
+                     Vec3 pan_offset = right * (-dx * pan_speed) + up * (dy * pan_speed);
+                     
+                     lookfrom = lookfrom + pan_offset;
+                     lookat = lookat + pan_offset;
+                     
+                     camera_changed = true;
+                     return false; // Interrupt rendering
+                  }
+
+                  last_mouse_x = mouse_x;
+                  last_mouse_y = mouse_y;
+               }
+               else if (event.type == SDL_MOUSEWHEEL)
+               {
+                  double zoom_speed = camera_distance * 0.1;
+                  camera_distance -= event.wheel.y * zoom_speed;
+                  if (camera_distance < 0.5) camera_distance = 0.5;
+                  if (camera_distance > 50.0) camera_distance = 50.0;
+                  
+                  double cos_elev = cos(camera_elevation);
+                  lookfrom.e[0] = lookat.x() + camera_distance * cos_elev * sin(camera_azimuth);
+                  lookfrom.e[1] = lookat.y() + camera_distance * sin(camera_elevation);
+                  lookfrom.e[2] = lookat.z() + camera_distance * cos_elev * cos(camera_azimuth);
+                  
+                  camera_changed = true;
+                  return false; // Interrupt rendering
+               }
+            }
+            
+            // Calculate tile boundaries
+            int x_start = tile_x * tile_width;
+            int y_start = tile_y * tile_height;
+            int x_end = std::min(x_start + tile_width, image_width);
+            int y_end = std::min(y_start + tile_height, image_height);
+            int actual_tile_width = x_end - x_start;
+            int actual_tile_height = y_end - y_start;
+            
+            // Create a temporary buffer for this tile
+            vector<unsigned char> tile_buffer(actual_tile_width * actual_tile_height * image_channels);
+            
+            // Adjust pixel00_loc for this tile (move right by x_start, down by y_start)
+            Point3 tile_pixel00 = pixel00_loc + pixel_delta_u * x_start + pixel_delta_v * y_start;
+            
+            // Render this tile
+            unsigned long long tile_ray_count = ::renderPixelsCUDA(
+               tile_buffer.data(), actual_tile_width, actual_tile_height,
+               camera_center.x(), camera_center.y(), camera_center.z(),
+               tile_pixel00.x(), tile_pixel00.y(), tile_pixel00.z(),
+               pixel_delta_u.x(), pixel_delta_u.y(), pixel_delta_u.z(),
+               pixel_delta_v.x(), pixel_delta_v.y(), pixel_delta_v.z(),
+               samples_per_pixel, max_depth
+            );
+            
+            n_rays.fetch_add(tile_ray_count, std::memory_order_relaxed);
+            
+            // Copy tile into main image buffer
+            for (int y = 0; y < actual_tile_height; y++)
+            {
+               int src_offset = y * actual_tile_width * image_channels;
+               int dst_offset = (y_start + y) * image_width * image_channels + x_start * image_channels;
+               memcpy(&image[dst_offset], &tile_buffer[src_offset], actual_tile_width * image_channels);
+            }
+            
+            // Update SDL display immediately after each tile
+            SDL_UpdateTexture(texture, nullptr, image.data(), image_width * image_channels);
+            SDL_RenderClear(renderer);
+            SDL_RenderCopy(renderer, texture, nullptr, nullptr);
+            
+            // Overlay logo if available
+            if (logo_texture)
+            {
+               SDL_RenderCopy(renderer, logo_texture, nullptr, &logo_rect);
+            }
+            
+            SDL_RenderPresent(renderer);
+         }
+      }
+      
+      return true; // Rendering completed successfully
+   }
+
+   /**
     * @brief Renders progressively with SDL2 window display showing incremental quality improvements
     * 
     * This method displays the image in an SDL window while rendering with increasing sample rates.
@@ -202,18 +392,22 @@ class Camera
     * - Left mouse button: Rotate camera (orbit around lookat point)
     * - Right mouse button: Pan camera (move lookat point)
     * - Mouse wheel: Zoom in/out (change camera distance)
-    * - Any camera movement automatically triggers re-rendering from 4 samples
+    * - Any camera movement automatically triggers re-rendering from 8 samples
     * - ESC/Close window: Exit
     *
-    * The interactive mode starts rendering from 4 samples (not 1) for faster response.
+    * The interactive mode starts rendering from 8 samples for fast response.
     * Any camera movement interrupts current rendering and immediately starts a new render.
-    * Maximum sample count capped at 128 for interactive responsiveness (256 takes too long).
+    * Maximum sample count capped at 256 for interactive responsiveness.
     * For highest quality renders, use the regular CUDA rendering mode.
     * 
+    * Tiled rendering: Frame is divided into fixed 8x8 block grid (64 tiles) for consistent
+    * visual appearance and responsive interaction at all quality levels.
+    * 500ms delay between quality stages to allow viewing each stage clearly.
+    * 
     * @param image The final image buffer to store the highest quality render
-    * @param sample_stages Vector of sample counts for progressive rendering (default: {1, 4, 16, 64, 128})
+    * @param sample_stages Vector of sample counts for progressive rendering (default: {8, 16, 32, 64, 128, 256})
     */
-   void renderPixelsSDLProgressive(vector<unsigned char> &image, const vector<int> &sample_stages = {1, 4, 16, 64, 128})
+   void renderPixelsSDLProgressive(vector<unsigned char> &image, const vector<int> &sample_stages = {8, 16, 32, 64, 128, 256})
    {
       // Initialize SDL
       if (SDL_Init(SDL_INIT_VIDEO) < 0)
@@ -223,7 +417,7 @@ class Camera
       }
 
       // Create window
-      SDL_Window *window = SDL_CreateWindow("Ray Tracer - Interactive (LMB:Rotate RMB:Pan Wheel:Zoom - Auto re-render)", 
+      SDL_Window *window = SDL_CreateWindow("ISC - 302 ray tracer (mui) / Interactive mode (LMB:Rotate RMB:Pan Wheel:Zoom)", 
                                              SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 
                                              image_width, image_height, SDL_WINDOW_SHOWN);
       if (!window)
@@ -255,6 +449,60 @@ class Camera
          return;
       }
 
+      // Load ISC logo using stb_image
+      int logo_img_width, logo_img_height, logo_img_channels;
+      unsigned char* logo_data = stbi_load("../res/ISC Logo inline white v3 - 1500px.png", 
+                                            &logo_img_width, &logo_img_height, &logo_img_channels, 4); // Force RGBA
+      
+      SDL_Texture *logo_texture = nullptr;
+      SDL_Rect logo_rect = {0, 0, 0, 0};
+      
+      if (logo_data)
+      {
+         cout << "Logo loaded: " << logo_img_width << "x" << logo_img_height << " channels: " << logo_img_channels << endl;
+         
+         // Calculate target logo size (1/10th of window width, maintain aspect ratio)
+         int logo_width = image_width / 5;
+         int logo_height = (logo_width * logo_img_height) / logo_img_width;
+         
+         // Pre-scale logo using high-quality Mitchell filter for best quality
+         unsigned char* scaled_logo = new unsigned char[logo_width * logo_height * 4];
+         stbir_resize_uint8_srgb(logo_data, logo_img_width, logo_img_height, 0,
+                                  scaled_logo, logo_width, logo_height, 0,
+                                  STBIR_RGBA);
+         
+         // Create surface from pre-scaled logo data
+         SDL_Surface *logo_surface = SDL_CreateRGBSurfaceFrom(
+            scaled_logo, logo_width, logo_height, 32, logo_width * 4,
+            0x000000FF, 0x0000FF00, 0x00FF0000, 0xFF000000);
+         
+         if (logo_surface)
+         {
+            logo_texture = SDL_CreateTextureFromSurface(renderer, logo_surface);
+            SDL_FreeSurface(logo_surface);
+            
+            if (logo_texture)
+            {
+               // Enable alpha blending for logo
+               SDL_SetTextureBlendMode(logo_texture, SDL_BLENDMODE_BLEND);
+               
+               // Position at bottom-right corner
+               logo_rect.x = image_width - logo_width - 10; // 10px padding from edge
+               logo_rect.y = image_height - logo_height - 10;
+               logo_rect.w = logo_width;
+               logo_rect.h = logo_height;
+            }
+         }
+         
+         // Clean up
+         delete[] scaled_logo;
+         stbi_image_free(logo_data);
+      }
+      else
+      {
+         cerr << "Warning: Could not load logo: " << stbi_failure_reason() << endl;
+      }
+
       cout << "\n=== Interactive Progressive SDL Rendering ===" << endl;
       cout << "Controls:" << endl;
       cout << "  Left Mouse Button:  Rotate camera (orbit)" << endl;
@@ -262,8 +510,9 @@ class Camera
       cout << "  Mouse Wheel:        Zoom in/out" << endl;
       cout << "  ESC:                Exit" << endl;
       cout << "\nCamera movements automatically trigger re-rendering" << endl;
-      cout << "Progressive quality stages: 4 → 16 → 64 → 128 samples" << endl;
-      cout << "Tip: Move camera during high-sample stages to restart at lower quality\n" << endl;
+      cout << "Progressive quality stages: 8 → 16 → 32 → 64 → 128 → 256 samples" << endl;
+      cout << "Full-frame rendering for 8 & 16 samples, 8x8 tiles for higher quality" << endl;
+      cout << "500ms delay after each stage to view quality improvements\n" << endl;
 
       bool running = true;
       bool camera_changed = true; // Trigger initial render
@@ -272,26 +521,29 @@ class Camera
       SDL_Event event;
       vector<unsigned char> stage_image(image_width * image_height * image_channels);
 
-      // Camera control state
-      bool left_button_down = false;
-      bool right_button_down = false;
-      int last_mouse_x = 0, last_mouse_y = 0;
+      // Initialize camera control state (now member variables)
+      left_button_down = false;
+      right_button_down = false;
+      last_mouse_x = 0;
+      last_mouse_y = 0;
       
-      // Find starting stage (first stage with >= 4 samples for quick preview)
+      // Find starting stage (first stage with >= 8 samples for quick preview)
       size_t quick_start_stage = 0;
       for (size_t i = 0; i < sample_stages.size(); i++)
       {
-         if (sample_stages[i] >= 4)
+         if (sample_stages[i] >= 8)
          {
             quick_start_stage = i;
             break;
          }
       }
       
-      // Camera orbit parameters
-      double camera_distance = (lookfrom - lookat).length();
-      double camera_azimuth = 0.0;   // Horizontal rotation angle
-      double camera_elevation = 0.0; // Vertical rotation angle
+      cout << "Quick start stage index: " << quick_start_stage << " (samples: " << sample_stages[quick_start_stage] << ")" << endl;
+      
+      // Initialize camera orbit parameters
+      camera_distance = (lookfrom - lookat).length();
+      camera_azimuth = 0.0;   // Horizontal rotation angle
+      camera_elevation = 0.0; // Vertical rotation angle (now member variable)
       
       // Calculate initial angles from current camera position
       Vec3 to_camera = lookfrom - lookat;
@@ -409,7 +661,8 @@ class Camera
             
             // Start from quick preview stage when camera moves
             current_stage = quick_start_stage;
-            cout << "\n[Camera changed - restarting from stage 1]" << endl;
+            cout << "\n[Camera changed - restarting from stage " << (current_stage + 1) 
+                 << " (index " << current_stage << ", samples: " << sample_stages[current_stage] << ")]" << endl;
          }
          
          // Continue progressive rendering through stages
@@ -419,32 +672,44 @@ class Camera
             int original_samples = samples_per_pixel;
             samples_per_pixel = current_samples;
 
-            cout << "Rendering stage " << (current_stage - quick_start_stage + 1) << " with " << current_samples << " samples..." << flush;
-
-            // Render with CUDA for this stage
-            unsigned long long cuda_ray_count =
-                ::renderPixelsCUDA(stage_image.data(), image_width, image_height, camera_center.x(), camera_center.y(),
-                                   camera_center.z(), pixel00_loc.x(), pixel00_loc.y(), pixel00_loc.z(), pixel_delta_u.x(),
-                                   pixel_delta_u.y(), pixel_delta_u.z(), pixel_delta_v.x(), pixel_delta_v.y(),
-                                   pixel_delta_v.z(), current_samples, max_depth);
-
-            n_rays.fetch_add(cuda_ray_count, std::memory_order_relaxed);
-
-            cout << " done" << endl;
-
-            // Update SDL texture and display
-            SDL_UpdateTexture(texture, nullptr, stage_image.data(), image_width * image_channels);
-            SDL_RenderClear(renderer);
-            SDL_RenderCopy(renderer, texture, nullptr, nullptr);
-            SDL_RenderPresent(renderer);
-
-            // Copy to final image buffer
-            image = stage_image;
-
-            samples_per_pixel = original_samples;
+            // For 8 and 16 samples, use full-frame rendering (1x1 tile = whole image)
+            // For higher samples, use 8x8 tiles for responsiveness
+            int tiles_per_axis = (current_samples <= 16) ? 1 : 8;
             
-            // Move to next stage for next iteration
-            current_stage++;
+            const char* render_mode = (tiles_per_axis == 1) ? "full frame" : "8x8 tiles";
+            cout << "Rendering stage " << (current_stage - quick_start_stage + 1) 
+                 << " with " << current_samples << " samples (" 
+                 << render_mode << ")..." << flush;
+
+            // Render with tiled CUDA rendering for responsiveness
+            bool completed = renderTiled(stage_image, tiles_per_axis, tiles_per_axis, renderer, texture, 
+                                        logo_texture, logo_rect, running, camera_changed);
+
+            if (completed)
+            {
+               cout << " done" << endl;
+
+               // Copy to final image buffer
+               image = stage_image;
+
+               samples_per_pixel = original_samples;
+               
+               // Move to next stage for next iteration
+               current_stage++;
+               
+               // Add 500ms delay after displaying each stage so user can see the quality improvement
+               if (current_stage < sample_stages.size())
+               {
+                  //cout << "delay !" << endl;
+                  //SDL_Delay(1500);
+               }
+            }
+            else
+            {
+               cout << " interrupted" << endl;
+               samples_per_pixel = original_samples;
+               // camera_changed or running will be handled in the next loop iteration
+            }
             
             // If we've completed all stages, stop rendering
             if (current_stage >= sample_stages.size())
@@ -464,6 +729,10 @@ class Camera
       cout << "\nTotal session time: " << timeStr(total_end - total_start) << endl;
 
       // Cleanup
+      if (logo_texture)
+      {
+         SDL_DestroyTexture(logo_texture);
+      }
       SDL_DestroyTexture(texture);
       SDL_DestroyRenderer(renderer);
       SDL_DestroyWindow(window);
@@ -477,6 +746,17 @@ class Camera
    Vec3 pixel_delta_u;   // Offset to pixel to the right
    Vec3 pixel_delta_v;   // Offset to pixel below
    Vec3 u, v, w;         // Camera frame basis vectors
+
+#ifdef SDL2_FOUND
+   // Camera control state for interactive mode
+   bool left_button_down = false;
+   bool right_button_down = false;
+   int last_mouse_x = 0;
+   int last_mouse_y = 0;
+   double camera_azimuth = 0.0;
+   double camera_elevation = 0.0;
+   double camera_distance = 0.0;
+#endif
 
    void initialize()
    {
@@ -606,10 +886,15 @@ class Camera
       int index = (y * image_width + x) * image_channels;
 
       static const Interval intensity(0.0, 0.999);
+      
+      // Apply gamma correction (linear to sRGB) for proper display
+      auto linear_to_gamma = [](double linear) {
+         return sqrt(linear); // Simple gamma 2.0 approximation
+      };
 
-      image[index + 0] = static_cast<int>(intensity.clamp(c.x()) * 256);
-      image[index + 1] = static_cast<int>(intensity.clamp(c.y()) * 256);
-      image[index + 2] = static_cast<int>(intensity.clamp(c.z()) * 256);
+      image[index + 0] = static_cast<int>(intensity.clamp(linear_to_gamma(c.x())) * 256);
+      image[index + 1] = static_cast<int>(intensity.clamp(linear_to_gamma(c.y())) * 256);
+      image[index + 2] = static_cast<int>(intensity.clamp(linear_to_gamma(c.z())) * 256);
    }
 
    /***

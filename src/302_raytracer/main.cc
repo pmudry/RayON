@@ -212,7 +212,7 @@ int main(int argc, char *argv[])
 #ifdef SDL2_FOUND
    case 3:
       cout << "Using CUDA GPU with progressive SDL display..." << endl;
-      c.renderPixelsSDLProgressive(localImage, {1, 4, 16, 64, 256, 1024});
+      c.renderPixelsSDLProgressive(localImage, {8, 16, 32, 64, 128, 256});
       break;
 #endif
    default:

@@ -44,20 +44,29 @@ The SDL window provides full interactive camera control:
 ### Sample Stages
 
 The progressive rendering goes through multiple quality stages:
-- **Stage 1**: 1 sample per pixel (very fast, noisy preview)
-- **Stage 2**: 4 samples per pixel (quick preview with less noise)
-- **Stage 3**: 16 samples per pixel (decent quality)
+- **Stage 1**: 8 samples per pixel (instant preview)
+- **Stage 2**: 16 samples per pixel (quick improvement)
+- **Stage 3**: 32 samples per pixel (cleaner result)
 - **Stage 4**: 64 samples per pixel (good quality)
-- **Stage 5**: 256 samples per pixel (high quality)
-- **Stage 6**: 1024 samples per pixel (final quality)
+- **Stage 5**: 128 samples per pixel (high quality)
+- **Stage 6**: 256 samples per pixel (very high quality)
 
-Each stage is displayed immediately in the SDL window, so you can see the quality progression.
+**Block-Based Tiled Rendering**: To keep the viewer responsive during high-sample renders, each frame is split into a fixed **8×8 grid of rectangular blocks (64 tiles total)**. This provides:
+
+- **64 event checks per frame** at all quality levels
+- **Immediate visual feedback** - see tiles appear as they complete
+- **Consistent visual appearance** - same tile boundaries across all stages eliminates artifacts
+- **Highly responsive** - can interrupt renders almost instantly at any quality level
+
+**Stage Delay**: After completing each quality stage, there's a 500ms pause before starting the next stage. This allows you to clearly see each quality level and interrupt if satisfied with the current result.
 
 ### Interactive Controls
 
 - **Left Mouse Button (LMB)**: Rotate camera (orbit around the look-at point)
-- **Right Mouse Button (RMB)**: Pan camera (move the look-at point)
+- **Right Mouse Button (RMB)**: Pan camera (move the look-at point and camera)
 - **Mouse Wheel**: Zoom in/out (change camera distance)
+- **Any camera movement**: Automatically interrupts current render and restarts from stage 1
+- **ESC Key / Close Window**: Exit the interactive session
 - **Space Bar**: Re-render with current camera position
 - **ESC key**: Stop rendering and exit
 - **Close window**: Stop rendering and exit
