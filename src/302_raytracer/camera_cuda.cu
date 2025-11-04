@@ -39,58 +39,58 @@
 struct float3_simple
 {
     float x, y, z;
-    __device__ __host__ float3_simple() : x(0), y(0), z(0) {}
-    __device__ __host__ float3_simple(float x_, float y_, float z_) : x(x_), y(y_), z(z_) {}
+    __device__ float3_simple() : x(0), y(0), z(0) {}
+    __device__ float3_simple(float x_, float y_, float z_) : x(x_), y(y_), z(z_) {}
 
-    __device__ __host__ float3_simple operator+(const float3_simple &other) const
+    __device__ float3_simple operator+(const float3_simple &other) const
     {
         return float3_simple(x + other.x, y + other.y, z + other.z);
     }
 
-    __device__ __host__ float3_simple operator-(const float3_simple &other) const
+    __device__ float3_simple operator-(const float3_simple &other) const
     {
         return float3_simple(x - other.x, y - other.y, z - other.z);
     }
 
-    __device__ __host__ float3_simple operator*(float t) const
+    __device__ float3_simple operator*(float t) const
     {
         return float3_simple(x * t, y * t, z * t);
     }
 
-    __device__ __host__ float3_simple operator/(float t) const
+    __device__ float3_simple operator/(float t) const
     {
         return float3_simple(x / t, y / t, z / t);
     }
 
-    __device__ __host__ float3_simple operator-() const
+    __device__ float3_simple operator-() const
     {
         return float3_simple(-x, -y, -z);
     }
 
-    __device__ __host__ float length() const
+    __device__ float length() const
     {
         return sqrtf(x * x + y * y + z * z);
     }
 
-    __device__ __host__ float length_squared() const
+    __device__ float length_squared() const
     {
         return x * x + y * y + z * z;
     }
 };
 
-__device__ __host__ float3_simple operator*(float t, const float3_simple &v)
+__device__ float3_simple operator*(float t, const float3_simple &v)
 {
     return v * t;
 }
 
 /** @brief Compute dot product of two vectors */
-__device__ __host__ float dot(const float3_simple &a, const float3_simple &b)
+__device__ float dot(const float3_simple &a, const float3_simple &b)
 {
     return a.x * b.x + a.y * b.y + a.z * b.z;
 }
 
 /** @brief Compute cross product of two vectors */
-__device__ __host__ float3_simple cross(const float3_simple &a, const float3_simple &b)
+__device__ float3_simple cross(const float3_simple &a, const float3_simple &b)
 {
     return float3_simple(
         a.y * b.z - a.z * b.y,
@@ -99,18 +99,18 @@ __device__ __host__ float3_simple cross(const float3_simple &a, const float3_sim
 }
 
 /** @brief Normalize a vector to unit length */
-__device__ __host__ float3_simple unit_vector(const float3_simple &v)
+__device__ float3_simple unit_vector(const float3_simple &v)
 {
     return v / v.length();
 }
 
 /** @brief Convert a normal to a debug RGB color */
-__device__ __host__ inline float3_simple normal_to_color(const float3_simple &n)
+__device__ inline float3_simple normal_to_color(const float3_simple &n)
 {
     return float3_simple(0.5f * (n.x + 1.0f), 0.5f * (n.y + 1.0f), 0.5f * (n.z + 1.0f));
 }
 
-__device__ __host__ inline float3_simple grayscale(float v)
+__device__ inline float3_simple grayscale(float v)
 {
     v = fmaxf(0.0f, fminf(1.0f, v));
     return float3_simple(v, v, v);
@@ -171,12 +171,12 @@ struct ray_simple
 {
     float3_simple orig, dir; ///< Ray origin and direction
 
-    __device__ __host__ ray_simple() {}
-    __device__ __host__ ray_simple(const float3_simple &origin, const float3_simple &direction)
+    __device__ ray_simple() {}
+    __device__ ray_simple(const float3_simple &origin, const float3_simple &direction)
         : orig(origin), dir(direction) {}
 
     /** @brief Get point along ray at parameter t */
-    __device__ __host__ float3_simple at(float t) const
+    __device__ float3_simple at(float t) const
     {
         return orig + t * dir;
     }
@@ -230,14 +230,17 @@ __device__ float random_float(curandState *state)
  */
 __device__ float3_simple reflect_fuzzy(const float3_simple &v, const float3_simple &n, float roughness, curandState *state)
 {
-    // Generate random perturbation vector in unit sphere
+    // Generate random vector in unit sphere using rejection sampling
     float3_simple random_in_sphere;
     do
     {
         random_in_sphere = 2.0f * float3_simple(random_float(state), random_float(state), random_float(state)) - float3_simple(1.0f, 1.0f, 1.0f);
     } while (random_in_sphere.length_squared() >= 1.0f);
 
-    // Perturb the normal and reflect off the modified surface
+    // Perturb the normal by the random vector and reflect off the modified surface
+    // This creates a "perturbed normal"—essentially tilting the surface slightly in a random direction. The amount of tilt is proportional to roughness: a value near 0 produces nearly perfect reflections, 
+    // while higher values create increasingly diffuse, scattered reflections. 
+    // The perturbed normal is then normalized to unit length before being used in the standard reflection calculation.
     float3_simple perturbed_normal = unit_vector(n + roughness * random_in_sphere);
     return reflect(v, perturbed_normal);
 }
@@ -886,6 +889,7 @@ __device__ float3_simple ray_color(const ray_simple &r, curandState *state, int 
     atomicAdd(ray_count, 1);
 
     hit_record_simple rec;
+    
     if (hit_world(r, 0.001f, FLT_MAX, rec))
     {
         // If we hit a light source, return its emission
@@ -939,7 +943,7 @@ __device__ float3_simple ray_color(const ray_simple &r, curandState *state, int 
         {
             // Lambertian scattering - different colors for different spheres
             float3_simple target = rec.p + rec.normal + random_in_hemisphere(rec.normal, state);
-            scattered = ray_simple(rec.p, target - rec.p);
+            scattered = ray_simple(rec.p, target - rec.p); // Use a ray from rec.p to target, using direction relative to the origin rec.p point.
             attenuation = rec.color;
         }
         else if (rec.material == MIRROR)
@@ -947,7 +951,7 @@ __device__ float3_simple ray_color(const ray_simple &r, curandState *state, int 
             // Mirror reflection
             float3_simple reflected = reflect(unit_vector(r.dir), rec.normal);
             scattered = ray_simple(rec.p, reflected);
-            attenuation = float3_simple(.99f, .99f, .99f); // Slightly blue-tinted mirror
+            attenuation = float3_simple(.99f, .99f, .99f); // Slightly attenuate to avoid infinite bounces
         }
         else if (rec.material == ROUGH_MIRROR)
         {
@@ -966,6 +970,7 @@ __device__ float3_simple ray_color(const ray_simple &r, curandState *state, int 
         {
             // Glass (dielectric) material
             attenuation = float3_simple(1.0f, 1.0f, 1.0f); // Glass doesn't absorb light
+
             // Monte Carlo approach to glass rendering: Instead of splitting the ray into separate
             // reflection and refraction rays (which would double the ray count exponentially),
             // we probabilistically choose ONE path per ray based on Fresnel reflectance.

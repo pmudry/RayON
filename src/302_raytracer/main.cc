@@ -3,6 +3,7 @@
 #include "sphere.h"
 #include "camera.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <future>
 #include <iostream>
@@ -45,10 +46,10 @@ void fillGradientImage(vector<unsigned char> &image)
    }
 }
 
-void dumpImageToFile(vector<unsigned char> &image, string name)
+void dumpImageToFile(vector<unsigned char> &image, int image_width, int image_height, string name)
 {
    // Write image to file
-   writeImage(image, IMAGE_WIDTH, IMAGE_HEIGHT, name);
+   writeImage(image, image_width, image_height, name);
 }
 
 using scene = Hittable_list;
@@ -78,8 +79,16 @@ scene demo_scene()
    return s;
 }
 
-int parseInput(int argc, char *argv[])
+struct ProgramArgs {
+   int samples = SAMPLES_PER_PIXEL;
+   int height = IMAGE_HEIGHT;
+};
+
+ProgramArgs parseInput(int argc, char *argv[])
 {
+   ProgramArgs args;
+   const vector<int> allowed_heights = {2160, 1080, 720, 360, 180};
+   
    // Parse command-line arguments
    for (int i = 1; i < argc; ++i)
    {
@@ -89,11 +98,28 @@ int parseInput(int argc, char *argv[])
          cout << "Options:\n";
          cout << "  -h, --help, /?  Show this help message\n";
          cout << "  -s <samples>    Set the number of samples per pixel (default: " << SAMPLES_PER_PIXEL << ")\n";
-         return -1;
+         cout << "  -r <height>     Set vertical resolution (allowed: 2160, 1080, 720, 360, 180, default: " << IMAGE_HEIGHT << ")\n";
+         args.samples = -1;
+         return args;
       }
       else if (strcmp(argv[i], "-s") == 0 && i + 1 < argc)
       {
-         return atoi(argv[++i]);
+         args.samples = atoi(argv[++i]);
+      }
+      else if (strcmp(argv[i], "-r") == 0 && i + 1 < argc)
+      {
+         int height = atoi(argv[++i]);
+         if (find(allowed_heights.begin(), allowed_heights.end(), height) != allowed_heights.end())
+         {
+            args.height = height;
+         }
+         else
+         {
+            cerr << "Invalid resolution height: " << height << "\n";
+            cerr << "Allowed values: 2160, 1080, 720, 360, 180\n";
+            args.samples = -1;
+            return args;
+         }
       }
       else if (argv[i][0] == '-')
       {
@@ -102,23 +128,35 @@ int parseInput(int argc, char *argv[])
          cout << "Options:\n";
          cout << "  -h, --help, /?  Show this help message\n";
          cout << "  -s <samples>    Set the number of samples per pixel (default: " << SAMPLES_PER_PIXEL << ")\n";
-         return -1;
+         cout << "  -r <height>     Set vertical resolution (allowed: 2160, 1080, 720, 360, 180, default: " << IMAGE_HEIGHT << ")\n";
+         args.samples = -1;
+         return args;
       }
       else
       {
          cerr << "Unexpected argument: " << argv[i] << "\n";
-         return -1;
+         args.samples = -1;
+         return args;
       }
    }
 
-   return SAMPLES_PER_PIXEL;
+   return args;
 }
 
 int main(int argc, char *argv[])
 {
-   int samples = parseInput(argc, argv);
+   ProgramArgs args = parseInput(argc, argv);
+   
+   if (args.samples < 0)
+   {
+      return 1;
+   }
 
-   Camera c(Vec3(0, 0, 0), IMAGE_WIDTH, IMAGE_HEIGHT, CHANNELS, samples);
+   // Calculate width maintaining aspect ratio (16:9)
+   int image_height = args.height;
+   int image_width = (image_height * 16) / 9;
+
+   Camera c(Vec3(0, 0, 0), image_width, image_height, CHANNELS, args.samples);
 
    vector<unsigned char> image(c.image_width * c.image_height * CHANNELS);
 
@@ -127,7 +165,7 @@ int main(int argc, char *argv[])
    cout << " 302 Ray tracer project v" << ver_major << " -- P.-A. Mudry, ISC 2026" << endl;
    cout << "=====================================================" << endl << endl;
    cout << "Rendering at resolution: " << c.image_width << " x " << c.image_height << " pixels" << endl;
-   cout << "Samples per pixel: " << samples << endl << endl;
+   cout << "Samples per pixel: " << args.samples << endl << endl;
 
    RndGen::set_seed(123);
 
@@ -171,7 +209,7 @@ int main(int argc, char *argv[])
    }
 
    // Create res directory if it doesn't exist
-   dumpImageToFile(localImage, "res/output.png");
+   dumpImageToFile(localImage, c.image_width, c.image_height, "res/output.png");
 
    cout.imbue(locale("en_US.UTF-8"));
    cout << "Rays traced: " << fixed << c.n_rays << endl;
