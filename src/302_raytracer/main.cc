@@ -179,7 +179,14 @@ int main(int argc, char *argv[])
    cout << "\t0. CPU sequential" << endl;
    cout << "\t1. CPU parallel" << endl;
    cout << "\t2. CUDA GPU (default)" << endl;
-   cout << "Enter choice (0, 1, or 2): ";
+#ifdef SDL2_FOUND
+   cout << "\t3. CUDA GPU with progressive SDL display" << endl;
+#endif
+   cout << "Enter choice (0, 1, 2" 
+#ifdef SDL2_FOUND
+        << ", or 3"
+#endif
+        << "): ";
 
    int choice = 2; // Default to CUDA
    string input;
@@ -202,6 +209,12 @@ int main(int argc, char *argv[])
       cout << "Using CPU parallel rendering..." << endl;
       c.renderPixelsParallel(scene, localImage);
       break;
+#ifdef SDL2_FOUND
+   case 3:
+      cout << "Using CUDA GPU with progressive SDL display..." << endl;
+      c.renderPixelsSDLProgressive(localImage, {1, 4, 16, 64, 256, 1024});
+      break;
+#endif
    default:
       cout << "Using CUDA GPU rendering..." << endl;
       c.renderPixelsCUDA(localImage);

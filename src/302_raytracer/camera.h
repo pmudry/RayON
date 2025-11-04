@@ -19,6 +19,10 @@
 #include <thread>
 #include <vector>
 
+#ifdef SDL2_FOUND
+#include <SDL.h>
+#endif
+
 #pragma once
 
 class Camera
@@ -186,6 +190,143 @@ class Camera
       auto duration = end_time - start_time;
       cout << "CUDA rendering completed in " << timeStr(duration) << endl;
    }
+
+#ifdef SDL2_FOUND
+   /**
+    * @brief Renders progressively with SDL2 window display showing incremental quality improvements
+    * 
+    * This method displays the image in an SDL window while rendering with increasing sample rates.
+    * It starts with low sample counts for quick preview and progressively increases quality.
+    * User can close the window at any time or wait for the final quality render.
+    * 
+    * @param image The final image buffer to store the highest quality render
+    * @param sample_stages Vector of sample counts for progressive rendering (e.g., {1, 4, 16, 64, 256})
+    */
+   void renderPixelsSDLProgressive(vector<unsigned char> &image, const vector<int> &sample_stages = {1, 4, 16, 64, 256})
+   {
+      // Initialize SDL
+      if (SDL_Init(SDL_INIT_VIDEO) < 0)
+      {
+         cerr << "SDL initialization failed: " << SDL_GetError() << endl;
+         return;
+      }
+
+      // Create window
+      SDL_Window *window = SDL_CreateWindow("Ray Tracer - Progressive Rendering", SDL_WINDOWPOS_CENTERED,
+                                             SDL_WINDOWPOS_CENTERED, image_width, image_height, SDL_WINDOW_SHOWN);
+      if (!window)
+      {
+         cerr << "Window creation failed: " << SDL_GetError() << endl;
+         SDL_Quit();
+         return;
+      }
+
+      // Create renderer
+      SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+      if (!renderer)
+      {
+         cerr << "Renderer creation failed: " << SDL_GetError() << endl;
+         SDL_DestroyWindow(window);
+         SDL_Quit();
+         return;
+      }
+
+      // Create texture for displaying the image
+      SDL_Texture *texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STREAMING,
+                                                image_width, image_height);
+      if (!texture)
+      {
+         cerr << "Texture creation failed: " << SDL_GetError() << endl;
+         SDL_DestroyRenderer(renderer);
+         SDL_DestroyWindow(window);
+         SDL_Quit();
+         return;
+      }
+
+      cout << "\n=== Progressive SDL Rendering ===" << endl;
+      cout << "Close window or press ESC to stop at current quality\n" << endl;
+
+      bool running = true;
+      SDL_Event event;
+      vector<unsigned char> stage_image(image_width * image_height * image_channels);
+
+      auto total_start = std::chrono::high_resolution_clock::now();
+
+      // Progressive rendering through sample stages
+      for (size_t stage = 0; stage < sample_stages.size() && running; stage++)
+      {
+         int current_samples = sample_stages[stage];
+         int original_samples = samples_per_pixel;
+         samples_per_pixel = current_samples;
+
+         cout << "Rendering stage " << (stage + 1) << "/" << sample_stages.size() << " with " << current_samples
+              << " samples per pixel..." << flush;
+
+         auto stage_start = std::chrono::high_resolution_clock::now();
+
+         // Render with CUDA for this stage
+         unsigned long long cuda_ray_count =
+             ::renderPixelsCUDA(stage_image.data(), image_width, image_height, camera_center.x(), camera_center.y(),
+                                camera_center.z(), pixel00_loc.x(), pixel00_loc.y(), pixel00_loc.z(), pixel_delta_u.x(),
+                                pixel_delta_u.y(), pixel_delta_u.z(), pixel_delta_v.x(), pixel_delta_v.y(),
+                                pixel_delta_v.z(), current_samples, max_depth);
+
+         n_rays.fetch_add(cuda_ray_count, std::memory_order_relaxed);
+
+         auto stage_end = std::chrono::high_resolution_clock::now();
+         cout << " completed in " << timeStr(stage_end - stage_start) << endl;
+
+         // Update SDL texture and display
+         SDL_UpdateTexture(texture, nullptr, stage_image.data(), image_width * image_channels);
+         SDL_RenderClear(renderer);
+         SDL_RenderCopy(renderer, texture, nullptr, nullptr);
+         SDL_RenderPresent(renderer);
+
+         // Copy to final image buffer
+         image = stage_image;
+
+         // Check for SDL events (window close, ESC key, etc.)
+         while (SDL_PollEvent(&event))
+         {
+            if (event.type == SDL_QUIT || (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE))
+            {
+               running = false;
+               cout << "\nRendering stopped by user at stage " << (stage + 1) << "/" << sample_stages.size() << endl;
+               break;
+            }
+         }
+
+         samples_per_pixel = original_samples;
+      }
+
+      auto total_end = std::chrono::high_resolution_clock::now();
+      cout << "\nTotal progressive rendering time: " << timeStr(total_end - total_start) << endl;
+
+      if (running)
+      {
+         cout << "Press any key or close window to continue..." << endl;
+         // Wait for user to close window or press a key
+         while (running)
+         {
+            while (SDL_PollEvent(&event))
+            {
+               if (event.type == SDL_QUIT || event.type == SDL_KEYDOWN)
+               {
+                  running = false;
+                  break;
+               }
+            }
+            SDL_Delay(100);
+         }
+      }
+
+      // Cleanup
+      SDL_DestroyTexture(texture);
+      SDL_DestroyRenderer(renderer);
+      SDL_DestroyWindow(window);
+      SDL_Quit();
+   }
+#endif // SDL2_FOUND
 
  private:
    Point3 camera_center; // Camera center
