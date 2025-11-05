@@ -10,6 +10,7 @@
 #include "color.h"
 #include "constants.h"
 #include "hittable.h"
+#include "interval.h"
 #include "material.h"
 #include "ray.h"
 #include "rnd_gen.h"

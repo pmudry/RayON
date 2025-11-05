@@ -7,14 +7,14 @@
  */
 #pragma once
 
-#include "camera_base.h"
-#include "color.h"
-#include "hittable.h"
-#include "interval.h"
-#include "material.h"
-#include "ray.h"
-#include "rnd_gen.h"
-#include "vec3.h"
+#include "../camera/camera_base.h"
+#include "../color.h"
+#include "../hittable.h"
+#include "../interval.h"
+#include "../material.h"
+#include "../ray.h"
+#include "../rnd_gen.h"
+#include "../vec3.h"
 
 class CPURayTracer : virtual public CameraBase
 {

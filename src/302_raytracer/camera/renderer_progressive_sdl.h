@@ -10,27 +10,15 @@
 #ifdef SDL2_FOUND
 
 #include "interval.h"
-#include "../camera_base.h"
-#include "gpu_renderers/renderer_cuda.h"
+#include "camera_base.h"
+
+#include "gpu_renderers/camera_cuda.h"
 #include "sdl_gui_handler.h"
 #include "sdl_gui_controls.h"
 
 #include <SDL.h>
 #include <algorithm>
 #include <chrono>
-
-// Forward declarations of CUDA functions
-extern "C" void setLightIntensity(float intensity);
-extern "C" void setBackgroundIntensity(float intensity);
-extern "C" unsigned long long renderPixelsCUDAAccumulative(unsigned char *image, float *accum_buffer,
-                                                            int width, int height,
-                                                            double cam_center_x, double cam_center_y, double cam_center_z,
-                                                            double pixel00_x, double pixel00_y, double pixel00_z,
-                                                            double delta_u_x, double delta_u_y, double delta_u_z,
-                                                            double delta_v_x, double delta_v_y, double delta_v_z,
-                                                            int samples_to_add, int total_samples_so_far, int max_depth,
-                                                            void **d_rand_states_ptr);
-extern "C" void freeDeviceRandomStates(void *d_rand_states);
 
 class RendererProgressiveSDL : virtual public CameraBase
 {
@@ -104,13 +92,8 @@ class RendererProgressiveSDL : virtual public CameraBase
             }
             else if (event.type == SDL_KEYDOWN)
             {
-               // Handle 'h' key to toggle GUI controls visibility
-               if (event.key.keysym.sym == SDLK_h)
-               {
-                  gui.toggleControls();
-               }
-               else if (camera_control.handleKeyDown(event, accumulation_enabled, gamma, light_intensity,
-                                                      background_intensity, needs_rerender, camera_changed))
+               if (camera_control.handleKeyDown(event, accumulation_enabled, gamma, light_intensity,
+                                                background_intensity, needs_rerender, camera_changed))
                {
                   if (camera_changed)
                   {
@@ -129,7 +112,7 @@ class RendererProgressiveSDL : virtual public CameraBase
                if (camera_control.handleMouseButtonDown(
                        event, dragging_slider, active_slider, gamma_slider_bounds, intensity_slider_bounds,
                        background_slider_bounds, toggle_button_rect, accumulation_enabled, gamma, light_intensity,
-                       background_intensity, needs_rerender, camera_changed, gui.getShowControls()))
+                       background_intensity, needs_rerender, camera_changed))
                {
                   if (camera_changed)
                   {
@@ -152,7 +135,7 @@ class RendererProgressiveSDL : virtual public CameraBase
                if (camera_control.handleMouseMotion(event, dragging_slider, active_slider, gamma_slider_bounds,
                                                     intensity_slider_bounds, background_slider_bounds, gamma,
                                                     light_intensity, background_intensity, needs_rerender,
-                                                    camera_changed, lookfrom, lookat, vup, w, gui.getShowControls()))
+                                                    camera_changed, lookfrom, lookat, vup, w))
                {
                   if (camera_changed)
                   {
@@ -209,6 +192,7 @@ class RendererProgressiveSDL : virtual public CameraBase
                          toggle_button_rect);
 
             image = display_image;
+            cout << " done" << endl;
          }
          else if (current_samples >= max_samples && !camera_changed)
          {

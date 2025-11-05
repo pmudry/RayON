@@ -6,7 +6,7 @@ This is a complete hand-made re-implementation of the `InOneWeekend` version, to
 
 - single-threaded
 - multi-threaded
-- CUDA accellerated
+- CUDA accelerated
 
 It uses [single-file public domain (or MIT licensed) libraries for C/C++](https://github.com/nothings/stb/tree/master).
 

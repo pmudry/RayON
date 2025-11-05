@@ -18,12 +18,12 @@
 #pragma once
 
 #include "camera_base.h"
-#include "renderer_cpu.h"
-#include "renderer_cpu_parallel.h"
-#include "renderer_cuda.h"
+#include "cpu_renderers/renderer_cpu.h"
+#include "cpu_renderers/renderer_cpu_parallel.h"
+#include "gpu_renderers/renderer_cuda.h"
 
 #ifdef SDL2_FOUND
-#include "camera_progressive_sdl_cuda.h"
+#include "camera/sdl/camera_progressive_sdl_cuda.h"
 #endif
 
 /**

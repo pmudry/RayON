@@ -61,12 +61,6 @@ class Rectangle : public Hittable
       rec.p = intersection;
       rec.set_face_normal(r, normal);
 
-      // Mark as light if this is an area light
-      if (is_light)
-      {
-         rec.isMirror = false; // Reuse existing field to mark as light
-      }
-
       return true;
    }
 
