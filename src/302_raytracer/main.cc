@@ -232,7 +232,7 @@ int main(int argc, char *argv[])
 #ifdef SDL2_FOUND
    case 3:
       cout << "Using CUDA GPU with interactive SDL display..." << endl;
-      c.renderPixelsSDLContinuous(localImage, 2048, args.start_samples, args.auto_accumulate);  // Max 2048 samples, start_samples per batch
+      c.renderPixelsSDLContinuous(localImage, args.start_samples, args.auto_accumulate);
       break;
 #endif
    default:

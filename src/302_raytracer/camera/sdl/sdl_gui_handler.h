@@ -220,7 +220,8 @@ class SDLGuiHandler
          small_font = ttf_font;
 
       int padding = 15;
-      int control_width = 220;
+      int control_width = 280;
+      int label_width = 120;
       int slider_height = 25;
       int spacing = 8;
       int start_y = image_height - (4 * slider_height + 3 * spacing + padding);
@@ -234,11 +235,11 @@ class SDLGuiHandler
 
       drawToggleButton(small_font, padding, start_y, accumulation_enabled, white, toggle_button_rect);
       drawSamplesSlider(small_font, padding, start_y + slider_height + spacing, control_width, samples_per_batch, white,
-                      samples_slider_bounds);
+                      samples_slider_bounds, label_width);
       drawLightSlider(small_font, padding, start_y + 2 * slider_height + 2 * spacing, control_width, light_intensity,
-                      white, intensity_slider_bounds);
+                      white, intensity_slider_bounds, label_width);
       drawBackgroundSlider(small_font, padding, start_y + 3 * slider_height + 3 * spacing, control_width,
-                           background_intensity, white, background_slider_bounds);
+                           background_intensity, white, background_slider_bounds, label_width);
 
       if (small_font != ttf_font)
       {
@@ -397,7 +398,7 @@ class SDLGuiHandler
    }
 
    void drawSamplesSlider(TTF_Font *ttf_font, int padding, int y, int control_width, int samples_per_batch, SDL_Color white,
-                        SliderBounds &samples_slider)
+                        SliderBounds &samples_slider, int label_width)
    {
       char label[32];
       snprintf(label, sizeof(label), "Samples: %d", samples_per_batch);
@@ -414,8 +415,8 @@ class SDLGuiHandler
          SDL_FreeSurface(text_surface);
       }
 
-      int slider_x = padding + 80;
-      int slider_w = control_width - 80;
+      int slider_x = padding + label_width;
+      int slider_w = control_width - label_width;
       SDL_Rect slider_bg = {slider_x, y + 8, slider_w, 8};
       SDL_SetRenderDrawColor(renderer, 60, 60, 60, 255);
       SDL_RenderFillRect(renderer, &slider_bg);
@@ -440,7 +441,7 @@ class SDLGuiHandler
    }
 
    void drawLightSlider(TTF_Font *ttf_font, int padding, int y, int control_width, float light_intensity,
-                        SDL_Color white, SliderBounds &intensity_slider)
+                        SDL_Color white, SliderBounds &intensity_slider, int label_width)
    {
       char label[32];
       snprintf(label, sizeof(label), "Light: %.1f", light_intensity);
@@ -457,8 +458,8 @@ class SDLGuiHandler
          SDL_FreeSurface(text_surface);
       }
 
-      int slider_x = padding + 80;
-      int slider_w = control_width - 80;
+      int slider_x = padding + label_width;
+      int slider_w = control_width - label_width;
       SDL_Rect slider_bg = {slider_x, y + 8, slider_w, 8};
       SDL_SetRenderDrawColor(renderer, 60, 60, 60, 255);
       SDL_RenderFillRect(renderer, &slider_bg);
@@ -483,7 +484,7 @@ class SDLGuiHandler
    }
 
    void drawBackgroundSlider(TTF_Font *ttf_font, int padding, int y, int control_width, float background_intensity,
-                             SDL_Color white, SliderBounds &background_slider)
+                             SDL_Color white, SliderBounds &background_slider, int label_width)
    {
       char label[32];
       snprintf(label, sizeof(label), "Background: %.2f", background_intensity);
@@ -500,8 +501,8 @@ class SDLGuiHandler
          SDL_FreeSurface(text_surface);
       }
 
-      int slider_x = padding + 100;
-      int slider_w = control_width - 100;
+      int slider_x = padding + label_width;
+      int slider_w = control_width - label_width;
       SDL_Rect slider_bg = {slider_x, y + 8, slider_w, 8};
       SDL_SetRenderDrawColor(renderer, 60, 60, 60, 255);
       SDL_RenderFillRect(renderer, &slider_bg);

@@ -45,17 +45,19 @@ class RendererProgressiveSDL : virtual public CameraBase
     * GUI and camera controls are handled by separate dedicated classes.
     *
     * @param image The final image buffer to store the render
-    * @param max_samples Maximum total samples to accumulate (default: 2048)
+    * @param max_samples Maximum total samples to accumulate (default: 4096)
     * @param samples_per_batch Number of samples to add per batch (default: 8)
     * @param auto_accumulate Enable automatic sample accumulation (default: true)
     */
-   void renderPixelsSDLContinuous(vector<unsigned char> &image, int max_samples = 2048, int samples_per_batch = 8,
+   void renderPixelsSDLContinuous(vector<unsigned char> &image, int samples_per_batch = 8,
                                   bool auto_accumulate = true)
    {
       // Initialize GUI
       SDLGuiHandler gui(image_width, image_height);
       if (!gui.initialize())
          return;
+
+      int max_samples = samples_per_pixel;
 
       gui.printControls(samples_per_batch, max_samples, auto_accumulate);
 
