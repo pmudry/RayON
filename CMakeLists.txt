@@ -55,24 +55,55 @@ set ( EXTERNAL
 )
 
 set ( SOURCE_302_RAYTRACER
-  src/302_raytracer/utils.h
+  # Main source
   src/302_raytracer/main.cc
+  
+  # Core headers
+  src/302_raytracer/utils.h
   src/302_raytracer/vec3.h
   src/302_raytracer/color.h
-  src/302_raytracer/sphere.h
-  src/302_raytracer/cube.h
-  src/302_raytracer/material.h
-  src/302_raytracer/rectangle.h
+  src/302_raytracer/ray.h
+  src/302_raytracer/interval.h
+  src/302_raytracer/constants.h
+  src/302_raytracer/rnd_gen.h
+  
+  # Geometry
   src/302_raytracer/hittable.h
   src/302_raytracer/hittable_list.h
-  src/302_raytracer/interval.h
-  src/302_raytracer/rnd_gen.h
-  src/302_raytracer/camera.h
-  src/302_raytracer/camera_cuda.cu
-  src/302_raytracer/camera_cuda.h
+  src/302_raytracer/sphere.h
+  src/302_raytracer/cube.h
+  src/302_raytracer/rectangle.h
+  
+  # Materials
+  src/302_raytracer/material.h
+  
+  # Camera and renderers
+  src/302_raytracer/camera/camera.h
+  src/302_raytracer/camera/camera_base.h
+  src/302_raytracer/camera/camera_cuda.h
+  
+  # SDL renderers (if SDL2 is available)
+  src/302_raytracer/camera/sdl/camera_progressive_sdl_cuda.h
+  src/302_raytracer/camera/sdl/sdl_gui_handler.h
+  src/302_raytracer/camera/sdl/sdl_gui_controls.h
+  
+  # CPU renderers
+  src/302_raytracer/cpu_renderers/cpu_ray_tracer.h
+  src/302_raytracer/cpu_renderers/renderer_cpu.h
+  src/302_raytracer/cpu_renderers/renderer_cpu_parallel.h
+  
+  # GPU renderers
+  src/302_raytracer/gpu_renderers/renderer_cuda.h
+  src/302_raytracer/gpu_renderers/renderer_cuda.cu
 )
 
+# Add include directories to avoid ugly ../../ paths
 include_directories(src)
+include_directories(src/302_raytracer)
+include_directories(src/302_raytracer/camera)
+include_directories(src/302_raytracer/camera/sdl)
+include_directories(src/302_raytracer/cpu_renderers)
+include_directories(src/302_raytracer/gpu_renderers)
 
 # Ensure compile_commands.json is generated in the source directory
 set(CMAKE_COMPILE_COMMANDS_OUTPUT_DIR ${CMAKE_SOURCE_DIR})
