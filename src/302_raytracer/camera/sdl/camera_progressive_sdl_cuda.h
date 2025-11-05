@@ -29,8 +29,9 @@ extern "C" unsigned long long renderPixelsSDLAccumulative(unsigned char *image, 
                                                             double delta_u_x, double delta_u_y, double delta_u_z,
                                                             double delta_v_x, double delta_v_y, double delta_v_z,
                                                             int samples_to_add, int total_samples_so_far, int max_depth,
-                                                            void **d_rand_states_ptr);
+                                                            void **d_rand_states_ptr, void **d_accum_buffer_ptr);
 extern "C" void freeDeviceRandomStates(void *d_rand_states);
+extern "C" void freeDeviceAccumBuffer(void *d_accum_buffer);
 
 class RendererProgressiveSDL : virtual public CameraBase
 {
@@ -89,6 +90,7 @@ class RendererProgressiveSDL : virtual public CameraBase
       vector<unsigned char> display_image(image_width * image_height * image_channels);
       vector<float> accum_buffer(image_width * image_height * image_channels, 0.0f);
       void *d_rand_states = nullptr;
+      void *d_accum_buffer = nullptr;  // Persistent device accumulation buffer
 
       auto total_start = std::chrono::high_resolution_clock::now();
 
@@ -178,10 +180,16 @@ class RendererProgressiveSDL : virtual public CameraBase
             current_samples = 0;
             std::fill(accum_buffer.begin(), accum_buffer.end(), 0.0f);
 
+            // Free and reset device buffers on camera change
             if (d_rand_states != nullptr)
             {
                freeDeviceRandomStates(d_rand_states);
                d_rand_states = nullptr;
+            }
+            if (d_accum_buffer != nullptr)
+            {
+               freeDeviceAccumBuffer(d_accum_buffer);
+               d_accum_buffer = nullptr;
             }
 
             initialize(); // Recalculate camera parameters
@@ -202,7 +210,7 @@ class RendererProgressiveSDL : virtual public CameraBase
          if (current_samples < max_samples && !camera_changed && running && accumulation_enabled)
          {
             renderBatch(display_image, accum_buffer, current_samples, max_samples, samples_per_batch, gamma,
-                        d_rand_states);
+                        d_rand_states, d_accum_buffer);
 
             displayFrame(gui, display_image, current_samples, gamma, light_intensity, background_intensity,
                          accumulation_enabled, gamma_slider_bounds, intensity_slider_bounds, background_slider_bounds,
@@ -224,6 +232,10 @@ class RendererProgressiveSDL : virtual public CameraBase
       {
          freeDeviceRandomStates(d_rand_states);
       }
+      if (d_accum_buffer != nullptr)
+      {
+         freeDeviceAccumBuffer(d_accum_buffer);
+      }
 
       gui.cleanup();
    }
@@ -233,7 +245,7 @@ class RendererProgressiveSDL : virtual public CameraBase
     * @brief Render a batch of samples using CUDA
     */
    void renderBatch(vector<unsigned char> &display_image, vector<float> &accum_buffer, int &current_samples,
-                    int max_samples, int samples_per_batch, float gamma, void *&d_rand_states)
+                    int max_samples, int samples_per_batch, float gamma, void *&d_rand_states, void *&d_accum_buffer)
    {
       current_samples += samples_per_batch;
       if (current_samples > max_samples)
@@ -248,7 +260,7 @@ class RendererProgressiveSDL : virtual public CameraBase
           display_image.data(), accum_buffer.data(), image_width, image_height, camera_center.x(), camera_center.y(),
           camera_center.z(), pixel00_loc.x(), pixel00_loc.y(), pixel00_loc.z(), pixel_delta_u.x(), pixel_delta_u.y(),
           pixel_delta_u.z(), pixel_delta_v.x(), pixel_delta_v.y(), pixel_delta_v.z(), actual_samples_to_add,
-          current_samples, max_depth, &d_rand_states);
+          current_samples, max_depth, &d_rand_states, &d_accum_buffer);
 
       n_rays.fetch_add(cuda_ray_count, std::memory_order_relaxed);
 

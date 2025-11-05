@@ -22,7 +22,8 @@ extern "C"
                                        int max_depth);
 
    // Host function for accumulative rendering (adds samples to existing buffer)
-   // d_rand_states: Pass nullptr to initialize, or pass existing device pointer to reuse
+   // d_rand_states_ptr: Pass pointer to nullptr to initialize, pass existing pointer to reuse
+   // d_accum_buffer_ptr: Pass pointer to nullptr to initialize, pass existing pointer to reuse (stays on device)
    unsigned long long renderPixelsSDLAccumulative(unsigned char *image, float *accum_buffer,
                                                     int width, int height,
                                                     double cam_center_x, double cam_center_y, double cam_center_z,
@@ -30,10 +31,13 @@ extern "C"
                                                     double delta_u_x, double delta_u_y, double delta_u_z,
                                                     double delta_v_x, double delta_v_y, double delta_v_z,
                                                     int samples_to_add, int total_samples_so_far, int max_depth,
-                                                    void **d_rand_states);
+                                                    void **d_rand_states_ptr, void **d_accum_buffer_ptr);
    
    // Helper to free device random states
    void freeDeviceRandomStates(void *d_rand_states);
+   
+   // Helper to free device accumulation buffer
+   void freeDeviceAccumBuffer(void *d_accum_buffer);
    
    // Set global light intensity (affects area light emission)
    void setLightIntensity(float intensity);

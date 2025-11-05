@@ -810,10 +810,10 @@ __device__ bool hit_world(const ray_simple &r, float t_min, float t_max, hit_rec
  * @param r Ray to trace through the scene
  * @param state Random number generator state for Monte Carlo sampling
  * @param depth Remaining recursion depth (prevents infinite recursion)
- * @param ray_count Counter for total rays traced (for performance metrics)
+ * @param local_ray_count Local counter for rays traced (accumulated per-thread, no atomics)
  * @return Final color contribution from this ray
  */
-__device__ float3_simple ray_color(const ray_simple &r, curandState *state, int depth, unsigned long long *ray_count)
+__device__ float3_simple ray_color(const ray_simple &r, curandState *state, int depth, int &local_ray_count)
 {
     // Iterative ray tracing to avoid recursion overhead
     float3_simple accumulated_color(0, 0, 0);
@@ -822,8 +822,8 @@ __device__ float3_simple ray_color(const ray_simple &r, curandState *state, int 
     
     for (int bounce = 0; bounce < depth; bounce++)
     {
-        // Increment ray counter atomically
-        atomicAdd(ray_count, 1);
+        // Increment local ray counter (no atomics, much faster)
+        local_ray_count++;
 
         hit_record_simple rec;
         
@@ -1014,6 +1014,7 @@ __global__ void renderKernel(unsigned char *image, int width, int height, int sa
     float3_simple pixel_delta_v(delta_v_x, delta_v_y, delta_v_z);
 
     float3_simple pixel_color(0, 0, 0);
+    int local_ray_count = 0;
 
     // Use full samples but ensure each pixel is completely independent
     int actual_samples = samples_per_pixel;
@@ -1028,8 +1029,11 @@ __global__ void renderKernel(unsigned char *image, int width, int height, int sa
         float3_simple ray_direction = pixel_center - camera_center;
         ray_simple r(camera_center, ray_direction);
 
-        pixel_color = pixel_color + ray_color(r, local_rand_state, min(max_depth, 6), ray_count);
+        pixel_color = pixel_color + ray_color(r, local_rand_state, min(max_depth, 6), local_ray_count);
     }
+
+    // Atomically add thread's local ray count to global counter (one atomic per thread instead of per ray)
+    atomicAdd(ray_count, (unsigned long long)local_ray_count);
 
     // Anti-aliasing is done there
     pixel_color = pixel_color / (float)actual_samples;
@@ -1184,25 +1188,15 @@ extern "C" void freeDeviceRandomStates(void *d_rand_states) {
     }
 }
 
+extern "C" void freeDeviceAccumBuffer(void *d_accum_buffer) {
+    if (d_accum_buffer != nullptr) {
+        cudaFree(d_accum_buffer);
+    }
+}
 
 /**
- * @brief Accumulative rendering function that adds new samples to existing accumulated color buffer
- * 
- * This function allows progressive refinement by accumulating samples over multiple calls.
- * It maintains an internal float3 accumulation buffer and returns the properly averaged/gamma-corrected result.
- * 
- * @param image Output RGB image buffer (byte array)
- * @param accum_buffer Accumulation buffer (float3 array, same size as image). Pass nullptr to reset/start fresh.
- * @param width Image width
- * @param height Image height
- * @param cam_center_x,y,z Camera center position
- * @param pixel00_x,y,z Top-left pixel center
- * @param delta_u_x,y,z Pixel step in U direction
- * @param delta_v_x,y,z Pixel step in V direction
- * @param samples_to_add Number of new samples to add this iteration
- * @param total_samples_so_far Total samples accumulated (including these new ones)
- * @param max_depth Maximum ray bounce depth
- * @return Number of rays traced
+ * @brief CUDA kernel for accumulative rendering (progressive sampling)
+ * Adds new samples to existing accumulated color buffer
  */
 __global__ void renderPixelsKernel(float *accum_buffer, unsigned char *image, int width, int height,
                                           int samples_to_add, int total_samples_so_far, int max_depth,
@@ -1234,6 +1228,7 @@ __global__ void renderPixelsKernel(float *accum_buffer, unsigned char *image, in
 
     // Read existing accumulated color
     float3_simple accumulated_color(accum_buffer[base_idx], accum_buffer[base_idx + 1], accum_buffer[base_idx + 2]);
+    int local_ray_count = 0;
 
     // Add new samples
     for (int s = 0; s < samples_to_add; s++)
@@ -1245,8 +1240,11 @@ __global__ void renderPixelsKernel(float *accum_buffer, unsigned char *image, in
         float3_simple ray_direction = pixel_center - camera_center;
         ray_simple r(camera_center, ray_direction);
 
-        accumulated_color = accumulated_color + ray_color(r, local_rand_state, min(max_depth, 6), ray_count);
+        accumulated_color = accumulated_color + ray_color(r, local_rand_state, min(max_depth, 6), local_ray_count);
     }
+
+    // Atomically add thread's local ray count to global counter (one atomic per thread instead of per ray)
+    atomicAdd(ray_count, (unsigned long long)local_ray_count);
 
     // Store accumulated color back to buffer
     accum_buffer[base_idx] = accumulated_color.x;
@@ -1260,6 +1258,27 @@ __global__ void renderPixelsKernel(float *accum_buffer, unsigned char *image, in
     image[base_idx + 2] = 0;
 }
 
+/**
+ * @brief Accumulative rendering function that adds new samples to existing accumulated color buffer
+ * 
+ * This function allows progressive refinement by accumulating samples over multiple calls.
+ * The accumulation buffer stays on the GPU for maximum performance - no copying back and forth.
+ * 
+ * @param image Output RGB image buffer (byte array) - only copied to host when needed
+ * @param accum_buffer Host accumulation buffer (float3 array) - only used for initialization/final readback
+ * @param width Image width
+ * @param height Image height
+ * @param cam_center_x,y,z Camera center position
+ * @param pixel00_x,y,z Top-left pixel center
+ * @param delta_u_x,y,z Pixel step in U direction
+ * @param delta_v_x,y,z Pixel step in V direction
+ * @param samples_to_add Number of new samples to add this iteration
+ * @param total_samples_so_far Total samples accumulated (including these new ones)
+ * @param max_depth Maximum ray bounce depth
+ * @param d_rand_states_ptr Persistent device random states pointer
+ * @param d_accum_buffer_ptr Persistent device accumulation buffer pointer (stays on device!)
+ * @return Number of rays traced
+ */
 extern "C" unsigned long long renderPixelsSDLAccumulative(unsigned char *image, float *accum_buffer,
                                                             int width, int height,
                                                             double cam_center_x, double cam_center_y, double cam_center_z,
@@ -1267,7 +1286,7 @@ extern "C" unsigned long long renderPixelsSDLAccumulative(unsigned char *image, 
                                                             double delta_u_x, double delta_u_y, double delta_u_z,
                                                             double delta_v_x, double delta_v_y, double delta_v_z,
                                                             int samples_to_add, int total_samples_so_far, int max_depth,
-                                                            void **d_rand_states_ptr)
+                                                            void **d_rand_states_ptr, void **d_accum_buffer_ptr)
 {
     unsigned char *d_image;
     float *d_accum_buffer;
@@ -1278,34 +1297,43 @@ extern "C" unsigned long long renderPixelsSDLAccumulative(unsigned char *image, 
     size_t accum_size = width * height * 3 * sizeof(float);
     int num_pixels = width * height;
 
-    // Allocate device memory
+    // Allocate device memory for image (only used for kernel, not persistent)
     cudaMalloc(&d_image, image_size);
-    cudaMalloc(&d_accum_buffer, accum_size);
     cudaMalloc(&d_ray_count, sizeof(unsigned long long));
     
     // Handle persistent random states (keep allocated to avoid overhead)
-    bool need_init = false;
+    bool need_rand_init = false;
     if (*d_rand_states_ptr == nullptr) {
         // First call - allocate device memory and mark for initialization
         cudaMalloc(&d_rand_states, num_pixels * sizeof(curandState));
         *d_rand_states_ptr = d_rand_states;
-        need_init = true;
+        need_rand_init = true;
     } else {
         // Reuse existing allocation (random states continue from last batch)
         d_rand_states = (curandState*)*d_rand_states_ptr;
     }
 
+    // Handle persistent accumulation buffer (STAYS ON DEVICE - major optimization!)
+    bool need_accum_init = false;
+    if (*d_accum_buffer_ptr == nullptr) {
+        // First call - allocate device memory and copy initial data
+        cudaMalloc(&d_accum_buffer, accum_size);
+        *d_accum_buffer_ptr = d_accum_buffer;
+        cudaMemcpy(d_accum_buffer, accum_buffer, accum_size, cudaMemcpyHostToDevice);
+        need_accum_init = true;
+    } else {
+        // Reuse existing device buffer - NO COPY from host! Buffer stays on GPU.
+        d_accum_buffer = (float*)*d_accum_buffer_ptr;
+    }
+
     // Initialize ray count
     cudaMemset(d_ray_count, 0, sizeof(unsigned long long));
-
-    // Copy accumulation buffer to device
-    cudaMemcpy(d_accum_buffer, accum_buffer, accum_size, cudaMemcpyHostToDevice);
 
     dim3 threads(16, 16);
     dim3 blocks((width + threads.x - 1) / threads.x, (height + threads.y - 1) / threads.y);
     
     // Only initialize random states on first call (let them evolve naturally for proper antialiasing)
-    if (need_init) {
+    if (need_rand_init) {
         init_random_states<<<blocks, threads>>>(d_rand_states, num_pixels, 1234ULL, width);
         cudaDeviceSynchronize();
     }
@@ -1322,18 +1350,17 @@ extern "C" unsigned long long renderPixelsSDLAccumulative(unsigned char *image, 
 
     cudaDeviceSynchronize();
 
-    // Copy results back
-    cudaMemcpy(image, d_image, image_size, cudaMemcpyDeviceToHost);
+    // Copy results back - ONLY accumulation buffer when needed (caller decides)
+    // Image buffer is not used (gamma correction done on CPU)
     cudaMemcpy(accum_buffer, d_accum_buffer, accum_size, cudaMemcpyDeviceToHost);
 
     unsigned long long host_ray_count = 0;
     cudaMemcpy(&host_ray_count, d_ray_count, sizeof(unsigned long long), cudaMemcpyDeviceToHost);
 
-    // Cleanup (but keep random states alive!)
+    // Cleanup temporary buffers only (keep persistent buffers alive!)
     cudaFree(d_image);
-    cudaFree(d_accum_buffer);
     cudaFree(d_ray_count);
-    // Don't free d_rand_states - it's persistent!
+    // Don't free d_rand_states or d_accum_buffer - they're persistent!
 
     return host_ray_count;
 }
