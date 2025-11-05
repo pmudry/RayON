@@ -22,6 +22,9 @@
 
 #ifdef SDL2_FOUND
 #include <SDL.h>
+#ifdef SDL2_TTF_FOUND
+#include <SDL_ttf.h>
+#endif
 #define STB_IMAGE_STATIC
 #define STB_IMAGE_IMPLEMENTATION
 #include "../external/stb_image.h"
@@ -231,7 +234,7 @@ class Camera
     */
    bool renderTiled(vector<unsigned char> &image, int tiles_x, int tiles_y, SDL_Renderer *renderer, 
                     SDL_Texture *texture, SDL_Texture *logo_texture, const SDL_Rect &logo_rect,
-                    bool &running, bool &camera_changed)
+                    void *font, bool &running, bool &camera_changed)
    {
       int tile_width = (image_width + tiles_x - 1) / tiles_x;
       int tile_height = (image_height + tiles_y - 1) / tiles_y;
@@ -376,11 +379,76 @@ class Camera
                SDL_RenderCopy(renderer, logo_texture, nullptr, &logo_rect);
             }
             
+            // Draw sample count text in upper-right corner
+            drawSampleCountText(renderer, font, samples_per_pixel);
+            
             SDL_RenderPresent(renderer);
          }
       }
       
       return true; // Rendering completed successfully
+   }
+
+   /**
+    * @brief Draws the current sample count text in the upper-right corner using TTF
+    */
+   void drawSampleCountText(SDL_Renderer* renderer, void* font_ptr, int sample_count)
+   {
+#ifdef SDL2_TTF_FOUND
+      TTF_Font* font = static_cast<TTF_Font*>(font_ptr);
+      if (!font) return; // Skip if font not loaded
+      
+      // Create text string
+      std::string text = std::to_string(sample_count) + " SPP";
+      
+      // Render text to surface with white color
+      SDL_Color white = {255, 255, 255, 255};
+      SDL_Surface* text_surface = TTF_RenderText_Blended(font, text.c_str(), white);
+      if (!text_surface) return;
+      
+      // Create texture from surface
+      SDL_Texture* text_texture = SDL_CreateTextureFromSurface(renderer, text_surface);
+      
+      if (text_texture)
+      {
+         // Calculate position (upper-right corner with padding)
+         int text_width = text_surface->w;
+         int text_height = text_surface->h;
+         int padding = 15;
+         
+         // Fixed box width to accommodate "4096 SPP" (approximately 90 pixels at size 16)
+         int box_width = 90;
+         
+         // Draw semi-transparent background box with fixed width
+         SDL_Rect bg_rect = {
+            image_width - box_width - padding,
+            padding - 5,
+            box_width,
+            text_height + 10
+         };
+         SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 200); // Semi-transparent black
+         SDL_RenderFillRect(renderer, &bg_rect);
+         
+         // Center text within the fixed-width box
+         SDL_Rect text_rect = {
+            image_width - padding - box_width + (box_width - text_width) / 2,
+            padding,
+            text_width,
+            text_height
+         };
+         SDL_RenderCopy(renderer, text_texture, nullptr, &text_rect);
+         
+         SDL_DestroyTexture(text_texture);
+      }
+      
+      SDL_FreeSurface(text_surface);
+#else
+      // Fallback: do nothing if SDL_ttf is not available
+      (void)renderer;
+      (void)font_ptr;
+      (void)sample_count;
+#endif
    }
 
    /**
@@ -415,6 +483,16 @@ class Camera
          cerr << "SDL initialization failed: " << SDL_GetError() << endl;
          return;
       }
+      
+#ifdef SDL2_TTF_FOUND
+      // Initialize SDL_ttf for text rendering
+      if (TTF_Init() < 0)
+      {
+         cerr << "SDL_ttf initialization failed: " << TTF_GetError() << endl;
+         SDL_Quit();
+         return;
+      }
+#endif
 
       // Create window
       SDL_Window *window = SDL_CreateWindow("ISC - 302 ray tracer (mui) / Interactive mode (LMB:Rotate RMB:Pan Wheel:Zoom)", 
@@ -423,6 +501,9 @@ class Camera
       if (!window)
       {
          cerr << "Window creation failed: " << SDL_GetError() << endl;
+#ifdef SDL2_TTF_FOUND
+         TTF_Quit();
+#endif
          SDL_Quit();
          return;
       }
@@ -502,6 +583,19 @@ class Camera
       {
          cerr << "Warning: Could not load logo: " << stbi_failure_reason() << endl;
       }
+      
+      // Load font for text rendering (using system mono font or DejaVu Sans Mono)
+      void* font = nullptr;
+#ifdef SDL2_TTF_FOUND
+      font = TTF_OpenFont("/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf", 16);
+      if (!font) {
+         // Try alternative font path
+         font = TTF_OpenFont("/usr/share/fonts/TTF/DejaVuSansMono-Bold.ttf", 16);
+      }
+      if (!font) {
+         cerr << "Warning: Could not load font: " << TTF_GetError() << endl;
+      }
+#endif
 
       cout << "\n=== Interactive Progressive SDL Rendering ===" << endl;
       cout << "Controls:" << endl;
@@ -509,11 +603,9 @@ class Camera
       cout << "  Right Mouse Button: Pan camera" << endl;
       cout << "  Mouse Wheel:        Zoom in/out" << endl;
       cout << "  ESC:                Exit" << endl;
-      cout << "\nCamera movements automatically trigger re-rendering" << endl;
       cout << "Progressive quality stages: 8 → 16 → 32 → 64 → 128 → 256 samples" << endl;
       cout << "Full-frame rendering for 8 & 16 samples, 8x8 tiles for higher quality" << endl;
-      cout << "500ms delay after each stage to view quality improvements\n" << endl;
-
+      
       bool running = true;
       bool camera_changed = true; // Trigger initial render
       bool rendering = false; // Track if currently rendering
@@ -683,7 +775,7 @@ class Camera
 
             // Render with tiled CUDA rendering for responsiveness
             bool completed = renderTiled(stage_image, tiles_per_axis, tiles_per_axis, renderer, texture, 
-                                        logo_texture, logo_rect, running, camera_changed);
+                                        logo_texture, logo_rect, font, running, camera_changed);
 
             if (completed)
             {
@@ -729,6 +821,14 @@ class Camera
       cout << "\nTotal session time: " << timeStr(total_end - total_start) << endl;
 
       // Cleanup
+#ifdef SDL2_TTF_FOUND
+      if (font)
+      {
+         TTF_CloseFont(static_cast<TTF_Font*>(font));
+      }
+      TTF_Quit();
+#endif
+      
       if (logo_texture)
       {
          SDL_DestroyTexture(logo_texture);
