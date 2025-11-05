@@ -901,139 +901,148 @@ __device__ bool hit_world(const ray_simple &r, float t_min, float t_max, hit_rec
  */
 __device__ float3_simple ray_color(const ray_simple &r, curandState *state, int depth, unsigned long long *ray_count)
 {
-    if (depth <= 0)
-        return float3_simple(0, 0, 0);
-
-    // Increment ray counter atomically
-    atomicAdd(ray_count, 1);
-
-    hit_record_simple rec;
+    // Iterative ray tracing to avoid recursion overhead
+    float3_simple accumulated_color(0, 0, 0);
+    float3_simple accumulated_attenuation(1.0f, 1.0f, 1.0f);
+    ray_simple current_ray = r;
     
-    if (hit_world(r, 0.001f, FLT_MAX, rec))
+    for (int bounce = 0; bounce < depth; bounce++)
     {
-        // If we hit a light source, return its emission
-        if (rec.material == LIGHT)
+        // Increment ray counter atomically
+        atomicAdd(ray_count, 1);
+
+        hit_record_simple rec;
+        
+        if (hit_world(current_ray, 0.001f, FLT_MAX, rec))
         {
-            return rec.emission;
-        }
+            // If we hit a light source, accumulate its emission and stop
+            if (rec.material == LIGHT)
+            {
+                accumulated_color = accumulated_color + float3_simple(
+                    accumulated_attenuation.x * rec.emission.x,
+                    accumulated_attenuation.y * rec.emission.y,
+                    accumulated_attenuation.z * rec.emission.z);
+                return accumulated_color;
+            }
 
 #if DEBUG_GOLF_NORMALS
-        // Approximate golf ball hit detection by center/radius
-        const float3_simple golf_center(1.0f, 0.0f, -2.0f);
-        const float golf_radius = 0.5f;
-        float3_simple to_golf = float3_simple(rec.p.x - golf_center.x, rec.p.y - golf_center.y, rec.p.z - golf_center.z);
-        float dist = to_golf.length();
-        bool near_golf_surface = fabsf(dist - golf_radius) < 0.25f;
-        if (near_golf_surface)
-        {
+            // Approximate golf ball hit detection by center/radius
+            const float3_simple golf_center(1.0f, 0.0f, -2.0f);
+            const float golf_radius = 0.5f;
+            float3_simple to_golf = float3_simple(rec.p.x - golf_center.x, rec.p.y - golf_center.y, rec.p.z - golf_center.z);
+            float dist = to_golf.length();
+            bool near_golf_surface = fabsf(dist - golf_radius) < 0.25f;
+            if (near_golf_surface)
+            {
 #if DEBUG_GOLF_NORMALS == 1
-            return normal_to_color(rec.normal);
+                return normal_to_color(rec.normal);
 #elif DEBUG_GOLF_NORMALS == 2
-            // Visualize displacement value on unit sphere
-            float3_simple dir = dist > 1e-6f ? (to_golf / dist) : float3_simple(0, 0, 1);
-            float d = hexagonalDimplePattern(dir); // negative inside dimple
-            // Map: deeper dimple (more negative) -> brighter (abs)
-            return grayscale(fminf(fabsf(d) * 3.0f, 1.0f));
+                // Visualize displacement value on unit sphere
+                float3_simple dir = dist > 1e-6f ? (to_golf / dist) : float3_simple(0, 0, 1);
+                float d = hexagonalDimplePattern(dir); // negative inside dimple
+                // Map: deeper dimple (more negative) -> brighter (abs)
+                return grayscale(fminf(fabsf(d) * 3.0f, 1.0f));
 #elif DEBUG_GOLF_NORMALS == 3
-            // Visualize gradient magnitude of displacement field
-            float3_simple dir = dist > 1e-6f ? (to_golf / dist) : float3_simple(0, 0, 1);
-            // Build tangent basis
-            float3_simple helper = fabsf(dir.x) > 0.8f ? float3_simple(0, 1, 0) : float3_simple(1, 0, 0);
-            float3_simple t1 = unit_vector(cross(helper, dir));
-            float3_simple t2 = cross(dir, t1);
-            const float h = 0.02f;
-            float d0 = hexagonalDimplePattern(dir);
-            float d1 = hexagonalDimplePattern(unit_vector(float3_simple(dir.x + h * t1.x, dir.y + h * t1.y, dir.z + h * t1.z)));
-            float d2 = hexagonalDimplePattern(unit_vector(float3_simple(dir.x + h * t2.x, dir.y + h * t2.y, dir.z + h * t2.z)));
-            float dd1 = (d1 - d0) / h;
-            float dd2 = (d2 - d0) / h;
-            float mag = sqrtf(dd1 * dd1 + dd2 * dd2);
-            return grayscale(fminf(mag * 0.5f, 1.0f));
+                // Visualize gradient magnitude of displacement field
+                float3_simple dir = dist > 1e-6f ? (to_golf / dist) : float3_simple(0, 0, 1);
+                // Build tangent basis
+                float3_simple helper = fabsf(dir.x) > 0.8f ? float3_simple(0, 1, 0) : float3_simple(1, 0, 0);
+                float3_simple t1 = unit_vector(cross(helper, dir));
+                float3_simple t2 = cross(dir, t1);
+                const float h = 0.02f;
+                float d0 = hexagonalDimplePattern(dir);
+                float d1 = hexagonalDimplePattern(unit_vector(float3_simple(dir.x + h * t1.x, dir.y + h * t1.y, dir.z + h * t1.z)));
+                float d2 = hexagonalDimplePattern(unit_vector(float3_simple(dir.x + h * t2.x, dir.y + h * t2.y, dir.z + h * t2.z)));
+                float dd1 = (d1 - d0) / h;
+                float dd2 = (d2 - d0) / h;
+                float mag = sqrtf(dd1 * dd1 + dd2 * dd2);
+                return grayscale(fminf(mag * 0.5f, 1.0f));
 #else
-            return normal_to_color(rec.normal);
+                return normal_to_color(rec.normal);
 #endif
-        }
-#endif
-
-        float3_simple attenuation;
-        ray_simple scattered;
-
-        if (rec.material == LAMBERTIAN)
-        {
-            // Lambertian scattering - different colors for different spheres
-            float3_simple target = rec.p + rec.normal + random_in_hemisphere(rec.normal, state);
-            scattered = ray_simple(rec.p, target - rec.p); // Use a ray from rec.p to target, using direction relative to the origin rec.p point.
-            attenuation = rec.color;
-        }
-        else if (rec.material == MIRROR)
-        {
-            // Mirror reflection
-            float3_simple reflected = reflect(unit_vector(r.dir), rec.normal);
-            scattered = ray_simple(rec.p, reflected);
-            attenuation = float3_simple(.99f, .99f, .99f); // Slightly attenuate to avoid infinite bounces
-        }
-        else if (rec.material == ROUGH_MIRROR)
-        {
-            // Rough mirror reflection with surface imperfections and custom tint
-            float3_simple reflected = reflect_fuzzy(unit_vector(r.dir), rec.normal, rec.roughness, state);
-            scattered = ray_simple(rec.p, reflected);
-
-            // Rough mirrors use stored color as tint with reduced reflectivity
-            float base_reflectivity = 0.8f;
-            attenuation = float3_simple(
-                rec.color.x * base_reflectivity,
-                rec.color.y * base_reflectivity,
-                rec.color.z * base_reflectivity);
-        }
-        else if (rec.material == GLASS)
-        {
-            // Glass (dielectric) material
-            attenuation = float3_simple(1.0f, 1.0f, 1.0f); // Glass doesn't absorb light
-
-            // Monte Carlo approach to glass rendering: Instead of splitting the ray into separate
-            // reflection and refraction rays (which would double the ray count exponentially),
-            // we probabilistically choose ONE path per ray based on Fresnel reflectance.
-            // This maintains constant ray count while still producing physically accurate results
-            // through statistical sampling over many rays per pixel.
-
-            // Determine refraction ratio based on which side of the surface we're hitting
-            // When ray hits front face: going from air (n=1.0) into glass (n=1.5), so ratio = 1.0/1.5
-            // When ray hits back face: going from glass (n=1.5) into air (n=1.0), so ratio = 1.5/1.0
-            float refraction_ratio = rec.front_face ? (1.0f / rec.refractive_index) : rec.refractive_index;
-
-            float3_simple unit_direction = unit_vector(r.dir);
-
-            float cos_theta = fminf(dot(-unit_direction, rec.normal), 1.0f);
-            float sin_theta = sqrtf(1.0f - cos_theta * cos_theta);
-
-            bool cannot_refract = refraction_ratio * sin_theta > 1.0f;
-            float3_simple direction;
-
-            if (cannot_refract || reflectance(cos_theta, refraction_ratio) > random_float(state))
-            {
-                // Reflect
-                direction = reflect(unit_direction, rec.normal);
             }
-            else
+#endif
+
+            float3_simple attenuation;
+            ray_simple scattered;
+
+            if (rec.material == LAMBERTIAN)
             {
-                // Refract
-                direction = refract(unit_direction, rec.normal, refraction_ratio);
+                // Lambertian scattering - different colors for different spheres
+                float3_simple target = rec.p + rec.normal + random_in_hemisphere(rec.normal, state);
+                scattered = ray_simple(rec.p, target - rec.p);
+                attenuation = rec.color;
+            }
+            else if (rec.material == MIRROR)
+            {
+                // Mirror reflection
+                float3_simple reflected = reflect(unit_vector(current_ray.dir), rec.normal);
+                scattered = ray_simple(rec.p, reflected);
+                attenuation = float3_simple(.99f, .99f, .99f);
+            }
+            else if (rec.material == ROUGH_MIRROR)
+            {
+                // Rough mirror reflection with surface imperfections and custom tint
+                float3_simple reflected = reflect_fuzzy(unit_vector(current_ray.dir), rec.normal, rec.roughness, state);
+                scattered = ray_simple(rec.p, reflected);
+
+                float base_reflectivity = 0.8f;
+                attenuation = float3_simple(
+                    rec.color.x * base_reflectivity,
+                    rec.color.y * base_reflectivity,
+                    rec.color.z * base_reflectivity);
+            }
+            else if (rec.material == GLASS)
+            {
+                // Glass (dielectric) material
+                attenuation = float3_simple(1.0f, 1.0f, 1.0f);
+
+                float refraction_ratio = rec.front_face ? (1.0f / rec.refractive_index) : rec.refractive_index;
+                float3_simple unit_direction = unit_vector(current_ray.dir);
+                float cos_theta = fminf(dot(-unit_direction, rec.normal), 1.0f);
+                float sin_theta = sqrtf(1.0f - cos_theta * cos_theta);
+                bool cannot_refract = refraction_ratio * sin_theta > 1.0f;
+                float3_simple direction;
+
+                if (cannot_refract || reflectance(cos_theta, refraction_ratio) > random_float(state))
+                {
+                    direction = reflect(unit_direction, rec.normal);
+                }
+                else
+                {
+                    direction = refract(unit_direction, rec.normal, refraction_ratio);
+                }
+
+                scattered = ray_simple(rec.p, direction);
             }
 
-            scattered = ray_simple(rec.p, direction);
+            // Accumulate attenuation
+            accumulated_attenuation = float3_simple(
+                accumulated_attenuation.x * attenuation.x,
+                accumulated_attenuation.y * attenuation.y,
+                accumulated_attenuation.z * attenuation.z);
+            
+            // Continue with scattered ray
+            current_ray = scattered;
         }
-
-        float3_simple color = ray_color(scattered, state, depth - 1, ray_count);
-        float3_simple shaded_color = float3_simple(attenuation.x * color.x, attenuation.y * color.y, attenuation.z * color.z);
-        
-        return shaded_color;
+        else
+        {
+            // Ray escaped to background - accumulate background color and stop
+            float3_simple unit_direction = unit_vector(current_ray.dir);
+            float t = 0.5f * (unit_direction.y + 1.0f);
+            float3_simple background = (1.0f - t) * float3_simple(1.0f, 1.0f, 1.0f) + t * float3_simple(0.5f, 0.7f, 1.0f);
+            background = background * g_background_intensity;
+            
+            accumulated_color = accumulated_color + float3_simple(
+                accumulated_attenuation.x * background.x,
+                accumulated_attenuation.y * background.y,
+                accumulated_attenuation.z * background.z);
+            return accumulated_color;
+        }
     }
-
-    // Background gradient for the world
-    float3_simple unit_direction = unit_vector(r.dir);
-    float t = 0.5f * (unit_direction.y + 1.0f);
-    float3_simple background = (1.0f - t) * float3_simple(1.0f, 1.0f, 1.0f) + t * float3_simple(0.5f, 0.7f, 1.0f);
-    return background * g_background_intensity;
+    
+    // If we exhausted all bounces without hitting background or light, return black
+    return accumulated_color;
 }
 
 //==============================================================================
