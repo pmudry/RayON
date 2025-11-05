@@ -303,13 +303,25 @@ __device__ float smoothstep(float edge0, float edge1, float x)
  * @param num_states Total number of states to initialize
  * @param seed Base seed for random number generation
  */
-__global__ void init_random_states(curandState *rand_states, int num_states, unsigned long long seed)
+__global__ void init_random_states(curandState *rand_states, int num_states, unsigned long long seed, int width)
 {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    // Support both 1D and 2D grid launches
+    int idx;
+    if (gridDim.y == 1) {
+        // 1D launch
+        idx = blockIdx.x * blockDim.x + threadIdx.x;
+    } else {
+        // 2D launch - compute proper 1D index
+        int x = blockIdx.x * blockDim.x + threadIdx.x;
+        int y = blockIdx.y * blockDim.y + threadIdx.y;
+        idx = y * width + x;
+    }
+    
     if (idx < num_states)
     {
-        // Initialize each state with a unique seed based on index
-        curand_init(seed + idx, 0, 0, &rand_states[idx]);
+        // Initialize each state with a unique seed and sequence
+        // Using idx for sequence ensures different random streams per pixel
+        curand_init(seed, idx, 0, &rand_states[idx]);
     }
 }
 
@@ -1154,7 +1166,7 @@ extern "C" unsigned long long renderPixelsCUDA(unsigned char *image, int width, 
     // Initialize random states for all pixels
     int threads_per_block = 256;
     int num_blocks = (num_pixels + threads_per_block - 1) / threads_per_block;
-    init_random_states<<<num_blocks, threads_per_block>>>(d_rand_states, num_pixels, 1984);
+    init_random_states<<<num_blocks, threads_per_block>>>(d_rand_states, num_pixels, 1984, width);
     
     cudaError_t init_err = cudaGetLastError();
     if (init_err != cudaSuccess)
@@ -1221,4 +1233,170 @@ extern "C" unsigned long long renderPixelsCUDA(unsigned char *image, int width, 
     cudaFree(d_rand_states);
 
     return host_ray_count;
+}
+
+/**
+ * @brief Accumulative rendering function that adds new samples to existing accumulated color buffer
+ * 
+ * This function allows progressive refinement by accumulating samples over multiple calls.
+ * It maintains an internal float3 accumulation buffer and returns the properly averaged/gamma-corrected result.
+ * 
+ * @param image Output RGB image buffer (byte array)
+ * @param accum_buffer Accumulation buffer (float3 array, same size as image). Pass nullptr to reset/start fresh.
+ * @param width Image width
+ * @param height Image height
+ * @param cam_center_x,y,z Camera center position
+ * @param pixel00_x,y,z Top-left pixel center
+ * @param delta_u_x,y,z Pixel step in U direction
+ * @param delta_v_x,y,z Pixel step in V direction
+ * @param samples_to_add Number of new samples to add this iteration
+ * @param total_samples_so_far Total samples accumulated (including these new ones)
+ * @param max_depth Maximum ray bounce depth
+ * @return Number of rays traced
+ */
+__global__ void renderAccumulativeKernel(float *accum_buffer, unsigned char *image, int width, int height,
+                                          int samples_to_add, int total_samples_so_far, int max_depth,
+                                          float cam_center_x, float cam_center_y, float cam_center_z,
+                                          float pixel00_x, float pixel00_y, float pixel00_z,
+                                          float delta_u_x, float delta_u_y, float delta_u_z,
+                                          float delta_v_x, float delta_v_y, float delta_v_z,
+                                          unsigned long long *ray_count,
+                                          curandState *rand_states)
+{
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (x >= width || y >= height)
+        return;
+
+    int pixel_idx = y * width + x;
+    int base_idx = pixel_idx * 3;
+
+    if (pixel_idx >= width * height || base_idx + 2 >= width * height * 3)
+        return;
+
+    curandState *local_rand_state = &rand_states[pixel_idx];
+
+    float3_simple camera_center(cam_center_x, cam_center_y, cam_center_z);
+    float3_simple pixel00_loc(pixel00_x, pixel00_y, pixel00_z);
+    float3_simple pixel_delta_u(delta_u_x, delta_u_y, delta_u_z);
+    float3_simple pixel_delta_v(delta_v_x, delta_v_y, delta_v_z);
+
+    // Read existing accumulated color
+    float3_simple accumulated_color(accum_buffer[base_idx], accum_buffer[base_idx + 1], accum_buffer[base_idx + 2]);
+
+    // Add new samples
+    for (int s = 0; s < samples_to_add; s++)
+    {
+        float offset_u = random_float(local_rand_state) - 0.5f;
+        float offset_v = random_float(local_rand_state) - 0.5f;
+
+        float3_simple pixel_center = pixel00_loc + ((float)x + offset_u) * pixel_delta_u + ((float)y + offset_v) * pixel_delta_v;
+        float3_simple ray_direction = pixel_center - camera_center;
+        ray_simple r(camera_center, ray_direction);
+
+        accumulated_color = accumulated_color + ray_color(r, local_rand_state, min(max_depth, 6), ray_count);
+    }
+
+    // Store accumulated color back to buffer
+    accum_buffer[base_idx] = accumulated_color.x;
+    accum_buffer[base_idx + 1] = accumulated_color.y;
+    accum_buffer[base_idx + 2] = accumulated_color.z;
+
+    // Convert to display: average and gamma correct
+    float3_simple avg_color = accumulated_color / (float)total_samples_so_far;
+
+    // Gamma correction (gamma=2)
+    avg_color.x = sqrtf(fmaxf(avg_color.x, 0.0f));
+    avg_color.y = sqrtf(fmaxf(avg_color.y, 0.0f));
+    avg_color.z = sqrtf(fmaxf(avg_color.z, 0.0f));
+
+    // Convert to bytes with clamping
+    image[base_idx] = (unsigned char)(255.0f * fminf(fmaxf(avg_color.x, 0.0f), 1.0f));
+    image[base_idx + 1] = (unsigned char)(255.0f * fminf(fmaxf(avg_color.y, 0.0f), 1.0f));
+    image[base_idx + 2] = (unsigned char)(255.0f * fminf(fmaxf(avg_color.z, 0.0f), 1.0f));
+}
+
+extern "C" unsigned long long renderPixelsCUDAAccumulative(unsigned char *image, float *accum_buffer,
+                                                            int width, int height,
+                                                            double cam_center_x, double cam_center_y, double cam_center_z,
+                                                            double pixel00_x, double pixel00_y, double pixel00_z,
+                                                            double delta_u_x, double delta_u_y, double delta_u_z,
+                                                            double delta_v_x, double delta_v_y, double delta_v_z,
+                                                            int samples_to_add, int total_samples_so_far, int max_depth,
+                                                            void **d_rand_states_ptr)
+{
+    unsigned char *d_image;
+    float *d_accum_buffer;
+    unsigned long long *d_ray_count;
+    curandState *d_rand_states;
+
+    size_t image_size = width * height * 3 * sizeof(unsigned char);
+    size_t accum_size = width * height * 3 * sizeof(float);
+    int num_pixels = width * height;
+
+    // Allocate device memory
+    cudaMalloc(&d_image, image_size);
+    cudaMalloc(&d_accum_buffer, accum_size);
+    cudaMalloc(&d_ray_count, sizeof(unsigned long long));
+    
+    // Handle persistent random states (keep allocated to avoid overhead)
+    bool need_init = false;
+    if (*d_rand_states_ptr == nullptr) {
+        // First call - allocate device memory and mark for initialization
+        cudaMalloc(&d_rand_states, num_pixels * sizeof(curandState));
+        *d_rand_states_ptr = d_rand_states;
+        need_init = true;
+    } else {
+        // Reuse existing allocation (random states continue from last batch)
+        d_rand_states = (curandState*)*d_rand_states_ptr;
+    }
+
+    // Initialize ray count
+    cudaMemset(d_ray_count, 0, sizeof(unsigned long long));
+
+    // Copy accumulation buffer to device
+    cudaMemcpy(d_accum_buffer, accum_buffer, accum_size, cudaMemcpyHostToDevice);
+
+    dim3 threads(16, 16);
+    dim3 blocks((width + threads.x - 1) / threads.x, (height + threads.y - 1) / threads.y);
+    
+    // Only initialize random states on first call (let them evolve naturally for proper antialiasing)
+    if (need_init) {
+        init_random_states<<<blocks, threads>>>(d_rand_states, num_pixels, 1234ULL, width);
+        cudaDeviceSynchronize();
+    }
+    // Otherwise random states continue from where they left off in the previous batch
+
+    // Launch accumulative rendering kernel
+    renderAccumulativeKernel<<<blocks, threads>>>(d_accum_buffer, d_image, width, height,
+                                                   samples_to_add, total_samples_so_far, max_depth,
+                                                   (float)cam_center_x, (float)cam_center_y, (float)cam_center_z,
+                                                   (float)pixel00_x, (float)pixel00_y, (float)pixel00_z,
+                                                   (float)delta_u_x, (float)delta_u_y, (float)delta_u_z,
+                                                   (float)delta_v_x, (float)delta_v_y, (float)delta_v_z,
+                                                   d_ray_count, d_rand_states);
+
+    cudaDeviceSynchronize();
+
+    // Copy results back
+    cudaMemcpy(image, d_image, image_size, cudaMemcpyDeviceToHost);
+    cudaMemcpy(accum_buffer, d_accum_buffer, accum_size, cudaMemcpyDeviceToHost);
+
+    unsigned long long host_ray_count = 0;
+    cudaMemcpy(&host_ray_count, d_ray_count, sizeof(unsigned long long), cudaMemcpyDeviceToHost);
+
+    // Cleanup (but keep random states alive!)
+    cudaFree(d_image);
+    cudaFree(d_accum_buffer);
+    cudaFree(d_ray_count);
+    // Don't free d_rand_states - it's persistent!
+
+    return host_ray_count;
+}
+
+extern "C" void freeDeviceRandomStates(void *d_rand_states) {
+    if (d_rand_states != nullptr) {
+        cudaFree(d_rand_states);
+    }
 }

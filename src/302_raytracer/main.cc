@@ -180,7 +180,7 @@ int main(int argc, char *argv[])
    cout << "\t1. CPU parallel" << endl;
    cout << "\t2. CUDA GPU (default)" << endl;
 #ifdef SDL2_FOUND
-   cout << "\t3. CUDA GPU with progressive SDL display" << endl;
+   cout << "\t3. CUDA GPU with interactive SDL display" << endl;
 #endif
    cout << "Enter choice (0, 1, 2" 
 #ifdef SDL2_FOUND
@@ -211,8 +211,8 @@ int main(int argc, char *argv[])
       break;
 #ifdef SDL2_FOUND
    case 3:
-      cout << "Using CUDA GPU with progressive SDL display..." << endl;
-      c.renderPixelsSDLProgressive(localImage, {8, 16, 32, 64, 128, 256});
+      cout << "Using CUDA GPU with interactive SDL display..." << endl;
+      c.renderPixelsSDLContinuous(localImage, 1024, 4);  // Max 1024 samples, add 4 per batch
       break;
 #endif
    default:
