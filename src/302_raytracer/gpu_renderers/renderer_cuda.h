@@ -1,5 +1,5 @@
 /**
- * @class CameraCUDA
+ * @class RendererCUDA
  * @brief CUDA GPU renderer
  *
  * This renderer implements GPU-accelerated ray tracing using CUDA, significantly
@@ -7,7 +7,7 @@
  */
 #pragma once
 
-#include "camera_base.h"
+#include "../camera/camera_base.h"
 #include <vector>
 
 #ifdef __cplusplus
@@ -23,7 +23,7 @@ extern "C"
 
    // Host function for accumulative rendering (adds samples to existing buffer)
    // d_rand_states: Pass nullptr to initialize, or pass existing device pointer to reuse
-   unsigned long long renderPixelsCUDAAccumulative(unsigned char *image, float *accum_buffer,
+   unsigned long long renderPixelsSDLAccumulative(unsigned char *image, float *accum_buffer,
                                                     int width, int height,
                                                     double cam_center_x, double cam_center_y, double cam_center_z,
                                                     double pixel00_x, double pixel00_y, double pixel00_z,

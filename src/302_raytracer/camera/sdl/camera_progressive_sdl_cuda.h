@@ -22,7 +22,7 @@
 // Forward declarations of CUDA functions
 extern "C" void setLightIntensity(float intensity);
 extern "C" void setBackgroundIntensity(float intensity);
-extern "C" unsigned long long renderPixelsCUDAAccumulative(unsigned char *image, float *accum_buffer,
+extern "C" unsigned long long renderPixelsSDLAccumulative(unsigned char *image, float *accum_buffer,
                                                             int width, int height,
                                                             double cam_center_x, double cam_center_y, double cam_center_z,
                                                             double pixel00_x, double pixel00_y, double pixel00_z,
@@ -244,7 +244,7 @@ class RendererProgressiveSDL : virtual public CameraBase
          actual_samples_to_add = max_samples - (current_samples - samples_per_batch);
 
       // Call CUDA to render and accumulate samples
-      unsigned long long cuda_ray_count = ::renderPixelsCUDAAccumulative(
+      unsigned long long cuda_ray_count = ::renderPixelsSDLAccumulative(
           display_image.data(), accum_buffer.data(), image_width, image_height, camera_center.x(), camera_center.y(),
           camera_center.z(), pixel00_loc.x(), pixel00_loc.y(), pixel00_loc.z(), pixel_delta_u.x(), pixel_delta_u.y(),
           pixel_delta_u.z(), pixel_delta_v.x(), pixel_delta_v.y(), pixel_delta_v.z(), actual_samples_to_add,

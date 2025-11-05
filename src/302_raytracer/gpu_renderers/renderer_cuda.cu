@@ -1,5 +1,5 @@
 /**
- * @file camera_cuda.cu
+ * @file renderer_cuda.cu
  * @brief CUDA-accelerated ray tracing implementation with support for various materials
  *        including displacement-mapped spheres for organic surface variations.
  *
@@ -9,6 +9,8 @@
  * - Noise-based surface displacement for organic sphere deformation
  * - Multi-threaded rendering with anti-aliasing
  */
+
+#include "cuda_float3.cuh"
 
 #include <cuda_runtime.h>
 #include <curand_kernel.h>
@@ -33,94 +35,6 @@ __constant__ float g_background_intensity = 1.0f;
 // 2 = show displacement value (grayscale, brighter = deeper dimple)
 // 3 = show gradient magnitude (grayscale)
 #define DEBUG_GOLF_NORMALS 0
-
-//==============================================================================
-// VECTOR MATH AND UTILITY STRUCTURES
-//==============================================================================
-
-/**
- * @brief Simple 3D vector structure optimized for CUDA
- * Provides basic vector operations for ray tracing computations
- */
-struct float3_simple
-{
-    float x, y, z;
-    __device__ float3_simple() : x(0), y(0), z(0) {}
-    __device__ float3_simple(float x_, float y_, float z_) : x(x_), y(y_), z(z_) {}
-
-    __device__ float3_simple operator+(const float3_simple &other) const
-    {
-        return float3_simple(x + other.x, y + other.y, z + other.z);
-    }
-
-    __device__ float3_simple operator-(const float3_simple &other) const
-    {
-        return float3_simple(x - other.x, y - other.y, z - other.z);
-    }
-
-    __device__ float3_simple operator*(float t) const
-    {
-        return float3_simple(x * t, y * t, z * t);
-    }
-
-    __device__ float3_simple operator/(float t) const
-    {
-        return float3_simple(x / t, y / t, z / t);
-    }
-
-    __device__ float3_simple operator-() const
-    {
-        return float3_simple(-x, -y, -z);
-    }
-
-    __device__ float length() const
-    {
-        return sqrtf(x * x + y * y + z * z);
-    }
-
-    __device__ float length_squared() const
-    {
-        return x * x + y * y + z * z;
-    }
-};
-
-__device__ float3_simple operator*(float t, const float3_simple &v)
-{
-    return v * t;
-}
-
-/** @brief Compute dot product of two vectors */
-__device__ float dot(const float3_simple &a, const float3_simple &b)
-{
-    return a.x * b.x + a.y * b.y + a.z * b.z;
-}
-
-/** @brief Compute cross product of two vectors */
-__device__ float3_simple cross(const float3_simple &a, const float3_simple &b)
-{
-    return float3_simple(
-        a.y * b.z - a.z * b.y,
-        a.z * b.x - a.x * b.z,
-        a.x * b.y - a.y * b.x);
-}
-
-/** @brief Normalize a vector to unit length */
-__device__ float3_simple unit_vector(const float3_simple &v)
-{
-    return v / v.length();
-}
-
-/** @brief Convert a normal to a debug RGB color */
-__device__ inline float3_simple normal_to_color(const float3_simple &n)
-{
-    return float3_simple(0.5f * (n.x + 1.0f), 0.5f * (n.y + 1.0f), 0.5f * (n.z + 1.0f));
-}
-
-__device__ inline float3_simple grayscale(float v)
-{
-    v = fmaxf(0.0f, fminf(1.0f, v));
-    return float3_simple(v, v, v);
-}
 
 //==============================================================================
 // OPTICAL PHYSICS FUNCTIONS
@@ -1254,6 +1168,23 @@ extern "C" unsigned long long renderPixelsCUDA(unsigned char *image, int width, 
     return host_ray_count;
 }
 
+extern "C" void setLightIntensity(float intensity)
+{
+    cudaMemcpyToSymbol(g_light_intensity, &intensity, sizeof(float));
+}
+
+extern "C" void setBackgroundIntensity(float intensity)
+{
+    cudaMemcpyToSymbol(g_background_intensity, &intensity, sizeof(float));
+}
+
+extern "C" void freeDeviceRandomStates(void *d_rand_states) {
+    if (d_rand_states != nullptr) {
+        cudaFree(d_rand_states);
+    }
+}
+
+
 /**
  * @brief Accumulative rendering function that adds new samples to existing accumulated color buffer
  * 
@@ -1273,7 +1204,7 @@ extern "C" unsigned long long renderPixelsCUDA(unsigned char *image, int width, 
  * @param max_depth Maximum ray bounce depth
  * @return Number of rays traced
  */
-__global__ void renderAccumulativeKernel(float *accum_buffer, unsigned char *image, int width, int height,
+__global__ void renderPixelsKernel(float *accum_buffer, unsigned char *image, int width, int height,
                                           int samples_to_add, int total_samples_so_far, int max_depth,
                                           float cam_center_x, float cam_center_y, float cam_center_z,
                                           float pixel00_x, float pixel00_y, float pixel00_z,
@@ -1329,17 +1260,7 @@ __global__ void renderAccumulativeKernel(float *accum_buffer, unsigned char *ima
     image[base_idx + 2] = 0;
 }
 
-extern "C" void setLightIntensity(float intensity)
-{
-    cudaMemcpyToSymbol(g_light_intensity, &intensity, sizeof(float));
-}
-
-extern "C" void setBackgroundIntensity(float intensity)
-{
-    cudaMemcpyToSymbol(g_background_intensity, &intensity, sizeof(float));
-}
-
-extern "C" unsigned long long renderPixelsCUDAAccumulative(unsigned char *image, float *accum_buffer,
+extern "C" unsigned long long renderPixelsSDLAccumulative(unsigned char *image, float *accum_buffer,
                                                             int width, int height,
                                                             double cam_center_x, double cam_center_y, double cam_center_z,
                                                             double pixel00_x, double pixel00_y, double pixel00_z,
@@ -1391,7 +1312,7 @@ extern "C" unsigned long long renderPixelsCUDAAccumulative(unsigned char *image,
     // Otherwise random states continue from where they left off in the previous batch
 
     // Launch accumulative rendering kernel
-    renderAccumulativeKernel<<<blocks, threads>>>(d_accum_buffer, d_image, width, height,
+    renderPixelsKernel<<<blocks, threads>>>(d_accum_buffer, d_image, width, height,
                                                    samples_to_add, total_samples_so_far, max_depth,
                                                    (float)cam_center_x, (float)cam_center_y, (float)cam_center_z,
                                                    (float)pixel00_x, (float)pixel00_y, (float)pixel00_z,
@@ -1417,8 +1338,3 @@ extern "C" unsigned long long renderPixelsCUDAAccumulative(unsigned char *image,
     return host_ray_count;
 }
 
-extern "C" void freeDeviceRandomStates(void *d_rand_states) {
-    if (d_rand_states != nullptr) {
-        cudaFree(d_rand_states);
-    }
-}

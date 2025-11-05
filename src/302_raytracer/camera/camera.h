@@ -33,7 +33,7 @@
  * This class inherits from all renderer classes to provide a unified interface.
  * Virtual inheritance is used to avoid the diamond problem with CameraBase.
  */
-class Camera : public RendererCPU, public RendererCPUParallel, public CameraCUDA
+class Camera : public RendererCPU, public RendererCPUParallel, public RendererCUDA
 #ifdef SDL2_FOUND
                ,
                public RendererProgressiveSDL

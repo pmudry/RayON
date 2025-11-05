@@ -1,6 +1,6 @@
 # A simple yet pretty cool ray-tracer in CPP for CS302 HPC
 
-Based on https://github.com/RayTracing/raytracing.github.io/tree/release/src/InOneWeekend, an amazing resource ! 
+Based on <https://github.com/RayTracing/raytracing.github.io/tree/release/src/InOneWeekend>, an amazing resource ! 
 
 This is a complete hand-made re-implementation of the `InOneWeekend` version, to get started and understand how it works. There are multiple implementations : 
 
@@ -43,6 +43,7 @@ ninja && echo "2" | ./302_raytracer
 Install extension `clangd` from `LLVM`. This is all you need. There are *tasks* created in the `.vscode` folder that can be launched with `CTRL+Shift+P` -> Tasks and then you can build, and run. You can even setup key bindings for that.
 
 # TODOs 
+
 - Prepare basic GPU version rendering pipeline
 - Prepare basic C++ version for students
 - Check tools installation (ninja), libs and stuff
