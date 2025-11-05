@@ -37,7 +37,7 @@ class CameraControlHandler
       camera_elevation = asin(to_camera.y() / camera_distance);
    }
 
-   bool handleKeyDown(SDL_Event &event, bool &accumulation_enabled, float &gamma, float &light_intensity,
+   bool handleKeyDown(SDL_Event &event, bool &accumulation_enabled, float &samples_per_batch, float &light_intensity,
                       float &background_intensity, bool &needs_rerender, bool &camera_changed)
    {
       if (event.key.keysym.sym == SDLK_SPACE)
@@ -52,14 +52,14 @@ class CameraControlHandler
       }
       else if (event.key.keysym.sym == SDLK_UP)
       {
-         gamma = std::min(3.0f, gamma + 0.1f);
-         needs_rerender = true;
+         // Increase samples per batch (capped at 256)
+         samples_per_batch = std::min(256.0f, samples_per_batch + 1.0f);
          return true;
       }
       else if (event.key.keysym.sym == SDLK_DOWN)
       {
-         gamma = std::max(0.5f, gamma - 0.1f);
-         needs_rerender = true;
+         // Decrease samples per batch (minimum 1)
+         samples_per_batch = std::max(1.0f, samples_per_batch - 1.0f);
          return true;
       }
       else if (event.key.keysym.sym == SDLK_RIGHT)
@@ -78,9 +78,9 @@ class CameraControlHandler
    }
 
    bool handleMouseButtonDown(SDL_Event &event, bool &dragging_slider, SliderBounds *&active_slider,
-                              SliderBounds &gamma_slider_bounds, SliderBounds &intensity_slider_bounds,
+                              SliderBounds &samples_slider_bounds, SliderBounds &intensity_slider_bounds,
                               SliderBounds &background_slider_bounds, SDL_Rect &toggle_button_rect,
-                              bool &accumulation_enabled, float &gamma, float &light_intensity,
+                              bool &accumulation_enabled, float &samples_per_batch, float &light_intensity,
                               float &background_intensity, bool &needs_rerender, bool &camera_changed,
                               bool show_controls)
    {
@@ -100,7 +100,7 @@ class CameraControlHandler
                return true;
             }
             // Check sliders
-            else if (checkSliderClick(mx, my, gamma_slider_bounds, dragging_slider, active_slider, gamma,
+            else if (checkSliderClick(mx, my, samples_slider_bounds, dragging_slider, active_slider, samples_per_batch,
                                       needs_rerender, camera_changed))
             {
                return true;
@@ -150,8 +150,8 @@ class CameraControlHandler
    }
 
    bool handleMouseMotion(SDL_Event &event, bool &dragging_slider, SliderBounds *&active_slider,
-                          SliderBounds &gamma_slider_bounds, SliderBounds &intensity_slider_bounds,
-                          SliderBounds &background_slider_bounds, float &gamma, float &light_intensity,
+                          SliderBounds &samples_slider_bounds, SliderBounds &intensity_slider_bounds,
+                          SliderBounds &background_slider_bounds, float &samples_per_batch, float &light_intensity,
                           float &background_intensity, bool &needs_rerender, bool &camera_changed, Point3 &lookfrom,
                           Point3 &lookat, const Vec3 &vup, const Vec3 &w, bool show_controls)
    {
@@ -167,10 +167,10 @@ class CameraControlHandler
          ratio = std::max(0.0f, std::min(1.0f, ratio));
          float new_value = active_slider->min_val + ratio * (active_slider->max_val - active_slider->min_val);
 
-         if (active_slider == &gamma_slider_bounds)
+         if (active_slider == &samples_slider_bounds)
          {
-            gamma = new_value;
-            needs_rerender = true;
+            samples_per_batch = new_value;
+            // No need to re-render, just update for next batch
          }
          else if (active_slider == &intensity_slider_bounds)
          {

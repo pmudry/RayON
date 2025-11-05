@@ -68,17 +68,18 @@ class RendererProgressiveSDL : virtual public CameraBase
       bool camera_changed = true;
       bool accumulation_enabled = auto_accumulate;
       int current_samples = 0;
-      float gamma = 2.0f;
+      float gamma = 2.0f;  // Fixed gamma value
       float light_intensity = 1.0f;
       float background_intensity = 1.0f;
       bool needs_rerender = false;
+      float samples_per_batch_float = static_cast<float>(samples_per_batch);  // Float version for slider
 
       // Set initial rendering parameters
       ::setLightIntensity(light_intensity);
       ::setBackgroundIntensity(background_intensity);
 
       // UI state
-      SliderBounds gamma_slider_bounds = {0, 0, 0, 0, 0.5f, 3.0f, &gamma};
+      SliderBounds samples_slider_bounds = {0, 0, 0, 0, 1.0f, 256.0f, &samples_per_batch_float};
       SliderBounds intensity_slider_bounds = {0, 0, 0, 0, 0.1f, 3.0f, &light_intensity};
       SliderBounds background_slider_bounds = {0, 0, 0, 0, 0.0f, 3.0f, &background_intensity};
       SDL_Rect toggle_button_rect = {0, 0, 0, 0};
@@ -111,9 +112,12 @@ class RendererProgressiveSDL : virtual public CameraBase
                {
                   gui.toggleControls();
                }
-               else if (camera_control.handleKeyDown(event, accumulation_enabled, gamma, light_intensity,
+               else if (camera_control.handleKeyDown(event, accumulation_enabled, samples_per_batch_float, light_intensity,
                                                       background_intensity, needs_rerender, camera_changed))
                {
+                  // Sync samples_per_batch from float slider value
+                  samples_per_batch = static_cast<int>(samples_per_batch_float);
+                  
                   if (camera_changed)
                   {
                      ::setLightIntensity(light_intensity);
@@ -121,16 +125,18 @@ class RendererProgressiveSDL : virtual public CameraBase
                   }
                   if (accumulation_enabled != auto_accumulate)
                   {
-                     cout << "\n[Auto-accumulation " << (accumulation_enabled ? "ENABLED" : "DISABLED") << "]" << endl;
                      auto_accumulate = accumulation_enabled;
                   }
                }
             }
             else if (event.type == SDL_MOUSEBUTTONDOWN)
             {
+               // Sync samples_per_batch from float slider value
+               samples_per_batch = static_cast<int>(samples_per_batch_float);
+               
                if (camera_control.handleMouseButtonDown(
-                       event, dragging_slider, active_slider, gamma_slider_bounds, intensity_slider_bounds,
-                       background_slider_bounds, toggle_button_rect, accumulation_enabled, gamma, light_intensity,
+                       event, dragging_slider, active_slider, samples_slider_bounds, intensity_slider_bounds,
+                       background_slider_bounds, toggle_button_rect, accumulation_enabled, samples_per_batch_float, light_intensity,
                        background_intensity, needs_rerender, camera_changed, gui.getShowControls()))
                {
                   if (camera_changed)
@@ -139,8 +145,7 @@ class RendererProgressiveSDL : virtual public CameraBase
                      ::setBackgroundIntensity(background_intensity);
                   }
                   if (accumulation_enabled != auto_accumulate)
-                  {
-                     cout << "\n[Auto-accumulation " << (accumulation_enabled ? "ENABLED" : "DISABLED") << "]" << endl;
+                  {                   
                      auto_accumulate = accumulation_enabled;
                   }
                }
@@ -151,11 +156,14 @@ class RendererProgressiveSDL : virtual public CameraBase
             }
             else if (event.type == SDL_MOUSEMOTION)
             {
-               if (camera_control.handleMouseMotion(event, dragging_slider, active_slider, gamma_slider_bounds,
-                                                    intensity_slider_bounds, background_slider_bounds, gamma,
+               if (camera_control.handleMouseMotion(event, dragging_slider, active_slider, samples_slider_bounds,
+                                                    intensity_slider_bounds, background_slider_bounds, samples_per_batch_float,
                                                     light_intensity, background_intensity, needs_rerender,
                                                     camera_changed, lookfrom, lookat, vup, w, gui.getShowControls()))
                {
+                  // Sync samples_per_batch from float slider value
+                  samples_per_batch = static_cast<int>(samples_per_batch_float);
+                  
                   if (camera_changed)
                   {
                      ::setLightIntensity(light_intensity);
@@ -199,28 +207,43 @@ class RendererProgressiveSDL : virtual public CameraBase
          if (needs_rerender && current_samples > 0)
          {
             applyGammaCorrection(display_image, accum_buffer, current_samples, gamma);
-            displayFrame(gui, display_image, current_samples, gamma, light_intensity, background_intensity,
-                         accumulation_enabled, gamma_slider_bounds, intensity_slider_bounds, background_slider_bounds,
+            displayFrame(gui, display_image, current_samples, samples_per_batch, light_intensity, background_intensity,
+                         accumulation_enabled, samples_slider_bounds, intensity_slider_bounds, background_slider_bounds,
                          toggle_button_rect);
             image = display_image;
             needs_rerender = false;
          }
 
-         // Accumulate more samples if enabled
-         if (current_samples < max_samples && !camera_changed && running && accumulation_enabled)
+         // Render logic: accumulate if enabled, or render once if auto-accumulation is off
+         bool should_render = current_samples < max_samples && !camera_changed && running;
+         bool needs_initial_render = current_samples == 0 && !accumulation_enabled; // Render at least once when auto-accumulation is off
+         
+         if (should_render && (accumulation_enabled || needs_initial_render))
          {
             renderBatch(display_image, accum_buffer, current_samples, max_samples, samples_per_batch, gamma,
                         d_rand_states, d_accum_buffer);
 
-            displayFrame(gui, display_image, current_samples, gamma, light_intensity, background_intensity,
-                         accumulation_enabled, gamma_slider_bounds, intensity_slider_bounds, background_slider_bounds,
+            displayFrame(gui, display_image, current_samples, samples_per_batch, light_intensity, background_intensity,
+                         accumulation_enabled, samples_slider_bounds, intensity_slider_bounds, background_slider_bounds,
                          toggle_button_rect);
 
             image = display_image;
          }
          else if (current_samples >= max_samples && !camera_changed)
          {
+            // Refresh display even when idle to show logo and UI
+            displayFrame(gui, display_image, current_samples, samples_per_batch, light_intensity, background_intensity,
+                         accumulation_enabled, samples_slider_bounds, intensity_slider_bounds, background_slider_bounds,
+                         toggle_button_rect);
             SDL_Delay(16); // ~60 FPS event polling
+         }
+         else if (!accumulation_enabled && current_samples > 0 && !camera_changed)
+         {
+            // Refresh display even when idle to show logo and UI
+            displayFrame(gui, display_image, current_samples, samples_per_batch, light_intensity, background_intensity,
+                         accumulation_enabled, samples_slider_bounds, intensity_slider_bounds, background_slider_bounds,
+                         toggle_button_rect);
+            SDL_Delay(16); // ~60 FPS event polling (already rendered once, waiting for user input)
          }
       }
 
@@ -304,15 +327,15 @@ class RendererProgressiveSDL : virtual public CameraBase
    /**
     * @brief Update the display with current frame and UI
     */
-   void displayFrame(SDLGuiHandler &gui, const vector<unsigned char> &display_image, int current_samples, float gamma,
+   void displayFrame(SDLGuiHandler &gui, const vector<unsigned char> &display_image, int current_samples, int samples_per_batch,
                      float light_intensity, float background_intensity, bool accumulation_enabled,
-                     SliderBounds &gamma_slider_bounds, SliderBounds &intensity_slider_bounds,
+                     SliderBounds &samples_slider_bounds, SliderBounds &intensity_slider_bounds,
                      SliderBounds &background_slider_bounds, SDL_Rect &toggle_button_rect)
    {
       gui.updateDisplay(display_image, image_channels);
       gui.drawLogo();
       gui.drawSampleCountText(current_samples);
-      gui.drawUIControls(gamma, light_intensity, background_intensity, accumulation_enabled, gamma_slider_bounds,
+      gui.drawUIControls(samples_per_batch, light_intensity, background_intensity, accumulation_enabled, samples_slider_bounds,
                          intensity_slider_bounds, background_slider_bounds, toggle_button_rect);
       gui.present();
    }

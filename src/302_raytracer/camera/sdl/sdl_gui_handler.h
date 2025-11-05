@@ -202,8 +202,8 @@ class SDLGuiHandler
 #endif
    }
 
-   void drawUIControls(float gamma, float light_intensity, float background_intensity, bool accumulation_enabled,
-                       SliderBounds &gamma_slider_bounds, SliderBounds &intensity_slider_bounds,
+   void drawUIControls(int samples_per_batch, float light_intensity, float background_intensity, bool accumulation_enabled,
+                       SliderBounds &samples_slider_bounds, SliderBounds &intensity_slider_bounds,
                        SliderBounds &background_slider_bounds, SDL_Rect &toggle_button_rect)
    {
       // Don't draw controls if they're hidden
@@ -233,8 +233,8 @@ class SDLGuiHandler
       SDL_RenderFillRect(renderer, &bg_rect);
 
       drawToggleButton(small_font, padding, start_y, accumulation_enabled, white, toggle_button_rect);
-      drawGammaSlider(small_font, padding, start_y + slider_height + spacing, control_width, gamma, white,
-                      gamma_slider_bounds);
+      drawSamplesSlider(small_font, padding, start_y + slider_height + spacing, control_width, samples_per_batch, white,
+                      samples_slider_bounds);
       drawLightSlider(small_font, padding, start_y + 2 * slider_height + 2 * spacing, control_width, light_intensity,
                       white, intensity_slider_bounds);
       drawBackgroundSlider(small_font, padding, start_y + 3 * slider_height + 3 * spacing, control_width,
@@ -258,7 +258,7 @@ class SDLGuiHandler
       cout << "  H:                   Hide/show GUI controls" << endl;
       cout << "  Up/Down Arrows:      Adjust gamma (0.5-3.0)" << endl;
       cout << "  Left/Right Arrows:   Adjust light intensity (0.1-3.0)" << endl;
-      cout << "  ESC:                 Exit" << endl;
+      cout << "  ESC:                 Exit" << endl <<endl;
       cout << "Sample accumulation: " << samples_per_batch << " samples per batch, up to " << max_samples
            << " total samples" << endl;
       cout << "Auto-accumulation: " << (auto_accumulate ? "ON" : "OFF") << endl;
@@ -305,7 +305,7 @@ class SDLGuiHandler
    void loadLogo()
    {
       int logo_img_width, logo_img_height, logo_img_channels;
-      unsigned char *logo_data = stbi_load("../res/ISC Logo inline white v3 - 1500px.png", &logo_img_width,
+      unsigned char *logo_data = stbi_load("../resources/ISC Logo inline white v3 - 1500px.png", &logo_img_width,
                                            &logo_img_height, &logo_img_channels, 4);
 
       if (logo_data)
@@ -396,11 +396,11 @@ class SDLGuiHandler
       toggle_button_rect.h = box_size;
    }
 
-   void drawGammaSlider(TTF_Font *ttf_font, int padding, int y, int control_width, float gamma, SDL_Color white,
-                        SliderBounds &gamma_slider)
+   void drawSamplesSlider(TTF_Font *ttf_font, int padding, int y, int control_width, int samples_per_batch, SDL_Color white,
+                        SliderBounds &samples_slider)
    {
       char label[32];
-      snprintf(label, sizeof(label), "Gamma: %.1f", gamma);
+      snprintf(label, sizeof(label), "Samples: %d", samples_per_batch);
       SDL_Surface *text_surface = TTF_RenderText_Blended(ttf_font, label, white);
       if (text_surface)
       {
@@ -420,15 +420,15 @@ class SDLGuiHandler
       SDL_SetRenderDrawColor(renderer, 60, 60, 60, 255);
       SDL_RenderFillRect(renderer, &slider_bg);
 
-      gamma_slider.x = slider_x;
-      gamma_slider.y = y + 8;
-      gamma_slider.width = slider_w;
-      gamma_slider.height = 8;
-      gamma_slider.min_val = 0.5f;
-      gamma_slider.max_val = 3.0f;
+      samples_slider.x = slider_x;
+      samples_slider.y = y + 8;
+      samples_slider.width = slider_w;
+      samples_slider.height = 8;
+      samples_slider.min_val = 1.0f;
+      samples_slider.max_val = 256.0f;
 
-      float gamma_ratio = (gamma - 0.5f) / (3.0f - 0.5f);
-      int fill_w = static_cast<int>(slider_w * gamma_ratio);
+      float samples_ratio = (float(samples_per_batch) - 1.0f) / (256.0f - 1.0f);
+      int fill_w = static_cast<int>(slider_w * samples_ratio);
       SDL_Rect slider_fill = {slider_x, y + 8, fill_w, 8};
       SDL_SetRenderDrawColor(renderer, 100, 150, 255, 255);
       SDL_RenderFillRect(renderer, &slider_fill);
