@@ -91,8 +91,13 @@ class RendererProgressiveSDL : virtual public CameraBase
             }
             else if (event.type == SDL_KEYDOWN)
             {
-               if (camera_control.handleKeyDown(event, accumulation_enabled, gamma, light_intensity,
-                                                background_intensity, needs_rerender, camera_changed))
+               // Handle 'h' key to toggle GUI controls visibility
+               if (event.key.keysym.sym == SDLK_h)
+               {
+                  gui.toggleControls();
+               }
+               else if (camera_control.handleKeyDown(event, accumulation_enabled, gamma, light_intensity,
+                                                      background_intensity, needs_rerender, camera_changed))
                {
                   if (camera_changed)
                   {
@@ -111,7 +116,7 @@ class RendererProgressiveSDL : virtual public CameraBase
                if (camera_control.handleMouseButtonDown(
                        event, dragging_slider, active_slider, gamma_slider_bounds, intensity_slider_bounds,
                        background_slider_bounds, toggle_button_rect, accumulation_enabled, gamma, light_intensity,
-                       background_intensity, needs_rerender, camera_changed))
+                       background_intensity, needs_rerender, camera_changed, gui.getShowControls()))
                {
                   if (camera_changed)
                   {
@@ -134,7 +139,7 @@ class RendererProgressiveSDL : virtual public CameraBase
                if (camera_control.handleMouseMotion(event, dragging_slider, active_slider, gamma_slider_bounds,
                                                     intensity_slider_bounds, background_slider_bounds, gamma,
                                                     light_intensity, background_intensity, needs_rerender,
-                                                    camera_changed, lookfrom, lookat, vup, w))
+                                                    camera_changed, lookfrom, lookat, vup, w, gui.getShowControls()))
                {
                   if (camera_changed)
                   {

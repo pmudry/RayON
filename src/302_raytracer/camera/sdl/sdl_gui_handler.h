@@ -48,8 +48,8 @@ class SDLGuiHandler
 {
  public:
    SDLGuiHandler(int image_width, int image_height)
-       : image_width(image_width), image_height(image_height), window(nullptr), renderer(nullptr), texture(nullptr),
-         logo_texture(nullptr), font(nullptr)
+       : image_width(image_width), image_height(image_height), show_controls(true), window(nullptr), renderer(nullptr),
+         texture(nullptr), logo_texture(nullptr), font(nullptr)
    {
    }
 
@@ -161,6 +161,10 @@ class SDLGuiHandler
 
    void drawSampleCountText(int sample_count)
    {
+      // Don't draw sample count if controls are hidden
+      if (!show_controls)
+         return;
+
 #ifdef SDL2_TTF_FOUND
       TTF_Font *ttf_font = static_cast<TTF_Font *>(font);
       if (!ttf_font)
@@ -202,6 +206,10 @@ class SDLGuiHandler
                        SliderBounds &gamma_slider_bounds, SliderBounds &intensity_slider_bounds,
                        SliderBounds &background_slider_bounds, SDL_Rect &toggle_button_rect)
    {
+      // Don't draw controls if they're hidden
+      if (!show_controls)
+         return;
+
 #ifdef SDL2_TTF_FOUND
       TTF_Font *ttf_font = static_cast<TTF_Font *>(font);
       if (!ttf_font)
@@ -247,6 +255,7 @@ class SDLGuiHandler
       cout << "  Right Mouse Button:  Pan camera" << endl;
       cout << "  Mouse Wheel:         Zoom in/out" << endl;
       cout << "  SPACEBAR:            Toggle automatic accumulation" << endl;
+      cout << "  H:                   Hide/show GUI controls" << endl;
       cout << "  Up/Down Arrows:      Adjust gamma (0.5-3.0)" << endl;
       cout << "  Left/Right Arrows:   Adjust light intensity (0.1-3.0)" << endl;
       cout << "  ESC:                 Exit" << endl;
@@ -265,10 +274,18 @@ class SDLGuiHandler
    SDL_Texture *getLogoTexture() { return logo_texture; }
    const SDL_Rect &getLogoRect() const { return logo_rect; }
    void *getFont() { return font; }
+   bool getShowControls() const { return show_controls; }
+
+   // Control visibility toggle
+   void toggleControls()
+   {
+      show_controls = !show_controls;
+   }
 
  private:
    int image_width;
    int image_height;
+   bool show_controls; // Flag to show/hide GUI controls
 
    SDL_Window *window;
    SDL_Renderer *renderer;

@@ -45,6 +45,11 @@ class CameraControlHandler
          accumulation_enabled = !accumulation_enabled;
          return true;
       }
+      else if (event.key.keysym.sym == SDLK_h)
+      {
+         // This will be handled separately to toggle GUI controls visibility
+         return false; // Return false so it can be handled by the caller
+      }
       else if (event.key.keysym.sym == SDLK_UP)
       {
          gamma = std::min(3.0f, gamma + 0.1f);
@@ -76,45 +81,49 @@ class CameraControlHandler
                               SliderBounds &gamma_slider_bounds, SliderBounds &intensity_slider_bounds,
                               SliderBounds &background_slider_bounds, SDL_Rect &toggle_button_rect,
                               bool &accumulation_enabled, float &gamma, float &light_intensity,
-                              float &background_intensity, bool &needs_rerender, bool &camera_changed)
+                              float &background_intensity, bool &needs_rerender, bool &camera_changed,
+                              bool show_controls)
    {
       if (event.button.button == SDL_BUTTON_LEFT)
       {
          int mx = event.button.x;
          int my = event.button.y;
 
-         // Check if clicking on toggle button
-         if (mx >= toggle_button_rect.x && mx <= toggle_button_rect.x + toggle_button_rect.w &&
-             my >= toggle_button_rect.y && my <= toggle_button_rect.y + toggle_button_rect.h)
+         // Only handle slider/button interactions if controls are visible
+         if (show_controls)
          {
-            accumulation_enabled = !accumulation_enabled;
-            return true;
+            // Check if clicking on toggle button
+            if (mx >= toggle_button_rect.x && mx <= toggle_button_rect.x + toggle_button_rect.w &&
+                my >= toggle_button_rect.y && my <= toggle_button_rect.y + toggle_button_rect.h)
+            {
+               accumulation_enabled = !accumulation_enabled;
+               return true;
+            }
+            // Check sliders
+            else if (checkSliderClick(mx, my, gamma_slider_bounds, dragging_slider, active_slider, gamma,
+                                      needs_rerender, camera_changed))
+            {
+               return true;
+            }
+            else if (checkSliderClick(mx, my, intensity_slider_bounds, dragging_slider, active_slider, light_intensity,
+                                      needs_rerender, camera_changed))
+            {
+               camera_changed = true;
+               return true;
+            }
+            else if (checkSliderClick(mx, my, background_slider_bounds, dragging_slider, active_slider,
+                                      background_intensity, needs_rerender, camera_changed))
+            {
+               camera_changed = true;
+               return true;
+            }
          }
-         // Check sliders
-         else if (checkSliderClick(mx, my, gamma_slider_bounds, dragging_slider, active_slider, gamma, needs_rerender,
-                                   camera_changed))
-         {
-            return true;
-         }
-         else if (checkSliderClick(mx, my, intensity_slider_bounds, dragging_slider, active_slider, light_intensity,
-                                   needs_rerender, camera_changed))
-         {
-            camera_changed = true;
-            return true;
-         }
-         else if (checkSliderClick(mx, my, background_slider_bounds, dragging_slider, active_slider,
-                                   background_intensity, needs_rerender, camera_changed))
-         {
-            camera_changed = true;
-            return true;
-         }
-         else
-         {
-            left_button_down = true;
-            last_mouse_x = event.button.x;
-            last_mouse_y = event.button.y;
-            return false;
-         }
+
+         // If controls are hidden or click was outside controls, handle as camera rotation
+         left_button_down = true;
+         last_mouse_x = event.button.x;
+         last_mouse_y = event.button.y;
+         return false;
       }
       else if (event.button.button == SDL_BUTTON_RIGHT)
       {
@@ -144,14 +153,15 @@ class CameraControlHandler
                           SliderBounds &gamma_slider_bounds, SliderBounds &intensity_slider_bounds,
                           SliderBounds &background_slider_bounds, float &gamma, float &light_intensity,
                           float &background_intensity, bool &needs_rerender, bool &camera_changed, Point3 &lookfrom,
-                          Point3 &lookat, const Vec3 &vup, const Vec3 &w)
+                          Point3 &lookat, const Vec3 &vup, const Vec3 &w, bool show_controls)
    {
       int mouse_x = event.motion.x;
       int mouse_y = event.motion.y;
       int dx = mouse_x - last_mouse_x;
       int dy = mouse_y - last_mouse_y;
 
-      if (dragging_slider && active_slider)
+      // Only handle slider dragging if controls are visible
+      if (show_controls && dragging_slider && active_slider)
       {
          float ratio = (float)(mouse_x - active_slider->x) / active_slider->width;
          ratio = std::max(0.0f, std::min(1.0f, ratio));
@@ -172,9 +182,10 @@ class CameraControlHandler
             background_intensity = new_value;
             camera_changed = true;
          }
-         return false;
+         return true; // Return true so the caller can apply the changes
       }
-      else if (left_button_down)
+
+      if (left_button_down)
       {
          camera_azimuth += dx * 0.01;
          camera_elevation -= dy * 0.01;
