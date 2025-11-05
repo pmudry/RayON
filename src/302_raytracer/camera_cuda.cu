@@ -21,6 +21,12 @@
 #define M_PI 3.14159265358979323846f
 #endif
 
+// Global light intensity multiplier (can be updated per render)
+__constant__ float g_light_intensity = 1.0f;
+
+// Global background intensity multiplier (controls sky gradient brightness)
+__constant__ float g_background_intensity = 1.0f;
+
 // Golf ball debug modes:
 // 0 = off (regular shading)
 // 1 = show normals as colors (0.5*(n+1))
@@ -874,7 +880,8 @@ __device__ bool hit_world(const ray_simple &r, float t_min, float t_max, hit_rec
         closest_so_far = temp_rec.t;
         rec = temp_rec;
         rec.material = LIGHT;
-        rec.emission = float3_simple(4.8f, 4.1f, 3.7f); // Warm white light
+        // Base warm white light scaled by global intensity
+        rec.emission = float3_simple(4.8f, 4.1f, 3.7f) * g_light_intensity;
     }
 
     return hit_anything;
@@ -1017,13 +1024,16 @@ __device__ float3_simple ray_color(const ray_simple &r, curandState *state, int 
         }
 
         float3_simple color = ray_color(scattered, state, depth - 1, ray_count);
-        return float3_simple(attenuation.x * color.x, attenuation.y * color.y, attenuation.z * color.z);
+        float3_simple shaded_color = float3_simple(attenuation.x * color.x, attenuation.y * color.y, attenuation.z * color.z);
+        
+        return shaded_color;
     }
 
     // Background gradient for the world
     float3_simple unit_direction = unit_vector(r.dir);
     float t = 0.5f * (unit_direction.y + 1.0f);
-    return (1.0f - t) * float3_simple(1.0f, 1.0f, 1.0f) + t * float3_simple(0.5f, 0.7f, 1.0f);
+    float3_simple background = (1.0f - t) * float3_simple(1.0f, 1.0f, 1.0f) + t * float3_simple(0.5f, 0.7f, 1.0f);
+    return background * g_background_intensity;
 }
 
 //==============================================================================
@@ -1303,18 +1313,21 @@ __global__ void renderAccumulativeKernel(float *accum_buffer, unsigned char *ima
     accum_buffer[base_idx + 1] = accumulated_color.y;
     accum_buffer[base_idx + 2] = accumulated_color.z;
 
-    // Convert to display: average and gamma correct
-    float3_simple avg_color = accumulated_color / (float)total_samples_so_far;
+    // Note: Display conversion (gamma/intensity) is done on CPU side for flexibility
+    // Just copy raw accumulated values to image buffer for now (will be processed on CPU)
+    image[base_idx] = 0;
+    image[base_idx + 1] = 0;
+    image[base_idx + 2] = 0;
+}
 
-    // Gamma correction (gamma=2)
-    avg_color.x = sqrtf(fmaxf(avg_color.x, 0.0f));
-    avg_color.y = sqrtf(fmaxf(avg_color.y, 0.0f));
-    avg_color.z = sqrtf(fmaxf(avg_color.z, 0.0f));
+extern "C" void setLightIntensity(float intensity)
+{
+    cudaMemcpyToSymbol(g_light_intensity, &intensity, sizeof(float));
+}
 
-    // Convert to bytes with clamping
-    image[base_idx] = (unsigned char)(255.0f * fminf(fmaxf(avg_color.x, 0.0f), 1.0f));
-    image[base_idx + 1] = (unsigned char)(255.0f * fminf(fmaxf(avg_color.y, 0.0f), 1.0f));
-    image[base_idx + 2] = (unsigned char)(255.0f * fminf(fmaxf(avg_color.z, 0.0f), 1.0f));
+extern "C" void setBackgroundIntensity(float intensity)
+{
+    cudaMemcpyToSymbol(g_background_intensity, &intensity, sizeof(float));
 }
 
 extern "C" unsigned long long renderPixelsCUDAAccumulative(unsigned char *image, float *accum_buffer,

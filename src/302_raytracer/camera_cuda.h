@@ -25,6 +25,12 @@ extern "C"
    
    // Helper to free device random states
    void freeDeviceRandomStates(void *d_rand_states);
+   
+   // Set global light intensity (affects area light emission)
+   void setLightIntensity(float intensity);
+   
+   // Set background gradient intensity (sky brightness)
+   void setBackgroundIntensity(float intensity);
 
 #ifdef __cplusplus
 }

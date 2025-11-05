@@ -82,6 +82,8 @@ scene demo_scene()
 struct ProgramArgs {
    int samples = SAMPLES_PER_PIXEL;
    int height = IMAGE_HEIGHT;
+   int start_samples = 4;  // Number of samples to render initially when moving camera
+   bool auto_accumulate = true;  // Enable auto-accumulation by default
 };
 
 ProgramArgs parseInput(int argc, char *argv[])
@@ -96,9 +98,11 @@ ProgramArgs parseInput(int argc, char *argv[])
       {
          cout << "Usage: " << argv[0] << " [options]\n";
          cout << "Options:\n";
-         cout << "  -h, --help, /?  Show this help message\n";
-         cout << "  -s <samples>    Set the number of samples per pixel (default: " << SAMPLES_PER_PIXEL << ")\n";
-         cout << "  -r <height>     Set vertical resolution (allowed: 2160, 1080, 720, 360, 180, default: " << IMAGE_HEIGHT << ")\n";
+         cout << "  -h, --help, /?         Show this help message\n";
+         cout << "  -s <samples>           Set the number of samples per pixel (default: " << SAMPLES_PER_PIXEL << ")\n";
+         cout << "  -r <height>            Set vertical resolution (allowed: 2160, 1080, 720, 360, 180, default: " << IMAGE_HEIGHT << ")\n";
+         cout << "  --start-samples <n>    Set initial samples when moving camera in interactive mode (default: 4)\n";
+         cout << "  --no-auto-accumulate   Disable automatic sample accumulation in interactive mode\n";
          args.samples = -1;
          return args;
       }
@@ -121,14 +125,30 @@ ProgramArgs parseInput(int argc, char *argv[])
             return args;
          }
       }
+      else if (strcmp(argv[i], "--no-auto-accumulate") == 0)
+      {
+         args.auto_accumulate = false;
+      }
+      else if (strcmp(argv[i], "--start-samples") == 0 && i + 1 < argc)
+      {
+         args.start_samples = atoi(argv[++i]);
+         if (args.start_samples < 1)
+         {
+            cerr << "Invalid start-samples value: " << args.start_samples << " (must be >= 1)\n";
+            args.samples = -1;
+            return args;
+         }
+      }
       else if (argv[i][0] == '-')
       {
          cerr << "Unknown argument: " << argv[i] << "\n";
          cout << "Usage: " << argv[0] << " [options]\n";
          cout << "Options:\n";
-         cout << "  -h, --help, /?  Show this help message\n";
-         cout << "  -s <samples>    Set the number of samples per pixel (default: " << SAMPLES_PER_PIXEL << ")\n";
-         cout << "  -r <height>     Set vertical resolution (allowed: 2160, 1080, 720, 360, 180, default: " << IMAGE_HEIGHT << ")\n";
+         cout << "  -h, --help, /?         Show this help message\n";
+         cout << "  -s <samples>           Set the number of samples per pixel (default: " << SAMPLES_PER_PIXEL << ")\n";
+         cout << "  -r <height>            Set vertical resolution (allowed: 2160, 1080, 720, 360, 180, default: " << IMAGE_HEIGHT << ")\n";
+         cout << "  --start-samples <n>    Set initial samples when moving camera in interactive mode (default: 4)\n";
+         cout << "  --no-auto-accumulate   Disable automatic sample accumulation in interactive mode\n";
          args.samples = -1;
          return args;
       }
@@ -212,7 +232,7 @@ int main(int argc, char *argv[])
 #ifdef SDL2_FOUND
    case 3:
       cout << "Using CUDA GPU with interactive SDL display..." << endl;
-      c.renderPixelsSDLContinuous(localImage, 1024, 4);  // Max 1024 samples, add 4 per batch
+      c.renderPixelsSDLContinuous(localImage, 2048, args.start_samples, args.auto_accumulate);  // Max 2048 samples, start_samples per batch
       break;
 #endif
    default:

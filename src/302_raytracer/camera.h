@@ -34,6 +34,13 @@
 
 #pragma once
 
+// Structure to hold slider interaction bounds
+struct SliderBounds {
+   int x, y, width, height;
+   float min_val, max_val;
+   float* value_ptr;
+};
+
 class Camera
 {
 
@@ -451,6 +458,254 @@ class Camera
 #endif
    }
 
+   void drawUIControls(SDL_Renderer* renderer, void* font_ptr, float gamma, float light_intensity, float background_intensity, bool accumulation_enabled, 
+                       SliderBounds* gamma_slider, SliderBounds* intensity_slider, SliderBounds* background_slider, SDL_Rect* toggle_button_rect)
+   {
+#ifdef SDL2_TTF_FOUND
+      TTF_Font* font = static_cast<TTF_Font*>(font_ptr);
+      if (!font) return; // Skip if font not loaded
+      
+      // Use smaller font size for UI controls
+      TTF_Font* small_font = TTF_OpenFont("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 12);
+      if (!small_font) small_font = font; // Fallback to regular font
+      
+      int padding = 15;
+      int control_width = 220;
+      int slider_height = 25;
+      int spacing = 8;
+      int start_y = image_height - (4 * slider_height + 3 * spacing + padding);
+      
+      SDL_Color white = {255, 255, 255, 255};
+      SDL_Color green = {0, 255, 0, 255};
+      SDL_Color red = {255, 0, 0, 255};
+      
+      // Draw semi-transparent background
+      SDL_Rect bg_rect = {
+         padding - 5,
+         start_y - 5,
+         control_width + 10,
+         4 * slider_height + 3 * spacing + 10
+      };
+      SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+      SDL_SetRenderDrawColor(renderer, 0, 0, 0, 200);
+      SDL_RenderFillRect(renderer, &bg_rect);
+      
+      // Toggle button with checkbox
+      {
+         // Draw checkbox box
+         int box_size = 14;
+         int box_y = start_y + 5;
+         SDL_Rect checkbox_bg = {padding, box_y, box_size, box_size};
+         
+         // Draw box border
+         SDL_SetRenderDrawColor(renderer, 200, 200, 200, 255);
+         SDL_RenderDrawRect(renderer, &checkbox_bg);
+         
+         // Fill box based on state
+         SDL_Rect checkbox_fill = {padding + 2, box_y + 2, box_size - 4, box_size - 4};
+         if (accumulation_enabled) {
+            SDL_SetRenderDrawColor(renderer, 0, 200, 0, 255); // Green when ON
+         } else {
+            SDL_SetRenderDrawColor(renderer, 200, 0, 0, 255); // Red when OFF
+         }
+         SDL_RenderFillRect(renderer, &checkbox_fill);
+         
+         // Draw label text (always white)
+         std::string text = "Auto-Accum";
+         SDL_Surface* text_surface = TTF_RenderText_Blended(small_font, text.c_str(), white);
+         if (text_surface)
+         {
+            SDL_Texture* text_texture = SDL_CreateTextureFromSurface(renderer, text_surface);
+            if (text_texture)
+            {
+               SDL_Rect text_rect = {padding + box_size + 8, start_y + 5, text_surface->w, text_surface->h};
+               SDL_RenderCopy(renderer, text_texture, nullptr, &text_rect);
+               SDL_DestroyTexture(text_texture);
+            }
+            SDL_FreeSurface(text_surface);
+         }
+         
+         // Store toggle button bounds for click detection (include both box and text)
+         if (toggle_button_rect) {
+            toggle_button_rect->x = padding;
+            toggle_button_rect->y = box_y;
+            toggle_button_rect->w = box_size + 8 + 80; // box + spacing + text width estimate
+            toggle_button_rect->h = box_size;
+         }
+      }
+      
+      // Gamma slider
+      {
+         int y = start_y + slider_height + spacing;
+         
+         // Label with value
+         char label[32];
+         snprintf(label, sizeof(label), "Gamma: %.1f", gamma);
+         SDL_Surface* text_surface = TTF_RenderText_Blended(small_font, label, white);
+         if (text_surface)
+         {
+            SDL_Texture* text_texture = SDL_CreateTextureFromSurface(renderer, text_surface);
+            if (text_texture)
+            {
+               SDL_Rect text_rect = {padding, y + 5, text_surface->w, text_surface->h};
+               SDL_RenderCopy(renderer, text_texture, nullptr, &text_rect);
+               SDL_DestroyTexture(text_texture);
+            }
+            SDL_FreeSurface(text_surface);
+         }
+         
+         // Slider bar background
+         int slider_x = padding + 80;
+         int slider_w = control_width - 80;
+         SDL_Rect slider_bg = {slider_x, y + 8, slider_w, 8};
+         SDL_SetRenderDrawColor(renderer, 60, 60, 60, 255);
+         SDL_RenderFillRect(renderer, &slider_bg);
+         
+         // Store slider bounds for mouse interaction
+         if (gamma_slider) {
+            gamma_slider->x = slider_x;
+            gamma_slider->y = y + 8;
+            gamma_slider->width = slider_w;
+            gamma_slider->height = 8;
+            gamma_slider->min_val = 0.5f;
+            gamma_slider->max_val = 3.0f;
+         }
+         
+         // Slider fill (gamma range: 0.5 - 3.0)
+         float gamma_ratio = (gamma - 0.5f) / (3.0f - 0.5f);
+         int fill_w = static_cast<int>(slider_w * gamma_ratio);
+         SDL_Rect slider_fill = {slider_x, y + 8, fill_w, 8};
+         SDL_SetRenderDrawColor(renderer, 100, 150, 255, 255);
+         SDL_RenderFillRect(renderer, &slider_fill);
+         
+         // Slider handle
+         int handle_x = slider_x + fill_w - 3;
+         SDL_Rect handle = {handle_x, y + 4, 6, 16};
+         SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+         SDL_RenderFillRect(renderer, &handle);
+      }
+      
+      // Light intensity slider
+      {
+         int y = start_y + 2 * slider_height + 2 * spacing;
+         
+         // Label with value
+         char label[32];
+         snprintf(label, sizeof(label), "Light: %.1f", light_intensity);
+         SDL_Surface* text_surface = TTF_RenderText_Blended(small_font, label, white);
+         if (text_surface)
+         {
+            SDL_Texture* text_texture = SDL_CreateTextureFromSurface(renderer, text_surface);
+            if (text_texture)
+            {
+               SDL_Rect text_rect = {padding, y + 5, text_surface->w, text_surface->h};
+               SDL_RenderCopy(renderer, text_texture, nullptr, &text_rect);
+               SDL_DestroyTexture(text_texture);
+            }
+            SDL_FreeSurface(text_surface);
+         }
+         
+         // Slider bar background
+         int slider_x = padding + 80;
+         int slider_w = control_width - 80;
+         SDL_Rect slider_bg = {slider_x, y + 8, slider_w, 8};
+         SDL_SetRenderDrawColor(renderer, 60, 60, 60, 255);
+         SDL_RenderFillRect(renderer, &slider_bg);
+         
+         // Store slider bounds for mouse interaction
+         if (intensity_slider) {
+            intensity_slider->x = slider_x;
+            intensity_slider->y = y + 8;
+            intensity_slider->width = slider_w;
+            intensity_slider->height = 8;
+            intensity_slider->min_val = 0.1f;
+            intensity_slider->max_val = 3.0f;
+         }
+         
+         // Slider fill (intensity range: 0.1 - 3.0)
+         float intensity_ratio = (light_intensity - 0.1f) / (3.0f - 0.1f);
+         int fill_w = static_cast<int>(slider_w * intensity_ratio);
+         SDL_Rect slider_fill = {slider_x, y + 8, fill_w, 8};
+         SDL_SetRenderDrawColor(renderer, 255, 200, 100, 255);
+         SDL_RenderFillRect(renderer, &slider_fill);
+         
+         // Slider handle
+         int handle_x = slider_x + fill_w - 3;
+         SDL_Rect handle = {handle_x, y + 4, 6, 16};
+         SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+         SDL_RenderFillRect(renderer, &handle);
+      }
+      
+      // Background intensity slider
+      {
+         int y = start_y + 3 * slider_height + 3 * spacing;
+         
+         // Label with value
+         char label[32];
+         snprintf(label, sizeof(label), "Background: %.2f", background_intensity);
+         SDL_Surface* text_surface = TTF_RenderText_Blended(small_font, label, white);
+         if (text_surface)
+         {
+            SDL_Texture* text_texture = SDL_CreateTextureFromSurface(renderer, text_surface);
+            if (text_texture)
+            {
+               SDL_Rect text_rect = {padding, y + 5, text_surface->w, text_surface->h};
+               SDL_RenderCopy(renderer, text_texture, nullptr, &text_rect);
+               SDL_DestroyTexture(text_texture);
+            }
+            SDL_FreeSurface(text_surface);
+         }
+         
+         // Slider bar background
+         int slider_x = padding + 100;
+         int slider_w = control_width - 100;
+         SDL_Rect slider_bg = {slider_x, y + 8, slider_w, 8};
+         SDL_SetRenderDrawColor(renderer, 60, 60, 60, 255);
+         SDL_RenderFillRect(renderer, &slider_bg);
+         
+         // Store slider bounds for mouse interaction
+         if (background_slider) {
+            background_slider->x = slider_x;
+            background_slider->y = y + 8;
+            background_slider->width = slider_w;
+            background_slider->height = 8;
+            background_slider->min_val = 0.0f;
+            background_slider->max_val = 3.0f;
+         }
+         
+         // Slider fill (background range: 0.0 - 3.0)
+         float bg_ratio = (background_intensity - 0.0f) / (3.0f - 0.0f);
+         int fill_w = static_cast<int>(slider_w * bg_ratio);
+         SDL_Rect slider_fill = {slider_x, y + 8, fill_w, 8};
+         SDL_SetRenderDrawColor(renderer, 150, 100, 255, 255);
+         SDL_RenderFillRect(renderer, &slider_fill);
+         
+         // Slider handle
+         int handle_x = slider_x + fill_w - 3;
+         SDL_Rect handle = {handle_x, y + 4, 6, 16};
+         SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+         SDL_RenderFillRect(renderer, &handle);
+      }
+      
+      // Close small font if we opened it
+      if (small_font != font) {
+         TTF_CloseFont(small_font);
+      }
+#else
+      // Fallback: do nothing if SDL_ttf is not available
+      (void)renderer;
+      (void)font_ptr;
+      (void)gamma;
+      (void)light_intensity;
+      (void)background_intensity;
+      (void)accumulation_enabled;
+      (void)gamma_slider;
+      (void)intensity_slider;
+      (void)background_slider;
+      (void)toggle_button_rect;
+#endif
+   }
+
    /**
     * @brief Interactive SDL rendering with continuous sample accumulation
     * 
@@ -462,6 +717,9 @@ class Camera
     * - Left mouse button: Rotate camera (orbit around lookat point)
     * - Right mouse button: Pan camera (move lookat point)
     * - Mouse wheel: Zoom in/out (change camera distance)
+    * - Spacebar: Toggle automatic sample accumulation
+    * - Up/Down arrows: Adjust gamma correction (0.5 - 3.0)
+    * - Left/Right arrows: Adjust light intensity (0.1 - 3.0)
     * - Any camera movement automatically restarts rendering from scratch
     * - ESC/Close window: Exit
     *
@@ -473,8 +731,9 @@ class Camera
     * @param image The final image buffer to store the render
     * @param max_samples Maximum total samples to accumulate (default: 1024)
     * @param samples_per_batch Number of samples to add per batch (default: 8)
+    * @param auto_accumulate Enable automatic sample accumulation (default: true)
     */
-   void renderPixelsSDLContinuous(vector<unsigned char> &image, int max_samples = 1024, int samples_per_batch = 8)
+   void renderPixelsSDLContinuous(vector<unsigned char> &image, int max_samples = 2048, int samples_per_batch = 8, bool auto_accumulate = true)
    {
       // Initialize SDL
       if (SDL_Init(SDL_INIT_VIDEO) < 0)
@@ -587,16 +846,38 @@ class Camera
 
       cout << "\n=== Interactive Ray Tracing with Real-time Display ===" << endl;
       cout << "Controls:" << endl;
-      cout << "  Left Mouse Button:  Rotate camera (orbit)" << endl;
-      cout << "  Right Mouse Button: Pan camera" << endl;
-      cout << "  Mouse Wheel:        Zoom in/out" << endl;
-      cout << "  ESC:                Exit" << endl;
+      cout << "  Left Mouse Button:   Rotate camera (orbit)" << endl;
+      cout << "  Right Mouse Button:  Pan camera" << endl;
+      cout << "  Mouse Wheel:         Zoom in/out" << endl;
+      cout << "  SPACEBAR:            Toggle automatic accumulation" << endl;
+      cout << "  Up/Down Arrows:      Adjust gamma (0.5-3.0)" << endl;
+      cout << "  Left/Right Arrows:   Adjust light intensity (0.1-3.0)" << endl;
+      cout << "  ESC:                 Exit" << endl;
       cout << "Sample accumulation: " << samples_per_batch << " samples per batch, up to " << max_samples << " total samples" << endl;
+      cout << "Auto-accumulation: " << (auto_accumulate ? "ON" : "OFF") << endl;
       cout << "Using CUDA GPU acceleration with progressive refinement" << endl;
       
       bool running = true;
       bool camera_changed = true; // Trigger initial render
+      bool accumulation_enabled = auto_accumulate; // Current state of auto-accumulation
       int current_samples = 0; // Current accumulated sample count
+      float gamma = 2.0f; // Gamma correction value (default 2.0 for standard sRGB)
+      float light_intensity = 1.0f; // Light intensity multiplier
+      float background_intensity = 1.0f; // Background gradient brightness multiplier
+      bool needs_rerender = false; // Flag to trigger re-render for gamma/intensity changes
+      
+      // Set initial light intensity and background in CUDA
+      ::setLightIntensity(light_intensity);
+      ::setBackgroundIntensity(background_intensity);
+      
+      // Slider bounds for mouse interaction
+      SliderBounds gamma_slider_bounds = {0, 0, 0, 0, 0.5f, 3.0f, &gamma};
+      SliderBounds intensity_slider_bounds = {0, 0, 0, 0, 0.1f, 3.0f, &light_intensity};
+      SliderBounds background_slider_bounds = {0, 0, 0, 0, 0.0f, 3.0f, &background_intensity};
+      SDL_Rect toggle_button_rect = {0, 0, 0, 0};
+      bool dragging_slider = false;
+      SliderBounds* active_slider = nullptr;
+      
       SDL_Event event;
       vector<unsigned char> display_image(image_width * image_height * image_channels);
       vector<float> accum_buffer(image_width * image_height * image_channels, 0.0f);  // Accumulation buffer for CUDA
@@ -631,13 +912,104 @@ class Camera
             {
                running = false;
             }
+            else if (event.type == SDL_KEYDOWN)
+            {
+               if (event.key.keysym.sym == SDLK_SPACE)
+               {
+                  // Toggle automatic accumulation
+                  accumulation_enabled = !accumulation_enabled;
+                  cout << "\n[Auto-accumulation " << (accumulation_enabled ? "ENABLED" : "DISABLED") << "]" << endl;
+               }
+               else if (event.key.keysym.sym == SDLK_UP)
+               {
+                  // Increase gamma
+                  gamma = std::min(3.0f, gamma + 0.1f);
+                  needs_rerender = true;
+               }
+               else if (event.key.keysym.sym == SDLK_DOWN)
+               {
+                  // Decrease gamma
+                  gamma = std::max(0.5f, gamma - 0.1f);
+                  needs_rerender = true;
+               }
+               else if (event.key.keysym.sym == SDLK_RIGHT)
+               {
+                  // Increase light intensity - restart render with new light
+                  light_intensity = std::min(3.0f, light_intensity + 0.1f);
+                  ::setLightIntensity(light_intensity);
+                  camera_changed = true; // Restart rendering
+               }
+               else if (event.key.keysym.sym == SDLK_LEFT)
+               {
+                  // Decrease light intensity - restart render with new light
+                  light_intensity = std::max(0.1f, light_intensity - 0.1f);
+                  ::setLightIntensity(light_intensity);
+                  camera_changed = true; // Restart rendering
+               }
+            }
             else if (event.type == SDL_MOUSEBUTTONDOWN)
             {
                if (event.button.button == SDL_BUTTON_LEFT)
                {
-                  left_button_down = true;
-                  last_mouse_x = event.button.x;
-                  last_mouse_y = event.button.y;
+                  int mx = event.button.x;
+                  int my = event.button.y;
+                  
+                  // Check if clicking on toggle button
+                  if (mx >= toggle_button_rect.x && mx <= toggle_button_rect.x + toggle_button_rect.w &&
+                      my >= toggle_button_rect.y && my <= toggle_button_rect.y + toggle_button_rect.h)
+                  {
+                     // Toggle accumulation
+                     accumulation_enabled = !accumulation_enabled;
+                     cout << "\n[Auto-accumulation " << (accumulation_enabled ? "ENABLED" : "DISABLED") << "]" << endl;
+                  }
+                  // Check if clicking on gamma slider
+                  else if (mx >= gamma_slider_bounds.x && mx <= gamma_slider_bounds.x + gamma_slider_bounds.width &&
+                      my >= gamma_slider_bounds.y - 5 && my <= gamma_slider_bounds.y + gamma_slider_bounds.height + 5)
+                  {
+                     dragging_slider = true;
+                     active_slider = &gamma_slider_bounds;
+                     
+                     // Update value immediately
+                     float ratio = (float)(mx - gamma_slider_bounds.x) / gamma_slider_bounds.width;
+                     gamma = gamma_slider_bounds.min_val + ratio * (gamma_slider_bounds.max_val - gamma_slider_bounds.min_val);
+                     gamma = std::max(gamma_slider_bounds.min_val, std::min(gamma_slider_bounds.max_val, gamma));
+                     needs_rerender = true;
+                  }
+                  // Check if clicking on intensity slider
+                  else if (mx >= intensity_slider_bounds.x && mx <= intensity_slider_bounds.x + intensity_slider_bounds.width &&
+                           my >= intensity_slider_bounds.y - 5 && my <= intensity_slider_bounds.y + intensity_slider_bounds.height + 5)
+                  {
+                     dragging_slider = true;
+                     active_slider = &intensity_slider_bounds;
+                     
+                     // Update value immediately and restart render
+                     float ratio = (float)(mx - intensity_slider_bounds.x) / intensity_slider_bounds.width;
+                     light_intensity = intensity_slider_bounds.min_val + ratio * (intensity_slider_bounds.max_val - intensity_slider_bounds.min_val);
+                     light_intensity = std::max(intensity_slider_bounds.min_val, std::min(intensity_slider_bounds.max_val, light_intensity));
+                     ::setLightIntensity(light_intensity);
+                     camera_changed = true; // Restart rendering
+                  }
+                  // Check if clicking on background slider
+                  else if (mx >= background_slider_bounds.x && mx <= background_slider_bounds.x + background_slider_bounds.width &&
+                           my >= background_slider_bounds.y - 5 && my <= background_slider_bounds.y + background_slider_bounds.height + 5)
+                  {
+                     dragging_slider = true;
+                     active_slider = &background_slider_bounds;
+                     
+                     // Update value immediately and restart render
+                     float ratio = (float)(mx - background_slider_bounds.x) / background_slider_bounds.width;
+                     background_intensity = background_slider_bounds.min_val + ratio * (background_slider_bounds.max_val - background_slider_bounds.min_val);
+                     background_intensity = std::max(background_slider_bounds.min_val, std::min(background_slider_bounds.max_val, background_intensity));
+                     ::setBackgroundIntensity(background_intensity);
+                     camera_changed = true; // Restart rendering
+                  }
+                  else
+                  {
+                     // Normal camera rotation
+                     left_button_down = true;
+                     last_mouse_x = event.button.x;
+                     last_mouse_y = event.button.y;
+                  }
                }
                else if (event.button.button == SDL_BUTTON_RIGHT)
                {
@@ -651,6 +1023,8 @@ class Camera
                if (event.button.button == SDL_BUTTON_LEFT)
                {
                   left_button_down = false;
+                  dragging_slider = false;
+                  active_slider = nullptr;
                }
                else if (event.button.button == SDL_BUTTON_RIGHT)
                {
@@ -664,7 +1038,32 @@ class Camera
                int dx = mouse_x - last_mouse_x;
                int dy = mouse_y - last_mouse_y;
 
-               if (left_button_down)
+               if (dragging_slider && active_slider)
+               {
+                  // Update slider value based on mouse position
+                  float ratio = (float)(mouse_x - active_slider->x) / active_slider->width;
+                  ratio = std::max(0.0f, std::min(1.0f, ratio));
+                  float new_value = active_slider->min_val + ratio * (active_slider->max_val - active_slider->min_val);
+                  
+                  if (active_slider == &gamma_slider_bounds)
+                  {
+                     gamma = new_value;
+                     needs_rerender = true;
+                  }
+                  else if (active_slider == &intensity_slider_bounds)
+                  {
+                     light_intensity = new_value;
+                     ::setLightIntensity(light_intensity);
+                     camera_changed = true; // Restart rendering with new light
+                  }
+                  else if (active_slider == &background_slider_bounds)
+                  {
+                     background_intensity = new_value;
+                     ::setBackgroundIntensity(background_intensity);
+                     camera_changed = true; // Restart rendering with new background
+                  }
+               }
+               else if (left_button_down)
                {
                   // Rotate camera (orbit around lookat point)
                   camera_azimuth += dx * 0.01;
@@ -727,11 +1126,67 @@ class Camera
             }
             
             initialize(); // Recalculate camera parameters
-            cout << "\n[Camera moved - restarting render]" << endl;
          }
          
-         // Continue adding samples if we haven't reached max
-         if (current_samples < max_samples && !camera_changed && running)
+         // If gamma or light intensity changed, reprocess display from accumulation buffer
+         if (needs_rerender && current_samples > 0)
+         {
+            needs_rerender = false;
+            
+            // Reprocess accumulated buffer with new gamma (light intensity already in render)
+            for (int j = 0; j < image_height; j++)
+            {
+               for (int i = 0; i < image_width; i++)
+               {
+                  int pixel_idx = j * image_width + i;
+                  int display_idx = pixel_idx * image_channels;
+                  int accum_idx = pixel_idx * 3;
+                  
+                  // Get accumulated color
+                  float r = accum_buffer[accum_idx + 0] / current_samples;
+                  float g = accum_buffer[accum_idx + 1] / current_samples;
+                  float b = accum_buffer[accum_idx + 2] / current_samples;
+                  
+                  // Apply gamma correction (light intensity already in render)
+                  r = pow(r, 1.0f / gamma);
+                  g = pow(g, 1.0f / gamma);
+                  b = pow(b, 1.0f / gamma);
+                  
+                  // Clamp and convert to bytes
+                  static const Interval intensity_range(0.0, 0.999);
+                  display_image[display_idx + 0] = static_cast<unsigned char>(256 * intensity_range.clamp(r));
+                  display_image[display_idx + 1] = static_cast<unsigned char>(256 * intensity_range.clamp(g));
+                  display_image[display_idx + 2] = static_cast<unsigned char>(256 * intensity_range.clamp(b));
+                  if (image_channels == 4)
+                     display_image[display_idx + 3] = 255;
+               }
+            }
+            
+            // Update display
+            SDL_UpdateTexture(texture, nullptr, display_image.data(), image_width * image_channels);
+            SDL_RenderClear(renderer);
+            SDL_RenderCopy(renderer, texture, nullptr, nullptr);
+            
+            // Draw logo if available
+            if (logo_texture)
+            {
+               SDL_RenderCopy(renderer, logo_texture, nullptr, &logo_rect);
+            }
+            
+            // Draw sample count text
+            drawSampleCountText(renderer, font, current_samples);
+            
+            // Draw UI controls (sliders and toggle button)
+            drawUIControls(renderer, font, gamma, light_intensity, background_intensity, accumulation_enabled, &gamma_slider_bounds, &intensity_slider_bounds, &background_slider_bounds, &toggle_button_rect);
+            
+            SDL_RenderPresent(renderer);
+            
+            // Copy to final image buffer
+            image = display_image;
+         }
+         
+         // Continue adding samples if we haven't reached max and accumulation is enabled
+         if (current_samples < max_samples && !camera_changed && running && accumulation_enabled)
          {
             // Add samples_per_batch new samples to the accumulation
             current_samples += samples_per_batch;
@@ -742,8 +1197,6 @@ class Camera
             if (current_samples > max_samples)
                actual_samples_to_add = max_samples - (current_samples - samples_per_batch);
             
-            cout << "Rendering: " << current_samples << " samples..." << flush;
-
             // Call CUDA accumulative rendering with persistent random states
             unsigned long long cuda_ray_count = ::renderPixelsCUDAAccumulative(
                 display_image.data(), accum_buffer.data(), 
@@ -756,6 +1209,35 @@ class Camera
                 &d_rand_states);  // Pass persistent random states
             
             n_rays.fetch_add(cuda_ray_count, std::memory_order_relaxed);
+
+            // Convert accumulated buffer to display image with current gamma (light intensity already in render)
+            for (int j = 0; j < image_height; j++)
+            {
+               for (int i = 0; i < image_width; i++)
+               {
+                  int pixel_idx = j * image_width + i;
+                  int display_idx = pixel_idx * image_channels;
+                  int accum_idx = pixel_idx * 3;
+                  
+                  // Get accumulated color
+                  float r = accum_buffer[accum_idx + 0] / current_samples;
+                  float g = accum_buffer[accum_idx + 1] / current_samples;
+                  float b = accum_buffer[accum_idx + 2] / current_samples;
+                  
+                  // Apply gamma correction (light intensity already in render)
+                  r = pow(r, 1.0f / gamma);
+                  g = pow(g, 1.0f / gamma);
+                  b = pow(b, 1.0f / gamma);
+                  
+                  // Clamp and convert to bytes
+                  static const Interval intensity_range(0.0, 0.999);
+                  display_image[display_idx + 0] = static_cast<unsigned char>(256 * intensity_range.clamp(r));
+                  display_image[display_idx + 1] = static_cast<unsigned char>(256 * intensity_range.clamp(g));
+                  display_image[display_idx + 2] = static_cast<unsigned char>(256 * intensity_range.clamp(b));
+                  if (image_channels == 4)
+                     display_image[display_idx + 3] = 255;
+               }
+            }
 
             // Update display
             SDL_UpdateTexture(texture, nullptr, display_image.data(), image_width * image_channels);
@@ -770,6 +1252,9 @@ class Camera
             
             // Draw sample count text
             drawSampleCountText(renderer, font, current_samples);
+            
+            // Draw UI controls (sliders and toggle button)
+            drawUIControls(renderer, font, gamma, light_intensity, background_intensity, accumulation_enabled, &gamma_slider_bounds, &intensity_slider_bounds, &background_slider_bounds, &toggle_button_rect);
             
             SDL_RenderPresent(renderer);
 
