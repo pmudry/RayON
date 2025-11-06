@@ -82,7 +82,7 @@ scene demo_scene()
 struct ProgramArgs {
    int samples = SAMPLES_PER_PIXEL;
    int height = IMAGE_HEIGHT;
-   int start_samples = 4;  // Number of samples to render initially when moving camera
+   int start_samples = 32;  // Number of samples to render initially when moving camera
    bool auto_accumulate = true;  // Enable auto-accumulation by default
 };
 
@@ -101,7 +101,7 @@ ProgramArgs parseInput(int argc, char *argv[])
          cout << "  -h, --help, /?         Show this help message\n";
          cout << "  -s <samples>           Set the number of samples per pixel (default: " << SAMPLES_PER_PIXEL << ")\n";
          cout << "  -r <height>            Set vertical resolution (allowed: 2160, 1080, 720, 360, 180, default: " << IMAGE_HEIGHT << ")\n";
-         cout << "  --start-samples <n>    Set initial samples when moving camera in interactive mode (default: 4)\n";
+         cout << "  --start-samples <n>    Set initial samples when moving camera in interactive mode (default: 32)\n";
          cout << "  --no-auto-accumulate   Disable automatic sample accumulation in interactive mode\n";
          args.samples = -1;
          return args;
@@ -147,7 +147,7 @@ ProgramArgs parseInput(int argc, char *argv[])
          cout << "  -h, --help, /?         Show this help message\n";
          cout << "  -s <samples>           Set the number of samples per pixel (default: " << SAMPLES_PER_PIXEL << ")\n";
          cout << "  -r <height>            Set vertical resolution (allowed: 2160, 1080, 720, 360, 180, default: " << IMAGE_HEIGHT << ")\n";
-         cout << "  --start-samples <n>    Set initial samples when moving camera in interactive mode (default: 4)\n";
+         cout << "  --start-samples <n>    Set initial samples when moving camera in interactive mode (default: 32)\n";
          cout << "  --no-auto-accumulate   Disable automatic sample accumulation in interactive mode\n";
          args.samples = -1;
          return args;

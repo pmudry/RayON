@@ -30,6 +30,8 @@ class CameraControlHandler
       right_button_down = false;
       last_mouse_x = 0;
       last_mouse_y = 0;
+      auto_orbit_enabled = false;
+      orbit_speed = 0.3;  // Radians per second (slow rotation)
 
       Vec3 to_camera = lookfrom - lookat;
       camera_distance = to_camera.length();
@@ -49,6 +51,12 @@ class CameraControlHandler
       {
          // This will be handled separately to toggle GUI controls visibility
          return false; // Return false so it can be handled by the caller
+      }
+      else if (event.key.keysym.sym == SDLK_o)
+      {
+         // Toggle auto-orbit
+         toggleAutoOrbit();
+         return true;
       }
       else if (event.key.keysym.sym == SDLK_UP)
       {
@@ -80,9 +88,9 @@ class CameraControlHandler
    bool handleMouseButtonDown(SDL_Event &event, bool &dragging_slider, SliderBounds *&active_slider,
                               SliderBounds &samples_slider_bounds, SliderBounds &intensity_slider_bounds,
                               SliderBounds &background_slider_bounds, SliderBounds &fuzziness_slider_bounds, 
-                              SDL_Rect &toggle_button_rect, bool &accumulation_enabled, float &samples_per_batch, 
-                              float &light_intensity, float &background_intensity, float &metal_fuzziness, 
-                              bool &needs_rerender, bool &camera_changed, bool show_controls)
+                              SDL_Rect &toggle_button_rect, SDL_Rect &orbit_button_rect, bool &accumulation_enabled, 
+                              float &samples_per_batch, float &light_intensity, float &background_intensity, 
+                              float &metal_fuzziness, bool &needs_rerender, bool &camera_changed, bool show_controls)
    {
       if (event.button.button == SDL_BUTTON_LEFT)
       {
@@ -92,11 +100,18 @@ class CameraControlHandler
          // Only handle slider/button interactions if controls are visible
          if (show_controls)
          {
-            // Check if clicking on toggle button
+            // Check if clicking on accumulation toggle button
             if (mx >= toggle_button_rect.x && mx <= toggle_button_rect.x + toggle_button_rect.w &&
                 my >= toggle_button_rect.y && my <= toggle_button_rect.y + toggle_button_rect.h)
             {
                accumulation_enabled = !accumulation_enabled;
+               return true;
+            }
+            // Check if clicking on orbit toggle button
+            else if (mx >= orbit_button_rect.x && mx <= orbit_button_rect.x + orbit_button_rect.w &&
+                     my >= orbit_button_rect.y && my <= orbit_button_rect.y + orbit_button_rect.h)
+            {
+               toggleAutoOrbit();
                return true;
             }
             // Check sliders
@@ -247,6 +262,36 @@ class CameraControlHandler
       return true;
    }
 
+   bool updateAutoOrbit(Point3 &lookfrom, Point3 &lookat, float delta_time)
+   {
+      if (!auto_orbit_enabled)
+         return false;
+
+      // Update azimuth angle for smooth rotation
+      camera_azimuth += orbit_speed * delta_time;
+      
+      // Keep angle in range [0, 2*PI]
+      if (camera_azimuth > 2.0 * M_PI)
+         camera_azimuth -= 2.0 * M_PI;
+
+      // Update camera position
+      lookfrom.e[0] = lookat.x() + camera_distance * cos(camera_elevation) * sin(camera_azimuth);
+      lookfrom.e[1] = lookat.y() + camera_distance * sin(camera_elevation);
+      lookfrom.e[2] = lookat.z() + camera_distance * cos(camera_elevation) * cos(camera_azimuth);
+
+      return true;
+   }
+
+   void toggleAutoOrbit()
+   {
+      auto_orbit_enabled = !auto_orbit_enabled;
+   }
+
+   bool isAutoOrbitEnabled() const
+   {
+      return auto_orbit_enabled;
+   }
+
  private:
    bool left_button_down = false;
    bool right_button_down = false;
@@ -255,6 +300,8 @@ class CameraControlHandler
    double camera_azimuth = 0.0;
    double camera_elevation = 0.0;
    double camera_distance = 0.0;
+   bool auto_orbit_enabled = false;
+   double orbit_speed = 0.3;  // Radians per second
 
    bool checkSliderClick(int mx, int my, SliderBounds &slider, bool &dragging_slider, SliderBounds *&active_slider,
                          float &value, bool &needs_rerender, bool &camera_changed)

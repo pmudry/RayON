@@ -89,6 +89,7 @@ class RendererProgressiveSDL : virtual public CameraBase
       SliderBounds background_slider_bounds = {0, 0, 0, 0, 0.0f, 3.0f, &background_intensity};
       SliderBounds fuzziness_slider_bounds = {0, 0, 0, 0, 0.0f, 1.0f, &metal_fuzziness};
       SDL_Rect toggle_button_rect = {0, 0, 0, 0};
+      SDL_Rect orbit_button_rect = {0, 0, 0, 0};
       bool dragging_slider = false;
       SliderBounds *active_slider = nullptr;
 
@@ -98,6 +99,9 @@ class RendererProgressiveSDL : virtual public CameraBase
       vector<float> accum_buffer(image_width * image_height * image_channels, 0.0f);
       void *d_rand_states = nullptr;
       void *d_accum_buffer = nullptr;  // Persistent device accumulation buffer
+
+      // Timing for auto-orbit
+      auto last_frame_time = std::chrono::high_resolution_clock::now();
 
       auto total_start = std::chrono::high_resolution_clock::now();
 
@@ -142,10 +146,13 @@ class RendererProgressiveSDL : virtual public CameraBase
                
                if (camera_control.handleMouseButtonDown(
                        event, dragging_slider, active_slider, samples_slider_bounds, intensity_slider_bounds,
-                       background_slider_bounds, fuzziness_slider_bounds, toggle_button_rect, accumulation_enabled, 
-                       samples_per_batch_float, light_intensity, background_intensity, metal_fuzziness, needs_rerender, 
-                       camera_changed, gui.getShowControls()))
+                       background_slider_bounds, fuzziness_slider_bounds, toggle_button_rect, orbit_button_rect, 
+                       accumulation_enabled, samples_per_batch_float, light_intensity, background_intensity, metal_fuzziness, 
+                       needs_rerender, camera_changed, gui.getShowControls()))
                {
+                  // Sync samples_per_batch from float slider value after modification
+                  samples_per_batch = static_cast<int>(samples_per_batch_float);
+                  
                   if (camera_changed)
                   {
                      ::setLightIntensity(light_intensity);
@@ -191,6 +198,16 @@ class RendererProgressiveSDL : virtual public CameraBase
             }
          }
 
+         // Update auto-orbit if enabled (before handling camera_changed)
+         auto current_frame_time = std::chrono::high_resolution_clock::now();
+         std::chrono::duration<float> delta = current_frame_time - last_frame_time;
+         last_frame_time = current_frame_time;
+         
+         if (camera_control.updateAutoOrbit(lookfrom, lookat, delta.count()))
+         {
+            camera_changed = true;
+         }
+
          // Handle camera changes - restart rendering
          if (camera_changed)
          {
@@ -218,8 +235,9 @@ class RendererProgressiveSDL : virtual public CameraBase
          {
             applyGammaCorrection(display_image, accum_buffer, current_samples, gamma);
             displayFrame(gui, display_image, current_samples, samples_per_batch, light_intensity, background_intensity,
-                         metal_fuzziness, accumulation_enabled, samples_slider_bounds, intensity_slider_bounds, 
-                         background_slider_bounds, fuzziness_slider_bounds, toggle_button_rect);
+                         metal_fuzziness, accumulation_enabled, camera_control.isAutoOrbitEnabled(), samples_slider_bounds, 
+                         intensity_slider_bounds, background_slider_bounds, fuzziness_slider_bounds, toggle_button_rect, 
+                         orbit_button_rect);
             image = display_image;
             needs_rerender = false;
          }
@@ -234,8 +252,9 @@ class RendererProgressiveSDL : virtual public CameraBase
                         d_rand_states, d_accum_buffer);
 
             displayFrame(gui, display_image, current_samples, samples_per_batch, light_intensity, background_intensity,
-                         metal_fuzziness, accumulation_enabled, samples_slider_bounds, intensity_slider_bounds, 
-                         background_slider_bounds, fuzziness_slider_bounds, toggle_button_rect);
+                         metal_fuzziness, accumulation_enabled, camera_control.isAutoOrbitEnabled(), samples_slider_bounds, 
+                         intensity_slider_bounds, background_slider_bounds, fuzziness_slider_bounds, toggle_button_rect, 
+                         orbit_button_rect);
 
             image = display_image;
          }
@@ -243,16 +262,18 @@ class RendererProgressiveSDL : virtual public CameraBase
          {
             // Refresh display even when idle to show logo and UI
             displayFrame(gui, display_image, current_samples, samples_per_batch, light_intensity, background_intensity,
-                         metal_fuzziness, accumulation_enabled, samples_slider_bounds, intensity_slider_bounds, 
-                         background_slider_bounds, fuzziness_slider_bounds, toggle_button_rect);
+                         metal_fuzziness, accumulation_enabled, camera_control.isAutoOrbitEnabled(), samples_slider_bounds, 
+                         intensity_slider_bounds, background_slider_bounds, fuzziness_slider_bounds, toggle_button_rect, 
+                         orbit_button_rect);
             SDL_Delay(16); // ~60 FPS event polling
          }
          else if (!accumulation_enabled && current_samples > 0 && !camera_changed)
          {
             // Refresh display even when idle to show logo and UI
             displayFrame(gui, display_image, current_samples, samples_per_batch, light_intensity, background_intensity,
-                         metal_fuzziness, accumulation_enabled, samples_slider_bounds, intensity_slider_bounds, 
-                         background_slider_bounds, fuzziness_slider_bounds, toggle_button_rect);
+                         metal_fuzziness, accumulation_enabled, camera_control.isAutoOrbitEnabled(), samples_slider_bounds, 
+                         intensity_slider_bounds, background_slider_bounds, fuzziness_slider_bounds, toggle_button_rect, 
+                         orbit_button_rect);
             SDL_Delay(16); // ~60 FPS event polling (already rendered once, waiting for user input)
          }
       }
@@ -339,15 +360,16 @@ class RendererProgressiveSDL : virtual public CameraBase
     */
    void displayFrame(SDLGuiHandler &gui, const vector<unsigned char> &display_image, int current_samples, int samples_per_batch,
                      float light_intensity, float background_intensity, float metal_fuzziness, bool accumulation_enabled,
-                     SliderBounds &samples_slider_bounds, SliderBounds &intensity_slider_bounds,
-                     SliderBounds &background_slider_bounds, SliderBounds &fuzziness_slider_bounds, SDL_Rect &toggle_button_rect)
+                     bool auto_orbit_enabled, SliderBounds &samples_slider_bounds, SliderBounds &intensity_slider_bounds,
+                     SliderBounds &background_slider_bounds, SliderBounds &fuzziness_slider_bounds, SDL_Rect &toggle_button_rect,
+                     SDL_Rect &orbit_button_rect)
    {
       gui.updateDisplay(display_image, image_channels);
       gui.drawLogo();
       gui.drawSampleCountText(current_samples);
       gui.drawUIControls(samples_per_batch, light_intensity, background_intensity, metal_fuzziness, accumulation_enabled, 
-                         samples_slider_bounds, intensity_slider_bounds, background_slider_bounds, fuzziness_slider_bounds, 
-                         toggle_button_rect);
+                         auto_orbit_enabled, samples_slider_bounds, intensity_slider_bounds, background_slider_bounds, 
+                         fuzziness_slider_bounds, toggle_button_rect, orbit_button_rect);
       gui.present();
    }
 };

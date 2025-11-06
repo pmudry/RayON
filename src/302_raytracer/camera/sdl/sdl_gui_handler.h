@@ -203,8 +203,9 @@ class SDLGuiHandler
    }
 
    void drawUIControls(int samples_per_batch, float light_intensity, float background_intensity, float metal_fuzziness,
-                       bool accumulation_enabled, SliderBounds &samples_slider_bounds, SliderBounds &intensity_slider_bounds,
-                       SliderBounds &background_slider_bounds, SliderBounds &fuzziness_slider_bounds, SDL_Rect &toggle_button_rect)
+                       bool accumulation_enabled, bool auto_orbit_enabled, SliderBounds &samples_slider_bounds, 
+                       SliderBounds &intensity_slider_bounds, SliderBounds &background_slider_bounds, 
+                       SliderBounds &fuzziness_slider_bounds, SDL_Rect &toggle_button_rect, SDL_Rect &orbit_button_rect)
    {
       // Don't draw controls if they're hidden
       if (!show_controls)
@@ -224,23 +225,28 @@ class SDLGuiHandler
       int label_width = 120;
       int slider_height = 25;
       int spacing = 8;
-      int start_y = image_height - (5 * slider_height + 4 * spacing + padding);
+      int button_row_height = slider_height;  // Height for row with two buttons
+      int start_y = image_height - (5 * slider_height + button_row_height + 5 * spacing + padding);
 
       SDL_Color white = {255, 255, 255, 255};
 
-      SDL_Rect bg_rect = {padding - 5, start_y - 5, control_width + 10, 5 * slider_height + 4 * spacing + 10};
+      SDL_Rect bg_rect = {padding - 5, start_y - 5, control_width + 10, 5 * slider_height + button_row_height + 5 * spacing + 10};
       SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
       SDL_SetRenderDrawColor(renderer, 0, 0, 0, 200);
       SDL_RenderFillRect(renderer, &bg_rect);
 
-      drawToggleButton(small_font, padding, start_y, accumulation_enabled, white, toggle_button_rect);
-      drawSamplesSlider(small_font, padding, start_y + slider_height + spacing, control_width, samples_per_batch, white,
+      // Draw two toggle buttons side by side
+      int button_width = (control_width - spacing) / 2;
+      drawToggleButton(small_font, padding, start_y, accumulation_enabled, white, toggle_button_rect, "Auto-Accum", button_width);
+      drawOrbitButton(small_font, padding + button_width + spacing, start_y, auto_orbit_enabled, white, orbit_button_rect, "Auto-Orbit", button_width);
+      
+      drawSamplesSlider(small_font, padding, start_y + button_row_height + spacing, control_width, samples_per_batch, white,
                       samples_slider_bounds, label_width);
-      drawLightSlider(small_font, padding, start_y + 2 * slider_height + 2 * spacing, control_width, light_intensity,
+      drawLightSlider(small_font, padding, start_y + button_row_height + slider_height + 2 * spacing, control_width, light_intensity,
                       white, intensity_slider_bounds, label_width);
-      drawBackgroundSlider(small_font, padding, start_y + 3 * slider_height + 3 * spacing, control_width,
+      drawBackgroundSlider(small_font, padding, start_y + button_row_height + 2 * slider_height + 3 * spacing, control_width,
                            background_intensity, white, background_slider_bounds, label_width);
-      drawFuzzinessSlider(small_font, padding, start_y + 4 * slider_height + 4 * spacing, control_width,
+      drawFuzzinessSlider(small_font, padding, start_y + button_row_height + 3 * slider_height + 4 * spacing, control_width,
                           metal_fuzziness, white, fuzziness_slider_bounds, label_width);
 
       if (small_font != ttf_font)
@@ -258,8 +264,9 @@ class SDLGuiHandler
       cout << "  Right Mouse Button:  Pan camera" << endl;
       cout << "  Mouse Wheel:         Zoom in/out" << endl;
       cout << "  SPACEBAR:            Toggle automatic accumulation" << endl;
+      cout << "  O:                   Toggle auto-orbit camera" << endl;
       cout << "  H:                   Hide/show GUI controls" << endl;
-      cout << "  Up/Down Arrows:      Adjust gamma (0.5-3.0)" << endl;
+      cout << "  Up/Down Arrows:      Adjust samples per batch (1-256)" << endl;
       cout << "  Left/Right Arrows:   Adjust light intensity (0.1-3.0)" << endl;
       cout << "  ESC:                 Exit" << endl <<endl;
       cout << "Sample accumulation: " << samples_per_batch << " samples per batch, up to " << max_samples
@@ -358,18 +365,18 @@ class SDLGuiHandler
    }
 
 #ifdef SDL2_TTF_FOUND
-   void drawToggleButton(TTF_Font *ttf_font, int padding, int start_y, bool accumulation_enabled, SDL_Color white,
-                         SDL_Rect &toggle_button_rect)
+   void drawToggleButton(TTF_Font *ttf_font, int x, int y, bool enabled, SDL_Color white,
+                         SDL_Rect &button_rect, const char* label, int max_width)
    {
       int box_size = 14;
-      int box_y = start_y + 5;
-      SDL_Rect checkbox_bg = {padding, box_y, box_size, box_size};
+      int box_y = y + 5;
+      SDL_Rect checkbox_bg = {x, box_y, box_size, box_size};
 
       SDL_SetRenderDrawColor(renderer, 200, 200, 200, 255);
       SDL_RenderDrawRect(renderer, &checkbox_bg);
 
-      SDL_Rect checkbox_fill = {padding + 2, box_y + 2, box_size - 4, box_size - 4};
-      if (accumulation_enabled)
+      SDL_Rect checkbox_fill = {x + 2, box_y + 2, box_size - 4, box_size - 4};
+      if (enabled)
       {
          SDL_SetRenderDrawColor(renderer, 0, 200, 0, 255);
       }
@@ -379,24 +386,29 @@ class SDLGuiHandler
       }
       SDL_RenderFillRect(renderer, &checkbox_fill);
 
-      std::string text = "Auto-Accum";
-      SDL_Surface *text_surface = TTF_RenderText_Blended(ttf_font, text.c_str(), white);
+      SDL_Surface *text_surface = TTF_RenderText_Blended(ttf_font, label, white);
       if (text_surface)
       {
          SDL_Texture *text_texture = SDL_CreateTextureFromSurface(renderer, text_surface);
          if (text_texture)
          {
-            SDL_Rect text_rect = {padding + box_size + 8, start_y + 5, text_surface->w, text_surface->h};
+            SDL_Rect text_rect = {x + box_size + 8, y + 5, text_surface->w, text_surface->h};
             SDL_RenderCopy(renderer, text_texture, nullptr, &text_rect);
             SDL_DestroyTexture(text_texture);
          }
          SDL_FreeSurface(text_surface);
       }
 
-      toggle_button_rect.x = padding;
-      toggle_button_rect.y = box_y;
-      toggle_button_rect.w = box_size + 8 + 80;
-      toggle_button_rect.h = box_size;
+      button_rect.x = x;
+      button_rect.y = box_y;
+      button_rect.w = std::min(max_width, box_size + 8 + 80);
+      button_rect.h = box_size;
+   }
+
+   void drawOrbitButton(TTF_Font *ttf_font, int x, int y, bool enabled, SDL_Color white,
+                        SDL_Rect &button_rect, const char* label, int max_width)
+   {
+      drawToggleButton(ttf_font, x, y, enabled, white, button_rect, label, max_width);
    }
 
    void drawSamplesSlider(TTF_Font *ttf_font, int padding, int y, int control_width, int samples_per_batch, SDL_Color white,
