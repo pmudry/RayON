@@ -79,10 +79,10 @@ class CameraControlHandler
 
    bool handleMouseButtonDown(SDL_Event &event, bool &dragging_slider, SliderBounds *&active_slider,
                               SliderBounds &samples_slider_bounds, SliderBounds &intensity_slider_bounds,
-                              SliderBounds &background_slider_bounds, SDL_Rect &toggle_button_rect,
-                              bool &accumulation_enabled, float &samples_per_batch, float &light_intensity,
-                              float &background_intensity, bool &needs_rerender, bool &camera_changed,
-                              bool show_controls)
+                              SliderBounds &background_slider_bounds, SliderBounds &fuzziness_slider_bounds, 
+                              SDL_Rect &toggle_button_rect, bool &accumulation_enabled, float &samples_per_batch, 
+                              float &light_intensity, float &background_intensity, float &metal_fuzziness, 
+                              bool &needs_rerender, bool &camera_changed, bool show_controls)
    {
       if (event.button.button == SDL_BUTTON_LEFT)
       {
@@ -113,6 +113,12 @@ class CameraControlHandler
             }
             else if (checkSliderClick(mx, my, background_slider_bounds, dragging_slider, active_slider,
                                       background_intensity, needs_rerender, camera_changed))
+            {
+               camera_changed = true;
+               return true;
+            }
+            else if (checkSliderClick(mx, my, fuzziness_slider_bounds, dragging_slider, active_slider,
+                                      metal_fuzziness, needs_rerender, camera_changed))
             {
                camera_changed = true;
                return true;
@@ -151,8 +157,9 @@ class CameraControlHandler
 
    bool handleMouseMotion(SDL_Event &event, bool &dragging_slider, SliderBounds *&active_slider,
                           SliderBounds &samples_slider_bounds, SliderBounds &intensity_slider_bounds,
-                          SliderBounds &background_slider_bounds, float &samples_per_batch, float &light_intensity,
-                          float &background_intensity, bool &needs_rerender, bool &camera_changed, Point3 &lookfrom,
+                          SliderBounds &background_slider_bounds, SliderBounds &fuzziness_slider_bounds, 
+                          float &samples_per_batch, float &light_intensity, float &background_intensity, 
+                          float &metal_fuzziness, bool &needs_rerender, bool &camera_changed, Point3 &lookfrom,
                           Point3 &lookat, const Vec3 &vup, const Vec3 &w, bool show_controls)
    {
       int mouse_x = event.motion.x;
@@ -180,6 +187,11 @@ class CameraControlHandler
          else if (active_slider == &background_slider_bounds)
          {
             background_intensity = new_value;
+            camera_changed = true;
+         }
+         else if (active_slider == &fuzziness_slider_bounds)
+         {
+            metal_fuzziness = new_value;
             camera_changed = true;
          }
          return true; // Return true so the caller can apply the changes

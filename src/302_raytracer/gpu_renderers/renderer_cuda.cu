@@ -29,6 +29,9 @@ __constant__ float g_light_intensity = 1.0f;
 // Global background intensity multiplier (controls sky gradient brightness)
 __constant__ float g_background_intensity = 1.0f;
 
+// Global metal fuzziness/roughness multiplier (controls how rough metal surfaces appear)
+__constant__ float g_metal_fuzziness = 5.0f;
+
 // Golf ball debug modes:
 // 0 = off (regular shading)
 // 1 = show normals as colors (0.5*(n+1))
@@ -759,7 +762,7 @@ __device__ bool hit_world(const ray_simple &r, float t_min, float t_max, hit_rec
         closest_so_far = temp_rec.t;
         rec = temp_rec;
         rec.material = LAMBERTIAN;
-        rec.color = float3_simple(168 / 255.0f, 144 / 255.0f, 192 / 255.0f); // Violoet
+        rec.color = float3_simple(168 / 255.0f, 144 / 255.0f, 192 / 255.0f); // Violet
     }
 
     if (hit_sphere(float3_simple(-2.0f, -0.3, 1.2), 0.2f, r, t_min, closest_so_far, temp_rec))
@@ -897,7 +900,9 @@ __device__ float3_simple ray_color(const ray_simple &r, curandState *state, int 
             else if (rec.material == ROUGH_MIRROR)
             {
                 // Rough mirror reflection with surface imperfections and custom tint
-                float3_simple reflected = reflect_fuzzy(unit_vector(current_ray.dir), rec.normal, rec.roughness, state);
+                // Apply global fuzziness multiplier to object's base roughness
+                float effective_roughness = rec.roughness * g_metal_fuzziness;
+                float3_simple reflected = reflect_fuzzy(unit_vector(current_ray.dir), rec.normal, effective_roughness, state);
                 scattered = ray_simple(rec.p, reflected);
 
                 float base_reflectivity = 0.8f;
@@ -1182,6 +1187,11 @@ extern "C" void setBackgroundIntensity(float intensity)
     cudaMemcpyToSymbol(g_background_intensity, &intensity, sizeof(float));
 }
 
+extern "C" void setMetalFuzziness(float fuzziness)
+{
+    cudaMemcpyToSymbol(g_metal_fuzziness, &fuzziness, sizeof(float));
+}
+
 extern "C" void freeDeviceRandomStates(void *d_rand_states) {
     if (d_rand_states != nullptr) {
         cudaFree(d_rand_states);
@@ -1314,13 +1324,11 @@ extern "C" unsigned long long renderPixelsSDLAccumulative(unsigned char *image, 
     }
 
     // Handle persistent accumulation buffer (STAYS ON DEVICE - major optimization!)
-    bool need_accum_init = false;
     if (*d_accum_buffer_ptr == nullptr) {
         // First call - allocate device memory and copy initial data
         cudaMalloc(&d_accum_buffer, accum_size);
         *d_accum_buffer_ptr = d_accum_buffer;
         cudaMemcpy(d_accum_buffer, accum_buffer, accum_size, cudaMemcpyHostToDevice);
-        need_accum_init = true;
     } else {
         // Reuse existing device buffer - NO COPY from host! Buffer stays on GPU.
         d_accum_buffer = (float*)*d_accum_buffer_ptr;
