@@ -265,7 +265,7 @@ class RendererProgressiveSDL : virtual public CameraBase
                          metal_fuzziness, accumulation_enabled, camera_control.isAutoOrbitEnabled(), samples_slider_bounds, 
                          intensity_slider_bounds, background_slider_bounds, fuzziness_slider_bounds, toggle_button_rect, 
                          orbit_button_rect);
-            SDL_Delay(16); // ~60 FPS event polling
+            SDL_Delay(8); // ~60 FPS event polling
          }
          else if (!accumulation_enabled && current_samples > 0 && !camera_changed)
          {
@@ -274,7 +274,7 @@ class RendererProgressiveSDL : virtual public CameraBase
                          metal_fuzziness, accumulation_enabled, camera_control.isAutoOrbitEnabled(), samples_slider_bounds, 
                          intensity_slider_bounds, background_slider_bounds, fuzziness_slider_bounds, toggle_button_rect, 
                          orbit_button_rect);
-            SDL_Delay(16); // ~60 FPS event polling (already rendered once, waiting for user input)
+            SDL_Delay(8); // ~60 FPS event polling (already rendered once, waiting for user input)
          }
       }
 
