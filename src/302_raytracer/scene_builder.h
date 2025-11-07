@@ -134,20 +134,23 @@ private:
      */
     static shared_ptr<Hittable> createSDFShape(const GeometryDesc& desc, shared_ptr<Material> mat) {
         const auto& sdf_data = desc.data.sdf;
+        const Vec3& rotation = sdf_data.rotation;
         
         switch(sdf_data.sdf_type) {
             case SDFType::SPHERE:
                 return SDFShape::createSphere(
                     sdf_data.position,
                     sdf_data.parameters.x(),  // radius
-                    mat
+                    mat,
+                    rotation
                 );
                 
             case SDFType::BOX:
                 return SDFShape::createBox(
                     sdf_data.position,
                     sdf_data.parameters,  // half-extents (size)
-                    mat
+                    mat,
+                    rotation
                 );
                 
             case SDFType::TORUS:
@@ -155,7 +158,8 @@ private:
                     sdf_data.position,
                     sdf_data.parameters.x(),  // major radius
                     sdf_data.parameters.y(),  // minor radius
-                    mat
+                    mat,
+                    rotation
                 );
                 
             case SDFType::CAPSULE:
@@ -164,7 +168,7 @@ private:
                 // parameters.x = radius, parameters.y = height
                 Vec3 a = sdf_data.position - Vec3(0, sdf_data.parameters.y() * 0.5, 0);
                 Vec3 b = sdf_data.position + Vec3(0, sdf_data.parameters.y() * 0.5, 0);
-                return SDFShape::createCapsule(a, b, sdf_data.parameters.x(), mat);
+                return SDFShape::createCapsule(a, b, sdf_data.parameters.x(), mat, rotation);
             }
             
             case SDFType::CYLINDER:
@@ -172,14 +176,16 @@ private:
                     sdf_data.position,
                     sdf_data.parameters.y(),  // height
                     sdf_data.parameters.x(),  // radius
-                    mat
+                    mat,
+                    rotation
                 );
             
             case SDFType::PLANE:
                 return SDFShape::createPlane(
                     Vec3(0, 1, 0),  // normal (default: up)
                     sdf_data.parameters.x(),  // distance from origin
-                    mat
+                    mat,
+                    rotation
                 );
                 
             case SDFType::MANDELBULB:
@@ -187,7 +193,44 @@ private:
                     sdf_data.position,
                     sdf_data.parameters.x(),  // power (typically 8)
                     static_cast<int>(sdf_data.parameters.y()),  // iterations
-                    mat
+                    mat,
+                    rotation
+                );
+            
+            case SDFType::DEATH_STAR:
+                return SDFShape::createDeathStar(
+                    sdf_data.position,
+                    sdf_data.parameters.x(),  // main radius
+                    sdf_data.parameters.y(),  // cutout radius
+                    sdf_data.parameters.z(),  // cutout distance
+                    mat,
+                    rotation
+                );
+            
+            case SDFType::CUT_HOLLOW_SPHERE:
+                return SDFShape::createCutHollowSphere(
+                    sdf_data.position,
+                    sdf_data.parameters.x(),  // radius
+                    sdf_data.parameters.y(),  // cut height
+                    sdf_data.parameters.z(),  // thickness
+                    mat,
+                    rotation
+                );
+            
+            case SDFType::OCTAHEDRON:
+                return SDFShape::createOctahedron(
+                    sdf_data.position,
+                    sdf_data.parameters.x(),  // size
+                    mat,
+                    rotation
+                );
+            
+            case SDFType::PYRAMID:
+                return SDFShape::createPyramid(
+                    sdf_data.position,
+                    sdf_data.parameters.x(),  // height
+                    mat,
+                    rotation
                 );
                 
             case SDFType::CUSTOM:

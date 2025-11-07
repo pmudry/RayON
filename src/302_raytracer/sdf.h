@@ -24,6 +24,62 @@
 namespace SDF {
 
 //==============================================================================
+// ROTATION UTILITIES
+//==============================================================================
+
+/**
+ * @brief Rotate point around X axis
+ */
+inline Vec3 rotateX(const Vec3& p, double angle) {
+    double c = std::cos(angle);
+    double s = std::sin(angle);
+    return Vec3(p.x(), c * p.y() - s * p.z(), s * p.y() + c * p.z());
+}
+
+/**
+ * @brief Rotate point around Y axis
+ */
+inline Vec3 rotateY(const Vec3& p, double angle) {
+    double c = std::cos(angle);
+    double s = std::sin(angle);
+    return Vec3(c * p.x() + s * p.z(), p.y(), -s * p.x() + c * p.z());
+}
+
+/**
+ * @brief Rotate point around Z axis
+ */
+inline Vec3 rotateZ(const Vec3& p, double angle) {
+    double c = std::cos(angle);
+    double s = std::sin(angle);
+    return Vec3(c * p.x() - s * p.y(), s * p.x() + c * p.y(), p.z());
+}
+
+/**
+ * @brief Apply Euler rotation (X, Y, Z order)
+ * @param p Point to rotate
+ * @param rotation Rotation angles in radians (X, Y, Z)
+ */
+inline Vec3 applyRotation(const Vec3& p, const Vec3& rotation) {
+    Vec3 result = p;
+    if (rotation.x() != 0.0) result = rotateX(result, rotation.x());
+    if (rotation.y() != 0.0) result = rotateY(result, rotation.y());
+    if (rotation.z() != 0.0) result = rotateZ(result, rotation.z());
+    return result;
+}
+
+/**
+ * @brief Apply inverse Euler rotation (reverse order: Z, Y, X with negated angles)
+ * Used to transform points into the SDF's local space
+ */
+inline Vec3 applyInverseRotation(const Vec3& p, const Vec3& rotation) {
+    Vec3 result = p;
+    if (rotation.z() != 0.0) result = rotateZ(result, -rotation.z());
+    if (rotation.y() != 0.0) result = rotateY(result, -rotation.y());
+    if (rotation.x() != 0.0) result = rotateX(result, -rotation.x());
+    return result;
+}
+
+//==============================================================================
 // SDF PRIMITIVE DISTANCE FUNCTIONS
 //==============================================================================
 
@@ -164,6 +220,140 @@ inline double sdMandelbulb(const Vec3& p, const Vec3& center, double power = 8.0
     }
     
     return 0.5 * std::log(r) * r / dr;
+}
+
+/**
+ * @brief Signed distance to a Death Star shape (sphere with spherical cutout)
+ * @param p Point in space
+ * @param center Center of the death star
+ * @param ra Radius of main sphere
+ * @param rb Radius of spherical cutout
+ * @param d Distance from center to cutout sphere center
+ * @return Signed distance
+ * 
+ * Based on Íñigo Quilez's distance functions
+ * https://iquilezles.org/articles/distfunctions/
+ */
+inline double sdDeathStar(const Vec3& p, const Vec3& center, double ra, double rb, double d) {
+    Vec3 offset = p - center;
+    
+    // Calculate intersection parameters
+    double a = (ra*ra - rb*rb + d*d) / (2.0*d);
+    double b = std::sqrt(std::max(ra*ra - a*a, 0.0));
+    
+    // Work in 2D (project to XY plane, length of YZ)
+    Vec3 p2 = Vec3(offset.x(), std::sqrt(offset.y()*offset.y() + offset.z()*offset.z()), 0.0);
+    
+    if (p2.x() * b - p2.y() * a > d * std::max(b - p2.y(), 0.0)) {
+        return (p2 - Vec3(a, b, 0.0)).length();
+    } else {
+        return std::max(
+            p2.length() - ra,
+            -(p2 - Vec3(d, 0.0, 0.0)).length() + rb
+        );
+    }
+}
+
+/**
+ * @brief Signed distance to a cut hollow sphere
+ * @param p Point in space
+ * @param center Center of the sphere
+ * @param r Radius of sphere
+ * @param h Height of the cut (from center)
+ * @param t Thickness of the shell
+ * @return Signed distance
+ * 
+ * Based on Íñigo Quilez's distance functions
+ * https://iquilezles.org/articles/distfunctions/
+ */
+inline double sdCutHollowSphere(const Vec3& p, const Vec3& center, double r, double h, double t) {
+    Vec3 offset = p - center;
+    
+    // Calculate width at cut height
+    double w = std::sqrt(r*r - h*h);
+    
+    // Work in 2D (length in XZ plane, Y coordinate)
+    Vec3 q = Vec3(std::sqrt(offset.x()*offset.x() + offset.z()*offset.z()), offset.y(), 0.0);
+    
+    double dist;
+    if (h * q.x() < w * q.y()) {
+        dist = (q - Vec3(w, h, 0.0)).length();
+    } else {
+        dist = std::abs(q.length() - r);
+    }
+    
+    return dist - t;
+}
+
+/**
+ * @brief Signed distance to an octahedron
+ * @param p Point in space
+ * @param center Center of the octahedron
+ * @param s Size parameter (distance from center to vertex)
+ * @return Signed distance
+ * 
+ * Based on Íñigo Quilez's distance functions
+ * https://iquilezles.org/articles/distfunctions/
+ */
+inline double sdOctahedron(const Vec3& p, const Vec3& center, double s) {
+    Vec3 offset = p - center;
+    Vec3 pp = Vec3(std::abs(offset.x()), std::abs(offset.y()), std::abs(offset.z()));
+    
+    double m = pp.x() + pp.y() + pp.z() - s;
+    
+    Vec3 q;
+    if (3.0 * pp.x() < m) {
+        q = pp;
+    } else if (3.0 * pp.y() < m) {
+        q = Vec3(pp.y(), pp.z(), pp.x());
+    } else if (3.0 * pp.z() < m) {
+        q = Vec3(pp.z(), pp.x(), pp.y());
+    } else {
+        return m * 0.57735027;
+    }
+    
+    double k = std::clamp(0.5 * (q.z() - q.y() + s), 0.0, s);
+    return Vec3(q.x(), q.y() - s + k, q.z() - k).length();
+}
+
+/**
+ * @brief Signed distance to a pyramid (square base)
+ * @param p Point in space
+ * @param center Center of the pyramid base
+ * @param h Height of the pyramid
+ * @return Signed distance
+ * 
+ * Based on Íñigo Quilez's distance functions
+ * https://iquilezles.org/articles/distfunctions/
+ * The pyramid has a square base of side length 1 centered at the origin
+ */
+inline double sdPyramid(const Vec3& p, const Vec3& center, double h) {
+    Vec3 offset = p - center;
+    
+    double m2 = h*h + 0.25;
+    
+    // Mirror to first octant
+    Vec3 pp = Vec3(std::abs(offset.x()), offset.y(), std::abs(offset.z()));
+    
+    // Swap x and z if needed
+    if (pp.z() > pp.x()) {
+        pp = Vec3(pp.z(), pp.y(), pp.x());
+    }
+    pp = pp - Vec3(0.5, 0.0, 0.5);
+    
+    // Project to 2D
+    Vec3 q = Vec3(pp.z(), h*pp.y() - 0.5*pp.x(), h*pp.x() + 0.5*pp.y());
+    
+    double s = std::max(-q.x(), 0.0);
+    double t = std::clamp((q.y() - 0.5*pp.z()) / (m2 + 0.25), 0.0, 1.0);
+    
+    double a = m2 * (q.x() + s) * (q.x() + s) + q.y() * q.y();
+    double b = m2 * (q.x() + 0.5*t) * (q.x() + 0.5*t) + (q.y() - m2*t) * (q.y() - m2*t);
+    
+    double d2 = (std::min(q.y(), -q.x()*m2 - q.y()*0.5) > 0.0) ? 0.0 : std::min(a, b);
+    
+    double result = std::sqrt((d2 + q.z()*q.z()) / m2);
+    return result * ((q.z() > 0.0 || pp.y() < 0.0) ? 1.0 : -1.0);
 }
 
 //==============================================================================

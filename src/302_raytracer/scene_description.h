@@ -213,6 +213,10 @@ enum class SDFType : uint8_t {
     CYLINDER,
     PLANE,
     MANDELBULB,
+    DEATH_STAR,
+    CUT_HOLLOW_SPHERE,
+    OCTAHEDRON,
+    PYRAMID,
     CUSTOM         // User-defined distance function
 };
 
@@ -220,10 +224,11 @@ struct SDFPrimitive {
     SDFType type;
     Vec3 position;
     Vec3 parameters;       // Size/shape parameters
+    Vec3 rotation;         // Rotation in radians (pitch, yaw, roll / X, Y, Z axis)
     float blend_factor;    // For smooth blending operations
     int operation;         // Union, subtract, intersect
     
-    SDFPrimitive() : type(SDFType::SPHERE), blend_factor(0.0f), operation(0) {}
+    SDFPrimitive() : type(SDFType::SPHERE), rotation(0, 0, 0), blend_factor(0.0f), operation(0) {}
 };
 
 /**
@@ -283,6 +288,7 @@ struct GeometryDesc {
             SDFType sdf_type;
             Vec3 position;
             Vec3 parameters;
+            Vec3 rotation;       // Rotation in radians (X, Y, Z axis)
             float max_distance;  // Ray marching limit
             float epsilon;       // Surface precision
         } sdf;
@@ -533,13 +539,14 @@ public:
         geometries.push_back(geom);
     }
     
-    void addSDFPrimitive(SDFType type, const Vec3& pos, const Vec3& params, int mat_id) {
+    void addSDFPrimitive(SDFType type, const Vec3& pos, const Vec3& params, int mat_id, const Vec3& rotation = Vec3(0, 0, 0)) {
         GeometryDesc geom;
         geom.type = GeometryType::SDF_PRIMITIVE;
         geom.material_id = mat_id;
         geom.data.sdf.sdf_type = type;
         geom.data.sdf.position = pos;
         geom.data.sdf.parameters = params;
+        geom.data.sdf.rotation = rotation;
         geom.data.sdf.max_distance = 10.0f;  // Default ray march distance
         geom.data.sdf.epsilon = 0.001f;       // Default surface precision
         
@@ -552,28 +559,48 @@ public:
     
     // Convenient SDF shape factory methods
     
-    void addSDFSphere(const Vec3& center, double radius, int mat_id) {
+    void addSDFSphere(const Vec3& center, double radius, int mat_id, const Vec3& rotation = Vec3(0, 0, 0)) {
         Vec3 params(radius, 0, 0);
-        addSDFPrimitive(SDFType::SPHERE, center, params, mat_id);
+        addSDFPrimitive(SDFType::SPHERE, center, params, mat_id, rotation);
     }
     
-    void addSDFBox(const Vec3& center, const Vec3& half_extents, int mat_id) {
-        addSDFPrimitive(SDFType::BOX, center, half_extents, mat_id);
+    void addSDFBox(const Vec3& center, const Vec3& half_extents, int mat_id, const Vec3& rotation = Vec3(0, 0, 0)) {
+        addSDFPrimitive(SDFType::BOX, center, half_extents, mat_id, rotation);
     }
     
-    void addSDFTorus(const Vec3& center, double major_radius, double minor_radius, int mat_id) {
+    void addSDFTorus(const Vec3& center, double major_radius, double minor_radius, int mat_id, const Vec3& rotation = Vec3(0, 0, 0)) {
         Vec3 params(major_radius, minor_radius, 0);
-        addSDFPrimitive(SDFType::TORUS, center, params, mat_id);
+        addSDFPrimitive(SDFType::TORUS, center, params, mat_id, rotation);
     }
     
-    void addSDFCapsule(const Vec3& center, double radius, double height, int mat_id) {
+    void addSDFCapsule(const Vec3& center, double radius, double height, int mat_id, const Vec3& rotation = Vec3(0, 0, 0)) {
         Vec3 params(radius, height, 0);
-        addSDFPrimitive(SDFType::CAPSULE, center, params, mat_id);
+        addSDFPrimitive(SDFType::CAPSULE, center, params, mat_id, rotation);
     }
     
-    void addSDFMandelbulb(const Vec3& center, double power = 8.0, int iterations = 15, int mat_id = 0) {
+    void addSDFMandelbulb(const Vec3& center, double power = 8.0, int iterations = 15, int mat_id = 0, const Vec3& rotation = Vec3(0, 0, 0)) {
         Vec3 params(power, static_cast<double>(iterations), 0);
-        addSDFPrimitive(SDFType::MANDELBULB, center, params, mat_id);
+        addSDFPrimitive(SDFType::MANDELBULB, center, params, mat_id, rotation);
+    }
+    
+    void addSDFDeathStar(const Vec3& center, double main_radius, double cutout_radius, double cutout_distance, int mat_id, const Vec3& rotation = Vec3(0, 0, 0)) {
+        Vec3 params(main_radius, cutout_radius, cutout_distance);
+        addSDFPrimitive(SDFType::DEATH_STAR, center, params, mat_id, rotation);
+    }
+    
+    void addSDFCutHollowSphere(const Vec3& center, double radius, double cut_height, double thickness, int mat_id, const Vec3& rotation = Vec3(0, 0, 0)) {
+        Vec3 params(radius, cut_height, thickness);
+        addSDFPrimitive(SDFType::CUT_HOLLOW_SPHERE, center, params, mat_id, rotation);
+    }
+    
+    void addSDFOctahedron(const Vec3& center, double size, int mat_id, const Vec3& rotation = Vec3(0, 0, 0)) {
+        Vec3 params(size, 0, 0);
+        addSDFPrimitive(SDFType::OCTAHEDRON, center, params, mat_id, rotation);
+    }
+    
+    void addSDFPyramid(const Vec3& center, double height, int mat_id, const Vec3& rotation = Vec3(0, 0, 0)) {
+        Vec3 params(height, 0, 0);
+        addSDFPrimitive(SDFType::PYRAMID, center, params, mat_id, rotation);
     }
     
     //==========================================================================

@@ -129,8 +129,31 @@ Scene::SceneDescription create_scene_description()
    scene_desc.addSphere(Vec3(-1.5, -0.3, 1.2), 0.2, mat_green);
    scene_desc.addRectangle(Vec3(-1.0, 3.0, -2.0), Vec3(2.5, 0, 0), Vec3(0, 0, 1.5), mat_light);
 
-   // === SDF Torus - positioned prominently in the scene ===
-   scene_desc.addSDFTorus(Vec3(1.5, 0.7, -3.5), 0.6, 0.2, mat_torus_orange);
+   // === NEW SDF SHAPES from Íñigo Quilez's distance functions ===
+   // All SDF shapes now support rotation! Last parameter is Vec3(rotX, rotY, rotZ) in radians
+   // Rotation is applied in X, Y, Z order using Euler angles
+   // Example: Vec3(M_PI * 0.25, 0, 0) rotates 45 degrees around X axis
+   
+   // Materials for new SDF shapes
+   int mat_death_star = scene_desc.addMaterial(MaterialDesc::metal(Vec3(0.6, 0.6, 0.65), 0.1));
+   int mat_hollow_sphere = scene_desc.addMaterial(MaterialDesc::roughMirror(Vec3(0.9, 0.7, 0.3), 0.2));
+   int mat_octahedron = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(0.2, 0.8, 0.4)));
+   int mat_pyramid = scene_desc.addMaterial(MaterialDesc::roughMirror(Vec3(0.8, 0.3, 0.3), 0.15));
+   
+   // Death Star - positioned at back left, rotated to show cutout
+   scene_desc.addSDFDeathStar(Vec3(-3.5, 1.2, -4.5), 0.8, 0.5, 1.0, mat_death_star, Vec3(0, M_PI * 0.3, 0));
+   
+   // Cut Hollow Sphere - positioned center back, tilted for better view
+   scene_desc.addSDFCutHollowSphere(Vec3(0.0, 0.8, -5.0), 0.7, 0.3, 0.1, mat_hollow_sphere, Vec3(M_PI * 0.15, 0, 0));
+   
+   // Octahedron - positioned at front right, rotated 45 degrees
+   scene_desc.addSDFOctahedron(Vec3(2.5, 0.5, -2.0), 0.6, mat_octahedron, Vec3(0, M_PI * 0.25, M_PI * 0.25));
+   
+   // Pyramid - positioned at right back, rotated to face camera
+   scene_desc.addSDFPyramid(Vec3(3.0, 0.0, -4.0), 0.8, mat_pyramid, Vec3(0, M_PI * 0.4, 0));
+   
+   // Original SDF Torus - rotated to show hole better
+   scene_desc.addSDFTorus(Vec3(1.5, 0.7, -3.5), 0.6, 0.2, mat_torus_orange, Vec3(M_PI * 0.3, M_PI * 0.2, 0));
 
    // // Add many more spheres to test BVH performance
    // for (int i = 0; i < 10; i++) {

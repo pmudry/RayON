@@ -40,13 +40,14 @@ public:
     /**
      * @brief Construct an SDF sphere
      */
-    static shared_ptr<SDFShape> createSphere(const Vec3& center, double radius, shared_ptr<Material> mat) {
+    static shared_ptr<SDFShape> createSphere(const Vec3& center, double radius, shared_ptr<Material> mat, const Vec3& rotation = Vec3(0, 0, 0)) {
         auto shape = make_shared<SDFShape>(mat);
         shape->type = SDFType::SPHERE;
         shape->center = center;
         shape->param1 = radius;
+        shape->rotation = rotation;
         
-        // Distance function
+        // Distance function (spheres are rotationally symmetric, so rotation has no effect)
         shape->distance_func = [center, radius](const Vec3& p) {
             return SDF::sdSphere(p, center, radius);
         };
@@ -57,15 +58,18 @@ public:
     /**
      * @brief Construct an SDF box
      */
-    static shared_ptr<SDFShape> createBox(const Vec3& center, const Vec3& size, shared_ptr<Material> mat) {
+    static shared_ptr<SDFShape> createBox(const Vec3& center, const Vec3& size, shared_ptr<Material> mat, const Vec3& rotation = Vec3(0, 0, 0)) {
         auto shape = make_shared<SDFShape>(mat);
         shape->type = SDFType::BOX;
         shape->center = center;
         shape->size = size;
+        shape->rotation = rotation;
         
-        // Distance function
-        shape->distance_func = [center, size](const Vec3& p) {
-            return SDF::sdBox(p, center, size);
+        // Distance function with rotation support
+        shape->distance_func = [center, size, rotation](const Vec3& p) {
+            // Transform point into box's local space (apply inverse rotation)
+            Vec3 local_p = SDF::applyInverseRotation(p - center, rotation) + center;
+            return SDF::sdBox(local_p, center, size);
         };
         
         return shape;
@@ -74,16 +78,18 @@ public:
     /**
      * @brief Construct an SDF torus
      */
-    static shared_ptr<SDFShape> createTorus(const Vec3& center, double major_radius, double minor_radius, shared_ptr<Material> mat) {
+    static shared_ptr<SDFShape> createTorus(const Vec3& center, double major_radius, double minor_radius, shared_ptr<Material> mat, const Vec3& rotation = Vec3(0, 0, 0)) {
         auto shape = make_shared<SDFShape>(mat);
         shape->type = SDFType::TORUS;
         shape->center = center;
         shape->param1 = major_radius;
         shape->param2 = minor_radius;
+        shape->rotation = rotation;
         
-        // Distance function
-        shape->distance_func = [center, major_radius, minor_radius](const Vec3& p) {
-            return SDF::sdTorus(p, center, major_radius, minor_radius);
+        // Distance function with rotation support
+        shape->distance_func = [center, major_radius, minor_radius, rotation](const Vec3& p) {
+            Vec3 local_p = SDF::applyInverseRotation(p - center, rotation) + center;
+            return SDF::sdTorus(local_p, center, major_radius, minor_radius);
         };
         
         return shape;
@@ -92,16 +98,19 @@ public:
     /**
      * @brief Construct an SDF capsule
      */
-    static shared_ptr<SDFShape> createCapsule(const Vec3& a, const Vec3& b, double radius, shared_ptr<Material> mat) {
+    static shared_ptr<SDFShape> createCapsule(const Vec3& a, const Vec3& b, double radius, shared_ptr<Material> mat, const Vec3& rotation = Vec3(0, 0, 0)) {
         auto shape = make_shared<SDFShape>(mat);
         shape->type = SDFType::CAPSULE;
         shape->center = a;
         shape->direction = b;
         shape->param1 = radius;
+        shape->rotation = rotation;
         
-        // Distance function
-        shape->distance_func = [a, b, radius](const Vec3& p) {
-            return SDF::sdCapsule(p, a, b, radius);
+        // Distance function with rotation
+        Vec3 center = (a + b) * 0.5;
+        shape->distance_func = [a, b, radius, rotation, center](const Vec3& p) {
+            Vec3 local_p = SDF::applyInverseRotation(p - center, rotation) + center;
+            return SDF::sdCapsule(local_p, a, b, radius);
         };
         
         return shape;
@@ -110,16 +119,18 @@ public:
     /**
      * @brief Construct an SDF cylinder
      */
-    static shared_ptr<SDFShape> createCylinder(const Vec3& center, double height, double radius, shared_ptr<Material> mat) {
+    static shared_ptr<SDFShape> createCylinder(const Vec3& center, double height, double radius, shared_ptr<Material> mat, const Vec3& rotation = Vec3(0, 0, 0)) {
         auto shape = make_shared<SDFShape>(mat);
         shape->type = SDFType::CYLINDER;
         shape->center = center;
         shape->param1 = height;
         shape->param2 = radius;
+        shape->rotation = rotation;
         
-        // Distance function
-        shape->distance_func = [center, height, radius](const Vec3& p) {
-            return SDF::sdCylinder(p, center, height, radius);
+        // Distance function with rotation
+        shape->distance_func = [center, height, radius, rotation](const Vec3& p) {
+            Vec3 local_p = SDF::applyInverseRotation(p - center, rotation) + center;
+            return SDF::sdCylinder(local_p, center, height, radius);
         };
         
         return shape;
@@ -128,16 +139,19 @@ public:
     /**
      * @brief Construct an SDF plane
      */
-    static shared_ptr<SDFShape> createPlane(const Vec3& normal, double distance, shared_ptr<Material> mat) {
+    static shared_ptr<SDFShape> createPlane(const Vec3& normal, double distance, shared_ptr<Material> mat, const Vec3& rotation = Vec3(0, 0, 0)) {
         auto shape = make_shared<SDFShape>(mat);
         shape->type = SDFType::PLANE;
         shape->direction = unit_vector(normal);
         shape->param1 = distance;
+        shape->rotation = rotation;
         
-        // Distance function
+        // Distance function with rotation
         Vec3 n = unit_vector(normal);
-        shape->distance_func = [n, distance](const Vec3& p) {
-            return SDF::sdPlane(p, n, distance);
+        shape->distance_func = [n, distance, rotation](const Vec3& p) {
+            // Rotate the normal instead of the point for planes
+            Vec3 rotated_normal = SDF::applyRotation(n, rotation);
+            return SDF::sdPlane(p, rotated_normal, distance);
         };
         
         return shape;
@@ -146,16 +160,98 @@ public:
     /**
      * @brief Construct an SDF Mandelbulb fractal
      */
-    static shared_ptr<SDFShape> createMandelbulb(const Vec3& center, double power, int iterations, shared_ptr<Material> mat) {
+    static shared_ptr<SDFShape> createMandelbulb(const Vec3& center, double power, int iterations, shared_ptr<Material> mat, const Vec3& rotation = Vec3(0, 0, 0)) {
         auto shape = make_shared<SDFShape>(mat);
         shape->type = SDFType::MANDELBULB;
         shape->center = center;
         shape->param1 = power;
         shape->param2 = static_cast<double>(iterations);
+        shape->rotation = rotation;
         
-        // Distance function
-        shape->distance_func = [center, power, iterations](const Vec3& p) {
-            return SDF::sdMandelbulb(p, center, power, iterations);
+        // Distance function with rotation
+        shape->distance_func = [center, power, iterations, rotation](const Vec3& p) {
+            Vec3 local_p = SDF::applyInverseRotation(p - center, rotation) + center;
+            return SDF::sdMandelbulb(local_p, center, power, iterations);
+        };
+        
+        return shape;
+    }
+    
+    /**
+     * @brief Construct an SDF Death Star
+     */
+    static shared_ptr<SDFShape> createDeathStar(const Vec3& center, double main_radius, double cutout_radius, double cutout_distance, shared_ptr<Material> mat, const Vec3& rotation = Vec3(0, 0, 0)) {
+        auto shape = make_shared<SDFShape>(mat);
+        shape->type = SDFType::DEATH_STAR;
+        shape->center = center;
+        shape->param1 = main_radius;
+        shape->param2 = cutout_radius;
+        shape->size = Vec3(cutout_distance, 0, 0);  // Store cutout_distance in size.x
+        shape->rotation = rotation;
+        
+        // Distance function with rotation
+        shape->distance_func = [center, main_radius, cutout_radius, cutout_distance, rotation](const Vec3& p) {
+            Vec3 local_p = SDF::applyInverseRotation(p - center, rotation) + center;
+            return SDF::sdDeathStar(local_p, center, main_radius, cutout_radius, cutout_distance);
+        };
+        
+        return shape;
+    }
+    
+    /**
+     * @brief Construct an SDF Cut Hollow Sphere
+     */
+    static shared_ptr<SDFShape> createCutHollowSphere(const Vec3& center, double radius, double cut_height, double thickness, shared_ptr<Material> mat, const Vec3& rotation = Vec3(0, 0, 0)) {
+        auto shape = make_shared<SDFShape>(mat);
+        shape->type = SDFType::CUT_HOLLOW_SPHERE;
+        shape->center = center;
+        shape->param1 = radius;
+        shape->param2 = cut_height;
+        shape->size = Vec3(thickness, 0, 0);  // Store thickness in size.x
+        shape->rotation = rotation;
+        
+        // Distance function with rotation
+        shape->distance_func = [center, radius, cut_height, thickness, rotation](const Vec3& p) {
+            Vec3 local_p = SDF::applyInverseRotation(p - center, rotation) + center;
+            return SDF::sdCutHollowSphere(local_p, center, radius, cut_height, thickness);
+        };
+        
+        return shape;
+    }
+    
+    /**
+     * @brief Construct an SDF Octahedron
+     */
+    static shared_ptr<SDFShape> createOctahedron(const Vec3& center, double size, shared_ptr<Material> mat, const Vec3& rotation = Vec3(0, 0, 0)) {
+        auto shape = make_shared<SDFShape>(mat);
+        shape->type = SDFType::OCTAHEDRON;
+        shape->center = center;
+        shape->param1 = size;
+        shape->rotation = rotation;
+        
+        // Distance function with rotation
+        shape->distance_func = [center, size, rotation](const Vec3& p) {
+            Vec3 local_p = SDF::applyInverseRotation(p - center, rotation) + center;
+            return SDF::sdOctahedron(local_p, center, size);
+        };
+        
+        return shape;
+    }
+    
+    /**
+     * @brief Construct an SDF Pyramid
+     */
+    static shared_ptr<SDFShape> createPyramid(const Vec3& center, double height, shared_ptr<Material> mat, const Vec3& rotation = Vec3(0, 0, 0)) {
+        auto shape = make_shared<SDFShape>(mat);
+        shape->type = SDFType::PYRAMID;
+        shape->center = center;
+        shape->param1 = height;
+        shape->rotation = rotation;
+        
+        // Distance function with rotation
+        shape->distance_func = [center, height, rotation](const Vec3& p) {
+            Vec3 local_p = SDF::applyInverseRotation(p - center, rotation) + center;
+            return SDF::sdPyramid(local_p, center, height);
         };
         
         return shape;
@@ -223,6 +319,7 @@ private:
     Vec3 center{0, 0, 0};
     Vec3 size{1, 1, 1};
     Vec3 direction{0, 1, 0};
+    Vec3 rotation{0, 0, 0};  // Rotation in radians (X, Y, Z)
     double param1 = 1.0;
     double param2 = 1.0;
     
