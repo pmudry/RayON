@@ -10,19 +10,15 @@
 #include "vec3.h"
 #include "color.h"
 #include "constants.h"
-#include "hittable.h"
 #include "interval.h"
-#include "material.h"
-#include "ray.h"
-#include "rnd_gen.h"
 #include "utils.h"
 
 #include <atomic>
 #include <chrono>
-#include <cmath>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
+#include <vector>
 
 using namespace std;
 

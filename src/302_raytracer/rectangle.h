@@ -2,6 +2,7 @@
 
 #include "hittable.h"
 #include "utils.h"
+#include "color.h"
 
 /**
  * Rectangle class that can serve as both a surface and an area light
