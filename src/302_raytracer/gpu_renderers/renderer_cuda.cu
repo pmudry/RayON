@@ -12,6 +12,7 @@
 
 #include "cuda_float3.cuh"
 #include "cuda_utils.cuh"
+#include "cuda_scene.cuh"
 
 #include <cfloat>
 #include <cmath>
@@ -30,7 +31,7 @@ __constant__ float g_background_intensity = 1.0f;
 __constant__ float g_metal_fuzziness = 0.8f;
 
 // Global sampling strategy flag (0 = uniform, 1 = stratified)
-__constant__ int g_use_stratified_sampling = 0;
+__constant__ int g_use_stratified_sampling = 1;
 
 // Golf ball debug modes:
 // 0 = off (regular shading)
@@ -99,9 +100,11 @@ struct ray_simple
 };
 
 /**
- * @brief Material types supported by the ray tracer
+ * @brief Material types supported by the ray tracer (LEGACY)
+ * NOTE: This is the old enum used by hit_record_simple. 
+ * New code should use CudaScene::MaterialType instead.
  */
-enum MaterialType
+enum LegacyMaterialType
 {
    LAMBERTIAN = 0,  ///< Diffuse/matte surfaces
    MIRROR = 1,      ///< Perfect mirror surfaces
@@ -119,7 +122,7 @@ struct hit_record_simple
    float3_simple p, normal; ///< Intersection point and surface normal
    float t;                 ///< Ray parameter at intersection
    bool front_face;         ///< Whether ray hits front face
-   MaterialType material;   ///< Material type at intersection
+   LegacyMaterialType material;   ///< Material type at intersection
    float3_simple color;     ///< Base color for Lambertian materials
    float refractive_index;  ///< Refractive index for glass materials
    float3_simple emission;  ///< Emission color for light materials
@@ -555,7 +558,225 @@ __device__ bool hit_golf_ball_sphere(float3_simple center, float radius, const r
 //==============================================================================
 
 /**
- * @brief Test ray against all objects in the scene
+ * @brief Intersect a ray with a geometry object from the scene description
+ * @param geom Geometry object to test
+ * @param r Ray to test against geometry
+ * @param t_min Minimum valid intersection distance
+ * @param t_max Maximum valid intersection distance
+ * @param rec Hit record to fill with intersection data
+ * @return True if intersection found, false otherwise
+ */
+__device__ __forceinline__ bool intersect_geometry(const CudaScene::Geometry& geom, const ray_simple& r, 
+                                   float t_min, float t_max, hit_record_simple& rec)
+{
+    using namespace CudaScene;
+    
+    switch (geom.type) {
+        case GeometryType::SPHERE:
+            return hit_sphere(geom.data.sphere.center, geom.data.sphere.radius, 
+                            r, t_min, t_max, rec);
+        
+        case GeometryType::RECTANGLE:
+            return hit_rectangle(geom.data.rectangle.corner, 
+                               geom.data.rectangle.u, geom.data.rectangle.v,
+                               r, t_min, t_max, rec);
+        
+        case GeometryType::DISPLACED_SPHERE:
+            return hit_golf_ball_sphere(geom.data.displaced_sphere.center,
+                                      geom.data.displaced_sphere.radius,
+                                      r, t_min, t_max, rec);
+        
+        case GeometryType::CUBE:
+        case GeometryType::TRIANGLE:
+        case GeometryType::TRIANGLE_MESH:
+        case GeometryType::SDF_PRIMITIVE:
+            // Not yet implemented
+            return false;
+        
+        default:
+            return false;
+    }
+}
+
+/**
+ * @brief Apply procedural pattern to modify material color based on surface position
+ * @param pattern Pattern type
+ * @param base_color Base material color
+ * @param pattern_color Secondary pattern color
+ * @param param1 Pattern parameter 1 (e.g., dot count)
+ * @param param2 Pattern parameter 2 (e.g., dot radius)
+ * @param surface_point World position on surface
+ * @param geometry_center Center of geometry (for local coordinate calculation)
+ * @return Modified color with pattern applied
+ */
+__device__ float3_simple apply_procedural_pattern(
+    CudaScene::ProceduralPattern pattern,
+    const float3_simple& base_color,
+    const float3_simple& pattern_color,
+    float param1,
+    float param2,
+    const float3_simple& surface_point,
+    const float3_simple& geometry_center)
+{
+    using namespace CudaScene;
+    
+    switch (pattern) {
+        case ProceduralPattern::FIBONACCI_DOTS: {
+            // Calculate local direction from geometry center
+            float3_simple local = float3_simple(
+                surface_point.x - geometry_center.x,
+                surface_point.y - geometry_center.y,
+                surface_point.z - geometry_center.z
+            );
+            float3_simple dir = unit_vector(local);
+            
+            // Get pattern parameters
+            int dot_count = static_cast<int>(param1);
+            float dot_radius = param2;
+            
+            // Calculate angular distance to nearest Fibonacci point
+            float ang = nearestAngularDistanceFibonacci(dir, dot_count);
+            
+            // Blend between base and pattern color based on distance
+            float mask = ang < dot_radius ? 0.0f : 1.0f;
+            return float3_simple(
+                base_color.x * mask + pattern_color.x * (1.0f - mask),
+                base_color.y * mask + pattern_color.y * (1.0f - mask),
+                base_color.z * mask + pattern_color.z * (1.0f - mask)
+            );
+        }
+        
+        case ProceduralPattern::NONE:
+        default:
+            return base_color;
+    }
+}
+
+/**
+ * @brief Apply material properties to a hit record
+ * @param mat Material from scene description
+ * @param rec Hit record to modify with material properties
+ * @param geometry_center Center of the geometry (for pattern calculations)
+ */
+__device__ __forceinline__ void apply_material(const CudaScene::Material& mat, hit_record_simple& rec, 
+                                                const float3_simple& geometry_center)
+{
+    using namespace CudaScene;
+    
+    // First apply base material type
+    switch (mat.type) {
+        case MaterialType::LAMBERTIAN:
+            rec.material = LAMBERTIAN;
+            rec.color = mat.albedo;
+            break;
+        
+        case MaterialType::METAL:
+        case MaterialType::MIRROR:
+            rec.material = MIRROR;
+            rec.color = mat.albedo;
+            break;
+        
+        case MaterialType::ROUGH_MIRROR:
+            rec.material = ROUGH_MIRROR;
+            rec.color = mat.albedo;
+            rec.roughness = mat.roughness;
+            break;
+        
+        case MaterialType::GLASS:
+        case MaterialType::DIELECTRIC:
+            rec.material = GLASS;
+            rec.refractive_index = mat.refractive_index;
+            break;
+        
+        case MaterialType::LIGHT:
+            rec.material = LIGHT;
+            rec.emission = mat.emission;
+            break;
+        
+        case MaterialType::CONSTANT:
+            rec.material = LAMBERTIAN;
+            rec.color = mat.albedo;
+            break;
+        
+        case MaterialType::SHOW_NORMALS:
+            // Special material for debugging - will be handled in shading
+            rec.material = LAMBERTIAN;
+            rec.color = float3_simple(1, 1, 1);
+            break;
+        
+        case MaterialType::SDF_MATERIAL:
+            // Not yet implemented
+            rec.material = LAMBERTIAN;
+            rec.color = mat.albedo;
+            break;
+    }
+    
+    // Then apply procedural pattern if present
+    if (mat.pattern != ProceduralPattern::NONE) {
+        rec.color = apply_procedural_pattern(
+            mat.pattern,
+            rec.color,
+            mat.pattern_color,
+            mat.pattern_param1,
+            mat.pattern_param2,
+            rec.p,
+            geometry_center
+        );
+    }
+}
+
+/**
+ * @brief Test ray against scene using scene description data
+ * @param scene Scene data structure containing all geometry and materials
+ * @param r Ray to test against scene
+ * @param t_min Minimum valid intersection distance
+ * @param t_max Maximum valid intersection distance
+ * @param rec Hit record to fill with closest intersection
+ * @return True if any intersection found, false otherwise
+ */
+__device__ bool hit_scene(const CudaScene::Scene& scene, const ray_simple& r, 
+                         float t_min, float t_max, hit_record_simple& rec)
+{
+    hit_record_simple temp_rec;
+    bool hit_anything = false;
+    float closest_so_far = t_max;
+    int closest_material_id = -1;
+    int closest_geom_idx = -1;
+    
+    // Test all geometries in the scene - unroll for small scenes
+    #pragma unroll 4
+    for (int i = 0; i < scene.num_geometries; ++i) {
+        const CudaScene::Geometry& geom = scene.geometries[i];
+        
+        if (intersect_geometry(geom, r, t_min, closest_so_far, temp_rec)) {
+            hit_anything = true;
+            closest_so_far = temp_rec.t;
+            rec = temp_rec;
+            closest_material_id = geom.material_id;
+            closest_geom_idx = i;
+        }
+    }
+    
+    // Apply material properties only for the closest hit
+    if (hit_anything && closest_material_id >= 0 && closest_material_id < scene.num_materials) {
+        // Get geometry center for pattern calculations
+        float3_simple geom_center(0, 0, 0);
+        if (closest_geom_idx >= 0) {
+            const CudaScene::Geometry& geom = scene.geometries[closest_geom_idx];
+            if (geom.type == CudaScene::GeometryType::SPHERE || 
+                geom.type == CudaScene::GeometryType::DISPLACED_SPHERE) {
+                geom_center = geom.data.sphere.center;
+            }
+        }
+        
+        apply_material(scene.materials[closest_material_id], rec, geom_center);
+    }
+    
+    return hit_anything;
+}
+
+/**
+ * @brief Test ray against all objects in the scene (LEGACY - hardcoded scene)
  * @param r Ray to test against scene
  * @param t_min Minimum valid intersection distance
  * @param t_max Maximum valid intersection distance
@@ -711,7 +932,119 @@ __device__ bool hit_world(const ray_simple &r, float t_min, float t_max, hit_rec
 //==============================================================================
 
 /**
- * @brief Calculate color contribution from a ray using recursive ray tracing
+ * @brief Calculate color contribution from a ray using scene description (NEW)
+ * @param r Ray to trace through the scene
+ * @param scene Scene data structure containing all geometry and materials
+ * @param state Random number generator state for Monte Carlo sampling
+ * @param depth Remaining recursion depth (prevents infinite recursion)
+ * @param local_ray_count Local counter for rays traced (accumulated per-thread, no atomics)
+ * @return Final color contribution from this ray
+ */
+__device__ float3_simple ray_color(const ray_simple &r, const CudaScene::Scene& scene, 
+                                   curandState *state, int depth, int &local_ray_count)
+{
+   // Iterative ray tracing to avoid recursion overhead
+   float3_simple accumulated_color(0, 0, 0);
+   float3_simple accumulated_attenuation(1.0f, 1.0f, 1.0f);
+   ray_simple current_ray = r;
+
+   for (int bounce = 0; bounce < depth; bounce++)
+   {
+      // Increment local ray counter (no atomics, much faster)
+      local_ray_count++;
+
+      hit_record_simple rec;
+
+      if (hit_scene(scene, current_ray, 0.001f, FLT_MAX, rec))
+      {
+         // If we hit a light source, accumulate its emission and stop
+         if (rec.material == LIGHT)
+         {
+            accumulated_color = accumulated_color + float3_simple(accumulated_attenuation.x * rec.emission.x,
+                                                                  accumulated_attenuation.y * rec.emission.y,
+                                                                  accumulated_attenuation.z * rec.emission.z);
+            return accumulated_color;
+         }
+
+         // Handle material scattering
+         float3_simple scattered_direction;
+         float3_simple attenuation;
+
+         if (rec.material == LAMBERTIAN)
+         {
+            // Diffuse reflection - match legacy behavior exactly
+            float3_simple target = rec.p + rec.normal + random_in_hemisphere(rec.normal, state);
+            scattered_direction = target - rec.p;
+            attenuation = rec.color;
+         }
+         else if (rec.material == MIRROR)
+         {
+            // Perfect mirror reflection
+            scattered_direction = reflect(unit_vector(current_ray.dir), rec.normal);
+            attenuation = rec.color;
+         }
+         else if (rec.material == ROUGH_MIRROR)
+         {
+            // Rough mirror with fuzzy reflection
+            scattered_direction = reflect_fuzzy(unit_vector(current_ray.dir), rec.normal, 
+                                              rec.roughness * g_metal_fuzziness, state);
+            attenuation = rec.color;
+         }
+         else if (rec.material == GLASS)
+         {
+            // Glass with refraction and reflection
+            float3_simple unit_direction = unit_vector(current_ray.dir);
+            float refraction_ratio = rec.front_face ? (1.0f / rec.refractive_index) : rec.refractive_index;
+
+            float cos_theta = fminf(dot(-unit_direction, rec.normal), 1.0f);
+            float sin_theta = sqrtf(1.0f - cos_theta * cos_theta);
+
+            bool cannot_refract = refraction_ratio * sin_theta > 1.0f;
+
+            if (cannot_refract || reflectance(cos_theta, refraction_ratio) > rand_float(state))
+            {
+               scattered_direction = reflect(unit_direction, rec.normal);
+            }
+            else
+            {
+               scattered_direction = refract(unit_direction, rec.normal, refraction_ratio);
+            }
+
+            attenuation = float3_simple(1.0f, 1.0f, 1.0f);
+         }
+         else
+         {
+            // Unknown material - treat as perfect absorber
+            return accumulated_color;
+         }
+
+         // Update ray and attenuation
+         current_ray = ray_simple(rec.p, scattered_direction);
+         accumulated_attenuation = float3_simple(accumulated_attenuation.x * attenuation.x,
+                                                accumulated_attenuation.y * attenuation.y,
+                                                accumulated_attenuation.z * attenuation.z);
+      }
+      else
+      {
+         // Ray escaped the scene - sample background/sky
+         float3_simple unit_direction = unit_vector(current_ray.dir);
+         float t = 0.5f * (unit_direction.y + 1.0f);
+         float3_simple sky_color = (1.0f - t) * float3_simple(1.0f, 1.0f, 1.0f) + 
+                                  t * float3_simple(0.5f, 0.7f, 1.0f);
+         
+         accumulated_color = accumulated_color + float3_simple(accumulated_attenuation.x * sky_color.x * g_background_intensity,
+                                                              accumulated_attenuation.y * sky_color.y * g_background_intensity,
+                                                              accumulated_attenuation.z * sky_color.z * g_background_intensity);
+         return accumulated_color;
+      }
+   }
+
+   // Ray bounced too many times - return black
+   return accumulated_color;
+}
+
+/**
+ * @brief Calculate color contribution from a ray using recursive ray tracing (LEGACY)
  * @param r Ray to trace through the scene
  * @param state Random number generator state for Monte Carlo sampling
  * @param depth Remaining recursion depth (prevents infinite recursion)
@@ -1391,6 +1724,198 @@ renderPixelsCUDAAccumulative(unsigned char *image, float *accum_buffer, int widt
    cudaFree(d_image);
    cudaFree(d_ray_count);
    // Don't free d_rand_states or d_accum_buffer - they're persistent!
+
+   return host_ray_count;
+}
+
+//==============================================================================
+// NEW SCENE-BASED RENDERING (Phase 3)
+//==============================================================================
+
+/**
+ * @brief CUDA kernel for rendering with scene description data structure
+ * @param image Output image buffer
+ * @param scene Scene data on device
+ * @param width Image width
+ * @param height Image height
+ * @param samples_per_pixel Samples per pixel for anti-aliasing
+ * @param max_depth Maximum ray bounce depth
+ * @param cam_center_* Camera parameters
+ * @param pixel00_* Pixel grid parameters
+ * @param delta_u_* Pixel delta vectors
+ * @param delta_v_* Pixel delta vectors
+ * @param ray_count Ray counter
+ * @param rand_states Random state per pixel
+ */
+__global__ void renderKernelWithScene(unsigned char *image, CudaScene::Scene scene,
+                                     int width, int height, int samples_per_pixel, int max_depth,
+                                     float cam_center_x, float cam_center_y, float cam_center_z,
+                                     float pixel00_x, float pixel00_y, float pixel00_z,
+                                     float delta_u_x, float delta_u_y, float delta_u_z,
+                                     float delta_v_x, float delta_v_y, float delta_v_z,
+                                     unsigned long long *ray_count, curandState *rand_states)
+{
+   int x = blockIdx.x * blockDim.x + threadIdx.x;
+   int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+   if (x >= width || y >= height)
+      return;
+
+   int pixel_index = y * width + x;
+   curandState *local_state = &rand_states[pixel_index];
+
+   // Camera parameters
+   float3_simple cam_center(cam_center_x, cam_center_y, cam_center_z);
+   float3_simple pixel00(pixel00_x, pixel00_y, pixel00_z);
+   float3_simple delta_u(delta_u_x, delta_u_y, delta_u_z);
+   float3_simple delta_v(delta_v_x, delta_v_y, delta_v_z);
+
+   // Accumulate color from multiple samples
+   float3_simple pixel_color(0, 0, 0);
+   int local_ray_count = 0;
+
+   if (g_use_stratified_sampling)
+   {
+      // Stratified sampling
+      int grid_size = (int)sqrtf((float)samples_per_pixel);
+      if (grid_size * grid_size < samples_per_pixel)
+         grid_size++;
+      
+      float stratum_size = 1.0f / (float)grid_size;
+      int sample_idx = 0;
+      
+      for (int strat_y = 0; strat_y < grid_size && sample_idx < samples_per_pixel; strat_y++)
+      {
+         for (int strat_x = 0; strat_x < grid_size && sample_idx < samples_per_pixel; strat_x++)
+         {
+            float jitter_u = rand_float(local_state) * stratum_size;
+            float jitter_v = rand_float(local_state) * stratum_size;
+            float offset_u = (strat_x * stratum_size + jitter_u) - 0.5f;
+            float offset_v = (strat_y * stratum_size + jitter_v) - 0.5f;
+
+            float3_simple pixel_center =
+                pixel00 + float3_simple((x + offset_u) * delta_u.x, (x + offset_u) * delta_u.y, (x + offset_u) * delta_u.z) +
+                float3_simple((y + offset_v) * delta_v.x, (y + offset_v) * delta_v.y, (y + offset_v) * delta_v.z);
+
+            float3_simple ray_direction =
+                float3_simple(pixel_center.x - cam_center.x, pixel_center.y - cam_center.y, pixel_center.z - cam_center.z);
+
+            ray_simple r(cam_center, ray_direction);
+            pixel_color = pixel_color + ray_color(r, scene, local_state, min(max_depth, 6), local_ray_count);
+            sample_idx++;
+         }
+      }
+   }
+   else
+   {
+      // Uniform sampling
+      for (int s = 0; s < samples_per_pixel; ++s)
+      {
+         float offset_u = rand_float(local_state) - 0.5f;
+         float offset_v = rand_float(local_state) - 0.5f;
+
+         float3_simple pixel_center =
+             pixel00 + float3_simple((x + offset_u) * delta_u.x, (x + offset_u) * delta_u.y, (x + offset_u) * delta_u.z) +
+             float3_simple((y + offset_v) * delta_v.x, (y + offset_v) * delta_v.y, (y + offset_v) * delta_v.z);
+
+         float3_simple ray_direction =
+             float3_simple(pixel_center.x - cam_center.x, pixel_center.y - cam_center.y, pixel_center.z - cam_center.z);
+
+         ray_simple r(cam_center, ray_direction);
+         pixel_color = pixel_color + ray_color(r, scene, local_state, min(max_depth, 6), local_ray_count);
+      }
+   }
+
+   // Average the samples
+   float scale = 1.0f / samples_per_pixel;
+   pixel_color = float3_simple(pixel_color.x * scale, pixel_color.y * scale, pixel_color.z * scale);
+
+   // Gamma correction (gamma = 2.0)
+   pixel_color.x = sqrtf(pixel_color.x);
+   pixel_color.y = sqrtf(pixel_color.y);
+   pixel_color.z = sqrtf(pixel_color.z);
+
+   // Clamp and convert to 8-bit
+   pixel_color.x = fminf(fmaxf(pixel_color.x, 0.0f), 1.0f);
+   pixel_color.y = fminf(fmaxf(pixel_color.y, 0.0f), 1.0f);
+   pixel_color.z = fminf(fmaxf(pixel_color.z, 0.0f), 1.0f);
+
+   int idx = pixel_index * 3;
+   image[idx + 0] = static_cast<unsigned char>(pixel_color.x * 255.0f);
+   image[idx + 1] = static_cast<unsigned char>(pixel_color.y * 255.0f);
+   image[idx + 2] = static_cast<unsigned char>(pixel_color.z * 255.0f);
+
+   // Accumulate ray count (no atomics for speed)
+   atomicAdd(ray_count, (unsigned long long)local_ray_count);
+}
+
+/**
+ * @brief Host function to render using scene description
+ * @param image Output image buffer on host
+ * @param scene Scene structure with device pointers
+ * @param width Image width
+ * @param height Image height
+ * @param cam_center_* Camera parameters
+ * @param pixel00_* Pixel grid parameters
+ * @param delta_u_* Pixel delta vectors
+ * @param delta_v_* Pixel delta vectors
+ * @param samples_per_pixel Samples per pixel
+ * @param max_depth Maximum ray bounce depth
+ * @return Total rays traced
+ */
+extern "C" unsigned long long renderPixelsCUDAWithScene(
+    unsigned char *image, CudaScene::Scene* scene, int width, int height,
+    double cam_center_x, double cam_center_y, double cam_center_z,
+    double pixel00_x, double pixel00_y, double pixel00_z,
+    double delta_u_x, double delta_u_y, double delta_u_z,
+    double delta_v_x, double delta_v_y, double delta_v_z,
+    int samples_per_pixel, int max_depth)
+{
+   if (!scene) return 0;
+   
+   // Allocate device memory
+   unsigned char *d_image;
+   unsigned long long *d_ray_count;
+   curandState *d_rand_states;
+
+   int num_pixels = width * height;
+   size_t image_size = num_pixels * 3 * sizeof(unsigned char);
+
+   cudaMalloc(&d_image, image_size);
+   cudaMalloc(&d_ray_count, sizeof(unsigned long long));
+   cudaMalloc(&d_rand_states, num_pixels * sizeof(curandState));
+
+   // Initialize random states
+   dim3 threads(16, 16);
+   dim3 blocks((width + threads.x - 1) / threads.x, (height + threads.y - 1) / threads.y);
+   
+   init_random_states<<<blocks, threads>>>(d_rand_states, num_pixels, 1234ULL, width);
+   cudaDeviceSynchronize();
+
+   // Initialize ray count
+   cudaMemset(d_ray_count, 0, sizeof(unsigned long long));
+
+   // Launch rendering kernel - dereference the scene pointer
+   renderKernelWithScene<<<blocks, threads>>>(
+       d_image, *scene, width, height, samples_per_pixel, max_depth,
+       (float)cam_center_x, (float)cam_center_y, (float)cam_center_z,
+       (float)pixel00_x, (float)pixel00_y, (float)pixel00_z,
+       (float)delta_u_x, (float)delta_u_y, (float)delta_u_z,
+       (float)delta_v_x, (float)delta_v_y, (float)delta_v_z,
+       d_ray_count, d_rand_states);
+
+   cudaDeviceSynchronize();
+
+   // Copy results back
+   cudaMemcpy(image, d_image, image_size, cudaMemcpyDeviceToHost);
+
+   unsigned long long host_ray_count = 0;
+   cudaMemcpy(&host_ray_count, d_ray_count, sizeof(unsigned long long), cudaMemcpyDeviceToHost);
+
+   // Cleanup
+   cudaFree(d_image);
+   cudaFree(d_ray_count);
+   cudaFree(d_rand_states);
 
    return host_ray_count;
 }

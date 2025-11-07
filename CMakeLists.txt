@@ -77,6 +77,10 @@ set ( SOURCE_302_RAYTRACER
   # Materials
   src/302_raytracer/material.h
   
+  # Scene description (NEW)
+  src/302_raytracer/scene_description.h
+  src/302_raytracer/scene_builder.h
+  
   # Camera and renderers
   src/302_raytracer/camera/camera.h
   src/302_raytracer/camera/camera_base.h  
@@ -96,6 +100,8 @@ set ( SOURCE_302_RAYTRACER
   src/302_raytracer/gpu_renderers/renderer_cuda.cu
   src/302_raytracer/gpu_renderers/cuda_float3.cuh
   src/302_raytracer/gpu_renderers/cuda_utils.cuh
+  src/302_raytracer/gpu_renderers/cuda_scene.cuh
+  src/302_raytracer/gpu_renderers/scene_builder_cuda.cu
 )
 
 # Add include directories to avoid ugly ../../ paths

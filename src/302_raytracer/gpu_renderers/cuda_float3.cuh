@@ -22,28 +22,28 @@ struct float3_simple
 {
    float x, y, z;
 
-   __device__ float3_simple() : x(0), y(0), z(0) {}
-   __device__ float3_simple(float x_, float y_, float z_) : x(x_), y(y_), z(z_) {}
+   __host__ __device__ float3_simple() : x(0), y(0), z(0) {}
+   __host__ __device__ float3_simple(float x_, float y_, float z_) : x(x_), y(y_), z(z_) {}
 
-   __device__ float3_simple operator+(const float3_simple &other) const
+   __host__ __device__ float3_simple operator+(const float3_simple &other) const
    {
       return float3_simple(x + other.x, y + other.y, z + other.z);
    }
 
-   __device__ float3_simple operator-(const float3_simple &other) const
+   __host__ __device__ float3_simple operator-(const float3_simple &other) const
    {
       return float3_simple(x - other.x, y - other.y, z - other.z);
    }
 
-   __device__ float3_simple operator*(float t) const { return float3_simple(x * t, y * t, z * t); }
+   __host__ __device__ float3_simple operator*(float t) const { return float3_simple(x * t, y * t, z * t); }
 
-   __device__ float3_simple operator/(float t) const { return float3_simple(x / t, y / t, z / t); }
+   __host__ __device__ float3_simple operator/(float t) const { return float3_simple(x / t, y / t, z / t); }
 
-   __device__ float3_simple operator-() const { return float3_simple(-x, -y, -z); }
+   __host__ __device__ float3_simple operator-() const { return float3_simple(-x, -y, -z); }
 
-   __device__ float length() const { return sqrtf(x * x + y * y + z * z); }
+   __host__ __device__ float length() const { return sqrtf(x * x + y * y + z * z); }
 
-   __device__ float length_squared() const { return x * x + y * y + z * z; }
+   __host__ __device__ float length_squared() const { return x * x + y * y + z * z; }
 };
 
 /** @brief Scalar multiplication from left */

@@ -10,6 +10,11 @@
 #include "../camera/camera_base.h"
 #include <vector>
 
+// Forward declaration for CudaScene::Scene
+namespace CudaScene {
+    struct Scene;
+}
+
 // Forward declarations of CUDA functions
 extern "C"
 {
@@ -20,6 +25,14 @@ extern "C"
                                        double delta_v_x, double delta_v_y, double delta_v_z, int samples_per_pixel,
                                        int max_depth);
 
+   // Host function for scene-based CUDA rendering
+   unsigned long long renderPixelsCUDAWithScene(
+       unsigned char *image, CudaScene::Scene* scene, int width, int height,
+       double cam_center_x, double cam_center_y, double cam_center_z,
+       double pixel00_x, double pixel00_y, double pixel00_z,
+       double delta_u_x, double delta_u_y, double delta_u_z,
+       double delta_v_x, double delta_v_y, double delta_v_z,
+       int samples_per_pixel, int max_depth);
    
    // Helper to free device random states
    void freeDeviceRandomStates(void *d_rand_states);
