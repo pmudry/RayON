@@ -81,6 +81,11 @@ class RendererCUDAProgressive : virtual public CameraBase
       bool needs_rerender = false;
       bool force_immediate_render = false; // Flag to force rendering immediately after state change
       float samples_per_batch_float = static_cast<float>(samples_per_batch); // Float version for slider
+      
+      // Motion detection for adaptive quality
+      bool is_camera_moving = false;
+      auto last_camera_change_time = std::chrono::high_resolution_clock::now();
+      const float motion_cooldown_seconds = 0.5f; // Wait 0.5s after last input before considering stopped
 
       // Set initial rendering parameters
       ::setLightIntensity(light_intensity);
@@ -217,6 +222,11 @@ class RendererCUDAProgressive : virtual public CameraBase
             camera_changed = true;
          }
 
+         // Update motion detection
+         auto now = std::chrono::high_resolution_clock::now();
+         std::chrono::duration<float> time_since_last_change = now - last_camera_change_time;
+         is_camera_moving = (time_since_last_change.count() < motion_cooldown_seconds);
+
          // Handle camera changes - restart rendering
          if (camera_changed)
          {
@@ -224,6 +234,10 @@ class RendererCUDAProgressive : virtual public CameraBase
             current_samples = 0;
             force_immediate_render = true; // Force rendering after camera/settings change
             std::fill(accum_buffer.begin(), accum_buffer.end(), 0.0f);
+            
+            // Mark camera as moving
+            last_camera_change_time = now;
+            is_camera_moving = true;
 
             // Free and reset device buffers on camera change
             if (d_rand_states != nullptr)
@@ -261,7 +275,7 @@ class RendererCUDAProgressive : virtual public CameraBase
          {
             force_immediate_render = false; // Reset flag after rendering
             renderBatch(display_image, accum_buffer, current_samples, max_samples, samples_per_batch, gamma,
-                        d_rand_states, d_accum_buffer, gpu_scene);
+                        d_rand_states, d_accum_buffer, gpu_scene, is_camera_moving);
 
             displayFrame(gui, display_image, current_samples, samples_per_batch, light_intensity, background_intensity,
                          metal_fuzziness, accumulation_enabled, camera_control.isAutoOrbitEnabled(),
@@ -311,11 +325,44 @@ class RendererCUDAProgressive : virtual public CameraBase
 
  private:
    /**
+    * @brief Calculate progressive max depth based on accumulated samples
+    * Starts at depth 1, gradually increases to max 256 for final quality
+    */
+   int calculateProgressiveMaxDepth(int current_samples, int max_samples, bool is_moving)
+   {
+      // During camera motion, use reduced depth for faster preview
+      if (is_moving)
+      {
+         return 3; // Fast preview during motion
+      }
+      
+      // Progressive depth schedule for smooth quality ramp-up
+      if (current_samples <= 4)
+         return 4;  // First few samples: depth 1 (fastest preview)
+      else if (current_samples <= 16)
+         return 5;  // Quick preview: depth 2
+      else if (current_samples <= 32)
+         return 6;  // Early quality: depth 3
+      else if (current_samples <= 64)
+         return 7;  // Building detail: depth 4
+      else if (current_samples <= 128)
+         return 8;  // Good quality: depth 6
+      else if (current_samples <= 256)
+         return 16;  // High quality: depth 8
+      else if (current_samples <= 512)
+         return 16; // Very high quality: depth 12
+      else if (current_samples <= 1024)
+         return 24; // Excellent quality: depth 16      
+      else
+         return min(512, max_depth); // Final quality: depth up to 256
+   }
+
+   /**
     * @brief Render a batch of samples using CUDA
     */
    void renderBatch(vector<unsigned char> &display_image, vector<float> &accum_buffer, int &current_samples,
                     int max_samples, int samples_per_batch, float gamma, void *&d_rand_states, void *&d_accum_buffer,
-                    CudaScene::Scene *gpu_scene)
+                    CudaScene::Scene *gpu_scene, bool is_moving)
    {
       current_samples += samples_per_batch;
       if (current_samples > max_samples)
@@ -325,12 +372,15 @@ class RendererCUDAProgressive : virtual public CameraBase
       if (current_samples > max_samples)
          actual_samples_to_add = max_samples - (current_samples - samples_per_batch);
 
-      // Call CUDA to render and accumulate samples
+      // Calculate progressive max depth based on current sample count and motion state
+      int progressive_depth = calculateProgressiveMaxDepth(current_samples, max_samples, is_moving);
+
+      // Call CUDA to render and accumulate samples with progressive depth
       unsigned long long cuda_ray_count = ::renderPixelsCUDAAccumulative(
           display_image.data(), accum_buffer.data(), gpu_scene, image_width, image_height, camera_center.x(),
           camera_center.y(), camera_center.z(), pixel00_loc.x(), pixel00_loc.y(), pixel00_loc.z(), pixel_delta_u.x(),
           pixel_delta_u.y(), pixel_delta_u.z(), pixel_delta_v.x(), pixel_delta_v.y(), pixel_delta_v.z(),
-          actual_samples_to_add, current_samples, max_depth, &d_rand_states, &d_accum_buffer);
+          actual_samples_to_add, current_samples, progressive_depth, &d_rand_states, &d_accum_buffer);
 
       n_rays.fetch_add(cuda_ray_count, std::memory_order_relaxed);
 

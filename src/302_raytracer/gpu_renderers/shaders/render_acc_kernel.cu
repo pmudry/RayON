@@ -36,7 +36,7 @@ __global__ void renderAccKernel(float *accum_buffer, unsigned char *image, const
       float3_simple pixel_center = pixel00_loc + ((float)x + offset_u) * pixel_delta_u + ((float)y + offset_v) * pixel_delta_v;
       float3_simple ray_direction = pixel_center - camera_center;
       ray_simple r(camera_center, ray_direction);
-      accumulated_color = accumulated_color + ray_color(r, *scene, local_rand_state, min(max_depth, 6), local_ray_count);
+      accumulated_color = accumulated_color + ray_color(r, *scene, local_rand_state, max_depth, local_ray_count);
    }
    
    // Block-level atomic accumulation
