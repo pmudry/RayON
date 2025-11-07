@@ -114,6 +114,7 @@ Scene::SceneDescription create_scene_description()
    int mat_rose = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(226 / 255.0, 171 / 255.0, 186 / 255.0)));
    int mat_green = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(152 / 255.0, 199 / 255.0, 191 / 255.0)));
    int mat_light = scene_desc.addMaterial(MaterialDesc::light(Vec3(4.8, 4.1, 3.7)));
+   int mat_torus_orange = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(1.0, 0.6, 0.2)));
 
    // === Default scene - Geometry ===
    scene_desc.addSphere(Vec3(0, -950.5, -1), 950.0, mat_ground);
@@ -127,6 +128,9 @@ Scene::SceneDescription create_scene_description()
    scene_desc.addSphere(Vec3(-2.0, -0.3, 1.2), 0.2, mat_rose);
    scene_desc.addSphere(Vec3(-1.5, -0.3, 1.2), 0.2, mat_green);
    scene_desc.addRectangle(Vec3(-1.0, 3.0, -2.0), Vec3(2.5, 0, 0), Vec3(0, 0, 1.5), mat_light);
+
+   // === SDF Torus - positioned prominently in the scene ===
+   scene_desc.addSDFTorus(Vec3(1.5, 0.7, -3.5), 0.6, 0.2, mat_torus_orange);
 
    // // Add many more spheres to test BVH performance
    // for (int i = 0; i < 10; i++) {
@@ -145,51 +149,9 @@ Scene::SceneDescription create_scene_description()
    cout << "Built BVH with " << scene_desc.top_level_bvh.nodes.size() << " nodes for " << scene_desc.geometries.size()
         << " geometries" << endl;
 
-   // Uncomment the line below to test without BVH for performance comparison
-   // scene_desc.use_bvh = false;
-
    return scene_desc;
 }
 
-/**
- * @brief Create CPU-compatible scene with only Lambertian materials
- * This approximates the GPU scene but uses only materials available in the CPU renderer
- */
-Hittable_list create_cpu_scene()
-{
-   Hittable_list world;
-
-   // Materials - all lambertian with colors matching the GPU scene
-   auto mat_ground = make_shared<Lambertian>(Color(0.44, 0.7, 0.95));
-   auto mat_golden = make_shared<Lambertian>(Color(1.0, 0.85, 0.47));      // Golden (was rough mirror)
-   auto mat_blue_rough = make_shared<Lambertian>(Color(0.3, 0.3, 0.91));   // Blue (was rough mirror)
-   auto mat_red = make_shared<Lambertian>(Color(0.9, 0.1, 0.1));           // Red (was Fibonacci dots)
-   auto mat_glass_approx = make_shared<Lambertian>(Color(0.9, 0.9, 0.95)); // Light blue-white (was glass)
-   auto mat_yellow = make_shared<Lambertian>(Color(247 / 255.0, 241 / 255.0, 159 / 255.0));
-   auto mat_blue = make_shared<Lambertian>(Color(140 / 255.0, 198 / 255.0, 230 / 255.0));
-   auto mat_violet = make_shared<Lambertian>(Color(168 / 255.0, 144 / 255.0, 192 / 255.0));
-   auto mat_rose = make_shared<Lambertian>(Color(226 / 255.0, 171 / 255.0, 186 / 255.0));
-   auto mat_green = make_shared<Lambertian>(Color(152 / 255.0, 199 / 255.0, 191 / 255.0));
-   auto mat_light = make_shared<Lambertian>(Color(1.0, 1.0, 0.9)); // Bright warm white (was light)
-
-   // Geometry - matching GPU scene positions
-   world.add(make_shared<Sphere>(Point3(0, -950.5, -1), 950.0, mat_ground));
-   world.add(make_shared<Sphere>(Point3(-3.5, 0.45, -1.8), 0.8, mat_golden));
-   world.add(make_shared<Sphere>(Point3(1.2, 0, -2), 0.5, mat_blue_rough)); // Golf ball (no displacement)
-   world.add(make_shared<Sphere>(Point3(-1.3, 0.18, -5), 0.7, mat_red));
-   world.add(make_shared<Sphere>(Point3(-0.7, 0.2, -0.3), 0.6, mat_glass_approx));
-
-   // ISC logo spheres
-   world.add(make_shared<Sphere>(Point3(-3.5, -0.3, 1.2), 0.2, mat_yellow));
-   world.add(make_shared<Sphere>(Point3(-3.0, -0.3, 1.2), 0.2, mat_blue));
-   world.add(make_shared<Sphere>(Point3(-2.5, -0.3, 1.2), 0.2, mat_violet));
-   world.add(make_shared<Sphere>(Point3(-2.0, -0.3, 1.2), 0.2, mat_rose));
-   world.add(make_shared<Sphere>(Point3(-1.5, -0.3, 1.2), 0.2, mat_green));
-
-   // Note: Rectangle (area light) not added as CPU renderer may not support it
-
-   return world;
-}
 
 // Implementation of RendererCUDA::createDefaultScene() - uses unified scene
 Scene::SceneDescription RendererCUDA::createDefaultScene() { return create_scene_description(); }
@@ -349,8 +311,9 @@ int main(int argc, char *argv[])
 
    RndGen::set_seed(123);
 
-   // Create CPU scene (Lambertian materials only)
-   Hittable_list cpu_scene = create_cpu_scene();
+   // Create unified scene description and convert to CPU scene
+   Scene::SceneDescription scene_desc = create_scene_description();
+   Hittable_list cpu_scene = Scene::CPUSceneBuilder::buildCPUScene(scene_desc);
 
    vector<unsigned char> localImage(image.size());
 

@@ -210,6 +210,8 @@ enum class SDFType : uint8_t {
     BOX,
     TORUS,
     CAPSULE,
+    CYLINDER,
+    PLANE,
     MANDELBULB,
     CUSTOM         // User-defined distance function
 };
@@ -546,6 +548,32 @@ public:
         geom.bounds_max = pos + params;
         
         geometries.push_back(geom);
+    }
+    
+    // Convenient SDF shape factory methods
+    
+    void addSDFSphere(const Vec3& center, double radius, int mat_id) {
+        Vec3 params(radius, 0, 0);
+        addSDFPrimitive(SDFType::SPHERE, center, params, mat_id);
+    }
+    
+    void addSDFBox(const Vec3& center, const Vec3& half_extents, int mat_id) {
+        addSDFPrimitive(SDFType::BOX, center, half_extents, mat_id);
+    }
+    
+    void addSDFTorus(const Vec3& center, double major_radius, double minor_radius, int mat_id) {
+        Vec3 params(major_radius, minor_radius, 0);
+        addSDFPrimitive(SDFType::TORUS, center, params, mat_id);
+    }
+    
+    void addSDFCapsule(const Vec3& center, double radius, double height, int mat_id) {
+        Vec3 params(radius, height, 0);
+        addSDFPrimitive(SDFType::CAPSULE, center, params, mat_id);
+    }
+    
+    void addSDFMandelbulb(const Vec3& center, double power = 8.0, int iterations = 15, int mat_id = 0) {
+        Vec3 params(power, static_cast<double>(iterations), 0);
+        addSDFPrimitive(SDFType::MANDELBULB, center, params, mat_id);
     }
     
     //==========================================================================

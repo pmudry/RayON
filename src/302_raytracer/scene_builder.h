@@ -14,6 +14,7 @@
 #include "sphere.h"
 #include "rectangle.h"
 #include "material.h"
+#include "sdf_shape.h"
 #include <memory>
 
 using std::shared_ptr;
@@ -107,22 +108,91 @@ private:
                 );
                 
             case GeometryType::RECTANGLE:
-                // Note: Rectangle class needs modification to accept Material pointer
-                // For now, create a basic rectangle
                 return make_shared<Rectangle>(
                     desc.data.rectangle.corner,
                     desc.data.rectangle.u,
-                    desc.data.rectangle.v
+                    desc.data.rectangle.v,
+                    mat
                 );
+            
+            case GeometryType::SDF_PRIMITIVE:
+                return createSDFShape(desc, mat);
                 
             // Other geometry types not yet supported in CPU renderer
             case GeometryType::CUBE:
             case GeometryType::DISPLACED_SPHERE:
             case GeometryType::TRIANGLE:
             case GeometryType::TRIANGLE_MESH:
-            case GeometryType::SDF_PRIMITIVE:
             default:
                 // Return null for unsupported types
+                return nullptr;
+        }
+    }
+    
+    /**
+     * @brief Create SDF shape from GeometryDesc
+     */
+    static shared_ptr<Hittable> createSDFShape(const GeometryDesc& desc, shared_ptr<Material> mat) {
+        const auto& sdf_data = desc.data.sdf;
+        
+        switch(sdf_data.sdf_type) {
+            case SDFType::SPHERE:
+                return SDFShape::createSphere(
+                    sdf_data.position,
+                    sdf_data.parameters.x(),  // radius
+                    mat
+                );
+                
+            case SDFType::BOX:
+                return SDFShape::createBox(
+                    sdf_data.position,
+                    sdf_data.parameters,  // half-extents (size)
+                    mat
+                );
+                
+            case SDFType::TORUS:
+                return SDFShape::createTorus(
+                    sdf_data.position,
+                    sdf_data.parameters.x(),  // major radius
+                    sdf_data.parameters.y(),  // minor radius
+                    mat
+                );
+                
+            case SDFType::CAPSULE:
+            {
+                // For capsule, we need start and end points
+                // parameters.x = radius, parameters.y = height
+                Vec3 a = sdf_data.position - Vec3(0, sdf_data.parameters.y() * 0.5, 0);
+                Vec3 b = sdf_data.position + Vec3(0, sdf_data.parameters.y() * 0.5, 0);
+                return SDFShape::createCapsule(a, b, sdf_data.parameters.x(), mat);
+            }
+            
+            case SDFType::CYLINDER:
+                return SDFShape::createCylinder(
+                    sdf_data.position,
+                    sdf_data.parameters.y(),  // height
+                    sdf_data.parameters.x(),  // radius
+                    mat
+                );
+            
+            case SDFType::PLANE:
+                return SDFShape::createPlane(
+                    Vec3(0, 1, 0),  // normal (default: up)
+                    sdf_data.parameters.x(),  // distance from origin
+                    mat
+                );
+                
+            case SDFType::MANDELBULB:
+                return SDFShape::createMandelbulb(
+                    sdf_data.position,
+                    sdf_data.parameters.x(),  // power (typically 8)
+                    static_cast<int>(sdf_data.parameters.y()),  // iterations
+                    mat
+                );
+                
+            case SDFType::CUSTOM:
+            default:
+                // Custom SDFs not yet supported
                 return nullptr;
         }
     }

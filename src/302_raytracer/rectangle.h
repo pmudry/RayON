@@ -3,6 +3,8 @@
 #include "hittable.h"
 #include "utils.h"
 #include "color.h"
+#include "material.h"
+#include <memory>
 
 /**
  * Rectangle class that can serve as both a surface and an area light
@@ -10,8 +12,8 @@
 class Rectangle : public Hittable
 {
  public:
-   Rectangle(const Point3 &corner, const Vec3 &u, const Vec3 &v)
-       : corner(corner), u(u), v(v), is_light(false), light_color(Color(1, 1, 1)), light_intensity(1.0)
+   Rectangle(const Point3 &corner, const Vec3 &u, const Vec3 &v, shared_ptr<Material> mat = nullptr)
+       : corner(corner), u(u), v(v), mat_ptr(mat), is_light(false), light_color(Color(1, 1, 1)), light_intensity(1.0)
    {
       normal = unit_vector(cross(u, v));
       area = u.length() * v.length();
@@ -19,7 +21,7 @@ class Rectangle : public Hittable
 
    // Constructor for area light
    Rectangle(const Point3 &corner, const Vec3 &u, const Vec3 &v, const Color &light_col, double intensity)
-       : corner(corner), u(u), v(v), is_light(true), light_color(light_col), light_intensity(intensity)
+       : corner(corner), u(u), v(v), mat_ptr(nullptr), is_light(true), light_color(light_col), light_intensity(intensity)
    {
       normal = unit_vector(cross(u, v));
       area = u.length() * v.length();
@@ -61,6 +63,7 @@ class Rectangle : public Hittable
       rec.t = t;
       rec.p = intersection;
       rec.set_face_normal(r, normal);
+      rec.mat_ptr = mat_ptr;
 
       return true;
    }
@@ -88,6 +91,8 @@ class Rectangle : public Hittable
    Vec3 u, v;     // Two edges of the rectangle from corner
    Vec3 normal;   // Normal vector to the rectangle
    double area;   // Area of the rectangle
+   
+   shared_ptr<Material> mat_ptr; // Material pointer
 
    // Light properties
    bool is_light;
