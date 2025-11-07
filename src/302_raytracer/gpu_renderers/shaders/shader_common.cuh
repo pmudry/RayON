@@ -58,9 +58,9 @@ struct hit_record_simple
 // OPTICAL PHYSICS FUNCTIONS
 //==============================================================================
 
-__device__ inline float3_simple reflect(const float3_simple &v, const float3_simple &n) { return v - 2 * dot(v, n) * n; }
+__device__ __forceinline__ float3_simple reflect(const float3_simple &v, const float3_simple &n) { return v - 2 * dot(v, n) * n; }
 
-__device__ inline float3_simple refract(const float3_simple &uv, const float3_simple &n, float etai_over_etat)
+__device__ __forceinline__ float3_simple refract(const float3_simple &uv, const float3_simple &n, float etai_over_etat)
 {
    float cos_theta = fminf(dot(-uv, n), 1.0f);
    float3_simple r_out_perp = etai_over_etat * (uv + cos_theta * n);
@@ -68,14 +68,14 @@ __device__ inline float3_simple refract(const float3_simple &uv, const float3_si
    return r_out_perp + r_out_parallel;
 }
 
-__device__ inline float reflectance(float cosine, float ref_idx)
+__device__ __forceinline__ float reflectance(float cosine, float ref_idx)
 {
    float r0 = (1 - ref_idx) / (1 + ref_idx);
    r0 = r0 * r0;
    return r0 + (1 - r0) * powf((1 - cosine), 5);
 }
 
-__device__ inline float3_simple reflect_fuzzy(const float3_simple &v, const float3_simple &n, float roughness,
+__device__ __forceinline__ float3_simple reflect_fuzzy(const float3_simple &v, const float3_simple &n, float roughness,
                                               curandState *state)
 {
    float3_simple random_in_sphere;
@@ -89,7 +89,7 @@ __device__ inline float3_simple reflect_fuzzy(const float3_simple &v, const floa
    return reflect(v, perturbed_normal);
 }
 
-__device__ inline float3_simple random_in_hemisphere(const float3_simple &normal, curandState *state)
+__device__ __forceinline__ float3_simple random_in_hemisphere(const float3_simple &normal, curandState *state)
 {
    float3_simple in_unit_sphere;
    do
@@ -489,6 +489,25 @@ __device__ inline float3_simple ray_color(const ray_simple &r, const CudaScene::
          accumulated_attenuation = float3_simple(accumulated_attenuation.x * attenuation.x,
                                                  accumulated_attenuation.y * attenuation.y,
                                                  accumulated_attenuation.z * attenuation.z);
+         
+         // Russian Roulette path termination (after minimum bounces)
+         // This is an unbiased optimization that terminates low-contribution paths early
+         if (bounce > 3)
+         {
+            // Use maximum component of attenuation as survival probability
+            float max_component = fmaxf(accumulated_attenuation.x, 
+                                       fmaxf(accumulated_attenuation.y, accumulated_attenuation.z));
+            float survival_prob = fminf(max_component, 0.95f); // Cap at 95% to avoid never terminating
+            
+            if (rand_float(state) > survival_prob)
+            {
+               // Terminate this path
+               return accumulated_color;
+            }
+            
+            // Boost attenuation to maintain unbiased estimate
+            accumulated_attenuation = accumulated_attenuation / survival_prob;
+         }
       }
       else
       {

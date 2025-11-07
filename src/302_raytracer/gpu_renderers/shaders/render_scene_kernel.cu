@@ -7,6 +7,15 @@ __global__ void renderKernelWithScene(unsigned char *image, const CudaScene::Sce
                                       float delta_v_y, float delta_v_z, unsigned long long *ray_count,
                                       curandState *rand_states)
 {
+   // Shared memory for block-level ray counting (reduces global atomics)
+   __shared__ unsigned long long block_ray_count;
+   
+   // Initialize shared counter (only first thread)
+   if (threadIdx.x == 0 && threadIdx.y == 0) {
+      block_ray_count = 0;
+   }
+   __syncthreads();
+   
    int x = blockIdx.x * blockDim.x + threadIdx.x;
    int y = blockIdx.y * blockDim.y + threadIdx.y;
    if (x >= width || y >= height) return;
@@ -40,5 +49,13 @@ __global__ void renderKernelWithScene(unsigned char *image, const CudaScene::Sce
    image[idx + 0] = static_cast<unsigned char>(pixel_color.x * 255.0f);
    image[idx + 1] = static_cast<unsigned char>(pixel_color.y * 255.0f);
    image[idx + 2] = static_cast<unsigned char>(pixel_color.z * 255.0f);
-   atomicAdd(ray_count, (unsigned long long)local_ray_count);
+   
+   // Accumulate to block-level counter (shared memory atomic - much faster)
+   atomicAdd(&block_ray_count, (unsigned long long)local_ray_count);
+   __syncthreads();
+   
+   // Single thread per block writes to global memory
+   if (threadIdx.x == 0 && threadIdx.y == 0) {
+      atomicAdd(ray_count, block_ray_count);
+   }
 }

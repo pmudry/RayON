@@ -7,6 +7,14 @@ __global__ void renderAccKernel(float *accum_buffer, unsigned char *image, const
                                 float delta_v_x, float delta_v_y, float delta_v_z, unsigned long long *ray_count,
                                 curandState *rand_states)
 {
+   // Shared memory for block-level ray counting
+   __shared__ unsigned long long block_ray_count;
+   
+   if (threadIdx.x == 0 && threadIdx.y == 0) {
+      block_ray_count = 0;
+   }
+   __syncthreads();
+   
    int x = blockIdx.x * blockDim.x + threadIdx.x;
    int y = blockIdx.y * blockDim.y + threadIdx.y;
    if (x >= width || y >= height) return;
@@ -30,9 +38,19 @@ __global__ void renderAccKernel(float *accum_buffer, unsigned char *image, const
       ray_simple r(camera_center, ray_direction);
       accumulated_color = accumulated_color + ray_color(r, *scene, local_rand_state, min(max_depth, 6), local_ray_count);
    }
-   atomicAdd(ray_count, (unsigned long long)local_ray_count);
+   
+   // Block-level atomic accumulation
+   atomicAdd(&block_ray_count, (unsigned long long)local_ray_count);
+   
    accum_buffer[base_idx] = accumulated_color.x;
    accum_buffer[base_idx + 1] = accumulated_color.y;
    accum_buffer[base_idx + 2] = accumulated_color.z;
    image[base_idx] = 0; image[base_idx + 1] = 0; image[base_idx + 2] = 0;
+   
+   __syncthreads();
+   
+   // Single global atomic per block
+   if (threadIdx.x == 0 && threadIdx.y == 0) {
+      atomicAdd(ray_count, block_ray_count);
+   }
 }

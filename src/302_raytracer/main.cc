@@ -320,6 +320,7 @@ int main(int argc, char *argv[])
    cout << " 302 Ray tracer project v" << ver_major << " -- P.-A. Mudry, ISC 2026" << endl;
    cout << "======================================================" << endl << endl;
    cout << "Using features : yaml_scene_loader, unified_scene_descriptions, cuda_optimization_1, BVH" << endl << endl;
+   cout << "fast random (no curand_uniform), thread_block_optimal, inlining, Russian roulette termination, " << endl << endl;
    cout << "Rendering at resolution: " << c.image_width << " x " << c.image_height << " pixels" << endl;
    cout << "Samples per pixel: " << args.samples << endl << endl;
 
