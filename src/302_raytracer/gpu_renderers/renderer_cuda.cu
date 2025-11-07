@@ -775,158 +775,6 @@ __device__ bool hit_scene(const CudaScene::Scene& scene, const ray_simple& r,
     return hit_anything;
 }
 
-/**
- * @brief Test ray against all objects in the scene (LEGACY - hardcoded scene)
- * @param r Ray to test against scene
- * @param t_min Minimum valid intersection distance
- * @param t_max Maximum valid intersection distance
- * @param rec Hit record to fill with closest intersection
- * @return True if any intersection found, false otherwise
- */
-__device__ bool hit_world(const ray_simple &r, float t_min, float t_max, hit_record_simple &rec)
-{
-   hit_record_simple temp_rec;
-   bool hit_anything = false;
-   float closest_so_far = t_max;
-
-   // Ground sphere with rough mirror surface and slight blue tint
-   if (hit_sphere(float3_simple(0, -950.5f, -1), 950.0f, r, t_min, closest_so_far, temp_rec))
-   {
-      hit_anything = true;
-      closest_so_far = temp_rec.t;
-      rec = temp_rec;
-      rec.color = float3_simple(0.44f, 0.7f, .95f); // Slight blue tint (cool metal)
-      rec.material = LAMBERTIAN;
-      rec.roughness = 0.7f; // Higher roughness for ground surface
-   }
-
-   // Left sphere (rough mirror with golden tint)
-   if (hit_sphere(float3_simple(-3.5, 0.45, -1.8), 0.8f, r, t_min, closest_so_far, temp_rec))
-   {
-      hit_anything = true;
-      closest_so_far = temp_rec.t;
-      rec = temp_rec;
-      rec.material = ROUGH_MIRROR;
-      rec.color = float3_simple(1.0f, 0.85f, 0.47f); // Golden tint (brass/gold color)
-      rec.roughness = 0.03f;                         // Moderate surface roughness for imperfect reflection
-   }
-
-   // "Golf" ball displaced sphere
-   if (hit_golf_ball_sphere(float3_simple(1.2, 0, -2), 0.5f, r, t_min, closest_so_far, temp_rec))
-   {
-      hit_anything = true;
-      closest_so_far = temp_rec.t;
-      rec = temp_rec;
-      rec.material = ROUGH_MIRROR;
-      rec.roughness = 0.3f;                         // Moderate surface roughness for imperfect reflection
-      rec.color = float3_simple(0.3f, 0.3f, 0.91f); // Red
-   }
-
-   // The red-black dotted sphere
-   if (hit_sphere(float3_simple(-1.3f, 0.18, -5), 0.7f, r, t_min, closest_so_far, temp_rec))
-   {
-      hit_anything = true;
-      closest_so_far = temp_rec.t;
-      rec = temp_rec;
-      rec.material = LAMBERTIAN;
-
-      // Base red and dot color (near-black so it still responds to light)
-      float3_simple base_color = float3_simple(0.9f, 0.1f, 0.1f);
-      float3_simple dot_color = float3_simple(0.02f, 0.02f, 0.02f);
-
-      // Apply regularly spaced black dots in the sphere's local space
-      // Local direction from sphere center
-      float3_simple red_center = float3_simple(-1.3f, 0.18f, -5.0f);
-      float3_simple local = float3_simple(rec.p.x - red_center.x, rec.p.y - red_center.y, rec.p.z - red_center.z);
-      float3_simple dir = unit_vector(local);
-
-      // Fibonacci grid parameters: relatively big, regularly spaced
-      const int ndots = 12;           // number of centers (spacing)
-      const float dot_radius = 0.33f; // angular radius in radians (~13 deg)
-
-      float ang = nearestAngularDistanceFibonacci(dir, ndots);
-      float mask = ang < dot_radius ? 0.0f : 1.0f; // 0 inside dot -> dot color, 1 outside -> base red
-      rec.color = float3_simple(base_color.x * mask + dot_color.x * (1.0f - mask),
-                                base_color.y * mask + dot_color.y * (1.0f - mask),
-                                base_color.z * mask + dot_color.z * (1.0f - mask));
-   }
-
-   if (hit_sphere(float3_simple(-.7f, .2, -.3f), 0.6f, r, t_min, closest_so_far, temp_rec))
-   {
-      hit_anything = true;
-      closest_so_far = temp_rec.t;
-      rec = temp_rec;
-      rec.material = GLASS;
-      rec.refractive_index = 1.5f; // Typical glass refractive index
-   }
-
-   // ISC Logo spheres
-   if (hit_sphere(float3_simple(-3.5f, -0.3, 1.2), 0.2f, r, t_min, closest_so_far, temp_rec))
-   {
-      hit_anything = true;
-      closest_so_far = temp_rec.t;
-      rec = temp_rec;
-      rec.material = LAMBERTIAN;
-      rec.color = float3_simple(247 / 255.0f, 241 / 255.0f, 159 / 255.0f); // Yellow
-   }
-
-   if (hit_sphere(float3_simple(-3.0f, -0.3, 1.2), 0.2f, r, t_min, closest_so_far, temp_rec))
-   {
-      hit_anything = true;
-      closest_so_far = temp_rec.t;
-      rec = temp_rec;
-      rec.material = LAMBERTIAN;
-      rec.color = float3_simple(140 / 255.0f, 198 / 255.0f, 230 / 255.0f); // Blue
-   }
-
-   if (hit_sphere(float3_simple(-2.5f, -0.3, 1.2), 0.2f, r, t_min, closest_so_far, temp_rec))
-   {
-      hit_anything = true;
-      closest_so_far = temp_rec.t;
-      rec = temp_rec;
-      rec.material = LAMBERTIAN;
-      rec.color = float3_simple(168 / 255.0f, 144 / 255.0f, 192 / 255.0f); // Violet
-   }
-
-   if (hit_sphere(float3_simple(-2.0f, -0.3, 1.2), 0.2f, r, t_min, closest_so_far, temp_rec))
-   {
-      hit_anything = true;
-      closest_so_far = temp_rec.t;
-      rec = temp_rec;
-      rec.material = LAMBERTIAN;
-      rec.color = float3_simple(226 / 255.0f, 171 / 255.0f, 186 / 255.0f); // Rose
-   }
-
-   if (hit_sphere(float3_simple(-1.5f, -0.3, 1.2), 0.2f, r, t_min, closest_so_far, temp_rec))
-   {
-      hit_anything = true;
-      closest_so_far = temp_rec.t;
-      rec = temp_rec;
-      rec.material = LAMBERTIAN;
-      rec.color = float3_simple(152.0f / 255.0f, 199.0f / 255.0f, 191.0f / 255.0f); // Green
-   }
-
-   // 12 Simple spheres in circle around golden sphere
-   float3_simple golden_center = float3_simple(-3.5, 0, -2);
-
-   // Area light - rectangular light source above the scene
-   float3_simple light_corner(-1.0f, 3.0f, -2.0f); // Corner position
-   float3_simple light_u(2.5f, 0.0f, 0.0f);        // Width vector (2 units wide)
-   float3_simple light_v(0.0f, 0.0f, 1.5f);        // Height vector (1 unit tall)
-
-   if (hit_rectangle(light_corner, light_u, light_v, r, t_min, closest_so_far, temp_rec))
-   {
-      hit_anything = true;
-      closest_so_far = temp_rec.t;
-      rec = temp_rec;
-      rec.material = LIGHT;
-      // Base warm white light scaled by global intensity
-      rec.emission = float3_simple(4.8f, 4.1f, 3.7f) * g_light_intensity;
-   }
-
-   return hit_anything;
-}
-
 //==============================================================================
 // RAY TRACING AND SHADING
 //==============================================================================
@@ -1043,325 +891,15 @@ __device__ float3_simple ray_color(const ray_simple &r, const CudaScene::Scene& 
    return accumulated_color;
 }
 
-/**
- * @brief Calculate color contribution from a ray using recursive ray tracing (LEGACY)
- * @param r Ray to trace through the scene
- * @param state Random number generator state for Monte Carlo sampling
- * @param depth Remaining recursion depth (prevents infinite recursion)
- * @param local_ray_count Local counter for rays traced (accumulated per-thread, no atomics)
- * @return Final color contribution from this ray
- */
-__device__ float3_simple ray_color(const ray_simple &r, curandState *state, int depth, int &local_ray_count)
-{
-   // Iterative ray tracing to avoid recursion overhead
-   float3_simple accumulated_color(0, 0, 0);
-   float3_simple accumulated_attenuation(1.0f, 1.0f, 1.0f);
-   ray_simple current_ray = r;
-
-   for (int bounce = 0; bounce < depth; bounce++)
-   {
-      // Increment local ray counter (no atomics, much faster)
-      local_ray_count++;
-
-      hit_record_simple rec;
-
-      if (hit_world(current_ray, 0.001f, FLT_MAX, rec))
-      {
-         // If we hit a light source, accumulate its emission and stop
-         if (rec.material == LIGHT)
-         {
-            accumulated_color = accumulated_color + float3_simple(accumulated_attenuation.x * rec.emission.x,
-                                                                  accumulated_attenuation.y * rec.emission.y,
-                                                                  accumulated_attenuation.z * rec.emission.z);
-            return accumulated_color;
-         }
-
-#if DEBUG_GOLF_NORMALS
-         // Approximate golf ball hit detection by center/radius
-         const float3_simple golf_center(1.0f, 0.0f, -2.0f);
-         const float golf_radius = 0.5f;
-         float3_simple to_golf =
-             float3_simple(rec.p.x - golf_center.x, rec.p.y - golf_center.y, rec.p.z - golf_center.z);
-         float dist = to_golf.length();
-         bool near_golf_surface = fabsf(dist - golf_radius) < 0.25f;
-         if (near_golf_surface)
-         {
-#if DEBUG_GOLF_NORMALS == 1
-            return normal_to_color(rec.normal);
-#elif DEBUG_GOLF_NORMALS == 2
-            // Visualize displacement value on unit sphere
-            float3_simple dir = dist > 1e-6f ? (to_golf / dist) : float3_simple(0, 0, 1);
-            float d = hexagonalDimplePattern(dir); // negative inside dimple
-            // Map: deeper dimple (more negative) -> brighter (abs)
-            return grayscale(fminf(fabsf(d) * 3.0f, 1.0f));
-#elif DEBUG_GOLF_NORMALS == 3
-            // Visualize gradient magnitude of displacement field
-            float3_simple dir = dist > 1e-6f ? (to_golf / dist) : float3_simple(0, 0, 1);
-            // Build tangent basis
-            float3_simple helper = fabsf(dir.x) > 0.8f ? float3_simple(0, 1, 0) : float3_simple(1, 0, 0);
-            float3_simple t1 = unit_vector(cross(helper, dir));
-            float3_simple t2 = cross(dir, t1);
-            const float h = 0.02f;
-            float d0 = hexagonalDimplePattern(dir);
-            float d1 = hexagonalDimplePattern(
-                unit_vector(float3_simple(dir.x + h * t1.x, dir.y + h * t1.y, dir.z + h * t1.z)));
-            float d2 = hexagonalDimplePattern(
-                unit_vector(float3_simple(dir.x + h * t2.x, dir.y + h * t2.y, dir.z + h * t2.z)));
-            float dd1 = (d1 - d0) / h;
-            float dd2 = (d2 - d0) / h;
-            float mag = sqrtf(dd1 * dd1 + dd2 * dd2);
-            return grayscale(fminf(mag * 0.5f, 1.0f));
-#else
-            return normal_to_color(rec.normal);
-#endif
-         }
-#endif
-
-         float3_simple attenuation;
-         ray_simple scattered;
-
-         if (rec.material == LAMBERTIAN)
-         {
-            // Lambertian scattering - different colors for different spheres
-            float3_simple target = rec.p + rec.normal + random_in_hemisphere(rec.normal, state);
-            scattered = ray_simple(rec.p, target - rec.p);
-            attenuation = rec.color;
-         }
-         else if (rec.material == MIRROR)
-         {
-            // Mirror reflection
-            float3_simple reflected = reflect(unit_vector(current_ray.dir), rec.normal);
-            scattered = ray_simple(rec.p, reflected);
-            attenuation = float3_simple(.99f, .99f, .99f);
-         }
-         else if (rec.material == ROUGH_MIRROR)
-         {
-            // Rough mirror reflection with surface imperfections and custom tint
-            // Apply global fuzziness multiplier to object's base roughness
-            float effective_roughness = rec.roughness * g_metal_fuzziness;
-            float3_simple reflected =
-                reflect_fuzzy(unit_vector(current_ray.dir), rec.normal, effective_roughness, state);
-            scattered = ray_simple(rec.p, reflected);
-
-            float base_reflectivity = 0.8f;
-            attenuation = float3_simple(rec.color.x * base_reflectivity, rec.color.y * base_reflectivity,
-                                        rec.color.z * base_reflectivity);
-         }
-         else if (rec.material == GLASS)
-         {
-            // Glass (dielectric) material
-            attenuation = float3_simple(1.0f, 1.0f, 1.0f);
-
-            float refraction_ratio = rec.front_face ? (1.0f / rec.refractive_index) : rec.refractive_index;
-            float3_simple unit_direction = unit_vector(current_ray.dir);
-            float cos_theta = fminf(dot(-unit_direction, rec.normal), 1.0f);
-            float sin_theta = sqrtf(1.0f - cos_theta * cos_theta);
-            bool cannot_refract = refraction_ratio * sin_theta > 1.0f;
-            float3_simple direction;
-
-            if (cannot_refract || reflectance(cos_theta, refraction_ratio) > rand_float(state))
-            {
-               direction = reflect(unit_direction, rec.normal);
-            }
-            else
-            {
-               direction = refract(unit_direction, rec.normal, refraction_ratio);
-            }
-
-            scattered = ray_simple(rec.p, direction);
-         }
-
-         // Accumulate attenuation
-         accumulated_attenuation =
-             float3_simple(accumulated_attenuation.x * attenuation.x, accumulated_attenuation.y * attenuation.y,
-                           accumulated_attenuation.z * attenuation.z);
-
-         // Continue with scattered ray
-         current_ray = scattered;
-      }
-      else
-      {
-         // Ray escaped to background - accumulate background color and stop
-         float3_simple unit_direction = unit_vector(current_ray.dir);
-         float t = 0.5f * (unit_direction.y + 1.0f);
-         float3_simple background = (1.0f - t) * float3_simple(1.0f, 1.0f, 1.0f) + t * float3_simple(0.5f, 0.7f, 1.0f);
-         background = background * g_background_intensity;
-
-         accumulated_color = accumulated_color + float3_simple(accumulated_attenuation.x * background.x,
-                                                               accumulated_attenuation.y * background.y,
-                                                               accumulated_attenuation.z * background.z);
-         return accumulated_color;
-      }
-   }
-
-   // If we exhausted all bounces without hitting background or light, return black
-   return accumulated_color;
-}
-
 //==============================================================================
 // CUDA KERNELS
 //==============================================================================
 
 /**
- * @brief Main CUDA kernel for ray tracing entire image
- * Each thread processes one pixel with multiple samples for anti-aliasing
- * @param image Output image buffer (RGB, 8-bit per channel)
- * @param width Image width in pixels
- * @param height Image height in pixels
- * @param samples_per_pixel Number of rays per pixel for anti-aliasing
- * @param max_depth Maximum ray recursion depth
- * @param cam_center_* Camera center position components
- * @param pixel00_* Top-left pixel center position components
- * @param delta_u_* Pixel step in U direction components
- * @param delta_v_* Pixel step in V direction components
- * @param ray_count Global counter for rays traced
- * @param rand_states Shared array of random states (one per thread/pixel)
- */
-__global__ void renderKernel(unsigned char *image, int width, int height, int samples_per_pixel, int max_depth,
-                             float cam_center_x, float cam_center_y, float cam_center_z, float pixel00_x,
-                             float pixel00_y, float pixel00_z, float delta_u_x, float delta_u_y, float delta_u_z,
-                             float delta_v_x, float delta_v_y, float delta_v_z, unsigned long long *ray_count,
-                             curandState *rand_states)
-{
-
-   // Calculate global pixel coordinates within the tile
-   int x = blockIdx.x * blockDim.x + threadIdx.x;
-   int y = blockIdx.y * blockDim.y + threadIdx.y;
-
-   // Check if we're within the tile bounds and image bounds
-   if (x >= width || y >= height)
-      return;
-
-   int pixel_idx = y * width + x;
-   int base_idx = pixel_idx * 3;
-
-   // Double check bounds for memory access
-   if (pixel_idx >= width * height || base_idx + 2 >= width * height * 3)
-      return;
-
-   // Use the pre-initialized random state for this pixel
-   curandState *local_rand_state = &rand_states[pixel_idx];
-
-   // Convert parameters to float3_simple
-   float3_simple camera_center(cam_center_x, cam_center_y, cam_center_z);
-   float3_simple pixel00_loc(pixel00_x, pixel00_y, pixel00_z);
-   float3_simple pixel_delta_u(delta_u_x, delta_u_y, delta_u_z);
-   float3_simple pixel_delta_v(delta_v_x, delta_v_y, delta_v_z);
-
-   float3_simple pixel_color(0, 0, 0);
-   int local_ray_count = 0;
-
-   // Use full samples but ensure each pixel is completely independent
-   int actual_samples = samples_per_pixel;
-
-   // Debug: Print sampling mode once (only for first pixel)
-   if (x == 0 && y == 0)
-   {
-      printf("Kernel: g_use_stratified_sampling = %d, samples_per_pixel = %d\n", g_use_stratified_sampling,
-             samples_per_pixel);
-   }
-
-   if (g_use_stratified_sampling)
-   {
-      // Stratified sampling: divide pixel into grid of strata and sample once per stratum
-      // Calculate grid dimensions (e.g., 2x2 for 4 samples, 3x3 for 9 samples, etc.)
-      int grid_size = (int)sqrtf((float)actual_samples);
-
-      if (grid_size * grid_size < actual_samples)
-         grid_size++; // Round up if not perfect square
-
-      if (x == 0 && y == 0)
-      {
-         printf("Stratified: grid_size = %d (for %d samples)\n", grid_size, actual_samples);
-      }
-
-      float stratum_size = 1.0f / (float)grid_size; // Size of each stratum
-      int sample_idx = 0;
-
-      for (int strat_y = 0; strat_y < grid_size && sample_idx < actual_samples; strat_y++)
-      {
-         for (int strat_x = 0; strat_x < grid_size && sample_idx < actual_samples; strat_x++)
-         {
-            // Random offset within the current stratum
-            float jitter_u = rand_float(local_rand_state) * stratum_size;
-            float jitter_v = rand_float(local_rand_state) * stratum_size;
-
-            // Offset relative to pixel center [-0.5, 0.5]
-            float offset_u = (strat_x * stratum_size + jitter_u) - 0.5f;
-            float offset_v = (strat_y * stratum_size + jitter_v) - 0.5f;
-
-            if (x == 0 && y == 0 && sample_idx < 5)
-            {
-               printf("  Stratified sample %d: offset_u=%.3f, offset_v=%.3f (strat %d,%d)\n", sample_idx, offset_u,
-                      offset_v, strat_x, strat_y);
-            }
-
-            float3_simple pixel_center =
-                pixel00_loc + ((float)x + offset_u) * pixel_delta_u + ((float)y + offset_v) * pixel_delta_v;
-            float3_simple ray_direction = pixel_center - camera_center;
-            ray_simple r(camera_center, ray_direction);
-
-            pixel_color = pixel_color + ray_color(r, local_rand_state, min(max_depth, 6), local_ray_count);
-            sample_idx++;
-         }
-      }
-   }
-   else
-   {
-      // Uniform sampling: random offsets within pixel [-0.5, 0.5]
-      if (x == 0 && y == 0)
-      {
-         printf("Uniform: actual_samples = %d\n", actual_samples);
-      }
-
-      for (int s = 0; s < actual_samples; s++)
-      {
-         // Random offset within pixel for anti-aliasing
-         float offset_u = rand_float(local_rand_state) - 0.5f;
-         float offset_v = rand_float(local_rand_state) - 0.5f;
-
-         if (x == 0 && y == 0 && s < 5)
-         {
-            printf("  Uniform sample %d: offset_u=%.3f, offset_v=%.3f\n", s, offset_u, offset_v);
-         }
-
-         float3_simple pixel_center =
-             pixel00_loc + ((float)x + offset_u) * pixel_delta_u + ((float)y + offset_v) * pixel_delta_v;
-         float3_simple ray_direction = pixel_center - camera_center;
-         ray_simple r(camera_center, ray_direction);
-
-         pixel_color = pixel_color + ray_color(r, local_rand_state, min(max_depth, 6), local_ray_count);
-      }
-   }
-
-   // Atomically add thread's local ray count to global counter (one atomic per thread instead of per ray)
-   atomicAdd(ray_count, (unsigned long long)local_ray_count);
-
-   // Anti-aliasing is done there
-   pixel_color = pixel_color / (float)actual_samples;
-
-   // Gamma correction (gamma=2)
-   pixel_color.x = sqrtf(fmaxf(pixel_color.x, 0.0f));
-   pixel_color.y = sqrtf(fmaxf(pixel_color.y, 0.0f));
-   pixel_color.z = sqrtf(fmaxf(pixel_color.z, 0.0f));
-
-   // Convert to bytes with clamping
-   unsigned char r = (unsigned char)(255.0f * fminf(fmaxf(pixel_color.x, 0.0f), 1.0f));
-   unsigned char g = (unsigned char)(255.0f * fminf(fmaxf(pixel_color.y, 0.0f), 1.0f));
-   unsigned char b = (unsigned char)(255.0f * fminf(fmaxf(pixel_color.z, 0.0f), 1.0f));
-
-   // Store in image buffer - each thread writes to its own unique location
-   image[base_idx] = r;
-   image[base_idx + 1] = g;
-   image[base_idx + 2] = b;
-}
-
-
-/**
  * @brief CUDA kernel for accumulative rendering (progressive sampling) in real-time
- * Adds new samples to existing accumulated color buffer. For the rest see renderKernel.
+ * Adds new samples to existing accumulated color buffer. For the rest see renderKernelWithScene.
  */
-__global__ void renderAccKernel(float *accum_buffer, unsigned char *image, int width, int height,
+__global__ void renderAccKernel(float *accum_buffer, unsigned char *image, CudaScene::Scene scene, int width, int height,
                                              int samples_to_add, int total_samples_so_far, int max_depth,
                                              float cam_center_x, float cam_center_y, float cam_center_z,
                                              float pixel00_x, float pixel00_y, float pixel00_z, float delta_u_x,
@@ -1425,7 +963,7 @@ __global__ void renderAccKernel(float *accum_buffer, unsigned char *image, int w
             float3_simple ray_direction = pixel_center - camera_center;
             ray_simple r(camera_center, ray_direction);
 
-            accumulated_color = accumulated_color + ray_color(r, local_rand_state, min(max_depth, 6), local_ray_count);
+            accumulated_color = accumulated_color + ray_color(r, scene, local_rand_state, min(max_depth, 6), local_ray_count);
             sample_idx++;
          }
       }
@@ -1443,7 +981,7 @@ __global__ void renderAccKernel(float *accum_buffer, unsigned char *image, int w
          float3_simple ray_direction = pixel_center - camera_center;
          ray_simple r(camera_center, ray_direction);
 
-         accumulated_color = accumulated_color + ray_color(r, local_rand_state, min(max_depth, 6), local_ray_count);
+         accumulated_color = accumulated_color + ray_color(r, scene, local_rand_state, min(max_depth, 6), local_ray_count);
       }
    }
 
@@ -1504,122 +1042,6 @@ extern "C" void freeDeviceAccumBuffer(void *d_accum_buffer)
       cudaFree(d_accum_buffer);
    }
 }
-
-/**
- * @brief Host function for tile-based rendering (useful for real-time display)
- * Renders only a rectangular portion of the image for progressive rendering
- * @param image Full image buffer (input/output)
- * @param width Full image width in pixels
- * @param height Full image height in pixels
- * @param cam_center_* Camera position components
- * @param pixel00_* Top-left pixel center position components
- * @param delta_u_* Pixel step in U direction components
- * @param delta_v_* Pixel step in V direction components
- * @param samples_per_pixel Number of rays per pixel for anti-aliasing
- * @param max_depth Maximum ray recursion depth
- * @return Total number of rays traced for this tile
- */
-extern "C" unsigned long long renderPixelsCUDA(unsigned char *image, int width, int height, double cam_center_x,
-                                               double cam_center_y, double cam_center_z, double pixel00_x,
-                                               double pixel00_y, double pixel00_z, double delta_u_x, double delta_u_y,
-                                               double delta_u_z, double delta_v_x, double delta_v_y, double delta_v_z,
-                                               int samples_per_pixel, int max_depth)
-{
-
-   // Allocate device memory for the full image (we need to maintain the full buffer)
-   unsigned char *d_image;
-   unsigned long long *d_ray_count;
-   curandState *d_rand_states;
-
-   size_t image_size = width * height * 3 * sizeof(unsigned char);
-   int num_pixels = width * height;
-
-   cudaError_t malloc_err1 = cudaMalloc(&d_image, image_size);
-   cudaError_t malloc_err2 = cudaMalloc(&d_ray_count, sizeof(unsigned long long));
-   cudaError_t malloc_err3 = cudaMalloc(&d_rand_states, num_pixels * sizeof(curandState));
-
-   if (malloc_err1 != cudaSuccess || malloc_err2 != cudaSuccess || malloc_err3 != cudaSuccess)
-   {
-      printf("CUDA malloc error: %s, %s, %s\n", cudaGetErrorString(malloc_err1), cudaGetErrorString(malloc_err2),
-             cudaGetErrorString(malloc_err3));
-      return 0;
-   }
-
-   // Initialize ray counter to zero
-   cudaMemset(d_ray_count, 0, sizeof(unsigned long long));
-
-   // Initialize random states for all pixels
-   int threads_per_block = 256;
-   int num_blocks = (num_pixels + threads_per_block - 1) / threads_per_block;
-   init_random_states<<<num_blocks, threads_per_block>>>(d_rand_states, num_pixels, 1984, width);
-
-   cudaError_t init_err = cudaGetLastError();
-   if (init_err != cudaSuccess)
-   {
-      printf("CUDA random state init error: %s\n", cudaGetErrorString(init_err));
-      cudaFree(d_image);
-      cudaFree(d_ray_count);
-      cudaFree(d_rand_states);
-      return 0;
-   }
-
-   cudaDeviceSynchronize();
-
-   // Set up grid and block dimensions for the tile
-   dim3 block_size(32, 4); // A grid of 32x4 threads, 128 threads per block. They share fast shared memory, can
-                           // synchronize and execute on the same SM
-   dim3 grid_size((width + block_size.x - 1) /
-                      block_size.x, // We need 60x270 blocks to cover the whole image at 1920x1080
-                  (height + block_size.y - 1) / block_size.y);
-
-   // Launch tile rendering kernel, with a total of 2'073'600 threads
-   renderKernel<<<grid_size, block_size>>>(
-       d_image, width, height, samples_per_pixel, max_depth, (float)cam_center_x, (float)cam_center_y,
-       (float)cam_center_z, (float)pixel00_x, (float)pixel00_y, (float)pixel00_z, (float)delta_u_x, (float)delta_u_y,
-       (float)delta_u_z, (float)delta_v_x, (float)delta_v_y, (float)delta_v_z, d_ray_count, d_rand_states);
-
-   // Check for kernel errors
-   cudaError_t kernel_err = cudaGetLastError();
-   if (kernel_err != cudaSuccess)
-   {
-      printf("CUDA kernel error: %s\n", cudaGetErrorString(kernel_err));
-      cudaFree(d_image);
-      cudaFree(d_ray_count);
-      cudaFree(d_rand_states);
-      return 0;
-   }
-
-   cudaDeviceSynchronize();
-
-   // Copy result back to host
-   cudaError_t copy_err = cudaMemcpy(image, d_image, image_size, cudaMemcpyDeviceToHost);
-   if (copy_err != cudaSuccess)
-   {
-      printf("Memory copy error: %s\n", cudaGetErrorString(copy_err));
-      cudaFree(d_image);
-      cudaFree(d_ray_count);
-      cudaFree(d_rand_states);
-      return 0;
-   }
-
-   // Copy ray count back to host
-   unsigned long long host_ray_count = 0;
-   cudaError_t count_copy_err =
-       cudaMemcpy(&host_ray_count, d_ray_count, sizeof(unsigned long long), cudaMemcpyDeviceToHost);
-   if (count_copy_err != cudaSuccess)
-   {
-      printf("Ray count copy error: %s\n", cudaGetErrorString(count_copy_err));
-      host_ray_count = 0;
-   }
-
-   // Clean up
-   cudaFree(d_image);
-   cudaFree(d_ray_count);
-   cudaFree(d_rand_states);
-
-   return host_ray_count;
-}
-
 /**
  * @brief Accumulative rendering function that adds new samples to existing accumulated color buffer
  *
@@ -1628,6 +1050,7 @@ extern "C" unsigned long long renderPixelsCUDA(unsigned char *image, int width, 
  *
  * @param image Output RGB image buffer (byte array) - only copied to host when needed
  * @param accum_buffer Host accumulation buffer (float3 array) - only used for initialization/final readback
+ * @param scene Scene structure with device pointers
  * @param width Image width
  * @param height Image height
  * @param cam_center_x,y,z Camera center position
@@ -1642,7 +1065,7 @@ extern "C" unsigned long long renderPixelsCUDA(unsigned char *image, int width, 
  * @return Number of rays traced
  */
 extern "C" unsigned long long
-renderPixelsCUDAAccumulative(unsigned char *image, float *accum_buffer, int width, int height, double cam_center_x,
+renderPixelsCUDAAccumulative(unsigned char *image, float *accum_buffer, CudaScene::Scene* scene, int width, int height, double cam_center_x,
                             double cam_center_y, double cam_center_z, double pixel00_x, double pixel00_y,
                             double pixel00_z, double delta_u_x, double delta_u_y, double delta_u_z, double delta_v_x,
                             double delta_v_y, double delta_v_z, int samples_to_add, int total_samples_so_far,
@@ -1706,7 +1129,7 @@ renderPixelsCUDAAccumulative(unsigned char *image, float *accum_buffer, int widt
 
    // Launch accumulative rendering kernel
    renderAccKernel<<<blocks, threads>>>(
-       d_accum_buffer, d_image, width, height, samples_to_add, total_samples_so_far, max_depth, (float)cam_center_x,
+       d_accum_buffer, d_image, *scene, width, height, samples_to_add, total_samples_so_far, max_depth, (float)cam_center_x,
        (float)cam_center_y, (float)cam_center_z, (float)pixel00_x, (float)pixel00_y, (float)pixel00_z, (float)delta_u_x,
        (float)delta_u_y, (float)delta_u_z, (float)delta_v_x, (float)delta_v_y, (float)delta_v_z, d_ray_count,
        d_rand_states);

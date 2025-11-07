@@ -54,60 +54,82 @@ void dumpImageToFile(vector<unsigned char> &image, int image_width, int image_he
    writeImage(image, image_width, image_height, name);
 }
 
-using scene = Hittable_list;
+// using scene = Hittable_list;
 
-scene demo_scene()
-{
-   scene s;
+// scene demo_scene()
+// {
+//    scene s;
 
-   auto material_uniform_red = make_shared<Constant>(Color(1, 0.0, 0.0));
-   auto material_uniform_blue = make_shared<Constant>(Color(0, 0.0, 1.0));
-   auto material_normals = make_shared<ShowNormals>(Color(0, 0.0, 0.0));
-   auto material_lambert = make_shared<Lambertian>(Color(0.7, 0.7, 0.7));
-   auto material_metal = make_shared<Lambertian>(Color(0.7, 0.7, 0.7));
+//    auto material_uniform_red = make_shared<Constant>(Color(1, 0.0, 0.0));
+//    auto material_uniform_blue = make_shared<Constant>(Color(0, 0.0, 1.0));
+//    auto material_normals = make_shared<ShowNormals>(Color(0, 0.0, 0.0));
+//    auto material_lambert = make_shared<Lambertian>(Color(0.7, 0.7, 0.7));
+//    auto material_metal = make_shared<Lambertian>(Color(0.7, 0.7, 0.7));
 
-   s.add(make_shared<Sphere>(Point3(0, -950.5, -1), 950, material_uniform_red)); // Ground
-   s.add(make_shared<Sphere>(Point3(-3.5, 0.45, -1.8), .8, material_uniform_blue));
-   s.add(make_shared<Sphere>(Point3(-1.3, 0.18, -5), .7, material_uniform_blue));
-   s.add(make_shared<Sphere>(Point3(-.7, .2, -.3), .6, material_uniform_blue));
-   s.add(make_shared<Sphere>(Point3(1.2, 0, -2), 0.5, material_uniform_blue));
+//    s.add(make_shared<Sphere>(Point3(0, -950.5, -1), 950, material_uniform_red)); // Ground
+//    s.add(make_shared<Sphere>(Point3(-3.5, 0.45, -1.8), .8, material_uniform_blue));
+//    s.add(make_shared<Sphere>(Point3(-1.3, 0.18, -5), .7, material_uniform_blue));
+//    s.add(make_shared<Sphere>(Point3(-.7, .2, -.3), .6, material_uniform_blue));
+//    s.add(make_shared<Sphere>(Point3(1.2, 0, -2), 0.5, material_uniform_blue));
 
-   // Small "ISC" spheres at the bottom
-   for (int i = 0; i < 5; i++)
-   {
-      s.add(make_shared<Sphere>(Point3(-3.5 + i * 0.5, -0.3, 1.2), 0.2, material_lambert));
-   }
+//    // Small "ISC" spheres at the bottom
+//    for (int i = 0; i < 5; i++)
+//    {
+//       s.add(make_shared<Sphere>(Point3(-3.5 + i * 0.5, -0.3, 1.2), 0.2, material_lambert));
+//    }
 
-   return s;
-}
+//    return s;
+// }
 
 /**
- * @brief Create demo scene using new SceneDescription API
- * This demonstrates the unified scene format that works for both CPU and GPU
+ * @brief Create unified scene description used by all rendering options
+ * This is the single source of truth for the scene - matches the original CUDA scene
  */
 Scene::SceneDescription create_scene_description()
 {
    using namespace Scene;
-   SceneDescription scene;
+   SceneDescription scene_desc;
    
-   // === Define Materials ===
-   int mat_red = scene.addMaterial(MaterialDesc::constant(Vec3(1.0, 0.0, 0.0)));
-   int mat_blue = scene.addMaterial(MaterialDesc::constant(Vec3(0.0, 0.0, 1.0)));
-   int mat_lambert = scene.addMaterial(MaterialDesc::lambertian(Vec3(0.7, 0.7, 0.7)));
+   // === Materials ===
+   int mat_ground = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(0.44, 0.7, 0.95)));
+   int mat_golden = scene_desc.addMaterial(MaterialDesc::roughMirror(Vec3(1.0, 0.85, 0.47), 0.03));
+   int mat_blue_rough = scene_desc.addMaterial(MaterialDesc::roughMirror(Vec3(0.3, 0.3, 0.91), 0.3));
+   int mat_red_dots = scene_desc.addMaterial(MaterialDesc::fibonacciDots(
+       Vec3(0.9, 0.1, 0.1), Vec3(0.02, 0.02, 0.02), 12, 0.33f));
+   int mat_glass = scene_desc.addMaterial(MaterialDesc::glass(1.5));
+   int mat_yellow = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(247/255.0, 241/255.0, 159/255.0)));
+   int mat_blue = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(140/255.0, 198/255.0, 230/255.0)));
+   int mat_violet = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(168/255.0, 144/255.0, 192/255.0)));
+   int mat_rose = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(226/255.0, 171/255.0, 186/255.0)));
+   int mat_green = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(152/255.0, 199/255.0, 191/255.0)));
+   int mat_light = scene_desc.addMaterial(MaterialDesc::light(Vec3(4.8, 4.1, 3.7)));
    
-   // === Add Geometry ===
-   scene.addSphere(Vec3(0, -950.5, -1), 950.0, mat_red);  // Ground
-   scene.addSphere(Vec3(-3.5, 0.45, -1.8), 0.8, mat_blue);
-   scene.addSphere(Vec3(-1.3, 0.18, -5), 0.7, mat_blue);
-   scene.addSphere(Vec3(-0.7, 0.2, -0.3), 0.6, mat_blue);
-   scene.addSphere(Vec3(1.2, 0, -2), 0.5, mat_blue);
+   // === Geometry ===
+   scene_desc.addSphere(Vec3(0, -950.5, -1), 950.0, mat_ground);
+   scene_desc.addSphere(Vec3(-3.5, 0.45, -1.8), 0.8, mat_golden);
+   scene_desc.addDisplacedSphere(Vec3(1.2, 0, -2), 0.5, mat_blue_rough, 0.2f, 0);
+   scene_desc.addSphere(Vec3(-1.3, 0.18, -5), 0.7, mat_red_dots);
+   scene_desc.addSphere(Vec3(-0.7, 0.2, -0.3), 0.6, mat_glass);
+   scene_desc.addSphere(Vec3(-3.5, -0.3, 1.2), 0.2, mat_yellow);
+   scene_desc.addSphere(Vec3(-3.0, -0.3, 1.2), 0.2, mat_blue);
+   scene_desc.addSphere(Vec3(-2.5, -0.3, 1.2), 0.2, mat_violet);
+   scene_desc.addSphere(Vec3(-2.0, -0.3, 1.2), 0.2, mat_rose);
+   scene_desc.addSphere(Vec3(-1.5, -0.3, 1.2), 0.2, mat_green);
+   scene_desc.addRectangle(Vec3(-1.0, 3.0, -2.0), Vec3(2.5, 0, 0), Vec3(0, 0, 1.5), mat_light);
    
-   // Small "ISC" spheres
-   for (int i = 0; i < 5; i++) {
-      scene.addSphere(Vec3(-3.5 + i * 0.5, -0.3, 1.2), 0.2, mat_lambert);
-   }
-   
-   return scene;
+   return scene_desc;
+}
+
+// Implementation of RendererCUDA::createDefaultScene() - uses unified scene
+Scene::SceneDescription RendererCUDA::createDefaultScene()
+{
+   return create_scene_description();
+}
+
+// Implementation of RendererCUDAProgressive::createDefaultScene() - uses unified scene  
+Scene::SceneDescription RendererCUDAProgressive::createDefaultScene()
+{
+   return create_scene_description();
 }
 
 struct ProgramArgs
@@ -199,80 +221,11 @@ ProgramArgs parseInput(int argc, char *argv[])
    return args;
 }
 
-/**
- * @brief Create exact replica of original CUDA hardcoded scene for comparison
- * This scene matches the legacy hit_world() function in renderer_cuda.cu
- */
-Scene::SceneDescription create_original_cuda_scene()
-{
-   using namespace Scene;
-   SceneDescription scene_desc;
-   
-   // === Materials matching original scene ===
-   
-   // Ground: Lambertian with blue tint
-   int mat_ground = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(0.44, 0.7, 0.95)));
-   
-   // Left golden sphere: Rough mirror with golden tint
-   int mat_golden = scene_desc.addMaterial(MaterialDesc::roughMirror(Vec3(1.0, 0.85, 0.47), 0.03));
-   
-   // Blue rough mirror (golf ball - but without displacement for now)
-   int mat_blue_rough = scene_desc.addMaterial(MaterialDesc::roughMirror(Vec3(0.3, 0.3, 0.91), 0.3));
-   
-   // Red-black dotted sphere using Fibonacci dots pattern
-   int mat_red_dots = scene_desc.addMaterial(MaterialDesc::fibonacciDots(
-       Vec3(0.9, 0.1, 0.1),        // Base red color
-       Vec3(0.02, 0.02, 0.02),     // Near-black dot color
-       12,                          // Number of dots (Fibonacci grid spacing)
-       0.33f                        // Dot radius in radians (~13 degrees)
-   ));
-   
-   // Glass sphere
-   int mat_glass = scene_desc.addMaterial(MaterialDesc::glass(1.5));
-   
-   // ISC Logo spheres colors
-   int mat_yellow = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(247/255.0, 241/255.0, 159/255.0)));
-   int mat_blue = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(140/255.0, 198/255.0, 230/255.0)));
-   int mat_violet = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(168/255.0, 144/255.0, 192/255.0)));
-   int mat_rose = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(226/255.0, 171/255.0, 186/255.0)));
-   int mat_green = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(152/255.0, 199/255.0, 191/255.0)));
-   
-   // Area light
-   int mat_light = scene_desc.addMaterial(MaterialDesc::light(Vec3(4.8, 4.1, 3.7)));
-   
-   // === Geometry matching original scene ===
-   
-   // Ground sphere
-   scene_desc.addSphere(Vec3(0, -950.5, -1), 950.0, mat_ground);
-   
-   // Left golden sphere
-   scene_desc.addSphere(Vec3(-3.5, 0.45, -1.8), 0.8, mat_golden);
-   
-   // "Golf" ball with dimple displacement
-   scene_desc.addDisplacedSphere(Vec3(1.2, 0, -2), 0.5, mat_blue_rough, 0.2f, 0);
-   
-   // Red-black dotted sphere with Fibonacci pattern
-   scene_desc.addSphere(Vec3(-1.3, 0.18, -5), 0.7, mat_red_dots);
-   
-   // Glass sphere
-   scene_desc.addSphere(Vec3(-0.7, 0.2, -0.3), 0.6, mat_glass);
-   
-   // ISC Logo spheres (5 small spheres)
-   scene_desc.addSphere(Vec3(-3.5, -0.3, 1.2), 0.2, mat_yellow);
-   scene_desc.addSphere(Vec3(-3.0, -0.3, 1.2), 0.2, mat_blue);
-   scene_desc.addSphere(Vec3(-2.5, -0.3, 1.2), 0.2, mat_violet);
-   scene_desc.addSphere(Vec3(-2.0, -0.3, 1.2), 0.2, mat_rose);
-   scene_desc.addSphere(Vec3(-1.5, -0.3, 1.2), 0.2, mat_green);
-   
-   // Area light (rectangular)
-   scene_desc.addRectangle(Vec3(-1.0, 3.0, -2.0), Vec3(2.5, 0, 0), Vec3(0, 0, 1.5), mat_light);
-   
-   return scene_desc;
-}
+
 
 /**
- * @brief Test the new scene-based CUDA rendering with exact replica of original scene
- * This allows direct comparison between old (hardcoded) and new (data-driven) architectures
+ * @brief Test the new scene-based CUDA rendering
+ * This uses the same unified scene as all other rendering options
  */
 void test_new_scene_cuda_rendering(int width, int height, int samples)
 {
@@ -280,11 +233,10 @@ void test_new_scene_cuda_rendering(int width, int height, int samples)
    
    cout << "\n========================================" << endl;
    cout << "TESTING NEW SCENE-BASED CUDA RENDERING" << endl;
-   cout << "Exact replica of original hardcoded scene" << endl;
    cout << "========================================\n" << endl;
    
-   // Create scene matching original
-   SceneDescription scene_desc = create_original_cuda_scene();
+   // Create scene from unified scene description
+   SceneDescription scene_desc = create_scene_description();
    
    cout << "Scene created: " << scene_desc.materials.size() << " materials, " 
         << scene_desc.geometries.size() << " geometries" << endl;
@@ -392,9 +344,7 @@ int main(int argc, char *argv[])
 
    RndGen::set_seed(123);
 
-   // === OLD SCENE API (will be deprecated) ===
-   // scene s = many_spheres();
-   scene scene = demo_scene();
+   // scene scene = demo_scene();
 
    // === NEW SCENE API (unified CPU/GPU format) ===
    // Uncomment to test new scene description system:
@@ -431,14 +381,15 @@ int main(int argc, char *argv[])
 
    switch (choice)
    {
-   case 0:
-      cout << "Using CPU single threaded..." << endl;
-      c.renderPixels(scene, localImage);
-      break;
-   case 1:
-      cout << "Using CPU parallel rendering..." << endl;
-      c.renderPixelsParallel(scene, localImage);
-      break;
+   // case 0:
+   //    cout << "Using CPU single threaded..." << endl;
+   //    c.renderPixels(scene, localImage);
+   //    break;
+   // case 1:
+   //    cout << "Using CPU parallel rendering..." << endl;
+   //    c.renderPixelsParallel(scene, localImage);
+   //    break;
+   
 #ifdef SDL2_FOUND
    case 3:
       cout << "Using CUDA GPU with interactive SDL display..." << endl;

@@ -18,6 +18,8 @@
 #include <SDL.h>
 #include <algorithm>
 #include <chrono>
+#include "../scene_description.h"
+#include "../scene_builder.h"
 
 // Forward declarations of CUDA functions
 extern "C"
@@ -25,7 +27,7 @@ extern "C"
    void setLightIntensity(float intensity);
    void setBackgroundIntensity(float intensity);
    void setMetalFuzziness(float fuzziness);
-   unsigned long long renderPixelsCUDAAccumulative(unsigned char *image, float *accum_buffer, int width, int height,
+   unsigned long long renderPixelsCUDAAccumulative(unsigned char *image, float *accum_buffer, CudaScene::Scene* scene, int width, int height,
                                                   double cam_center_x, double cam_center_y, double cam_center_z,
                                                   double pixel00_x, double pixel00_y, double pixel00_z,
                                                   double delta_u_x, double delta_u_y, double delta_u_z,
@@ -103,6 +105,10 @@ class RendererCUDAProgressive : virtual public CameraBase
       vector<float> accum_buffer(image_width * image_height * image_channels, 0.0f);
       void *d_rand_states = nullptr;
       void *d_accum_buffer = nullptr; // Persistent device accumulation buffer
+
+      // Build scene once
+      Scene::SceneDescription scene_desc = createDefaultScene();
+      CudaScene::Scene* gpu_scene = Scene::CudaSceneBuilder::buildGPUScene(scene_desc);
 
       // Timing for auto-orbit
       auto last_frame_time = std::chrono::high_resolution_clock::now();
@@ -267,7 +273,7 @@ class RendererCUDAProgressive : virtual public CameraBase
             }
             force_immediate_render = false; // Reset flag after rendering
             renderBatch(display_image, accum_buffer, current_samples, max_samples, samples_per_batch, gamma,
-                        d_rand_states, d_accum_buffer);
+                        d_rand_states, d_accum_buffer, gpu_scene);
 
             displayFrame(gui, display_image, current_samples, samples_per_batch, light_intensity, background_intensity,
                          metal_fuzziness, accumulation_enabled, camera_control.isAutoOrbitEnabled(),
@@ -308,6 +314,9 @@ class RendererCUDAProgressive : virtual public CameraBase
       {
          freeDeviceAccumBuffer(d_accum_buffer);
       }
+      
+      // Cleanup scene
+      Scene::CudaSceneBuilder::freeGPUScene(gpu_scene);
 
       gui.cleanup();
    }
@@ -317,7 +326,8 @@ class RendererCUDAProgressive : virtual public CameraBase
     * @brief Render a batch of samples using CUDA
     */
    void renderBatch(vector<unsigned char> &display_image, vector<float> &accum_buffer, int &current_samples,
-                    int max_samples, int samples_per_batch, float gamma, void *&d_rand_states, void *&d_accum_buffer)
+                    int max_samples, int samples_per_batch, float gamma, void *&d_rand_states, void *&d_accum_buffer,
+                    CudaScene::Scene* gpu_scene)
    {
       current_samples += samples_per_batch;
       if (current_samples > max_samples)
@@ -329,7 +339,7 @@ class RendererCUDAProgressive : virtual public CameraBase
 
       // Call CUDA to render and accumulate samples
       unsigned long long cuda_ray_count = ::renderPixelsCUDAAccumulative(
-          display_image.data(), accum_buffer.data(), image_width, image_height, camera_center.x(), camera_center.y(),
+          display_image.data(), accum_buffer.data(), gpu_scene, image_width, image_height, camera_center.x(), camera_center.y(),
           camera_center.z(), pixel00_loc.x(), pixel00_loc.y(), pixel00_loc.z(), pixel_delta_u.x(), pixel_delta_u.y(),
           pixel_delta_u.z(), pixel_delta_v.x(), pixel_delta_v.y(), pixel_delta_v.z(), actual_samples_to_add,
           current_samples, max_depth, &d_rand_states, &d_accum_buffer);
@@ -392,6 +402,9 @@ class RendererCUDAProgressive : virtual public CameraBase
                          orbit_button_rect);
       gui.present();
    }
+   
+   // Forward declaration - scene is created in main.cc
+   Scene::SceneDescription createDefaultScene();  // Implemented in main.cc
 };
 
 #endif // SDL2_FOUND
