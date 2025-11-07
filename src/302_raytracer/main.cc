@@ -202,6 +202,8 @@ struct ProgramArgs
    int height = IMAGE_HEIGHT;
    int start_samples = 32;           // Number of samples to render initially when moving camera
    bool auto_accumulate = true;      // Enable auto-accumulation by default
+   int target_fps = 60;              // Target FPS for interactive rendering (default: 60)
+   bool adaptive_depth = false;      // Enable adaptive depth (default: off)
    const char *scene_file = nullptr; // Optional scene file to load
 };
 
@@ -224,6 +226,10 @@ ProgramArgs parseInput(int argc, char *argv[])
               << IMAGE_HEIGHT << ")\n";
          cout << "  --scene <file>         Load scene from YAML file (default: built-in scene)\n";
          cout << "  --start-samples <n>    Set initial samples when moving camera in interactive mode (default: 32)\n";
+         cout << "  --target-fps <fps>     Set target frame rate for interactive rendering (default: 60)\n";
+         cout << "                         Higher values = smoother motion but lower quality preview\n";
+         cout << "                         Lower values = better quality preview but less smooth motion\n";
+         cout << "  --adaptive-depth       Enable adaptive depth in interactive mode (progressively increases max depth)\n";
          cout << "  --no-auto-accumulate   Disable automatic sample accumulation in interactive mode\n";
          args.samples = -1;
          return args;
@@ -251,6 +257,10 @@ ProgramArgs parseInput(int argc, char *argv[])
       {
          args.auto_accumulate = false;
       }
+      else if (strcmp(argv[i], "--adaptive-depth") == 0)
+      {
+         args.adaptive_depth = true;
+      }
       else if (strcmp(argv[i], "--scene") == 0 && i + 1 < argc)
       {
          args.scene_file = argv[++i];
@@ -261,6 +271,16 @@ ProgramArgs parseInput(int argc, char *argv[])
          if (args.start_samples < 1)
          {
             cerr << "Invalid start-samples value: " << args.start_samples << " (must be >= 1)\n";
+            args.samples = -1;
+            return args;
+         }
+      }
+      else if (strcmp(argv[i], "--target-fps") == 0 && i + 1 < argc)
+      {
+         args.target_fps = atoi(argv[++i]);
+         if (args.target_fps < 1 || args.target_fps > 1000)
+         {
+            cerr << "Invalid target-fps value: " << args.target_fps << " (must be 1-1000)\n";
             args.samples = -1;
             return args;
          }
@@ -276,6 +296,8 @@ ProgramArgs parseInput(int argc, char *argv[])
          cout << "  -r <height>            Set vertical resolution (allowed: 2160, 1080, 720, 360, 180, default: "
               << IMAGE_HEIGHT << ")\n";
          cout << "  --scene <file>         Load scene from YAML file (default: built-in scene)\n";
+         cout << "  --target-fps <fps>     Set target frame rate for interactive rendering (default: 60)\n";
+         cout << "  --adaptive-depth       Enable adaptive depth in interactive mode (progressively increases max depth)\n";
          cout << "  --start-samples <n>    Set initial samples when moving camera in interactive mode (default: 32)\n";
          cout << "  --no-auto-accumulate   Disable automatic sample accumulation in interactive mode\n";
          args.samples = -1;
@@ -370,7 +392,7 @@ int main(int argc, char *argv[])
 #ifdef SDL2_FOUND
    case 3:
       cout << "Using CUDA GPU with interactive SDL display..." << endl;
-      c.renderPixelsSDLContinuous(localImage, args.start_samples, args.auto_accumulate);
+      c.renderPixelsSDLContinuous(localImage, args.start_samples, args.auto_accumulate, args.target_fps, args.adaptive_depth);
       break;
 #endif
    default:

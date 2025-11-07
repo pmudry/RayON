@@ -53,8 +53,10 @@ class RendererCUDAProgressive : virtual public CameraBase
     * @param max_samples Maximum total samples to accumulate (default: 4096)
     * @param samples_per_batch Number of samples to add per batch (default: 8)
     * @param auto_accumulate Enable automatic sample accumulation (default: true)
+    * @param target_fps Target frame rate for interactive rendering (default: 60)
+    * @param adaptive_depth Enable adaptive depth (progressively increases max depth) (default: false)
     */
-   void renderPixelsSDLContinuous(vector<unsigned char> &image, int samples_per_batch = 8, bool auto_accumulate = true)
+   void renderPixelsSDLContinuous(vector<unsigned char> &image, int samples_per_batch = 8, bool auto_accumulate = true, int target_fps = 60, bool adaptive_depth = false)
    {
       // Initialize GUI
       SDLGuiHandler gui(image_width, image_height);
@@ -86,6 +88,13 @@ class RendererCUDAProgressive : virtual public CameraBase
       bool is_camera_moving = false;
       auto last_camera_change_time = std::chrono::high_resolution_clock::now();
       const float motion_cooldown_seconds = 0.5f; // Wait 0.5s after last input before considering stopped
+      
+      // Adaptive sample rate for smooth target FPS
+      int adaptive_samples_per_batch = samples_per_batch; // Actual samples to render (adapts during motion)
+      int user_samples_per_batch = samples_per_batch;     // User's preferred samples (from UI slider)
+      auto last_render_time = std::chrono::high_resolution_clock::now();
+      const float target_frame_time_ms = 1000.0f / target_fps; // Calculate target frame time from FPS
+      const float adaptive_speed = 0.2f; // How quickly to adapt sample rate (lower = smoother)
 
       // Set initial rendering parameters
       ::setLightIntensity(light_intensity);
@@ -258,7 +267,7 @@ class RendererCUDAProgressive : virtual public CameraBase
          if (needs_rerender && current_samples > 0)
          {
             applyGammaCorrection(display_image, accum_buffer, current_samples, gamma);
-            displayFrame(gui, display_image, current_samples, samples_per_batch, light_intensity, background_intensity,
+            displayFrame(gui, display_image, current_samples, adaptive_samples_per_batch, light_intensity, background_intensity,
                          metal_fuzziness, accumulation_enabled, camera_control.isAutoOrbitEnabled(),
                          samples_slider_bounds, intensity_slider_bounds, background_slider_bounds,
                          fuzziness_slider_bounds, toggle_button_rect, orbit_button_rect);
@@ -274,10 +283,49 @@ class RendererCUDAProgressive : virtual public CameraBase
          if (should_render && (accumulation_enabled || needs_initial_render || force_immediate_render))
          {
             force_immediate_render = false; // Reset flag after rendering
-            renderBatch(display_image, accum_buffer, current_samples, max_samples, samples_per_batch, gamma,
-                        d_rand_states, d_accum_buffer, gpu_scene, is_camera_moving);
+            
+            // Sync user preference from slider
+            user_samples_per_batch = static_cast<int>(samples_per_batch_float);
+            
+            // Adaptive sample rate: use fewer samples during motion for smooth 60 FPS
+            if (is_camera_moving)
+            {
+               // During motion, use adaptive sample count for target frame rate
+               adaptive_samples_per_batch = max(1, adaptive_samples_per_batch);
+            }
+            else
+            {
+               // When camera stops, gradually ramp up to user's preferred sample count
+               adaptive_samples_per_batch = user_samples_per_batch;
+            }
+            
+            // Start timing this frame
+            auto frame_start = std::chrono::high_resolution_clock::now();
+            
+            renderBatch(display_image, accum_buffer, current_samples, max_samples, adaptive_samples_per_batch, gamma,
+                        d_rand_states, d_accum_buffer, gpu_scene, is_camera_moving, adaptive_depth);
+            
+            // Measure frame time and adapt sample rate for next frame
+            auto frame_end = std::chrono::high_resolution_clock::now();
+            std::chrono::duration<float, std::milli> frame_time = frame_end - frame_start;
+            
+            // Adaptive adjustment only during motion
+            if (is_camera_moving)
+            {
+               float time_ratio = target_frame_time_ms / frame_time.count();
+               
+               // Adjust sample count to hit target FPS
+               // Use exponential smoothing for gradual adjustment
+               float target_samples = adaptive_samples_per_batch * time_ratio;
+               adaptive_samples_per_batch = max(1, static_cast<int>(
+                  adaptive_samples_per_batch * (1.0f - adaptive_speed) + target_samples * adaptive_speed
+               ));
+               
+               // Clamp to reasonable range: 1 to user preference
+               adaptive_samples_per_batch = max(1, min(adaptive_samples_per_batch, user_samples_per_batch));
+            }
 
-            displayFrame(gui, display_image, current_samples, samples_per_batch, light_intensity, background_intensity,
+            displayFrame(gui, display_image, current_samples, adaptive_samples_per_batch, light_intensity, background_intensity,
                          metal_fuzziness, accumulation_enabled, camera_control.isAutoOrbitEnabled(),
                          samples_slider_bounds, intensity_slider_bounds,
                          background_slider_bounds, fuzziness_slider_bounds, toggle_button_rect, orbit_button_rect);
@@ -287,7 +335,7 @@ class RendererCUDAProgressive : virtual public CameraBase
          else if (current_samples >= max_samples && !camera_changed)
          {
             // Refresh display even when idle to show logo and UI
-            displayFrame(gui, display_image, current_samples, samples_per_batch, light_intensity, background_intensity,
+            displayFrame(gui, display_image, current_samples, adaptive_samples_per_batch, light_intensity, background_intensity,
                          metal_fuzziness, accumulation_enabled, camera_control.isAutoOrbitEnabled(),
                          samples_slider_bounds, intensity_slider_bounds,
                          background_slider_bounds, fuzziness_slider_bounds, toggle_button_rect, orbit_button_rect);
@@ -296,7 +344,7 @@ class RendererCUDAProgressive : virtual public CameraBase
          else if (!accumulation_enabled && current_samples > 0 && !camera_changed)
          {
             // Refresh display even when idle to show logo and UI
-            displayFrame(gui, display_image, current_samples, samples_per_batch, light_intensity, background_intensity,
+            displayFrame(gui, display_image, current_samples, adaptive_samples_per_batch, light_intensity, background_intensity,
                          metal_fuzziness, accumulation_enabled, camera_control.isAutoOrbitEnabled(),
                          samples_slider_bounds, intensity_slider_bounds,
                          background_slider_bounds, fuzziness_slider_bounds, toggle_button_rect, orbit_button_rect);
@@ -362,7 +410,7 @@ class RendererCUDAProgressive : virtual public CameraBase
     */
    void renderBatch(vector<unsigned char> &display_image, vector<float> &accum_buffer, int &current_samples,
                     int max_samples, int samples_per_batch, float gamma, void *&d_rand_states, void *&d_accum_buffer,
-                    CudaScene::Scene *gpu_scene, bool is_moving)
+                    CudaScene::Scene *gpu_scene, bool is_moving, bool adaptive_depth = false)
    {
       current_samples += samples_per_batch;
       if (current_samples > max_samples)
@@ -373,7 +421,8 @@ class RendererCUDAProgressive : virtual public CameraBase
          actual_samples_to_add = max_samples - (current_samples - samples_per_batch);
 
       // Calculate progressive max depth based on current sample count and motion state
-      int progressive_depth = calculateProgressiveMaxDepth(current_samples, max_samples, is_moving);
+      // If adaptive_depth is disabled, use the full max_depth
+      int progressive_depth = adaptive_depth ? calculateProgressiveMaxDepth(current_samples, max_samples, is_moving) : max_depth;
 
       // Call CUDA to render and accumulate samples with progressive depth
       unsigned long long cuda_ray_count = ::renderPixelsCUDAAccumulative(
