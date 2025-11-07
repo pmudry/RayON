@@ -20,8 +20,9 @@ __global__ void init_random_states(curandState *rand_states, int num_states, uns
 
     if (idx < num_states)
     {
-        // Initialize each state with a unique seed and sequence
-        // Using idx for sequence ensures different random streams per pixel
-        curand_init(seed, idx, 0, &rand_states[idx]);
+        // Initialize fast RNG state - we repurpose curandState storage
+        // Simple but effective: combine seed with index for per-pixel unique sequences
+        unsigned int *fast_state = (unsigned int*)&rand_states[idx];
+        *fast_state = (unsigned int)(seed + idx * 747796405u);
     }
 }

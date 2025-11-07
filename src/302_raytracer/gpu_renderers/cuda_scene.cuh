@@ -177,9 +177,10 @@ struct BVHNode {
 
 /**
  * @brief Complete GPU scene - pointers to device memory
+ * Aligned to 128 bytes for optimal memory access
  */
-struct Scene {
-    // Device memory pointers
+struct alignas(128) Scene {
+    // Device memory pointers (aligned to cache line boundaries)
     Material* materials;
     Geometry* geometries;
     BVHNode* bvh_nodes;

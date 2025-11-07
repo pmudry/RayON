@@ -28,6 +28,34 @@ extern "C" void setBackgroundIntensity(float intensity)
 
 extern "C" void setMetalFuzziness(float fuzziness) { cudaMemcpyToSymbol(g_metal_fuzziness, &fuzziness, sizeof(float)); }
 
+/**
+ * @brief Calculate optimal thread block configuration for 2D image rendering
+ * @param width Image width
+ * @param height Image height
+ * @return dim3 with optimal block dimensions
+ */
+static dim3 getOptimalBlockSize(int width, int height)
+{
+   // Query device properties
+   cudaDeviceProp prop;
+   cudaGetDeviceProperties(&prop, 0);
+   
+   // For modern GPUs, 256 threads per block is often optimal
+   // Use rectangular blocks (32x8) for better memory coalescing
+   // 32 threads in x-direction aligns with warp size for coalesced memory access
+   int blockSizeX = 32;
+   int blockSizeY = 8;
+   
+   // For older/smaller GPUs, fall back to 16x16
+   if (prop.maxThreadsPerBlock < 256)
+   {
+      blockSizeX = 16;
+      blockSizeY = 16;
+   }
+   
+   return dim3(blockSizeX, blockSizeY);
+}
+
 extern "C" void freeDeviceRandomStates(void *d_rand_states)
 {
    if (d_rand_states != nullptr)
@@ -111,7 +139,8 @@ extern "C" unsigned long long renderPixelsCUDAAccumulative(
 
    cudaMemset(d_ray_count, 0, sizeof(unsigned long long));
 
-   dim3 threads(16, 16);
+   // Use optimized thread block configuration
+   dim3 threads = getOptimalBlockSize(width, height);
    dim3 blocks((width + threads.x - 1) / threads.x, (height + threads.y - 1) / threads.y);
 
    if (need_rand_init)
@@ -120,7 +149,7 @@ extern "C" unsigned long long renderPixelsCUDAAccumulative(
       cudaDeviceSynchronize();
    }
 
-   renderAccKernel<<<blocks, threads>>>(d_accum, d_image, *scene, width, height, samples_to_add, total_samples_so_far,
+   renderAccKernel<<<blocks, threads>>>(d_accum, d_image, scene, width, height, samples_to_add, total_samples_so_far,
                                         max_depth, (float)cam_center_x, (float)cam_center_y, (float)cam_center_z,
                                         (float)pixel00_x, (float)pixel00_y, (float)pixel00_z, (float)delta_u_x,
                                         (float)delta_u_y, (float)delta_u_z, (float)delta_v_x, (float)delta_v_y,
@@ -193,8 +222,8 @@ extern "C" unsigned long long renderPixelsCUDAWithScene(unsigned char *image, Cu
    cudaMalloc(&d_ray_count, sizeof(unsigned long long));
    cudaMalloc(&d_rand_states, num_pixels * sizeof(curandState));
 
-   // Initialize random states
-   dim3 threads(16, 16);
+   // Use optimized thread block configuration
+   dim3 threads = getOptimalBlockSize(width, height);
    dim3 blocks((width + threads.x - 1) / threads.x, (height + threads.y - 1) / threads.y);
 
    init_random_states<<<blocks, threads>>>(d_rand_states, num_pixels, 1234ULL, width);
@@ -203,9 +232,9 @@ extern "C" unsigned long long renderPixelsCUDAWithScene(unsigned char *image, Cu
    // Initialize ray count
    cudaMemset(d_ray_count, 0, sizeof(unsigned long long));
 
-   // Launch rendering kernel - dereference the scene pointer
+   // Launch rendering kernel - pass scene pointer instead of dereferencing
    renderKernelWithScene<<<blocks, threads>>>(
-       d_image, *scene, width, height, samples_per_pixel, max_depth, (float)cam_center_x, (float)cam_center_y,
+       d_image, scene, width, height, samples_per_pixel, max_depth, (float)cam_center_x, (float)cam_center_y,
        (float)cam_center_z, (float)pixel00_x, (float)pixel00_y, (float)pixel00_z, (float)delta_u_x, (float)delta_u_y,
        (float)delta_u_z, (float)delta_v_x, (float)delta_v_y, (float)delta_v_z, d_ray_count, d_rand_states);
 

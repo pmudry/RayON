@@ -1,6 +1,6 @@
 #include "render_scene_kernel.cuh"
 
-__global__ void renderKernelWithScene(unsigned char *image, CudaScene::Scene scene, int width, int height,
+__global__ void renderKernelWithScene(unsigned char *image, const CudaScene::Scene * __restrict__ scene, int width, int height,
                                       int samples_per_pixel, int max_depth, float cam_center_x, float cam_center_y,
                                       float cam_center_z, float pixel00_x, float pixel00_y, float pixel00_z,
                                       float delta_u_x, float delta_u_y, float delta_u_z, float delta_v_x,
@@ -26,7 +26,7 @@ __global__ void renderKernelWithScene(unsigned char *image, CudaScene::Scene sce
                                    float3_simple((y + offset_v) * delta_v.x, (y + offset_v) * delta_v.y, (y + offset_v) * delta_v.z);
       float3_simple ray_direction = float3_simple(pixel_center.x - cam_center.x, pixel_center.y - cam_center.y, pixel_center.z - cam_center.z);
       ray_simple r(cam_center, ray_direction);
-      pixel_color = pixel_color + ray_color(r, scene, local_state, min(max_depth, 6), local_ray_count);
+      pixel_color = pixel_color + ray_color(r, *scene, local_state, min(max_depth, 6), local_ray_count);
    }
    float scale = 1.0f / samples_per_pixel;
    pixel_color = float3_simple(pixel_color.x * scale, pixel_color.y * scale, pixel_color.z * scale);

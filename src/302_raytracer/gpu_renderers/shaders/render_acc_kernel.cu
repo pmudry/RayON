@@ -1,6 +1,6 @@
 #include "render_acc_kernel.cuh"
 
-__global__ void renderAccKernel(float *accum_buffer, unsigned char *image, CudaScene::Scene scene, int width,
+__global__ void renderAccKernel(float *accum_buffer, unsigned char *image, const CudaScene::Scene * __restrict__ scene, int width,
                                 int height, int samples_to_add, int total_samples_so_far, int max_depth,
                                 float cam_center_x, float cam_center_y, float cam_center_z, float pixel00_x,
                                 float pixel00_y, float pixel00_z, float delta_u_x, float delta_u_y, float delta_u_z,
@@ -28,7 +28,7 @@ __global__ void renderAccKernel(float *accum_buffer, unsigned char *image, CudaS
       float3_simple pixel_center = pixel00_loc + ((float)x + offset_u) * pixel_delta_u + ((float)y + offset_v) * pixel_delta_v;
       float3_simple ray_direction = pixel_center - camera_center;
       ray_simple r(camera_center, ray_direction);
-      accumulated_color = accumulated_color + ray_color(r, scene, local_rand_state, min(max_depth, 6), local_ray_count);
+      accumulated_color = accumulated_color + ray_color(r, *scene, local_rand_state, min(max_depth, 6), local_ray_count);
    }
    atomicAdd(ray_count, (unsigned long long)local_ray_count);
    accum_buffer[base_idx] = accumulated_color.x;
