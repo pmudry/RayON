@@ -158,11 +158,57 @@ CudaScene::Scene* CudaSceneBuilder::buildGPUScene(const SceneDescription& desc) 
     // Set scene properties
     scene->num_materials = num_materials;
     scene->num_geometries = num_geometries;
-    scene->num_bvh_nodes = 0;  // BVH not yet implemented
-    scene->bvh_root_idx = -1;
-    scene->use_bvh = false;
     scene->max_ray_march_steps = 100;
     scene->ray_march_epsilon = 0.001f;
+    
+    // Handle BVH if available
+    scene->use_bvh = desc.use_bvh && !desc.top_level_bvh.nodes.empty();
+    if (scene->use_bvh) {
+        scene->num_bvh_nodes = static_cast<int>(desc.top_level_bvh.nodes.size());
+        scene->bvh_root_idx = desc.top_level_bvh.root_index;
+        
+        // Convert BVH nodes
+        CudaScene::BVHNode* host_bvh_nodes = new CudaScene::BVHNode[scene->num_bvh_nodes];
+        for (int i = 0; i < scene->num_bvh_nodes; ++i) {
+            const BVHNode& host_node = desc.top_level_bvh.nodes[i];
+            CudaScene::BVHNode& device_node = host_bvh_nodes[i];
+            
+            // Copy bounding box
+            device_node.bounds_min = float3_simple(
+                static_cast<float>(host_node.bounds_min.x()),
+                static_cast<float>(host_node.bounds_min.y()),
+                static_cast<float>(host_node.bounds_min.z())
+            );
+            device_node.bounds_max = float3_simple(
+                static_cast<float>(host_node.bounds_max.x()),
+                static_cast<float>(host_node.bounds_max.y()),
+                static_cast<float>(host_node.bounds_max.z())
+            );
+            
+            device_node.is_leaf = host_node.is_leaf;
+            device_node.split_axis = host_node.split_axis;
+            
+            if (host_node.is_leaf) {
+                device_node.data.leaf.first_geom_idx = host_node.data.leaf.first_geom_idx;
+                device_node.data.leaf.geom_count = host_node.data.leaf.geom_count;
+            } else {
+                device_node.data.interior.left_child = host_node.data.interior.left_child;
+                device_node.data.interior.right_child = host_node.data.interior.right_child;
+            }
+        }
+        
+        // Allocate and copy BVH to device
+        cudaMalloc(&scene->bvh_nodes, scene->num_bvh_nodes * sizeof(CudaScene::BVHNode));
+        cudaMemcpy(scene->bvh_nodes, host_bvh_nodes,
+                  scene->num_bvh_nodes * sizeof(CudaScene::BVHNode),
+                  cudaMemcpyHostToDevice);
+        
+        delete[] host_bvh_nodes;
+    } else {
+        scene->num_bvh_nodes = 0;
+        scene->bvh_root_idx = -1;
+        scene->bvh_nodes = nullptr;
+    }
     
     // Allocate device memory and copy
     if (scene->num_materials > 0) {
@@ -182,9 +228,6 @@ CudaScene::Scene* CudaSceneBuilder::buildGPUScene(const SceneDescription& desc) 
     } else {
         scene->geometries = nullptr;
     }
-    
-    // BVH not yet implemented
-    scene->bvh_nodes = nullptr;
     
     // Free host arrays
     delete[] host_materials;

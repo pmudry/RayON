@@ -220,7 +220,6 @@ class RendererCUDAProgressive : virtual public CameraBase
          // Handle camera changes - restart rendering
          if (camera_changed)
          {
-            std::cout << "Camera changed detected, resetting buffers and forcing re-render" << std::endl;
             camera_changed = false;
             current_samples = 0;
             force_immediate_render = true; // Force rendering after camera/settings change
@@ -260,10 +259,6 @@ class RendererCUDAProgressive : virtual public CameraBase
 
          if (should_render && (accumulation_enabled || needs_initial_render || force_immediate_render))
          {
-            if (force_immediate_render)
-            {
-               std::cout << "Force immediate render triggered (samples=" << current_samples << ")" << std::endl;
-            }
             force_immediate_render = false; // Reset flag after rendering
             renderBatch(display_image, accum_buffer, current_samples, max_samples, samples_per_batch, gamma,
                         d_rand_states, d_accum_buffer, gpu_scene);

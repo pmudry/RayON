@@ -111,6 +111,62 @@ __device__ inline float smoothstep(float edge0, float edge1, float x)
 }
 
 //==============================================================================
+// BVH / AABB INTERSECTION
+//==============================================================================
+
+/**
+ * @brief Ray-AABB intersection test using slab method
+ * @param r Ray to test
+ * @param box_min AABB minimum corner
+ * @param box_max AABB maximum corner
+ * @param t_min Minimum ray parameter
+ * @param t_max Maximum ray parameter
+ * @return true if ray intersects AABB in range [t_min, t_max]
+ */
+__device__ inline bool hit_aabb(const ray_simple &r, const float3_simple &box_min, const float3_simple &box_max,
+                                float t_min, float t_max)
+{
+   // Compute inverse ray direction once
+   float inv_dir_x = 1.0f / r.dir.x;
+   float inv_dir_y = 1.0f / r.dir.y;
+   float inv_dir_z = 1.0f / r.dir.z;
+   
+   // X slab
+   float t0_x = (box_min.x - r.orig.x) * inv_dir_x;
+   float t1_x = (box_max.x - r.orig.x) * inv_dir_x;
+   if (inv_dir_x < 0.0f) {
+      float temp = t0_x;
+      t0_x = t1_x;
+      t1_x = temp;
+   }
+   
+   // Y slab
+   float t0_y = (box_min.y - r.orig.y) * inv_dir_y;
+   float t1_y = (box_max.y - r.orig.y) * inv_dir_y;
+   if (inv_dir_y < 0.0f) {
+      float temp = t0_y;
+      t0_y = t1_y;
+      t1_y = temp;
+   }
+   
+   // Z slab
+   float t0_z = (box_min.z - r.orig.z) * inv_dir_z;
+   float t1_z = (box_max.z - r.orig.z) * inv_dir_z;
+   if (inv_dir_z < 0.0f) {
+      float temp = t0_z;
+      t0_z = t1_z;
+      t1_z = temp;
+   }
+   
+   // Compute intersection interval
+   float t_enter = fmaxf(fmaxf(t0_x, t0_y), t0_z);
+   float t_exit = fminf(fminf(t1_x, t1_y), t1_z);
+   
+   // Check if ray intersects AABB
+   return t_enter <= t_exit && t_exit >= t_min && t_enter <= t_max;
+}
+
+//==============================================================================
 // INTERSECTIONS AND PROCEDURAL UTILS
 //==============================================================================
 
@@ -268,19 +324,91 @@ __device__ inline bool hit_scene(const CudaScene::Scene &scene, const ray_simple
    int closest_material_id = -1;
    int closest_geom_idx = -1;
 
-#pragma unroll 4
-   for (int i = 0; i < scene.num_geometries; ++i)
+   // Use BVH if available, otherwise linear scan
+   if (scene.use_bvh && scene.bvh_root_idx >= 0)
    {
-      const CudaScene::Geometry &geom = scene.geometries[i];
-      if (intersect_geometry(geom, r, t_min, closest_so_far, temp_rec))
+      // Stack-based BVH traversal (iterative to avoid recursion)
+      int stack[32];
+      int stack_ptr = 0;
+      stack[stack_ptr++] = scene.bvh_root_idx;
+      
+      while (stack_ptr > 0)
       {
-         hit_anything = true;
-         closest_so_far = temp_rec.t;
-         rec = temp_rec;
-         closest_material_id = geom.material_id;
-         closest_geom_idx = i;
+         int node_idx = stack[--stack_ptr];
+         const CudaScene::BVHNode &node = scene.bvh_nodes[node_idx];
+         
+         // Test ray against node's AABB
+         if (!hit_aabb(r, node.bounds_min, node.bounds_max, t_min, closest_so_far))
+            continue;
+         
+         if (node.is_leaf)
+         {
+            // Leaf node: test all geometries
+            int first = node.data.leaf.first_geom_idx;
+            int count = node.data.leaf.geom_count;
+            
+            for (int i = 0; i < count; ++i)
+            {
+               const CudaScene::Geometry &geom = scene.geometries[first + i];
+               if (intersect_geometry(geom, r, t_min, closest_so_far, temp_rec))
+               {
+                  hit_anything = true;
+                  closest_so_far = temp_rec.t;
+                  rec = temp_rec;
+                  closest_material_id = geom.material_id;
+                  closest_geom_idx = first + i;
+               }
+            }
+         }
+         else
+         {
+            // Interior node: push children onto stack
+            // Push farther child first for better traversal order
+            int left_child = node.data.interior.left_child;
+            int right_child = node.data.interior.right_child;
+            
+            // Simple heuristic: test which child is closer
+            float3_simple left_center = (scene.bvh_nodes[left_child].bounds_min + 
+                                         scene.bvh_nodes[left_child].bounds_max) * 0.5f;
+            float3_simple right_center = (scene.bvh_nodes[right_child].bounds_min + 
+                                          scene.bvh_nodes[right_child].bounds_max) * 0.5f;
+            
+            float dist_left = (left_center - r.orig).length_squared();
+            float dist_right = (right_center - r.orig).length_squared();
+            
+            if (dist_left < dist_right)
+            {
+               // Right is farther, push it first
+               if (stack_ptr < 32) stack[stack_ptr++] = right_child;
+               if (stack_ptr < 32) stack[stack_ptr++] = left_child;
+            }
+            else
+            {
+               // Left is farther, push it first
+               if (stack_ptr < 32) stack[stack_ptr++] = left_child;
+               if (stack_ptr < 32) stack[stack_ptr++] = right_child;
+            }
+         }
       }
    }
+   else
+   {
+      // Linear scan fallback
+#pragma unroll 4
+      for (int i = 0; i < scene.num_geometries; ++i)
+      {
+         const CudaScene::Geometry &geom = scene.geometries[i];
+         if (intersect_geometry(geom, r, t_min, closest_so_far, temp_rec))
+         {
+            hit_anything = true;
+            closest_so_far = temp_rec.t;
+            rec = temp_rec;
+            closest_material_id = geom.material_id;
+            closest_geom_idx = i;
+         }
+      }
+   }
+   
    if (hit_anything && closest_material_id >= 0 && closest_material_id < scene.num_materials)
    {
       float3_simple geom_center(0, 0, 0);

@@ -1,12 +1,12 @@
 #include "camera/camera.h"
 #include "constants.h"
+#include "gpu_renderers/renderer_cuda.h"
 #include "hittable_list.h"
+#include "scene_builder.h"
+#include "scene_description.h"
 #include "sphere.h"
 #include "utils.h"
-#include "scene_description.h"
-#include "scene_builder.h"
 #include "yaml_scene_loader.h"
-#include "gpu_renderers/renderer_cuda.h"
 
 #include <filesystem>
 #include <iostream>
@@ -18,12 +18,14 @@ using namespace constants;
 using namespace utils;
 
 // Global scene file path (set from command line)
-static const char* g_scene_file = nullptr;
+static const char *g_scene_file = nullptr;
 
 // Function to ensure directory exists
-void ensureDirectoryExists(const string& filepath) {
+void ensureDirectoryExists(const string &filepath)
+{
    size_t pos = filepath.find_last_of("/\\");
-   if (pos != string::npos) {
+   if (pos != string::npos)
+   {
       string dir = filepath.substr(0, pos);
       filesystem::create_directories(dir);
    }
@@ -77,31 +79,42 @@ Scene::SceneDescription create_scene_description()
 {
    using namespace Scene;
    SceneDescription scene_desc;
-   
+
    // If scene file specified, try to load it
-   if (g_scene_file != nullptr) {
+   if (g_scene_file != nullptr)
+   {
       cout << "Attempting to load scene from: " << g_scene_file << endl;
-      if (loadSceneFromYAML(g_scene_file, scene_desc)) {
-         return scene_desc;  // Successfully loaded
-      } else {
+      if (loadSceneFromYAML(g_scene_file, scene_desc))
+      {
+         // Build BVH if enabled in scene
+         if (scene_desc.use_bvh)
+         {
+            cout << "Building BVH acceleration structure..." << endl;
+            scene_desc.buildBVH();
+            cout << "BVH built with " << scene_desc.top_level_bvh.nodes.size() << " nodes" << endl;
+         }
+         return scene_desc; // Successfully loaded
+      }
+      else
+      {
          cerr << "WARNING: Failed to load scene file, using default scene instead" << endl;
       }
    }
-   
+
    // === Default scene - Materials ===
    int mat_ground = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(0.44, 0.7, 0.95)));
    int mat_golden = scene_desc.addMaterial(MaterialDesc::roughMirror(Vec3(1.0, 0.85, 0.47), 0.03));
    int mat_blue_rough = scene_desc.addMaterial(MaterialDesc::roughMirror(Vec3(0.3, 0.3, 0.91), 0.3));
-   int mat_red_dots = scene_desc.addMaterial(MaterialDesc::fibonacciDots(
-       Vec3(0.9, 0.1, 0.1), Vec3(0.02, 0.02, 0.02), 12, 0.33f));
+   int mat_red_dots =
+       scene_desc.addMaterial(MaterialDesc::fibonacciDots(Vec3(0.9, 0.1, 0.1), Vec3(0.02, 0.02, 0.02), 12, 0.33f));
    int mat_glass = scene_desc.addMaterial(MaterialDesc::glass(1.5));
-   int mat_yellow = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(247/255.0, 241/255.0, 159/255.0)));
-   int mat_blue = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(140/255.0, 198/255.0, 230/255.0)));
-   int mat_violet = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(168/255.0, 144/255.0, 192/255.0)));
-   int mat_rose = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(226/255.0, 171/255.0, 186/255.0)));
-   int mat_green = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(152/255.0, 199/255.0, 191/255.0)));
+   int mat_yellow = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(247 / 255.0, 241 / 255.0, 159 / 255.0)));
+   int mat_blue = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(140 / 255.0, 198 / 255.0, 230 / 255.0)));
+   int mat_violet = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(168 / 255.0, 144 / 255.0, 192 / 255.0)));
+   int mat_rose = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(226 / 255.0, 171 / 255.0, 186 / 255.0)));
+   int mat_green = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(152 / 255.0, 199 / 255.0, 191 / 255.0)));
    int mat_light = scene_desc.addMaterial(MaterialDesc::light(Vec3(4.8, 4.1, 3.7)));
-   
+
    // === Default scene - Geometry ===
    scene_desc.addSphere(Vec3(0, -950.5, -1), 950.0, mat_ground);
    scene_desc.addSphere(Vec3(-3.5, 0.45, -1.8), 0.8, mat_golden);
@@ -114,7 +127,27 @@ Scene::SceneDescription create_scene_description()
    scene_desc.addSphere(Vec3(-2.0, -0.3, 1.2), 0.2, mat_rose);
    scene_desc.addSphere(Vec3(-1.5, -0.3, 1.2), 0.2, mat_green);
    scene_desc.addRectangle(Vec3(-1.0, 3.0, -2.0), Vec3(2.5, 0, 0), Vec3(0, 0, 1.5), mat_light);
-   
+
+   // // Add many more spheres to test BVH performance
+   // for (int i = 0; i < 10; i++) {
+   //    for (int j = 0; j < 10; j++) {
+   //       double x = -4.5 + i * 1.0;
+   //       double z = -8.0 + j * 1.0;
+   //       int mat = (i + j) % 4;
+   //       int material = mat == 0 ? mat_yellow : (mat == 1 ? mat_blue : (mat == 2 ? mat_violet : mat_rose));
+   //       scene_desc.addSphere(Vec3(x, -0.4, z), 0.15, material);
+   //    }
+   // }
+
+   // Build BVH for default scene (always enabled for default)
+   scene_desc.use_bvh = true;
+   scene_desc.buildBVH();
+   cout << "Built BVH with " << scene_desc.top_level_bvh.nodes.size() << " nodes for " << scene_desc.geometries.size()
+        << " geometries" << endl;
+
+   // Uncomment the line below to test without BVH for performance comparison
+   // scene_desc.use_bvh = false;
+
    return scene_desc;
 }
 
@@ -125,57 +158,51 @@ Scene::SceneDescription create_scene_description()
 Hittable_list create_cpu_scene()
 {
    Hittable_list world;
-   
+
    // Materials - all lambertian with colors matching the GPU scene
    auto mat_ground = make_shared<Lambertian>(Color(0.44, 0.7, 0.95));
-   auto mat_golden = make_shared<Lambertian>(Color(1.0, 0.85, 0.47));        // Golden (was rough mirror)
-   auto mat_blue_rough = make_shared<Lambertian>(Color(0.3, 0.3, 0.91));     // Blue (was rough mirror)
-   auto mat_red = make_shared<Lambertian>(Color(0.9, 0.1, 0.1));             // Red (was Fibonacci dots)
-   auto mat_glass_approx = make_shared<Lambertian>(Color(0.9, 0.9, 0.95));   // Light blue-white (was glass)
-   auto mat_yellow = make_shared<Lambertian>(Color(247/255.0, 241/255.0, 159/255.0));
-   auto mat_blue = make_shared<Lambertian>(Color(140/255.0, 198/255.0, 230/255.0));
-   auto mat_violet = make_shared<Lambertian>(Color(168/255.0, 144/255.0, 192/255.0));
-   auto mat_rose = make_shared<Lambertian>(Color(226/255.0, 171/255.0, 186/255.0));
-   auto mat_green = make_shared<Lambertian>(Color(152/255.0, 199/255.0, 191/255.0));
-   auto mat_light = make_shared<Lambertian>(Color(1.0, 1.0, 0.9));           // Bright warm white (was light)
-   
+   auto mat_golden = make_shared<Lambertian>(Color(1.0, 0.85, 0.47));      // Golden (was rough mirror)
+   auto mat_blue_rough = make_shared<Lambertian>(Color(0.3, 0.3, 0.91));   // Blue (was rough mirror)
+   auto mat_red = make_shared<Lambertian>(Color(0.9, 0.1, 0.1));           // Red (was Fibonacci dots)
+   auto mat_glass_approx = make_shared<Lambertian>(Color(0.9, 0.9, 0.95)); // Light blue-white (was glass)
+   auto mat_yellow = make_shared<Lambertian>(Color(247 / 255.0, 241 / 255.0, 159 / 255.0));
+   auto mat_blue = make_shared<Lambertian>(Color(140 / 255.0, 198 / 255.0, 230 / 255.0));
+   auto mat_violet = make_shared<Lambertian>(Color(168 / 255.0, 144 / 255.0, 192 / 255.0));
+   auto mat_rose = make_shared<Lambertian>(Color(226 / 255.0, 171 / 255.0, 186 / 255.0));
+   auto mat_green = make_shared<Lambertian>(Color(152 / 255.0, 199 / 255.0, 191 / 255.0));
+   auto mat_light = make_shared<Lambertian>(Color(1.0, 1.0, 0.9)); // Bright warm white (was light)
+
    // Geometry - matching GPU scene positions
    world.add(make_shared<Sphere>(Point3(0, -950.5, -1), 950.0, mat_ground));
    world.add(make_shared<Sphere>(Point3(-3.5, 0.45, -1.8), 0.8, mat_golden));
-   world.add(make_shared<Sphere>(Point3(1.2, 0, -2), 0.5, mat_blue_rough));       // Golf ball (no displacement)
+   world.add(make_shared<Sphere>(Point3(1.2, 0, -2), 0.5, mat_blue_rough)); // Golf ball (no displacement)
    world.add(make_shared<Sphere>(Point3(-1.3, 0.18, -5), 0.7, mat_red));
    world.add(make_shared<Sphere>(Point3(-0.7, 0.2, -0.3), 0.6, mat_glass_approx));
-   
+
    // ISC logo spheres
    world.add(make_shared<Sphere>(Point3(-3.5, -0.3, 1.2), 0.2, mat_yellow));
    world.add(make_shared<Sphere>(Point3(-3.0, -0.3, 1.2), 0.2, mat_blue));
    world.add(make_shared<Sphere>(Point3(-2.5, -0.3, 1.2), 0.2, mat_violet));
    world.add(make_shared<Sphere>(Point3(-2.0, -0.3, 1.2), 0.2, mat_rose));
    world.add(make_shared<Sphere>(Point3(-1.5, -0.3, 1.2), 0.2, mat_green));
-   
+
    // Note: Rectangle (area light) not added as CPU renderer may not support it
-   
+
    return world;
 }
 
 // Implementation of RendererCUDA::createDefaultScene() - uses unified scene
-Scene::SceneDescription RendererCUDA::createDefaultScene()
-{
-   return create_scene_description();
-}
+Scene::SceneDescription RendererCUDA::createDefaultScene() { return create_scene_description(); }
 
-Scene::SceneDescription RendererCUDAProgressive::createDefaultScene()
-{
-   return create_scene_description();
-}
+Scene::SceneDescription RendererCUDAProgressive::createDefaultScene() { return create_scene_description(); }
 
 struct ProgramArgs
 {
    int samples = SAMPLES_PER_PIXEL;
    int height = IMAGE_HEIGHT;
-   int start_samples = 32;      // Number of samples to render initially when moving camera
-   bool auto_accumulate = true; // Enable auto-accumulation by default
-   const char* scene_file = nullptr;  // Optional scene file to load
+   int start_samples = 32;           // Number of samples to render initially when moving camera
+   bool auto_accumulate = true;      // Enable auto-accumulation by default
+   const char *scene_file = nullptr; // Optional scene file to load
 };
 
 ProgramArgs parseInput(int argc, char *argv[])
@@ -276,7 +303,7 @@ int main(int argc, char *argv[])
    {
       return 1;
    }
-   
+
    // Set global scene file for scene loading
    g_scene_file = args.scene_file;
 
@@ -292,6 +319,7 @@ int main(int argc, char *argv[])
    cout << "======================================================" << endl;
    cout << " 302 Ray tracer project v" << ver_major << " -- P.-A. Mudry, ISC 2026" << endl;
    cout << "======================================================" << endl << endl;
+   cout << "Using features : yaml_scene_loader, unified_scene_descriptions, cuda_optimization_1, BVH" << endl << endl;
    cout << "Rendering at resolution: " << c.image_width << " x " << c.image_height << " pixels" << endl;
    cout << "Samples per pixel: " << args.samples << endl << endl;
 
@@ -309,7 +337,7 @@ int main(int argc, char *argv[])
    cout << "\t2. CUDA GPU (default)" << endl;
 #ifdef SDL2_FOUND
    cout << "\t3. CUDA GPU with interactive SDL display" << endl;
-#endif   
+#endif
    cout << "Enter choice (0, 1, 2"
 #ifdef SDL2_FOUND
         << ", 3"
@@ -337,7 +365,7 @@ int main(int argc, char *argv[])
       cout << "Using CPU parallel rendering..." << endl;
       c.renderPixelsParallel(cpu_scene, localImage);
       break;
-   
+
 #ifdef SDL2_FOUND
    case 3:
       cout << "Using CUDA GPU with interactive SDL display..." << endl;
