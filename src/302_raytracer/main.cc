@@ -164,7 +164,6 @@ Scene::SceneDescription RendererCUDA::createDefaultScene()
    return create_scene_description();
 }
 
-// Implementation of RendererCUDAProgressive::createDefaultScene() - uses unified scene  
 Scene::SceneDescription RendererCUDAProgressive::createDefaultScene()
 {
    return create_scene_description();

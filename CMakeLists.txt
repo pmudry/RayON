@@ -87,8 +87,7 @@ set ( SOURCE_302_RAYTRACER
   src/302_raytracer/camera/camera.h
   src/302_raytracer/camera/camera_base.h  
   
-  # SDL renderers (if SDL2 is available)
-  src/302_raytracer/camera/sdl/camera_progressive_sdl_cuda.h
+  # SDL renderers (if SDL2 is available)  
   src/302_raytracer/camera/sdl/sdl_gui_handler.h
   src/302_raytracer/camera/sdl/sdl_gui_controls.h
   
@@ -99,6 +98,7 @@ set ( SOURCE_302_RAYTRACER
   
   # GPU renderers
   src/302_raytracer/gpu_renderers/renderer_cuda.h
+  src/302_raytracer/gpu_renderers/renderer_cuda_progressive.h
   
   src/302_raytracer/gpu_renderers/cuda_float3.cuh
     src/302_raytracer/gpu_renderers/cuda_utils.cuh
