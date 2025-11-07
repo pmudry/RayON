@@ -54,33 +54,6 @@ void dumpImageToFile(vector<unsigned char> &image, int image_width, int image_he
    writeImage(image, image_width, image_height, name);
 }
 
-// using scene = Hittable_list;
-
-// scene demo_scene()
-// {
-//    scene s;
-
-//    auto material_uniform_red = make_shared<Constant>(Color(1, 0.0, 0.0));
-//    auto material_uniform_blue = make_shared<Constant>(Color(0, 0.0, 1.0));
-//    auto material_normals = make_shared<ShowNormals>(Color(0, 0.0, 0.0));
-//    auto material_lambert = make_shared<Lambertian>(Color(0.7, 0.7, 0.7));
-//    auto material_metal = make_shared<Lambertian>(Color(0.7, 0.7, 0.7));
-
-//    s.add(make_shared<Sphere>(Point3(0, -950.5, -1), 950, material_uniform_red)); // Ground
-//    s.add(make_shared<Sphere>(Point3(-3.5, 0.45, -1.8), .8, material_uniform_blue));
-//    s.add(make_shared<Sphere>(Point3(-1.3, 0.18, -5), .7, material_uniform_blue));
-//    s.add(make_shared<Sphere>(Point3(-.7, .2, -.3), .6, material_uniform_blue));
-//    s.add(make_shared<Sphere>(Point3(1.2, 0, -2), 0.5, material_uniform_blue));
-
-//    // Small "ISC" spheres at the bottom
-//    for (int i = 0; i < 5; i++)
-//    {
-//       s.add(make_shared<Sphere>(Point3(-3.5 + i * 0.5, -0.3, 1.2), 0.2, material_lambert));
-//    }
-
-//    return s;
-// }
-
 /**
  * @brief Create unified scene description used by all rendering options
  * This is the single source of truth for the scene - matches the original CUDA scene
@@ -118,6 +91,46 @@ Scene::SceneDescription create_scene_description()
    scene_desc.addRectangle(Vec3(-1.0, 3.0, -2.0), Vec3(2.5, 0, 0), Vec3(0, 0, 1.5), mat_light);
    
    return scene_desc;
+}
+
+/**
+ * @brief Create CPU-compatible scene with only Lambertian materials
+ * This approximates the GPU scene but uses only materials available in the CPU renderer
+ */
+Hittable_list create_cpu_scene()
+{
+   Hittable_list world;
+   
+   // Materials - all lambertian with colors matching the GPU scene
+   auto mat_ground = make_shared<Lambertian>(Color(0.44, 0.7, 0.95));
+   auto mat_golden = make_shared<Lambertian>(Color(1.0, 0.85, 0.47));        // Golden (was rough mirror)
+   auto mat_blue_rough = make_shared<Lambertian>(Color(0.3, 0.3, 0.91));     // Blue (was rough mirror)
+   auto mat_red = make_shared<Lambertian>(Color(0.9, 0.1, 0.1));             // Red (was Fibonacci dots)
+   auto mat_glass_approx = make_shared<Lambertian>(Color(0.9, 0.9, 0.95));   // Light blue-white (was glass)
+   auto mat_yellow = make_shared<Lambertian>(Color(247/255.0, 241/255.0, 159/255.0));
+   auto mat_blue = make_shared<Lambertian>(Color(140/255.0, 198/255.0, 230/255.0));
+   auto mat_violet = make_shared<Lambertian>(Color(168/255.0, 144/255.0, 192/255.0));
+   auto mat_rose = make_shared<Lambertian>(Color(226/255.0, 171/255.0, 186/255.0));
+   auto mat_green = make_shared<Lambertian>(Color(152/255.0, 199/255.0, 191/255.0));
+   auto mat_light = make_shared<Lambertian>(Color(1.0, 1.0, 0.9));           // Bright warm white (was light)
+   
+   // Geometry - matching GPU scene positions
+   world.add(make_shared<Sphere>(Point3(0, -950.5, -1), 950.0, mat_ground));
+   world.add(make_shared<Sphere>(Point3(-3.5, 0.45, -1.8), 0.8, mat_golden));
+   world.add(make_shared<Sphere>(Point3(1.2, 0, -2), 0.5, mat_blue_rough));       // Golf ball (no displacement)
+   world.add(make_shared<Sphere>(Point3(-1.3, 0.18, -5), 0.7, mat_red));
+   world.add(make_shared<Sphere>(Point3(-0.7, 0.2, -0.3), 0.6, mat_glass_approx));
+   
+   // ISC logo spheres
+   world.add(make_shared<Sphere>(Point3(-3.5, -0.3, 1.2), 0.2, mat_yellow));
+   world.add(make_shared<Sphere>(Point3(-3.0, -0.3, 1.2), 0.2, mat_blue));
+   world.add(make_shared<Sphere>(Point3(-2.5, -0.3, 1.2), 0.2, mat_violet));
+   world.add(make_shared<Sphere>(Point3(-2.0, -0.3, 1.2), 0.2, mat_rose));
+   world.add(make_shared<Sphere>(Point3(-1.5, -0.3, 1.2), 0.2, mat_green));
+   
+   // Note: Rectangle (area light) not added as CPU renderer may not support it
+   
+   return world;
 }
 
 // Implementation of RendererCUDA::createDefaultScene() - uses unified scene
@@ -221,100 +234,6 @@ ProgramArgs parseInput(int argc, char *argv[])
    return args;
 }
 
-
-
-/**
- * @brief Test the new scene-based CUDA rendering
- * This uses the same unified scene as all other rendering options
- */
-void test_new_scene_cuda_rendering(int width, int height, int samples)
-{
-   using namespace Scene;
-   
-   cout << "\n========================================" << endl;
-   cout << "TESTING NEW SCENE-BASED CUDA RENDERING" << endl;
-   cout << "========================================\n" << endl;
-   
-   // Create scene from unified scene description
-   SceneDescription scene_desc = create_scene_description();
-   
-   cout << "Scene created: " << scene_desc.materials.size() << " materials, " 
-        << scene_desc.geometries.size() << " geometries" << endl;
-   
-   // Build GPU scene
-   cout << "Building GPU scene..." << endl;
-   CudaScene::Scene* gpu_scene = CudaSceneBuilder::buildGPUScene(scene_desc);
-   cout << "GPU scene built successfully!" << endl;
-   
-   // Setup camera - MATCHING Camera class parameters exactly
-   int max_depth = 50;
-   
-   // Camera parameters from CameraBase
-   Point3 look_from = Point3(-2, 2, 5);
-   Point3 look_at = Point3(-2, -0.5, -1);
-   Vec3 vup = Vec3(0, 1, 0);
-   double vfov = 35.0;  // degrees
-   
-   // Calculate camera parameters
-   auto focal_length = (look_from - look_at).length();
-   auto theta = utils::degrees_to_radians(vfov);
-   auto h = tan(theta / 2);
-   
-   auto viewport_height = 2 * h * focal_length;
-   auto viewport_width = viewport_height * (double(width) / height);
-   
-   // Camera basis vectors
-   Vec3 w = unit_vector(look_from - look_at);
-   Vec3 u = unit_vector(cross(vup, w));
-   Vec3 v = cross(w, u);
-   
-   // Viewport vectors
-   Vec3 viewport_u = viewport_width * u;
-   Vec3 viewport_v = viewport_height * -v;
-   
-   // Pixel deltas
-   Vec3 pixel_delta_u = viewport_u / width;
-   Vec3 pixel_delta_v = viewport_v / height;
-   
-   // First pixel location
-   Vec3 viewport_upper_left = look_from - (focal_length * w) - viewport_u / 2 - viewport_v / 2;
-   Vec3 pixel00_loc = viewport_upper_left + 0.5 * (pixel_delta_u + pixel_delta_v);
-   
-   // Allocate image buffer
-   vector<unsigned char> image(width * height * 3);
-   
-   cout << "Rendering " << width << "x" << height << " with " << samples << " samples..." << endl;
-   auto start_time = std::chrono::high_resolution_clock::now();
-   
-   // Render using new scene-based function
-   unsigned long long ray_count = renderPixelsCUDAWithScene(
-       image.data(), gpu_scene, width, height,
-       look_from.x(), look_from.y(), look_from.z(),
-       pixel00_loc.x(), pixel00_loc.y(), pixel00_loc.z(),
-       pixel_delta_u.x(), pixel_delta_u.y(), pixel_delta_u.z(),
-       pixel_delta_v.x(), pixel_delta_v.y(), pixel_delta_v.z(),
-       samples, max_depth
-   );
-   
-   auto end_time = std::chrono::high_resolution_clock::now();
-   auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-   
-   cout << "Rendering completed in " << duration.count() << " ms" << endl;
-   cout.imbue(locale("en_US.UTF-8"));
-   cout << "Rays traced: " << fixed << ray_count << endl;
-   
-   // Save image with descriptive filename
-   string filename = "res/new_scene_" + to_string(width) + "x" + to_string(height) + "_s" + to_string(samples) + ".png";
-   writeImage(image, width, height, filename);
-   
-   // Cleanup
-   CudaSceneBuilder::freeGPUScene(gpu_scene);
-   cout << "GPU scene freed" << endl;
-   
-   cout << "\nTest completed successfully!" << endl;
-   cout << "Compare this image with the legacy CUDA renderer output.\n" << endl;
-}
-
 int main(int argc, char *argv[])
 {
    // Enable colored error output (all cerr messages will be displayed in red)
@@ -344,12 +263,8 @@ int main(int argc, char *argv[])
 
    RndGen::set_seed(123);
 
-   // scene scene = demo_scene();
-
-   // === NEW SCENE API (unified CPU/GPU format) ===
-   // Uncomment to test new scene description system:
-   // Scene::SceneDescription scene_desc = create_scene_description();
-   // scene scene = Scene::CPUSceneBuilder::buildCPUScene(scene_desc);
+   // Create CPU scene (Lambertian materials only)
+   Hittable_list cpu_scene = create_cpu_scene();
 
    vector<unsigned char> localImage(image.size());
 
@@ -360,13 +275,12 @@ int main(int argc, char *argv[])
    cout << "\t2. CUDA GPU (default)" << endl;
 #ifdef SDL2_FOUND
    cout << "\t3. CUDA GPU with interactive SDL display" << endl;
-#endif
-   cout << "\t4. TEST: New scene-based CUDA rendering (Phase 3)" << endl;
+#endif   
    cout << "Enter choice (0, 1, 2"
 #ifdef SDL2_FOUND
         << ", 3"
 #endif
-        << ", or 4): ";
+        << "): ";
 
    int choice = 2; // Default to CUDA
    string input;
@@ -381,14 +295,14 @@ int main(int argc, char *argv[])
 
    switch (choice)
    {
-   // case 0:
-   //    cout << "Using CPU single threaded..." << endl;
-   //    c.renderPixels(scene, localImage);
-   //    break;
-   // case 1:
-   //    cout << "Using CPU parallel rendering..." << endl;
-   //    c.renderPixelsParallel(scene, localImage);
-   //    break;
+   case 0:
+      cout << "Using CPU single threaded..." << endl;
+      c.renderPixels(cpu_scene, localImage);
+      break;
+   case 1:
+      cout << "Using CPU parallel rendering..." << endl;
+      c.renderPixelsParallel(cpu_scene, localImage);
+      break;
    
 #ifdef SDL2_FOUND
    case 3:
@@ -396,9 +310,6 @@ int main(int argc, char *argv[])
       c.renderPixelsSDLContinuous(localImage, args.start_samples, args.auto_accumulate);
       break;
 #endif
-   case 4:
-      test_new_scene_cuda_rendering(image_width, image_height, args.samples);
-      return 0;  // Exit after test
    default:
       cout << "Using CUDA GPU rendering..." << endl;
       c.renderPixelsCUDA(localImage);
