@@ -94,6 +94,8 @@ set ( SOURCE_302_RAYTRACER
   # GPU renderers
   src/302_raytracer/gpu_renderers/renderer_cuda.h
   src/302_raytracer/gpu_renderers/renderer_cuda.cu
+  src/302_raytracer/gpu_renderers/cuda_float3.cuh
+  src/302_raytracer/gpu_renderers/cuda_utils.cuh
 )
 
 # Add include directories to avoid ugly ../../ paths

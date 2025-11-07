@@ -40,7 +40,8 @@ class CameraControlHandler
    }
 
    bool handleKeyDown(SDL_Event &event, bool &accumulation_enabled, float &samples_per_batch, float &light_intensity,
-                      float &background_intensity, bool &needs_rerender, bool &camera_changed)
+                      float &background_intensity, bool &use_stratified_sampling, bool &needs_rerender, 
+                      bool &camera_changed)
    {
       if (event.key.keysym.sym == SDLK_SPACE)
       {
@@ -56,6 +57,14 @@ class CameraControlHandler
       {
          // Toggle auto-orbit
          toggleAutoOrbit();
+         return true;
+      }
+      else if (event.key.keysym.sym == SDLK_s)
+      {
+         // Toggle stratified sampling
+         use_stratified_sampling = !use_stratified_sampling;
+         std::cout << "S key pressed - toggling to: " << (use_stratified_sampling ? "STRATIFIED" : "UNIFORM") << std::endl;
+         camera_changed = true;
          return true;
       }
       else if (event.key.keysym.sym == SDLK_UP)

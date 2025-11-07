@@ -75,13 +75,16 @@ class RendererProgressiveSDL : virtual public CameraBase
       float light_intensity = 1.0f;
       float background_intensity = 1.0f;
       float metal_fuzziness = 1.0f;
+      bool use_stratified_sampling = false;  // Start with uniform sampling
       bool needs_rerender = false;
+      bool force_immediate_render = false;  // Flag to force rendering immediately after state change
       float samples_per_batch_float = static_cast<float>(samples_per_batch);  // Float version for slider
 
       // Set initial rendering parameters
       ::setLightIntensity(light_intensity);
       ::setBackgroundIntensity(background_intensity);
       ::setMetalFuzziness(metal_fuzziness);
+      ::setStratifiedSampling(use_stratified_sampling ? 1 : 0);
 
       // UI state
       SliderBounds samples_slider_bounds = {0, 0, 0, 0, 1.0f, 256.0f, &samples_per_batch_float};
@@ -123,7 +126,8 @@ class RendererProgressiveSDL : virtual public CameraBase
                   gui.toggleControls();
                }
                else if (camera_control.handleKeyDown(event, accumulation_enabled, samples_per_batch_float, light_intensity,
-                                                      background_intensity, needs_rerender, camera_changed))
+                                                      background_intensity, use_stratified_sampling, needs_rerender, 
+                                                      camera_changed))
                {
                   // Sync samples_per_batch from float slider value
                   samples_per_batch = static_cast<int>(samples_per_batch_float);
@@ -132,6 +136,10 @@ class RendererProgressiveSDL : virtual public CameraBase
                   {
                      ::setLightIntensity(light_intensity);
                      ::setBackgroundIntensity(background_intensity);
+                     int sampling_mode = use_stratified_sampling ? 1 : 0;
+                     std::cout << "Calling setStratifiedSampling(" << sampling_mode << ")" << std::endl;
+                     ::setStratifiedSampling(sampling_mode);
+                     std::cout << "Sampling strategy changed to: " << (use_stratified_sampling ? "STRATIFIED" : "UNIFORM") << std::endl;
                   }
                   if (accumulation_enabled != auto_accumulate)
                   {
@@ -211,8 +219,10 @@ class RendererProgressiveSDL : virtual public CameraBase
          // Handle camera changes - restart rendering
          if (camera_changed)
          {
+            std::cout << "Camera changed detected, resetting buffers and forcing re-render" << std::endl;
             camera_changed = false;
             current_samples = 0;
+            force_immediate_render = true;  // Force rendering after camera/settings change
             std::fill(accum_buffer.begin(), accum_buffer.end(), 0.0f);
 
             // Free and reset device buffers on camera change
@@ -235,26 +245,31 @@ class RendererProgressiveSDL : virtual public CameraBase
          {
             applyGammaCorrection(display_image, accum_buffer, current_samples, gamma);
             displayFrame(gui, display_image, current_samples, samples_per_batch, light_intensity, background_intensity,
-                         metal_fuzziness, accumulation_enabled, camera_control.isAutoOrbitEnabled(), samples_slider_bounds, 
-                         intensity_slider_bounds, background_slider_bounds, fuzziness_slider_bounds, toggle_button_rect, 
-                         orbit_button_rect);
+                         metal_fuzziness, accumulation_enabled, camera_control.isAutoOrbitEnabled(), 
+                         use_stratified_sampling, samples_slider_bounds, intensity_slider_bounds, background_slider_bounds, 
+                         fuzziness_slider_bounds, toggle_button_rect, orbit_button_rect);
             image = display_image;
             needs_rerender = false;
          }
 
          // Render logic: accumulate if enabled, or render once if auto-accumulation is off
-         bool should_render = current_samples < max_samples && !camera_changed && running;
+         bool should_render = (current_samples < max_samples && !camera_changed && running) || force_immediate_render;
          bool needs_initial_render = current_samples == 0 && !accumulation_enabled; // Render at least once when auto-accumulation is off
          
-         if (should_render && (accumulation_enabled || needs_initial_render))
+         if (should_render && (accumulation_enabled || needs_initial_render || force_immediate_render))
          {
+            if (force_immediate_render)
+            {
+               std::cout << "Force immediate render triggered (samples=" << current_samples << ")" << std::endl;
+            }
+            force_immediate_render = false;  // Reset flag after rendering
             renderBatch(display_image, accum_buffer, current_samples, max_samples, samples_per_batch, gamma,
                         d_rand_states, d_accum_buffer);
 
             displayFrame(gui, display_image, current_samples, samples_per_batch, light_intensity, background_intensity,
-                         metal_fuzziness, accumulation_enabled, camera_control.isAutoOrbitEnabled(), samples_slider_bounds, 
-                         intensity_slider_bounds, background_slider_bounds, fuzziness_slider_bounds, toggle_button_rect, 
-                         orbit_button_rect);
+                         metal_fuzziness, accumulation_enabled, camera_control.isAutoOrbitEnabled(), 
+                         use_stratified_sampling, samples_slider_bounds, intensity_slider_bounds, background_slider_bounds, 
+                         fuzziness_slider_bounds, toggle_button_rect, orbit_button_rect);
 
             image = display_image;
          }
@@ -262,18 +277,18 @@ class RendererProgressiveSDL : virtual public CameraBase
          {
             // Refresh display even when idle to show logo and UI
             displayFrame(gui, display_image, current_samples, samples_per_batch, light_intensity, background_intensity,
-                         metal_fuzziness, accumulation_enabled, camera_control.isAutoOrbitEnabled(), samples_slider_bounds, 
-                         intensity_slider_bounds, background_slider_bounds, fuzziness_slider_bounds, toggle_button_rect, 
-                         orbit_button_rect);
+                         metal_fuzziness, accumulation_enabled, camera_control.isAutoOrbitEnabled(), 
+                         use_stratified_sampling, samples_slider_bounds, intensity_slider_bounds, background_slider_bounds, 
+                         fuzziness_slider_bounds, toggle_button_rect, orbit_button_rect);
             SDL_Delay(8); // ~60 FPS event polling
          }
          else if (!accumulation_enabled && current_samples > 0 && !camera_changed)
          {
             // Refresh display even when idle to show logo and UI
             displayFrame(gui, display_image, current_samples, samples_per_batch, light_intensity, background_intensity,
-                         metal_fuzziness, accumulation_enabled, camera_control.isAutoOrbitEnabled(), samples_slider_bounds, 
-                         intensity_slider_bounds, background_slider_bounds, fuzziness_slider_bounds, toggle_button_rect, 
-                         orbit_button_rect);
+                         metal_fuzziness, accumulation_enabled, camera_control.isAutoOrbitEnabled(), 
+                         use_stratified_sampling, samples_slider_bounds, intensity_slider_bounds, background_slider_bounds, 
+                         fuzziness_slider_bounds, toggle_button_rect, orbit_button_rect);
             SDL_Delay(8); // ~60 FPS event polling (already rendered once, waiting for user input)
          }
       }
@@ -360,16 +375,16 @@ class RendererProgressiveSDL : virtual public CameraBase
     */
    void displayFrame(SDLGuiHandler &gui, const vector<unsigned char> &display_image, int current_samples, int samples_per_batch,
                      float light_intensity, float background_intensity, float metal_fuzziness, bool accumulation_enabled,
-                     bool auto_orbit_enabled, SliderBounds &samples_slider_bounds, SliderBounds &intensity_slider_bounds,
-                     SliderBounds &background_slider_bounds, SliderBounds &fuzziness_slider_bounds, SDL_Rect &toggle_button_rect,
-                     SDL_Rect &orbit_button_rect)
+                     bool auto_orbit_enabled, bool use_stratified_sampling, SliderBounds &samples_slider_bounds, 
+                     SliderBounds &intensity_slider_bounds, SliderBounds &background_slider_bounds, 
+                     SliderBounds &fuzziness_slider_bounds, SDL_Rect &toggle_button_rect, SDL_Rect &orbit_button_rect)
    {
       gui.updateDisplay(display_image, image_channels);
       gui.drawLogo();
       gui.drawSampleCountText(current_samples);
       gui.drawUIControls(samples_per_batch, light_intensity, background_intensity, metal_fuzziness, accumulation_enabled, 
-                         auto_orbit_enabled, samples_slider_bounds, intensity_slider_bounds, background_slider_bounds, 
-                         fuzziness_slider_bounds, toggle_button_rect, orbit_button_rect);
+                         auto_orbit_enabled, use_stratified_sampling, samples_slider_bounds, intensity_slider_bounds, 
+                         background_slider_bounds, fuzziness_slider_bounds, toggle_button_rect, orbit_button_rect);
       gui.present();
    }
 };

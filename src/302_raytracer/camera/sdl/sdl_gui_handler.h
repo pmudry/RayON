@@ -203,9 +203,10 @@ class SDLGuiHandler
    }
 
    void drawUIControls(int samples_per_batch, float light_intensity, float background_intensity, float metal_fuzziness,
-                       bool accumulation_enabled, bool auto_orbit_enabled, SliderBounds &samples_slider_bounds, 
-                       SliderBounds &intensity_slider_bounds, SliderBounds &background_slider_bounds, 
-                       SliderBounds &fuzziness_slider_bounds, SDL_Rect &toggle_button_rect, SDL_Rect &orbit_button_rect)
+                       bool accumulation_enabled, bool auto_orbit_enabled, bool use_stratified_sampling,
+                       SliderBounds &samples_slider_bounds, SliderBounds &intensity_slider_bounds, 
+                       SliderBounds &background_slider_bounds, SliderBounds &fuzziness_slider_bounds, 
+                       SDL_Rect &toggle_button_rect, SDL_Rect &orbit_button_rect)
    {
       // Don't draw controls if they're hidden
       if (!show_controls)
@@ -248,6 +249,19 @@ class SDLGuiHandler
                            background_intensity, white, background_slider_bounds, label_width);
       drawFuzzinessSlider(small_font, padding, start_y + button_row_height + 3 * slider_height + 4 * spacing, control_width,
                           metal_fuzziness, white, fuzziness_slider_bounds, label_width);
+      
+      // Draw sampling mode indicator
+      const char *sampling_text = use_stratified_sampling ? "Sampling: Stratified (S)" : "Sampling: Uniform (S)";
+      SDL_Surface *sampling_surface = TTF_RenderText_Blended(small_font, sampling_text, white);
+      if (sampling_surface)
+      {
+         SDL_Texture *sampling_texture = SDL_CreateTextureFromSurface(renderer, sampling_surface);
+         SDL_Rect sampling_rect = {padding, start_y + button_row_height + 4 * slider_height + 5 * spacing, 
+                                    sampling_surface->w, sampling_surface->h};
+         SDL_RenderCopy(renderer, sampling_texture, nullptr, &sampling_rect);
+         SDL_DestroyTexture(sampling_texture);
+         SDL_FreeSurface(sampling_surface);
+      }
 
       if (small_font != ttf_font)
       {

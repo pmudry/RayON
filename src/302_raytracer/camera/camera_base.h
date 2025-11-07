@@ -7,6 +7,7 @@
  */
 #pragma once
 
+#include "vec3.h"
 #include "color.h"
 #include "constants.h"
 #include "hittable.h"
@@ -15,7 +16,6 @@
 #include "ray.h"
 #include "rnd_gen.h"
 #include "utils.h"
-#include "vec3.h"
 
 #include <atomic>
 #include <chrono>
@@ -23,13 +23,8 @@
 #include <iomanip>
 #include <iostream>
 #include <sstream>
-#include <vector>
 
-using std::cerr;
-using std::cout;
-using std::endl;
-using std::string;
-using std::vector;
+using namespace std;
 
 class CameraBase
 {

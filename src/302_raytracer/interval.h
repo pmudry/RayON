@@ -15,6 +15,8 @@
 
 #include "utils.h"
 
+using namespace utils;
+
 class Interval
 {
  public:
