@@ -4,7 +4,7 @@
 		{
 			"type": "shell",
 			"label": "CMake: fresh",
-			"command": "cd ${workspaceFolder}/build && cmake .. --fresh -DCMAKE_EXPORT_COMPILE_COMMANDS=1 && cp compile_commands.json ..",			
+			"command": "cd ${workspaceFolder}/build && cmake .. --fresh -DCMAKE_EXPORT_COMPILE_COMMANDS=1 && cp compile_commands.json ..",
 			"problemMatcher": [],
 			"detail": "CMake clean eveyrhing",
 			"group": {
@@ -42,7 +42,14 @@
 				"kind": "build",
 				"isDefault": false
 			}
+		},
+		{
+			"label": "Launch",
+			"type": "shell",
+			"command": "cd ${workspaceFolder}/build && ./302_raytracer",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
 		}
-		
 	]
 }

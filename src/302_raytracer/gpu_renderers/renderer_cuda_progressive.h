@@ -15,11 +15,11 @@
 #include "sdl_gui_controls.h"
 #include "sdl_gui_handler.h"
 
+#include "../scene_builder.h"
+#include "../scene_description.h"
 #include <SDL.h>
 #include <algorithm>
 #include <chrono>
-#include "../scene_description.h"
-#include "../scene_builder.h"
 
 // Forward declarations of CUDA functions
 extern "C"
@@ -27,13 +27,13 @@ extern "C"
    void setLightIntensity(float intensity);
    void setBackgroundIntensity(float intensity);
    void setMetalFuzziness(float fuzziness);
-   unsigned long long renderPixelsCUDAAccumulative(unsigned char *image, float *accum_buffer, CudaScene::Scene* scene, int width, int height,
-                                                  double cam_center_x, double cam_center_y, double cam_center_z,
-                                                  double pixel00_x, double pixel00_y, double pixel00_z,
-                                                  double delta_u_x, double delta_u_y, double delta_u_z,
-                                                  double delta_v_x, double delta_v_y, double delta_v_z,
-                                                  int samples_to_add, int total_samples_so_far, int max_depth,
-                                                  void **d_rand_states_ptr, void **d_accum_buffer_ptr);
+   unsigned long long renderPixelsCUDAAccumulative(unsigned char *image, float *accum_buffer, CudaScene::Scene *scene,
+                                                   int width, int height, double cam_center_x, double cam_center_y,
+                                                   double cam_center_z, double pixel00_x, double pixel00_y,
+                                                   double pixel00_z, double delta_u_x, double delta_u_y,
+                                                   double delta_u_z, double delta_v_x, double delta_v_y,
+                                                   double delta_v_z, int samples_to_add, int total_samples_so_far,
+                                                   int max_depth, void **d_rand_states_ptr, void **d_accum_buffer_ptr);
    void freeDeviceRandomStates(void *d_rand_states);
    void freeDeviceAccumBuffer(void *d_accum_buffer);
 }
@@ -78,7 +78,6 @@ class RendererCUDAProgressive : virtual public CameraBase
       float light_intensity = 1.0f;
       float background_intensity = 1.0f;
       float metal_fuzziness = 1.0f;
-      bool use_stratified_sampling = false; // Start with uniform sampling
       bool needs_rerender = false;
       bool force_immediate_render = false; // Flag to force rendering immediately after state change
       float samples_per_batch_float = static_cast<float>(samples_per_batch); // Float version for slider
@@ -87,7 +86,6 @@ class RendererCUDAProgressive : virtual public CameraBase
       ::setLightIntensity(light_intensity);
       ::setBackgroundIntensity(background_intensity);
       ::setMetalFuzziness(metal_fuzziness);
-      ::setStratifiedSampling(use_stratified_sampling ? 1 : 0);
 
       // UI state
       SliderBounds samples_slider_bounds = {0, 0, 0, 0, 1.0f, 256.0f, &samples_per_batch_float};
@@ -108,7 +106,7 @@ class RendererCUDAProgressive : virtual public CameraBase
 
       // Build scene once
       Scene::SceneDescription scene_desc = createDefaultScene();
-      CudaScene::Scene* gpu_scene = Scene::CudaSceneBuilder::buildGPUScene(scene_desc);
+      CudaScene::Scene *gpu_scene = Scene::CudaSceneBuilder::buildGPUScene(scene_desc);
 
       // Timing for auto-orbit
       auto last_frame_time = std::chrono::high_resolution_clock::now();
@@ -133,8 +131,8 @@ class RendererCUDAProgressive : virtual public CameraBase
                   gui.toggleControls();
                }
                else if (camera_control.handleKeyDown(event, accumulation_enabled, samples_per_batch_float,
-                                                     light_intensity, background_intensity, use_stratified_sampling,
-                                                     needs_rerender, camera_changed))
+                                                     light_intensity, background_intensity, needs_rerender,
+                                                     camera_changed))
                {
                   // Sync samples_per_batch from float slider value
                   samples_per_batch = static_cast<int>(samples_per_batch_float);
@@ -143,11 +141,6 @@ class RendererCUDAProgressive : virtual public CameraBase
                   {
                      ::setLightIntensity(light_intensity);
                      ::setBackgroundIntensity(background_intensity);
-                     int sampling_mode = use_stratified_sampling ? 1 : 0;
-                     std::cout << "Calling setStratifiedSampling(" << sampling_mode << ")" << std::endl;
-                     ::setStratifiedSampling(sampling_mode);
-                     std::cout << "Sampling strategy changed to: "
-                               << (use_stratified_sampling ? "STRATIFIED" : "UNIFORM") << std::endl;
                   }
                   if (accumulation_enabled != auto_accumulate)
                   {
@@ -254,8 +247,8 @@ class RendererCUDAProgressive : virtual public CameraBase
             applyGammaCorrection(display_image, accum_buffer, current_samples, gamma);
             displayFrame(gui, display_image, current_samples, samples_per_batch, light_intensity, background_intensity,
                          metal_fuzziness, accumulation_enabled, camera_control.isAutoOrbitEnabled(),
-                         use_stratified_sampling, samples_slider_bounds, intensity_slider_bounds,
-                         background_slider_bounds, fuzziness_slider_bounds, toggle_button_rect, orbit_button_rect);
+                         samples_slider_bounds, intensity_slider_bounds, background_slider_bounds,
+                         fuzziness_slider_bounds, toggle_button_rect, orbit_button_rect);
             image = display_image;
             needs_rerender = false;
          }
@@ -277,7 +270,7 @@ class RendererCUDAProgressive : virtual public CameraBase
 
             displayFrame(gui, display_image, current_samples, samples_per_batch, light_intensity, background_intensity,
                          metal_fuzziness, accumulation_enabled, camera_control.isAutoOrbitEnabled(),
-                         use_stratified_sampling, samples_slider_bounds, intensity_slider_bounds,
+                         samples_slider_bounds, intensity_slider_bounds,
                          background_slider_bounds, fuzziness_slider_bounds, toggle_button_rect, orbit_button_rect);
 
             image = display_image;
@@ -287,7 +280,7 @@ class RendererCUDAProgressive : virtual public CameraBase
             // Refresh display even when idle to show logo and UI
             displayFrame(gui, display_image, current_samples, samples_per_batch, light_intensity, background_intensity,
                          metal_fuzziness, accumulation_enabled, camera_control.isAutoOrbitEnabled(),
-                         use_stratified_sampling, samples_slider_bounds, intensity_slider_bounds,
+                         samples_slider_bounds, intensity_slider_bounds,
                          background_slider_bounds, fuzziness_slider_bounds, toggle_button_rect, orbit_button_rect);
             SDL_Delay(8); // ~60 FPS event polling
          }
@@ -296,7 +289,7 @@ class RendererCUDAProgressive : virtual public CameraBase
             // Refresh display even when idle to show logo and UI
             displayFrame(gui, display_image, current_samples, samples_per_batch, light_intensity, background_intensity,
                          metal_fuzziness, accumulation_enabled, camera_control.isAutoOrbitEnabled(),
-                         use_stratified_sampling, samples_slider_bounds, intensity_slider_bounds,
+                         samples_slider_bounds, intensity_slider_bounds,
                          background_slider_bounds, fuzziness_slider_bounds, toggle_button_rect, orbit_button_rect);
             SDL_Delay(8); // ~60 FPS event polling (already rendered once, waiting for user input)
          }
@@ -314,7 +307,7 @@ class RendererCUDAProgressive : virtual public CameraBase
       {
          freeDeviceAccumBuffer(d_accum_buffer);
       }
-      
+
       // Cleanup scene
       Scene::CudaSceneBuilder::freeGPUScene(gpu_scene);
 
@@ -327,7 +320,7 @@ class RendererCUDAProgressive : virtual public CameraBase
     */
    void renderBatch(vector<unsigned char> &display_image, vector<float> &accum_buffer, int &current_samples,
                     int max_samples, int samples_per_batch, float gamma, void *&d_rand_states, void *&d_accum_buffer,
-                    CudaScene::Scene* gpu_scene)
+                    CudaScene::Scene *gpu_scene)
    {
       current_samples += samples_per_batch;
       if (current_samples > max_samples)
@@ -339,10 +332,10 @@ class RendererCUDAProgressive : virtual public CameraBase
 
       // Call CUDA to render and accumulate samples
       unsigned long long cuda_ray_count = ::renderPixelsCUDAAccumulative(
-          display_image.data(), accum_buffer.data(), gpu_scene, image_width, image_height, camera_center.x(), camera_center.y(),
-          camera_center.z(), pixel00_loc.x(), pixel00_loc.y(), pixel00_loc.z(), pixel_delta_u.x(), pixel_delta_u.y(),
-          pixel_delta_u.z(), pixel_delta_v.x(), pixel_delta_v.y(), pixel_delta_v.z(), actual_samples_to_add,
-          current_samples, max_depth, &d_rand_states, &d_accum_buffer);
+          display_image.data(), accum_buffer.data(), gpu_scene, image_width, image_height, camera_center.x(),
+          camera_center.y(), camera_center.z(), pixel00_loc.x(), pixel00_loc.y(), pixel00_loc.z(), pixel_delta_u.x(),
+          pixel_delta_u.y(), pixel_delta_u.z(), pixel_delta_v.x(), pixel_delta_v.y(), pixel_delta_v.z(),
+          actual_samples_to_add, current_samples, max_depth, &d_rand_states, &d_accum_buffer);
 
       n_rays.fetch_add(cuda_ray_count, std::memory_order_relaxed);
 
@@ -388,7 +381,7 @@ class RendererCUDAProgressive : virtual public CameraBase
     */
    void displayFrame(SDLGuiHandler &gui, const vector<unsigned char> &display_image, int current_samples,
                      int samples_per_batch, float light_intensity, float background_intensity, float metal_fuzziness,
-                     bool accumulation_enabled, bool auto_orbit_enabled, bool use_stratified_sampling,
+                     bool accumulation_enabled, bool auto_orbit_enabled, 
                      SliderBounds &samples_slider_bounds, SliderBounds &intensity_slider_bounds,
                      SliderBounds &background_slider_bounds, SliderBounds &fuzziness_slider_bounds,
                      SDL_Rect &toggle_button_rect, SDL_Rect &orbit_button_rect)
@@ -397,14 +390,14 @@ class RendererCUDAProgressive : virtual public CameraBase
       gui.drawLogo();
       gui.drawSampleCountText(current_samples);
       gui.drawUIControls(samples_per_batch, light_intensity, background_intensity, metal_fuzziness,
-                         accumulation_enabled, auto_orbit_enabled, use_stratified_sampling, samples_slider_bounds,
+                         accumulation_enabled, auto_orbit_enabled, samples_slider_bounds,
                          intensity_slider_bounds, background_slider_bounds, fuzziness_slider_bounds, toggle_button_rect,
                          orbit_button_rect);
       gui.present();
    }
-   
+
    // Forward declaration - scene is created in main.cc
-   Scene::SceneDescription createDefaultScene();  // Implemented in main.cc
+   Scene::SceneDescription createDefaultScene(); // Implemented in main.cc
 };
 
 #endif // SDL2_FOUND

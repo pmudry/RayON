@@ -1,1009 +1,24 @@
-/**
- * @file renderer_cuda.cu
- * @brief CUDA-accelerated ray tracing implementation with support for various materials
- *        including displacement-mapped spheres for organic surface variations.
- *
- * This file contains the GPU kernels and device functions for ray tracing, including:
- * - Basic geometric primitives (spheres, rectangles)
- * - Material handling (Lambertian, Mirror, Rough Mirror, Glass, Light)
- * - Noise-based surface displacement for organic sphere deformation
- * - Multi-threaded rendering with anti-aliasing
- */
+// Host-side CUDA renderer implementation.
+// Device-side kernels and ray tracing logic live in gpu_renderers/shaders/*.cu(h).
 
 #include "cuda_float3.cuh"
-#include "cuda_utils.cuh"
 #include "cuda_scene.cuh"
+#include "cuda_utils.cuh"
+#include "shaders/shader_common.cuh"
+#include "shaders/render_acc_kernel.cuh"
+#include "shaders/render_scene_kernel.cuh"
 
-#include <cfloat>
-#include <cmath>
-#include <cstdio>
 #include <cuda_runtime.h>
 #include <curand_kernel.h>
 #include <device_launch_parameters.h>
+#include <cstdio>
 
-// Global light intensity multiplier (can be updated per render)
+// Global device constants (single definition here)
 __constant__ float g_light_intensity = 1.0f;
-
-// Global background intensity multiplier (controls sky gradient brightness)
 __constant__ float g_background_intensity = 1.0f;
-
-// Global metal fuzziness/roughness multiplier (controls how rough metal surfaces appear)
 __constant__ float g_metal_fuzziness = 0.8f;
 
-// Global sampling strategy flag (0 = uniform, 1 = stratified)
-__constant__ int g_use_stratified_sampling = 1;
-
-// Golf ball debug modes:
-// 0 = off (regular shading)
-// 1 = show normals as colors (0.5*(n+1))
-// 2 = show displacement value (grayscale, brighter = deeper dimple)
-// 3 = show gradient magnitude (grayscale)
-#define DEBUG_GOLF_NORMALS 0
-
-//==============================================================================
-// OPTICAL PHYSICS FUNCTIONS
-//==============================================================================
-
-/**
- * @brief Calculate reflection direction using the law of reflection
- * @param v Incident ray direction (should be normalized)
- * @param n Surface normal (should be normalized)
- * @return Reflected ray direction
- */
-__device__ float3_simple reflect(const float3_simple &v, const float3_simple &n) { return v - 2 * dot(v, n) * n; }
-
-/**
- * @brief Calculate refraction direction using Snell's law
- * @param uv Incident ray direction (normalized)
- * @param n Surface normal (normalized)
- * @param etai_over_etat Ratio of refractive indices (n1/n2)
- * @return Refracted ray direction
- */
-__device__ float3_simple refract(const float3_simple &uv, const float3_simple &n, float etai_over_etat)
-{
-   float cos_theta = fminf(dot(-uv, n), 1.0f);
-   float3_simple r_out_perp = etai_over_etat * (uv + cos_theta * n);
-   float3_simple r_out_parallel = -sqrtf(fabsf(1.0f - r_out_perp.length_squared())) * n;
-   return r_out_perp + r_out_parallel;
-}
-
-/**
- * @brief Schlick's approximation for Fresnel reflectance
- * Used to determine reflection probability for dielectric materials
- * @param cosine Cosine of angle between incident ray and normal
- * @param ref_idx Refractive index of the material
- * @return Probability of reflection (0-1)
- */
-__device__ float reflectance(float cosine, float ref_idx)
-{
-   float r0 = (1 - ref_idx) / (1 + ref_idx);
-   r0 = r0 * r0;
-   return r0 + (1 - r0) * powf((1 - cosine), 5);
-}
-
-//==============================================================================
-// RAY TRACING DATA STRUCTURES
-//==============================================================================
-
-/**
- * @brief Simple ray structure for ray tracing calculations
- */
-struct ray_simple
-{
-   float3_simple orig, dir; ///< Ray origin and direction
-
-   __device__ ray_simple() {}
-   __device__ ray_simple(const float3_simple &origin, const float3_simple &direction) : orig(origin), dir(direction) {}
-
-   /** @brief Get point along ray at parameter t */
-   __device__ float3_simple at(float t) const { return orig + t * dir; }
-};
-
-/**
- * @brief Material types supported by the ray tracer (LEGACY)
- * NOTE: This is the old enum used by hit_record_simple. 
- * New code should use CudaScene::MaterialType instead.
- */
-enum LegacyMaterialType
-{
-   LAMBERTIAN = 0,  ///< Diffuse/matte surfaces
-   MIRROR = 1,      ///< Perfect mirror surfaces
-   GLASS = 2,       ///< Transparent dielectric materials
-   LIGHT = 3,       ///< Emissive light sources
-   ROUGH_MIRROR = 4 ///< Imperfect mirror with surface roughness
-};
-
-/**
- * @brief Hit record containing intersection information
- * Stores all data needed for shading at intersection points
- */
-struct hit_record_simple
-{
-   float3_simple p, normal; ///< Intersection point and surface normal
-   float t;                 ///< Ray parameter at intersection
-   bool front_face;         ///< Whether ray hits front face
-   LegacyMaterialType material;   ///< Material type at intersection
-   float3_simple color;     ///< Base color for Lambertian materials
-   float refractive_index;  ///< Refractive index for glass materials
-   float3_simple emission;  ///< Emission color for light materials
-   float roughness;         ///< Surface roughness for rough mirrors
-};
-
-/**
- * @brief Generate fuzzy reflection direction for rough mirror surfaces
- * @param v Incident ray direction (normalized)
- * @param n Surface normal (normalized)
- * @param roughness Surface roughness factor (0=perfect mirror, 1=very rough)
- * @param state Random number generator state
- * @return Fuzzy reflected ray direction
- */
-__device__ float3_simple reflect_fuzzy(const float3_simple &v, const float3_simple &n, float roughness,
-                                       curandState *state)
-{
-   // Generate random vector in unit sphere using rejection sampling
-   float3_simple random_in_sphere;
-   do
-   {
-      random_in_sphere = 2.0f * float3_simple(rand_float(state), rand_float(state), rand_float(state)) -
-                         float3_simple(1.0f, 1.0f, 1.0f);
-   } while (random_in_sphere.length_squared() >= 1.0f);
-
-   // Perturb the normal by the random vector and reflect off the modified surface
-   // This creates a "perturbed normal"—essentially tilting the surface slightly in a random direction. The amount of
-   // tilt is proportional to roughness: a value near 0 produces nearly perfect reflections, while higher values create
-   // increasingly diffuse, scattered reflections. The perturbed normal is then normalized to unit length before being
-   // used in the standard reflection calculation.
-   float3_simple perturbed_normal = unit_vector(n + roughness * random_in_sphere);
-   return reflect(v, perturbed_normal);
-}
-
-/**
- * @brief Generate random direction in hemisphere around surface normal
- * Used for Lambertian (diffuse) material sampling
- * @param normal Surface normal direction
- * @param state Random number generator state
- * @return Random direction in hemisphere
- */
-__device__ float3_simple random_in_hemisphere(const float3_simple &normal, curandState *state)
-{
-   // Generate random point in unit sphere using rejection sampling
-   float3_simple in_unit_sphere;
-   do
-   {
-      in_unit_sphere = 2.0f * float3_simple(rand_float(state), rand_float(state), rand_float(state)) -
-                       float3_simple(1.0f, 1.0f, 1.0f);
-   } while (in_unit_sphere.length_squared() >= 1.0f);
-
-   // Ensure the direction is in the same hemisphere as the normal
-   if (dot(in_unit_sphere, normal) > 0.0f)
-      return in_unit_sphere;
-   else
-      return float3_simple(-in_unit_sphere.x, -in_unit_sphere.y, -in_unit_sphere.z);
-}
-
-/**
- * @brief Sample random point on rectangular area light for soft shadows
- * @param state Random number generator state
- * @return Random point on the area light surface
- */
-__device__ float3_simple sample_area_light(curandState *state)
-{
-   float3_simple light_corner(-1.0f, 3.0f, -2.0f); // Light position
-   float3_simple light_u(2.0f, 0.0f, 0.0f);        // Width vector
-   float3_simple light_v(0.0f, 0.0f, 1.0f);        // Height vector
-
-   float alpha = rand_float(state);
-   float beta = rand_float(state);
-
-   return light_corner + alpha * light_u + beta * light_v;
-}
-
-/** @brief Smooth interpolation function for gradual transitions */
-__device__ float smoothstep(float edge0, float edge1, float x)
-{
-   float t = fmaxf(0.0f, fminf(1.0f, (x - edge0) / (edge1 - edge0)));
-   return t * t * (3.0f - 2.0f * t);
-}
-
-//==============================================================================
-// PROCEDURAL GENERATION UTILITIES
-//==============================================================================
-
-// Device function for sphere intersection
-__device__ bool hit_sphere(const float3_simple &center, float radius, const ray_simple &r, float t_min, float t_max,
-                           hit_record_simple &rec)
-{
-   // Calculate vector from ray origin to sphere center
-   float3_simple oc = r.orig - center;
-
-   // Quadratic equation coefficients for ray-sphere intersection
-   // Ray equation: P(t) = A + t*B, where A is origin, B is direction
-   // Sphere equation: (P-C)·(P-C) = r², where C is center, r is radius
-   // Substituting ray into sphere equation gives: at² + 2bt + c = 0
-   float a = dot(r.dir, r.dir);             // Coefficient a: direction·direction
-   float half_b = dot(oc, r.dir);           // Half of coefficient b: (origin-center)·direction
-   float c = dot(oc, oc) - radius * radius; // Coefficient c: |origin-center|² - r²
-
-   // Calculate discriminant to check if ray intersects sphere
-   float discriminant = half_b * half_b - a * c;
-
-   // No intersection if discriminant is negative
-   if (discriminant < 0)
-      return false;
-
-   // Calculate the two possible intersection points
-   float sqrtd = sqrtf(discriminant);
-   float root = (-half_b - sqrtd) / a; // Closer intersection point
-
-   // Check if closer intersection is within valid t range
-   if (root < t_min || t_max < root)
-   {
-      root = (-half_b + sqrtd) / a; // Try farther intersection point
-      if (root < t_min || t_max < root)
-         return false; // Both intersections outside valid range
-   }
-
-   // Fill hit record with intersection details
-   rec.t = root;        // Parameter t where intersection occurs
-   rec.p = r.at(rec.t); // Point of intersection
-
-   // Calculate outward-pointing normal at intersection point
-   float3_simple outward_normal = (rec.p - center) / radius;
-
-   // Determine if ray hits front face (ray and normal point in opposite directions)
-   rec.front_face = dot(r.dir, outward_normal) < 0;
-
-   // Set normal to always point against the ray direction
-   rec.normal =
-       rec.front_face ? outward_normal : float3_simple(-outward_normal.x, -outward_normal.y, -outward_normal.z);
-
-   return true;
-}
-
-/**
- * @brief Ray-rectangle intersection for area lights
- * @param corner One corner of the rectangle
- * @param u Vector defining one edge of the rectangle
- * @param v Vector defining the adjacent edge of the rectangle
- * @param r Ray to intersect
- * @param t_min Minimum valid intersection distance
- * @param t_max Maximum valid intersection distance
- * @param rec Hit record to fill with intersection data
- * @return True if intersection found within rectangle bounds
- */
-__device__ bool hit_rectangle(const float3_simple &corner, const float3_simple &u, const float3_simple &v,
-                              const ray_simple &r, float t_min, float t_max, hit_record_simple &rec)
-{
-   // Calculate normal vector (perpendicular to rectangle plane)
-   float3_simple normal = unit_vector(float3_simple(u.y * v.z - u.z * v.y, // Cross product u × v
-                                                    u.z * v.x - u.x * v.z, u.x * v.y - u.y * v.x));
-
-   // Calculate intersection with plane: normal · (P - corner) = 0
-   // For ray P = origin + t * direction: t = normal · (corner - origin) / (normal · direction)
-   float denom = dot(normal, r.dir);
-
-   // If denominator is close to 0, ray is parallel to plane
-   if (fabsf(denom) < 1e-8f)
-      return false;
-
-   float t = dot(normal, corner - r.orig) / denom;
-
-   if (t < t_min || t > t_max)
-      return false;
-
-   // Find intersection point
-   float3_simple intersection = r.at(t);
-
-   // Check if intersection is within rectangle bounds
-   float3_simple p = intersection - corner;
-
-   // Project onto rectangle's coordinate system
-   float alpha = dot(p, u) / dot(u, u);
-   float beta = dot(p, v) / dot(v, v);
-
-   // Check if point is inside rectangle (0 <= alpha <= 1, 0 <= beta <= 1)
-   if (alpha < 0.0f || alpha > 1.0f || beta < 0.0f || beta > 1.0f)
-      return false;
-
-   // We have a valid hit
-   rec.t = t;
-   rec.p = intersection;
-   rec.front_face = dot(r.dir, normal) < 0;
-   rec.normal = rec.front_face ? normal : float3_simple(-normal.x, -normal.y, -normal.z);
-
-   return true;
-}
-
-//==============================================================================
-// GOLF BALL SURFACE DISPLACEMENT
-//==============================================================================
-
-// Generate i-th point on a Fibonacci sphere with n points
-__device__ inline float3_simple fibonacci_point(int i, int n)
-{
-   // Golden angle in radians
-   const float ga = 2.39996323f; // ~pi * (3 - sqrt(5))
-   float k = (float)i + 0.5f;
-   float v = k / (float)n;
-   float phi = acosf(1.0f - 2.0f * v);
-   float theta = ga * k;
-   float s = sinf(phi);
-   return float3_simple(cosf(theta) * s, sinf(theta) * s, cosf(phi));
-}
-
-/**
- * @brief Find distance to nearest point in a regular icosahedral distribution
- * @param p 3D point on unit sphere surface (normalized)
- * @return Distance to nearest dimple center
- */
-// Angular distance (radians) to nearest Fibonacci dimple center
-__device__ float distanceToNearestDimple(float3_simple p)
-{
-   float3_simple q = unit_vector(p);
-   const int N = 150; // number of dimple centers; adjust for density
-   float max_dot = -1.0f;
-   for (int i = 0; i < N; ++i)
-   {
-      float3_simple c = fibonacci_point(i, N);
-      float d = dot(q, c);
-      if (d > max_dot)
-         max_dot = d;
-   }
-   // Angular distance between q and nearest center
-   max_dot = fmaxf(fminf(max_dot, 1.0f), -1.0f);
-   return acosf(max_dot);
-}
-
-/**
- * @brief Create regular dimple pattern using icosahedral distribution
- * @param p 3D point on unit sphere surface (normalized)
- * @return Dimple depth (negative for inward displacement)
- */
-__device__ float hexagonalDimplePattern(float3_simple p)
-{
-   // Angular distance to the nearest Fibonacci center
-   float ang = distanceToNearestDimple(unit_vector(p));
-
-   // Dimple size and depth in angular units
-   const float dimple_radius = 0.24f; // ~13.7 degrees
-   const float dimple_depth = 0.35f;
-
-   if (ang < dimple_radius)
-   {
-      float t = ang / dimple_radius; // 0..1
-      float depth = dimple_depth * cosf(t * M_PI * 0.5f);
-      return -depth; // inward displacement
-   }
-   return 0.0f;
-}
-
-//==============================================================================
-// RED SPHERE BLACK DOTS (FIBONACCI GRID)
-//==============================================================================
-
-/**
- * @brief Nearest angular distance to a Fibonacci-grid center (parameterized N)
- * @param dir Unit vector on sphere
- * @param N Number of centers (controls spacing)
- */
-__device__ float nearestAngularDistanceFibonacci(float3_simple dir, int N)
-{
-   float3_simple q = unit_vector(dir);
-   float max_dp = -1.0f;
-   for (int i = 0; i < N; ++i)
-   {
-      float3_simple c = fibonacci_point(i, N);
-      float d = dot(q, c);
-      if (d > max_dp)
-         max_dp = d;
-   }
-   max_dp = fmaxf(fminf(max_dp, 1.0f), -1.0f);
-   return acosf(max_dp);
-}
-
-/**
- * @brief Calculate golf ball surface displacement using regular hexagonal dimple pattern
- * @param p Surface point in world coordinates
- * @param center Sphere center in world coordinates
- * @param radius Sphere radius
- * @return Displacement amount (negative creates dimples)
- */
-__device__ float golfBallDisplacement(float3_simple p, float3_simple center, float radius)
-{
-   // Convert to sphere-local coordinates (relative to sphere center)
-   float3_simple local_point = float3_simple(p.x - center.x, p.y - center.y, p.z - center.z);
-
-   // Normalize to get position on unit sphere surface
-   float3_simple normalized = unit_vector(local_point);
-
-   // Get regular hexagonal dimple displacement
-   float displacement = hexagonalDimplePattern(normalized);
-
-   return displacement;
-}
-
-/**
- * @brief Ray-sphere intersection with golf ball surface displacement
- * @param center Sphere center
- * @param radius Sphere radius
- * @param r Ray to intersect
- * @param t_min Minimum intersection distance
- * @param t_max Maximum intersection distance
- * @param rec Hit record to fill
- * @return True if intersection found
- */
-__device__ bool hit_golf_ball_sphere(float3_simple center, float radius, const ray_simple &r, float t_min, float t_max,
-                                     hit_record_simple &rec)
-{
-   // First, find intersection with base sphere
-   if (!hit_sphere(center, radius, r, t_min, t_max, rec))
-   {
-      return false;
-   }
-
-   // Compute displacement value at the base hit point
-   float3_simple surface_point = rec.p;
-   float base_displacement = golfBallDisplacement(surface_point, center, radius);
-
-   // Strengths
-   const float displacement_scale = 0.2f; // normal perturbation strength
-   // Geometric displacement: outward-only push to enhance rim highlight while avoiding self-intersections.
-   // We push more outside dimples and less inside them (never inward), keeping the surface stable.
-   const float dimple_depth_param = 0.35f; // must match hexagonalDimplePattern()
-   const float geo_strength = 0.35f;       // max outward push as a fraction of radius
-
-   // Outward normal of the base sphere at the hit location (stable reference)
-   float3_simple base_outward =
-       unit_vector(float3_simple(surface_point.x - center.x, surface_point.y - center.y, surface_point.z - center.z));
-
-   // Apply outward-only geometric displacement to enhance rim highlight without self-trapping
-   float d_norm = fminf(1.0f, fmaxf(0.0f, -base_displacement / dimple_depth_param)); // 0 outside -> 1 deepest dimple
-   float outward_push = radius * geo_strength * (1.0f - d_norm);                     // more push outside dimples
-   rec.p =
-       float3_simple(surface_point.x + base_outward.x * outward_push, surface_point.y + base_outward.y * outward_push,
-                     surface_point.z + base_outward.z * outward_push);
-
-   // Base shading normal from displaced position
-   float3_simple base_normal = unit_vector(float3_simple(rec.p.x - center.x, rec.p.y - center.y, rec.p.z - center.z));
-
-   // For actual dimple areas, perturb the normal using tangent-space gradient of the displacement field
-   if (base_displacement < -0.001f)
-   {
-      // Build an orthonormal basis (t1, t2) for the tangent plane at base_normal
-      float3_simple helper = fabsf(base_normal.x) > 0.8f ? float3_simple(0, 1, 0) : float3_simple(1, 0, 0);
-      float3_simple t1 = unit_vector(cross(helper, base_normal));
-      float3_simple t2 = cross(base_normal, t1); // already orthogonal, length ~1
-
-      // Sample displacement on the unit sphere in small angular steps along t1 and t2
-      const float h = 0.015f;            // small angle in radians (sharper)
-      float3_simple p_hat = base_normal; // unit direction from center after displacement
-      // Evaluate displacement using the pattern directly in direction space
-      float d0 = hexagonalDimplePattern(p_hat);
-      float d1 = hexagonalDimplePattern(
-          unit_vector(float3_simple(p_hat.x + h * t1.x, p_hat.y + h * t1.y, p_hat.z + h * t1.z)));
-      float d2 = hexagonalDimplePattern(
-          unit_vector(float3_simple(p_hat.x + h * t2.x, p_hat.y + h * t2.y, p_hat.z + h * t2.z)));
-
-      // Tangent gradient of the displacement field on the sphere
-      float dd1 = (d1 - d0) / h;
-      float dd2 = (d2 - d0) / h;
-      float3_simple grad_tan = float3_simple(dd1 * t1.x + dd2 * t2.x, dd1 * t1.y + dd2 * t2.y, dd1 * t1.z + dd2 * t2.z);
-
-      // Perturbed normal follows the gradient of the implicit surface F(x)=|x-c|- (R + s*d(p_hat))
-      // n ≈ base_normal - s * grad_tan
-      float3_simple delta_n = float3_simple(-displacement_scale * grad_tan.x, -displacement_scale * grad_tan.y,
-                                            -displacement_scale * grad_tan.z);
-
-      // Silhouette-safe attenuation: reduce perturbation at grazing view angles to avoid black edges
-      float3_simple view_dir = unit_vector(float3_simple(-r.dir.x, -r.dir.y, -r.dir.z));
-      float ndv = fmaxf(0.0f, dot(base_normal, view_dir));
-      float atten = smoothstep(0.1f, 0.4f, ndv); // 0 near silhouette, 1 away from it
-      delta_n = float3_simple(delta_n.x * atten, delta_n.y * atten, delta_n.z * atten);
-
-      // Clamp perturbation to avoid flipping normals (black shading)
-      float max_len = 0.4f; // safe limit
-      float len = delta_n.length();
-      if (len > max_len && len > 1e-6f)
-      {
-         delta_n = (max_len / len) * delta_n;
-      }
-
-      float3_simple perturbed =
-          unit_vector(float3_simple(base_normal.x + delta_n.x, base_normal.y + delta_n.y, base_normal.z + delta_n.z));
-
-      // Ensure normal points outward relative to sphere center
-      if (dot(perturbed, base_normal) < 0.0f)
-      {
-         perturbed = float3_simple(-perturbed.x, -perturbed.y, -perturbed.z);
-      }
-
-      // NaN guard
-      if (!(perturbed.x == perturbed.x) || !(perturbed.y == perturbed.y) || !(perturbed.z == perturbed.z))
-      {
-         perturbed = base_normal;
-      }
-
-      rec.normal = perturbed;
-   }
-   else
-   {
-      // Use standard outward normal for non-dimple areas
-      rec.normal = base_normal;
-   }
-
-   // Set front face based on ray direction and flip to oppose incoming ray
-   float ndotv = dot(r.dir, rec.normal);
-   if (!(ndotv == ndotv))
-   { // NaN guard
-      rec.normal = base_normal;
-      ndotv = dot(r.dir, rec.normal);
-   }
-   rec.front_face = ndotv < 0;
-   if (!rec.front_face)
-   {
-      rec.normal = float3_simple(-rec.normal.x, -rec.normal.y, -rec.normal.z);
-   }
-
-   // Push the hit point slightly along the final normal to avoid self-intersections
-   // and starting the next bounce inside the surface (prevents black artifacts)
-   const float surface_epsilon = 1e-3f; // in world units
-   rec.p = float3_simple(rec.p.x + rec.normal.x * surface_epsilon, rec.p.y + rec.normal.y * surface_epsilon,
-                         rec.p.z + rec.normal.z * surface_epsilon);
-
-   return true;
-}
-
-//==============================================================================
-// SCENE DEFINITION AND INTERSECTION
-//==============================================================================
-
-/**
- * @brief Intersect a ray with a geometry object from the scene description
- * @param geom Geometry object to test
- * @param r Ray to test against geometry
- * @param t_min Minimum valid intersection distance
- * @param t_max Maximum valid intersection distance
- * @param rec Hit record to fill with intersection data
- * @return True if intersection found, false otherwise
- */
-__device__ __forceinline__ bool intersect_geometry(const CudaScene::Geometry& geom, const ray_simple& r, 
-                                   float t_min, float t_max, hit_record_simple& rec)
-{
-    using namespace CudaScene;
-    
-    switch (geom.type) {
-        case GeometryType::SPHERE:
-            return hit_sphere(geom.data.sphere.center, geom.data.sphere.radius, 
-                            r, t_min, t_max, rec);
-        
-        case GeometryType::RECTANGLE:
-            return hit_rectangle(geom.data.rectangle.corner, 
-                               geom.data.rectangle.u, geom.data.rectangle.v,
-                               r, t_min, t_max, rec);
-        
-        case GeometryType::DISPLACED_SPHERE:
-            return hit_golf_ball_sphere(geom.data.displaced_sphere.center,
-                                      geom.data.displaced_sphere.radius,
-                                      r, t_min, t_max, rec);
-        
-        case GeometryType::CUBE:
-        case GeometryType::TRIANGLE:
-        case GeometryType::TRIANGLE_MESH:
-        case GeometryType::SDF_PRIMITIVE:
-            // Not yet implemented
-            return false;
-        
-        default:
-            return false;
-    }
-}
-
-/**
- * @brief Apply procedural pattern to modify material color based on surface position
- * @param pattern Pattern type
- * @param base_color Base material color
- * @param pattern_color Secondary pattern color
- * @param param1 Pattern parameter 1 (e.g., dot count)
- * @param param2 Pattern parameter 2 (e.g., dot radius)
- * @param surface_point World position on surface
- * @param geometry_center Center of geometry (for local coordinate calculation)
- * @return Modified color with pattern applied
- */
-__device__ float3_simple apply_procedural_pattern(
-    CudaScene::ProceduralPattern pattern,
-    const float3_simple& base_color,
-    const float3_simple& pattern_color,
-    float param1,
-    float param2,
-    const float3_simple& surface_point,
-    const float3_simple& geometry_center)
-{
-    using namespace CudaScene;
-    
-    switch (pattern) {
-        case ProceduralPattern::FIBONACCI_DOTS: {
-            // Calculate local direction from geometry center
-            float3_simple local = float3_simple(
-                surface_point.x - geometry_center.x,
-                surface_point.y - geometry_center.y,
-                surface_point.z - geometry_center.z
-            );
-            float3_simple dir = unit_vector(local);
-            
-            // Get pattern parameters
-            int dot_count = static_cast<int>(param1);
-            float dot_radius = param2;
-            
-            // Calculate angular distance to nearest Fibonacci point
-            float ang = nearestAngularDistanceFibonacci(dir, dot_count);
-            
-            // Blend between base and pattern color based on distance
-            float mask = ang < dot_radius ? 0.0f : 1.0f;
-            return float3_simple(
-                base_color.x * mask + pattern_color.x * (1.0f - mask),
-                base_color.y * mask + pattern_color.y * (1.0f - mask),
-                base_color.z * mask + pattern_color.z * (1.0f - mask)
-            );
-        }
-        
-        case ProceduralPattern::NONE:
-        default:
-            return base_color;
-    }
-}
-
-/**
- * @brief Apply material properties to a hit record
- * @param mat Material from scene description
- * @param rec Hit record to modify with material properties
- * @param geometry_center Center of the geometry (for pattern calculations)
- */
-__device__ __forceinline__ void apply_material(const CudaScene::Material& mat, hit_record_simple& rec, 
-                                                const float3_simple& geometry_center)
-{
-    using namespace CudaScene;
-    
-    // First apply base material type
-    switch (mat.type) {
-        case MaterialType::LAMBERTIAN:
-            rec.material = LAMBERTIAN;
-            rec.color = mat.albedo;
-            break;
-        
-        case MaterialType::METAL:
-        case MaterialType::MIRROR:
-            rec.material = MIRROR;
-            rec.color = mat.albedo;
-            break;
-        
-        case MaterialType::ROUGH_MIRROR:
-            rec.material = ROUGH_MIRROR;
-            rec.color = mat.albedo;
-            rec.roughness = mat.roughness;
-            break;
-        
-        case MaterialType::GLASS:
-        case MaterialType::DIELECTRIC:
-            rec.material = GLASS;
-            rec.refractive_index = mat.refractive_index;
-            break;
-        
-        case MaterialType::LIGHT:
-            rec.material = LIGHT;
-            rec.emission = mat.emission;
-            break;
-        
-        case MaterialType::CONSTANT:
-            rec.material = LAMBERTIAN;
-            rec.color = mat.albedo;
-            break;
-        
-        case MaterialType::SHOW_NORMALS:
-            // Special material for debugging - will be handled in shading
-            rec.material = LAMBERTIAN;
-            rec.color = float3_simple(1, 1, 1);
-            break;
-        
-        case MaterialType::SDF_MATERIAL:
-            // Not yet implemented
-            rec.material = LAMBERTIAN;
-            rec.color = mat.albedo;
-            break;
-    }
-    
-    // Then apply procedural pattern if present
-    if (mat.pattern != ProceduralPattern::NONE) {
-        rec.color = apply_procedural_pattern(
-            mat.pattern,
-            rec.color,
-            mat.pattern_color,
-            mat.pattern_param1,
-            mat.pattern_param2,
-            rec.p,
-            geometry_center
-        );
-    }
-}
-
-/**
- * @brief Test ray against scene using scene description data
- * @param scene Scene data structure containing all geometry and materials
- * @param r Ray to test against scene
- * @param t_min Minimum valid intersection distance
- * @param t_max Maximum valid intersection distance
- * @param rec Hit record to fill with closest intersection
- * @return True if any intersection found, false otherwise
- */
-__device__ bool hit_scene(const CudaScene::Scene& scene, const ray_simple& r, 
-                         float t_min, float t_max, hit_record_simple& rec)
-{
-    hit_record_simple temp_rec;
-    bool hit_anything = false;
-    float closest_so_far = t_max;
-    int closest_material_id = -1;
-    int closest_geom_idx = -1;
-    
-    // Test all geometries in the scene - unroll for small scenes
-    #pragma unroll 4
-    for (int i = 0; i < scene.num_geometries; ++i) {
-        const CudaScene::Geometry& geom = scene.geometries[i];
-        
-        if (intersect_geometry(geom, r, t_min, closest_so_far, temp_rec)) {
-            hit_anything = true;
-            closest_so_far = temp_rec.t;
-            rec = temp_rec;
-            closest_material_id = geom.material_id;
-            closest_geom_idx = i;
-        }
-    }
-    
-    // Apply material properties only for the closest hit
-    if (hit_anything && closest_material_id >= 0 && closest_material_id < scene.num_materials) {
-        // Get geometry center for pattern calculations
-        float3_simple geom_center(0, 0, 0);
-        if (closest_geom_idx >= 0) {
-            const CudaScene::Geometry& geom = scene.geometries[closest_geom_idx];
-            if (geom.type == CudaScene::GeometryType::SPHERE || 
-                geom.type == CudaScene::GeometryType::DISPLACED_SPHERE) {
-                geom_center = geom.data.sphere.center;
-            }
-        }
-        
-        apply_material(scene.materials[closest_material_id], rec, geom_center);
-    }
-    
-    return hit_anything;
-}
-
-//==============================================================================
-// RAY TRACING AND SHADING
-//==============================================================================
-
-/**
- * @brief Calculate color contribution from a ray using scene description (NEW)
- * @param r Ray to trace through the scene
- * @param scene Scene data structure containing all geometry and materials
- * @param state Random number generator state for Monte Carlo sampling
- * @param depth Remaining recursion depth (prevents infinite recursion)
- * @param local_ray_count Local counter for rays traced (accumulated per-thread, no atomics)
- * @return Final color contribution from this ray
- */
-__device__ float3_simple ray_color(const ray_simple &r, const CudaScene::Scene& scene, 
-                                   curandState *state, int depth, int &local_ray_count)
-{
-   // Iterative ray tracing to avoid recursion overhead
-   float3_simple accumulated_color(0, 0, 0);
-   float3_simple accumulated_attenuation(1.0f, 1.0f, 1.0f);
-   ray_simple current_ray = r;
-
-   for (int bounce = 0; bounce < depth; bounce++)
-   {
-      // Increment local ray counter (no atomics, much faster)
-      local_ray_count++;
-
-      hit_record_simple rec;
-
-      if (hit_scene(scene, current_ray, 0.001f, FLT_MAX, rec))
-      {
-         // If we hit a light source, accumulate its emission and stop
-         if (rec.material == LIGHT)
-         {
-            accumulated_color = accumulated_color + float3_simple(accumulated_attenuation.x * rec.emission.x * g_light_intensity,
-                                                                  accumulated_attenuation.y * rec.emission.y * g_light_intensity,
-                                                                  accumulated_attenuation.z * rec.emission.z * g_light_intensity);
-            return accumulated_color;
-         }
-
-         // Handle material scattering
-         float3_simple scattered_direction;
-         float3_simple attenuation;
-
-         if (rec.material == LAMBERTIAN)
-         {
-            // Diffuse reflection - match legacy behavior exactly
-            float3_simple target = rec.p + rec.normal + random_in_hemisphere(rec.normal, state);
-            scattered_direction = target - rec.p;
-            attenuation = rec.color;
-         }
-         else if (rec.material == MIRROR)
-         {
-            // Perfect mirror reflection
-            scattered_direction = reflect(unit_vector(current_ray.dir), rec.normal);
-            attenuation = rec.color;
-         }
-         else if (rec.material == ROUGH_MIRROR)
-         {
-            // Rough mirror with fuzzy reflection
-            scattered_direction = reflect_fuzzy(unit_vector(current_ray.dir), rec.normal, 
-                                              rec.roughness * g_metal_fuzziness, state);
-            attenuation = rec.color;
-         }
-         else if (rec.material == GLASS)
-         {
-            // Glass with refraction and reflection
-            float3_simple unit_direction = unit_vector(current_ray.dir);
-            float refraction_ratio = rec.front_face ? (1.0f / rec.refractive_index) : rec.refractive_index;
-
-            float cos_theta = fminf(dot(-unit_direction, rec.normal), 1.0f);
-            float sin_theta = sqrtf(1.0f - cos_theta * cos_theta);
-
-            bool cannot_refract = refraction_ratio * sin_theta > 1.0f;
-
-            if (cannot_refract || reflectance(cos_theta, refraction_ratio) > rand_float(state))
-            {
-               scattered_direction = reflect(unit_direction, rec.normal);
-            }
-            else
-            {
-               scattered_direction = refract(unit_direction, rec.normal, refraction_ratio);
-            }
-
-            attenuation = float3_simple(1.0f, 1.0f, 1.0f);
-         }
-         else
-         {
-            // Unknown material - treat as perfect absorber
-            return accumulated_color;
-         }
-
-         // Update ray and attenuation
-         current_ray = ray_simple(rec.p, scattered_direction);
-         accumulated_attenuation = float3_simple(accumulated_attenuation.x * attenuation.x,
-                                                accumulated_attenuation.y * attenuation.y,
-                                                accumulated_attenuation.z * attenuation.z);
-      }
-      else
-      {
-         // Ray escaped the scene - sample background/sky
-         float3_simple unit_direction = unit_vector(current_ray.dir);
-         float t = 0.5f * (unit_direction.y + 1.0f);
-         float3_simple sky_color = (1.0f - t) * float3_simple(1.0f, 1.0f, 1.0f) + 
-                                  t * float3_simple(0.5f, 0.7f, 1.0f);
-         
-         accumulated_color = accumulated_color + float3_simple(accumulated_attenuation.x * sky_color.x * g_background_intensity,
-                                                              accumulated_attenuation.y * sky_color.y * g_background_intensity,
-                                                              accumulated_attenuation.z * sky_color.z * g_background_intensity);
-         return accumulated_color;
-      }
-   }
-
-   // Ray bounced too many times - return black
-   return accumulated_color;
-}
-
-//==============================================================================
-// CUDA KERNELS
-//==============================================================================
-
-/**
- * @brief CUDA kernel for accumulative rendering (progressive sampling) in real-time
- * Adds new samples to existing accumulated color buffer. For the rest see renderKernelWithScene.
- */
-__global__ void renderAccKernel(float *accum_buffer, unsigned char *image, CudaScene::Scene scene, int width, int height,
-                                             int samples_to_add, int total_samples_so_far, int max_depth,
-                                             float cam_center_x, float cam_center_y, float cam_center_z,
-                                             float pixel00_x, float pixel00_y, float pixel00_z, float delta_u_x,
-                                             float delta_u_y, float delta_u_z, float delta_v_x, float delta_v_y,
-                                             float delta_v_z, unsigned long long *ray_count, curandState *rand_states)
-{
-   int x = blockIdx.x * blockDim.x + threadIdx.x;
-   int y = blockIdx.y * blockDim.y + threadIdx.y;
-
-   if (x >= width || y >= height)
-      return;
-
-   int pixel_idx = y * width + x;
-   int base_idx = pixel_idx * 3;
-
-   if (pixel_idx >= width * height || base_idx + 2 >= width * height * 3)
-      return;
-
-   curandState *local_rand_state = &rand_states[pixel_idx];
-
-   float3_simple camera_center(cam_center_x, cam_center_y, cam_center_z);
-   float3_simple pixel00_loc(pixel00_x, pixel00_y, pixel00_z);
-   float3_simple pixel_delta_u(delta_u_x, delta_u_y, delta_u_z);
-   float3_simple pixel_delta_v(delta_v_x, delta_v_y, delta_v_z);
-
-   // Read existing accumulated color
-   float3_simple accumulated_color(accum_buffer[base_idx], accum_buffer[base_idx + 1], accum_buffer[base_idx + 2]);
-   int local_ray_count = 0;
-
-   // Debug: Print sampling mode once (only for first pixel)
-   if (x == 0 && y == 0)
-   {
-      printf("PixelsKernel: g_use_stratified_sampling = %d\n", g_use_stratified_sampling);
-   }
-
-   if (g_use_stratified_sampling)
-   {
-      // Stratified sampling: divide pixel into grid of strata and sample once per stratum
-      // Calculate grid dimensions (e.g., 2x2 for 4 samples, 3x3 for 9 samples, etc.)
-      int grid_size = (int)sqrtf((float)samples_to_add);
-      if (grid_size * grid_size < samples_to_add)
-         grid_size++; // Round up if not perfect square
-
-      float stratum_size = 1.0f / (float)grid_size; // Size of each stratum
-      int sample_idx = 0;
-
-      for (int strat_y = 0; strat_y < grid_size && sample_idx < samples_to_add; strat_y++)
-      {
-         for (int strat_x = 0; strat_x < grid_size && sample_idx < samples_to_add; strat_x++)
-         {
-            // Random offset within the current stratum
-            float jitter_u = rand_float(local_rand_state) * stratum_size;
-            float jitter_v = rand_float(local_rand_state) * stratum_size;
-
-            // Offset relative to pixel center [-0.5, 0.5]
-            float offset_u = (strat_x * stratum_size + jitter_u) - 0.5f;
-            float offset_v = (strat_y * stratum_size + jitter_v) - 0.5f;
-
-            float3_simple pixel_center =
-                pixel00_loc + ((float)x + offset_u) * pixel_delta_u + ((float)y + offset_v) * pixel_delta_v;
-            float3_simple ray_direction = pixel_center - camera_center;
-            ray_simple r(camera_center, ray_direction);
-
-            accumulated_color = accumulated_color + ray_color(r, scene, local_rand_state, min(max_depth, 6), local_ray_count);
-            sample_idx++;
-         }
-      }
-   }
-   else
-   {
-      // Uniform sampling: random offsets within pixel [-0.5, 0.5]
-      for (int s = 0; s < samples_to_add; s++)
-      {
-         float offset_u = rand_float(local_rand_state) - 0.5f;
-         float offset_v = rand_float(local_rand_state) - 0.5f;
-
-         float3_simple pixel_center =
-             pixel00_loc + ((float)x + offset_u) * pixel_delta_u + ((float)y + offset_v) * pixel_delta_v;
-         float3_simple ray_direction = pixel_center - camera_center;
-         ray_simple r(camera_center, ray_direction);
-
-         accumulated_color = accumulated_color + ray_color(r, scene, local_rand_state, min(max_depth, 6), local_ray_count);
-      }
-   }
-
-   // Atomically add thread's local ray count to global counter (one atomic per thread instead of per ray)
-   atomicAdd(ray_count, (unsigned long long)local_ray_count);
-
-   // Store accumulated color back to buffer
-   accum_buffer[base_idx] = accumulated_color.x;
-   accum_buffer[base_idx + 1] = accumulated_color.y;
-   accum_buffer[base_idx + 2] = accumulated_color.z;
-
-   // Note: Display conversion (gamma/intensity) is done on CPU side for flexibility
-   // Just copy raw accumulated values to image buffer for now (will be processed on CPU)
-   image[base_idx] = 0;
-   image[base_idx + 1] = 0;
-   image[base_idx + 2] = 0;
-}
-
-
-//==============================================================================
-// HOST INTERFACE FUNCTIONS
-//==============================================================================
+//==================== HOST INTERFACE FUNCTIONS ====================
 extern "C" void setLightIntensity(float intensity) { cudaMemcpyToSymbol(g_light_intensity, &intensity, sizeof(float)); }
 
 extern "C" void setBackgroundIntensity(float intensity)
@@ -1012,20 +27,6 @@ extern "C" void setBackgroundIntensity(float intensity)
 }
 
 extern "C" void setMetalFuzziness(float fuzziness) { cudaMemcpyToSymbol(g_metal_fuzziness, &fuzziness, sizeof(float)); }
-
-extern "C" void setStratifiedSampling(int use_stratified)
-{
-   printf("setStratifiedSampling called with value: %d\n", use_stratified);
-   cudaError_t err = cudaMemcpyToSymbol(g_use_stratified_sampling, &use_stratified, sizeof(int));
-   if (err != cudaSuccess)
-   {
-      printf("ERROR: Failed to set stratified sampling: %s\n", cudaGetErrorString(err));
-   }
-   else
-   {
-      printf("Successfully set g_use_stratified_sampling to %d\n", use_stratified);
-   }
-}
 
 extern "C" void freeDeviceRandomStates(void *d_rand_states)
 {
@@ -1064,90 +65,74 @@ extern "C" void freeDeviceAccumBuffer(void *d_accum_buffer)
  * @param d_accum_buffer_ptr Persistent device accumulation buffer pointer (stays on device!)
  * @return Number of rays traced
  */
-extern "C" unsigned long long
-renderPixelsCUDAAccumulative(unsigned char *image, float *accum_buffer, CudaScene::Scene* scene, int width, int height, double cam_center_x,
-                            double cam_center_y, double cam_center_z, double pixel00_x, double pixel00_y,
-                            double pixel00_z, double delta_u_x, double delta_u_y, double delta_u_z, double delta_v_x,
-                            double delta_v_y, double delta_v_z, int samples_to_add, int total_samples_so_far,
-                            int max_depth, void **d_rand_states_ptr, void **d_accum_buffer_ptr)
+// Progressive accumulative rendering host wrapper (used by interactive SDL renderer)
+extern "C" unsigned long long renderPixelsCUDAAccumulative(
+    unsigned char *image, float *accum_buffer, CudaScene::Scene *scene, int width, int height, double cam_center_x,
+    double cam_center_y, double cam_center_z, double pixel00_x, double pixel00_y, double pixel00_z, double delta_u_x,
+    double delta_u_y, double delta_u_z, double delta_v_x, double delta_v_y, double delta_v_z, int samples_to_add,
+    int total_samples_so_far, int max_depth, void **d_rand_states_ptr, void **d_accum_buffer_ptr)
 {
-   unsigned char *d_image;
-   float *d_accum_buffer;
-   unsigned long long *d_ray_count;
-   curandState *d_rand_states;
+   if (!scene) return 0ULL;
 
-   size_t image_size = width * height * 3 * sizeof(unsigned char);
-   size_t accum_size = width * height * 3 * sizeof(float);
+   unsigned char *d_image = nullptr;
+   float *d_accum = nullptr;
+   unsigned long long *d_ray_count = nullptr;
+   curandState *d_rand_states = nullptr;
+
+   size_t image_size = (size_t)width * height * 3 * sizeof(unsigned char);
+   size_t accum_size = (size_t)width * height * 3 * sizeof(float);
    int num_pixels = width * height;
 
-   // Allocate device memory for image (only used for kernel, not persistent)
    cudaMalloc(&d_image, image_size);
    cudaMalloc(&d_ray_count, sizeof(unsigned long long));
 
-   // Handle persistent random states (keep allocated to avoid overhead)
    bool need_rand_init = false;
    if (*d_rand_states_ptr == nullptr)
    {
-      // First call - allocate device memory and mark for initialization
       cudaMalloc(&d_rand_states, num_pixels * sizeof(curandState));
       *d_rand_states_ptr = d_rand_states;
       need_rand_init = true;
    }
    else
    {
-      // Reuse existing allocation (random states continue from last batch)
-      d_rand_states = (curandState *)*d_rand_states_ptr;
+      d_rand_states = static_cast<curandState *>(*d_rand_states_ptr);
    }
 
-   // Handle persistent accumulation buffer (STAYS ON DEVICE - major optimization!)
    if (*d_accum_buffer_ptr == nullptr)
    {
-      // First call - allocate device memory and copy initial data
-      cudaMalloc(&d_accum_buffer, accum_size);
-      *d_accum_buffer_ptr = d_accum_buffer;
-      cudaMemcpy(d_accum_buffer, accum_buffer, accum_size, cudaMemcpyHostToDevice);
+      cudaMalloc(&d_accum, accum_size);
+      *d_accum_buffer_ptr = d_accum;
+      cudaMemcpy(d_accum, accum_buffer, accum_size, cudaMemcpyHostToDevice);
    }
    else
    {
-      // Reuse existing device buffer - NO COPY from host! Buffer stays on GPU.
-      d_accum_buffer = (float *)*d_accum_buffer_ptr;
+      d_accum = static_cast<float *>(*d_accum_buffer_ptr);
    }
 
-   // Initialize ray count
    cudaMemset(d_ray_count, 0, sizeof(unsigned long long));
 
    dim3 threads(16, 16);
    dim3 blocks((width + threads.x - 1) / threads.x, (height + threads.y - 1) / threads.y);
 
-   // Only initialize random states on first call (let them evolve naturally for proper antialiasing)
    if (need_rand_init)
    {
       init_random_states<<<blocks, threads>>>(d_rand_states, num_pixels, 1234ULL, width);
       cudaDeviceSynchronize();
    }
-   // Otherwise random states continue from where they left off in the previous batch
 
-   // Launch accumulative rendering kernel
-   renderAccKernel<<<blocks, threads>>>(
-       d_accum_buffer, d_image, *scene, width, height, samples_to_add, total_samples_so_far, max_depth, (float)cam_center_x,
-       (float)cam_center_y, (float)cam_center_z, (float)pixel00_x, (float)pixel00_y, (float)pixel00_z, (float)delta_u_x,
-       (float)delta_u_y, (float)delta_u_z, (float)delta_v_x, (float)delta_v_y, (float)delta_v_z, d_ray_count,
-       d_rand_states);
-
+   renderAccKernel<<<blocks, threads>>>(d_accum, d_image, *scene, width, height, samples_to_add, total_samples_so_far,
+                                        max_depth, (float)cam_center_x, (float)cam_center_y, (float)cam_center_z,
+                                        (float)pixel00_x, (float)pixel00_y, (float)pixel00_z, (float)delta_u_x,
+                                        (float)delta_u_y, (float)delta_u_z, (float)delta_v_x, (float)delta_v_y,
+                                        (float)delta_v_z, d_ray_count, d_rand_states);
    cudaDeviceSynchronize();
 
-   // Copy results back - ONLY accumulation buffer when needed (caller decides)
-   // Image buffer is not used (gamma correction done on CPU)
-   cudaMemcpy(accum_buffer, d_accum_buffer, accum_size, cudaMemcpyDeviceToHost);
-
-   unsigned long long host_ray_count = 0;
+   cudaMemcpy(accum_buffer, d_accum, accum_size, cudaMemcpyDeviceToHost);
+   unsigned long long host_ray_count = 0ULL;
    cudaMemcpy(&host_ray_count, d_ray_count, sizeof(unsigned long long), cudaMemcpyDeviceToHost);
 
-   // Cleanup temporary buffers only (keep persistent buffers alive!)
    cudaFree(d_image);
    cudaFree(d_ray_count);
-   // Don't free d_rand_states or d_accum_buffer - they're persistent!
-
    return host_ray_count;
 }
 
@@ -1170,107 +155,7 @@ renderPixelsCUDAAccumulative(unsigned char *image, float *accum_buffer, CudaScen
  * @param ray_count Ray counter
  * @param rand_states Random state per pixel
  */
-__global__ void renderKernelWithScene(unsigned char *image, CudaScene::Scene scene,
-                                     int width, int height, int samples_per_pixel, int max_depth,
-                                     float cam_center_x, float cam_center_y, float cam_center_z,
-                                     float pixel00_x, float pixel00_y, float pixel00_z,
-                                     float delta_u_x, float delta_u_y, float delta_u_z,
-                                     float delta_v_x, float delta_v_y, float delta_v_z,
-                                     unsigned long long *ray_count, curandState *rand_states)
-{
-   int x = blockIdx.x * blockDim.x + threadIdx.x;
-   int y = blockIdx.y * blockDim.y + threadIdx.y;
-
-   if (x >= width || y >= height)
-      return;
-
-   int pixel_index = y * width + x;
-   curandState *local_state = &rand_states[pixel_index];
-
-   // Camera parameters
-   float3_simple cam_center(cam_center_x, cam_center_y, cam_center_z);
-   float3_simple pixel00(pixel00_x, pixel00_y, pixel00_z);
-   float3_simple delta_u(delta_u_x, delta_u_y, delta_u_z);
-   float3_simple delta_v(delta_v_x, delta_v_y, delta_v_z);
-
-   // Accumulate color from multiple samples
-   float3_simple pixel_color(0, 0, 0);
-   int local_ray_count = 0;
-
-   if (g_use_stratified_sampling)
-   {
-      // Stratified sampling
-      int grid_size = (int)sqrtf((float)samples_per_pixel);
-      if (grid_size * grid_size < samples_per_pixel)
-         grid_size++;
-      
-      float stratum_size = 1.0f / (float)grid_size;
-      int sample_idx = 0;
-      
-      for (int strat_y = 0; strat_y < grid_size && sample_idx < samples_per_pixel; strat_y++)
-      {
-         for (int strat_x = 0; strat_x < grid_size && sample_idx < samples_per_pixel; strat_x++)
-         {
-            float jitter_u = rand_float(local_state) * stratum_size;
-            float jitter_v = rand_float(local_state) * stratum_size;
-            float offset_u = (strat_x * stratum_size + jitter_u) - 0.5f;
-            float offset_v = (strat_y * stratum_size + jitter_v) - 0.5f;
-
-            float3_simple pixel_center =
-                pixel00 + float3_simple((x + offset_u) * delta_u.x, (x + offset_u) * delta_u.y, (x + offset_u) * delta_u.z) +
-                float3_simple((y + offset_v) * delta_v.x, (y + offset_v) * delta_v.y, (y + offset_v) * delta_v.z);
-
-            float3_simple ray_direction =
-                float3_simple(pixel_center.x - cam_center.x, pixel_center.y - cam_center.y, pixel_center.z - cam_center.z);
-
-            ray_simple r(cam_center, ray_direction);
-            pixel_color = pixel_color + ray_color(r, scene, local_state, min(max_depth, 6), local_ray_count);
-            sample_idx++;
-         }
-      }
-   }
-   else
-   {
-      // Uniform sampling
-      for (int s = 0; s < samples_per_pixel; ++s)
-      {
-         float offset_u = rand_float(local_state) - 0.5f;
-         float offset_v = rand_float(local_state) - 0.5f;
-
-         float3_simple pixel_center =
-             pixel00 + float3_simple((x + offset_u) * delta_u.x, (x + offset_u) * delta_u.y, (x + offset_u) * delta_u.z) +
-             float3_simple((y + offset_v) * delta_v.x, (y + offset_v) * delta_v.y, (y + offset_v) * delta_v.z);
-
-         float3_simple ray_direction =
-             float3_simple(pixel_center.x - cam_center.x, pixel_center.y - cam_center.y, pixel_center.z - cam_center.z);
-
-         ray_simple r(cam_center, ray_direction);
-         pixel_color = pixel_color + ray_color(r, scene, local_state, min(max_depth, 6), local_ray_count);
-      }
-   }
-
-   // Average the samples
-   float scale = 1.0f / samples_per_pixel;
-   pixel_color = float3_simple(pixel_color.x * scale, pixel_color.y * scale, pixel_color.z * scale);
-
-   // Gamma correction (gamma = 2.0)
-   pixel_color.x = sqrtf(pixel_color.x);
-   pixel_color.y = sqrtf(pixel_color.y);
-   pixel_color.z = sqrtf(pixel_color.z);
-
-   // Clamp and convert to 8-bit
-   pixel_color.x = fminf(fmaxf(pixel_color.x, 0.0f), 1.0f);
-   pixel_color.y = fminf(fmaxf(pixel_color.y, 0.0f), 1.0f);
-   pixel_color.z = fminf(fmaxf(pixel_color.z, 0.0f), 1.0f);
-
-   int idx = pixel_index * 3;
-   image[idx + 0] = static_cast<unsigned char>(pixel_color.x * 255.0f);
-   image[idx + 1] = static_cast<unsigned char>(pixel_color.y * 255.0f);
-   image[idx + 2] = static_cast<unsigned char>(pixel_color.z * 255.0f);
-
-   // Accumulate ray count (no atomics for speed)
-   atomicAdd(ray_count, (unsigned long long)local_ray_count);
-}
+// renderKernelWithScene is implemented in shaders/render_scene_kernel.cu
 
 /**
  * @brief Host function to render using scene description
@@ -1286,16 +171,16 @@ __global__ void renderKernelWithScene(unsigned char *image, CudaScene::Scene sce
  * @param max_depth Maximum ray bounce depth
  * @return Total rays traced
  */
-extern "C" unsigned long long renderPixelsCUDAWithScene(
-    unsigned char *image, CudaScene::Scene* scene, int width, int height,
-    double cam_center_x, double cam_center_y, double cam_center_z,
-    double pixel00_x, double pixel00_y, double pixel00_z,
-    double delta_u_x, double delta_u_y, double delta_u_z,
-    double delta_v_x, double delta_v_y, double delta_v_z,
-    int samples_per_pixel, int max_depth)
+extern "C" unsigned long long renderPixelsCUDAWithScene(unsigned char *image, CudaScene::Scene *scene, int width,
+                                                        int height, double cam_center_x, double cam_center_y,
+                                                        double cam_center_z, double pixel00_x, double pixel00_y,
+                                                        double pixel00_z, double delta_u_x, double delta_u_y,
+                                                        double delta_u_z, double delta_v_x, double delta_v_y,
+                                                        double delta_v_z, int samples_per_pixel, int max_depth)
 {
-   if (!scene) return 0;
-   
+   if (!scene)
+      return 0;
+
    // Allocate device memory
    unsigned char *d_image;
    unsigned long long *d_ray_count;
@@ -1311,7 +196,7 @@ extern "C" unsigned long long renderPixelsCUDAWithScene(
    // Initialize random states
    dim3 threads(16, 16);
    dim3 blocks((width + threads.x - 1) / threads.x, (height + threads.y - 1) / threads.y);
-   
+
    init_random_states<<<blocks, threads>>>(d_rand_states, num_pixels, 1234ULL, width);
    cudaDeviceSynchronize();
 
@@ -1320,12 +205,9 @@ extern "C" unsigned long long renderPixelsCUDAWithScene(
 
    // Launch rendering kernel - dereference the scene pointer
    renderKernelWithScene<<<blocks, threads>>>(
-       d_image, *scene, width, height, samples_per_pixel, max_depth,
-       (float)cam_center_x, (float)cam_center_y, (float)cam_center_z,
-       (float)pixel00_x, (float)pixel00_y, (float)pixel00_z,
-       (float)delta_u_x, (float)delta_u_y, (float)delta_u_z,
-       (float)delta_v_x, (float)delta_v_y, (float)delta_v_z,
-       d_ray_count, d_rand_states);
+       d_image, *scene, width, height, samples_per_pixel, max_depth, (float)cam_center_x, (float)cam_center_y,
+       (float)cam_center_z, (float)pixel00_x, (float)pixel00_y, (float)pixel00_z, (float)delta_u_x, (float)delta_u_y,
+       (float)delta_u_z, (float)delta_v_x, (float)delta_v_y, (float)delta_v_z, d_ray_count, d_rand_states);
 
    cudaDeviceSynchronize();
 

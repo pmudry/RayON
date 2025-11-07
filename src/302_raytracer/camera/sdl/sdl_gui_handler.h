@@ -203,10 +203,9 @@ class SDLGuiHandler
    }
 
    void drawUIControls(int samples_per_batch, float light_intensity, float background_intensity, float metal_fuzziness,
-                       bool accumulation_enabled, bool auto_orbit_enabled, bool use_stratified_sampling,
-                       SliderBounds &samples_slider_bounds, SliderBounds &intensity_slider_bounds, 
-                       SliderBounds &background_slider_bounds, SliderBounds &fuzziness_slider_bounds, 
-                       SDL_Rect &toggle_button_rect, SDL_Rect &orbit_button_rect)
+                       bool accumulation_enabled, bool auto_orbit_enabled, SliderBounds &samples_slider_bounds,
+                       SliderBounds &intensity_slider_bounds, SliderBounds &background_slider_bounds,
+                       SliderBounds &fuzziness_slider_bounds, SDL_Rect &toggle_button_rect, SDL_Rect &orbit_button_rect)
    {
       // Don't draw controls if they're hidden
       if (!show_controls)
@@ -226,42 +225,32 @@ class SDLGuiHandler
       int label_width = 120;
       int slider_height = 25;
       int spacing = 8;
-      int button_row_height = slider_height;  // Height for row with two buttons
+      int button_row_height = slider_height; // Height for row with two buttons
       int start_y = image_height - (5 * slider_height + button_row_height + 5 * spacing + padding);
 
       SDL_Color white = {255, 255, 255, 255};
 
-      SDL_Rect bg_rect = {padding - 5, start_y - 5, control_width + 10, 5 * slider_height + button_row_height + 5 * spacing + 10};
+      SDL_Rect bg_rect = {padding - 5, start_y - 5, control_width + 10,
+                          5 * slider_height + button_row_height + 5 * spacing + 10};
       SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
       SDL_SetRenderDrawColor(renderer, 0, 0, 0, 200);
       SDL_RenderFillRect(renderer, &bg_rect);
 
       // Draw two toggle buttons side by side
       int button_width = (control_width - spacing) / 2;
-      drawToggleButton(small_font, padding, start_y, accumulation_enabled, white, toggle_button_rect, "Auto-Accum", button_width);
-      drawOrbitButton(small_font, padding + button_width + spacing, start_y, auto_orbit_enabled, white, orbit_button_rect, "Auto-Orbit", button_width);
-      
-      drawSamplesSlider(small_font, padding, start_y + button_row_height + spacing, control_width, samples_per_batch, white,
-                      samples_slider_bounds, label_width);
-      drawLightSlider(small_font, padding, start_y + button_row_height + slider_height + 2 * spacing, control_width, light_intensity,
-                      white, intensity_slider_bounds, label_width);
-      drawBackgroundSlider(small_font, padding, start_y + button_row_height + 2 * slider_height + 3 * spacing, control_width,
-                           background_intensity, white, background_slider_bounds, label_width);
-      drawFuzzinessSlider(small_font, padding, start_y + button_row_height + 3 * slider_height + 4 * spacing, control_width,
-                          metal_fuzziness, white, fuzziness_slider_bounds, label_width);
-      
-      // Draw sampling mode indicator
-      const char *sampling_text = use_stratified_sampling ? "Sampling: Stratified (S)" : "Sampling: Uniform (S)";
-      SDL_Surface *sampling_surface = TTF_RenderText_Blended(small_font, sampling_text, white);
-      if (sampling_surface)
-      {
-         SDL_Texture *sampling_texture = SDL_CreateTextureFromSurface(renderer, sampling_surface);
-         SDL_Rect sampling_rect = {padding, start_y + button_row_height + 4 * slider_height + 5 * spacing, 
-                                    sampling_surface->w, sampling_surface->h};
-         SDL_RenderCopy(renderer, sampling_texture, nullptr, &sampling_rect);
-         SDL_DestroyTexture(sampling_texture);
-         SDL_FreeSurface(sampling_surface);
-      }
+      drawToggleButton(small_font, padding, start_y, accumulation_enabled, white, toggle_button_rect, "Auto-Accum",
+                       button_width);
+      drawOrbitButton(small_font, padding + button_width + spacing, start_y, auto_orbit_enabled, white,
+                      orbit_button_rect, "Auto-Orbit", button_width);
+
+      drawSamplesSlider(small_font, padding, start_y + button_row_height + spacing, control_width, samples_per_batch,
+                        white, samples_slider_bounds, label_width);
+      drawLightSlider(small_font, padding, start_y + button_row_height + slider_height + 2 * spacing, control_width,
+                      light_intensity, white, intensity_slider_bounds, label_width);
+      drawBackgroundSlider(small_font, padding, start_y + button_row_height + 2 * slider_height + 3 * spacing,
+                           control_width, background_intensity, white, background_slider_bounds, label_width);
+      drawFuzzinessSlider(small_font, padding, start_y + button_row_height + 3 * slider_height + 4 * spacing,
+                          control_width, metal_fuzziness, white, fuzziness_slider_bounds, label_width);
 
       if (small_font != ttf_font)
       {
@@ -282,7 +271,7 @@ class SDLGuiHandler
       cout << "  H:                   Hide/show GUI controls" << endl;
       cout << "  Up/Down Arrows:      Adjust samples per batch (1-256)" << endl;
       cout << "  Left/Right Arrows:   Adjust light intensity (0.1-3.0)" << endl;
-      cout << "  ESC:                 Exit" << endl <<endl;
+      cout << "  ESC:                 Exit" << endl << endl;
       cout << "Sample accumulation: " << samples_per_batch << " samples per batch, up to " << max_samples
            << " total samples" << endl;
       cout << "Auto-accumulation: " << (auto_accumulate ? "ON" : "OFF") << endl;
@@ -301,10 +290,7 @@ class SDLGuiHandler
    bool getShowControls() const { return show_controls; }
 
    // Control visibility toggle
-   void toggleControls()
-   {
-      show_controls = !show_controls;
-   }
+   void toggleControls() { show_controls = !show_controls; }
 
  private:
    int image_width;
@@ -379,8 +365,8 @@ class SDLGuiHandler
    }
 
 #ifdef SDL2_TTF_FOUND
-   void drawToggleButton(TTF_Font *ttf_font, int x, int y, bool enabled, SDL_Color white,
-                         SDL_Rect &button_rect, const char* label, int max_width)
+   void drawToggleButton(TTF_Font *ttf_font, int x, int y, bool enabled, SDL_Color white, SDL_Rect &button_rect,
+                         const char *label, int max_width)
    {
       int box_size = 14;
       int box_y = y + 5;
@@ -419,14 +405,14 @@ class SDLGuiHandler
       button_rect.h = box_size;
    }
 
-   void drawOrbitButton(TTF_Font *ttf_font, int x, int y, bool enabled, SDL_Color white,
-                        SDL_Rect &button_rect, const char* label, int max_width)
+   void drawOrbitButton(TTF_Font *ttf_font, int x, int y, bool enabled, SDL_Color white, SDL_Rect &button_rect,
+                        const char *label, int max_width)
    {
       drawToggleButton(ttf_font, x, y, enabled, white, button_rect, label, max_width);
    }
 
-   void drawSamplesSlider(TTF_Font *ttf_font, int padding, int y, int control_width, int samples_per_batch, SDL_Color white,
-                        SliderBounds &samples_slider, int label_width)
+   void drawSamplesSlider(TTF_Font *ttf_font, int padding, int y, int control_width, int samples_per_batch,
+                          SDL_Color white, SliderBounds &samples_slider, int label_width)
    {
       char label[32];
       snprintf(label, sizeof(label), "Samples: %d", samples_per_batch);

@@ -15,33 +15,11 @@
  * @param num_states Total number of states to initialize
  * @param seed Base seed for random number generation
  */
-__global__ void init_random_states(curandState *rand_states, int num_states, unsigned long long seed, int width)
-{
-   // Support both 1D and 2D grid launches
-   int idx;
-   if (gridDim.y == 1)
-   {
-      // 1D launch
-      idx = blockIdx.x * blockDim.x + threadIdx.x;
-   }
-   else
-   {
-      // 2D launch - compute proper 1D index
-      int x = blockIdx.x * blockDim.x + threadIdx.x;
-      int y = blockIdx.y * blockDim.y + threadIdx.y;
-      idx = y * width + x;
-   }
-
-   if (idx < num_states)
-   {
-      // Initialize each state with a unique seed and sequence
-      // Using idx for sequence ensures different random streams per pixel
-      curand_init(seed, idx, 0, &rand_states[idx]);
-   }
-}
+// Forward declaration only. Implemented in cuda_utils.cu to avoid multiple definition at device link.
+__global__ void init_random_states(curandState *rand_states, int num_states, unsigned long long seed, int width);
 
 /** @brief Generate random float in range [0,1) using CUDA's curand */
-__device__ float rand_float(curandState *state) { return curand_uniform(state); }
+static __device__ inline float rand_float(curandState *state) { return curand_uniform(state); }
 
 /**
  * @brief Generate random position on sphere surface using spherical coordinates
@@ -50,7 +28,7 @@ __device__ float rand_float(curandState *state) { return curand_uniform(state); 
  * @param radius Sphere radius
  * @return Random point on sphere surface
  */
-__device__ float3_simple randPosInSphere(curandState *state, float3_simple center, float radius)
+static __device__ inline float3_simple randPosInSphere(curandState *state, float3_simple center, float radius)
 {
    float theta = 2.0f * M_PI * rand_float(state);      // Azimuth [0, 2π]
    float phi = acosf(1.0f - 2.0f * rand_float(state)); // Polar [0, π]
@@ -72,7 +50,7 @@ __device__ float3_simple randPosInSphere(curandState *state, float3_simple cente
  * @param theta Output azimuthal angle (0 to 2π)
  * @param phi Output polar angle (0 to π)
  */
-__device__ void cartesianToSpherical(float3_simple p, float &theta, float &phi)
+static __device__ inline void cartesianToSpherical(float3_simple p, float &theta, float &phi)
 {
    float r = p.length();
    if (r < 1e-6f)

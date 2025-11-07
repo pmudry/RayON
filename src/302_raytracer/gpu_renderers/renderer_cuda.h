@@ -42,11 +42,7 @@ extern "C"
    void setBackgroundIntensity(float intensity);
    
    // Set metal roughness/fuzziness multiplier
-   void setMetalFuzziness(float fuzziness);
-   
-   // Set sampling strategy (0 = uniform, 1 = stratified)
-   void setStratifiedSampling(int use_stratified);
-
+   void setMetalFuzziness(float fuzziness);      
 }
 
 class RendererCUDA : virtual public CameraBase
