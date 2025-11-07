@@ -5,6 +5,7 @@
 #include "utils.h"
 #include "scene_description.h"
 #include "scene_builder.h"
+#include "yaml_scene_loader.h"
 #include "gpu_renderers/renderer_cuda.h"
 
 #include <filesystem>
@@ -16,9 +17,22 @@
 using namespace constants;
 using namespace utils;
 
+// Global scene file path (set from command line)
+static const char* g_scene_file = nullptr;
+
+// Function to ensure directory exists
+void ensureDirectoryExists(const string& filepath) {
+   size_t pos = filepath.find_last_of("/\\");
+   if (pos != string::npos) {
+      string dir = filepath.substr(0, pos);
+      filesystem::create_directories(dir);
+   }
+}
+
 // Function to write image buffer to PNG file
 void writeImage(const vector<unsigned char> &image, int image_width, int image_height, const string &filename)
 {
+   ensureDirectoryExists(filename);
    const int channels = 3; // RGB
    if (stbi_write_png(filename.c_str(), image_width, image_height, channels, image.data(), image_width * channels))
    {
@@ -57,13 +71,24 @@ void dumpImageToFile(vector<unsigned char> &image, int image_width, int image_he
 /**
  * @brief Create unified scene description used by all rendering options
  * This is the single source of truth for the scene - matches the original CUDA scene
+ * Uses global g_scene_file if set, otherwise creates default scene
  */
 Scene::SceneDescription create_scene_description()
 {
    using namespace Scene;
    SceneDescription scene_desc;
    
-   // === Materials ===
+   // If scene file specified, try to load it
+   if (g_scene_file != nullptr) {
+      cout << "Attempting to load scene from: " << g_scene_file << endl;
+      if (loadSceneFromYAML(g_scene_file, scene_desc)) {
+         return scene_desc;  // Successfully loaded
+      } else {
+         cerr << "WARNING: Failed to load scene file, using default scene instead" << endl;
+      }
+   }
+   
+   // === Default scene - Materials ===
    int mat_ground = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(0.44, 0.7, 0.95)));
    int mat_golden = scene_desc.addMaterial(MaterialDesc::roughMirror(Vec3(1.0, 0.85, 0.47), 0.03));
    int mat_blue_rough = scene_desc.addMaterial(MaterialDesc::roughMirror(Vec3(0.3, 0.3, 0.91), 0.3));
@@ -77,7 +102,7 @@ Scene::SceneDescription create_scene_description()
    int mat_green = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(152/255.0, 199/255.0, 191/255.0)));
    int mat_light = scene_desc.addMaterial(MaterialDesc::light(Vec3(4.8, 4.1, 3.7)));
    
-   // === Geometry ===
+   // === Default scene - Geometry ===
    scene_desc.addSphere(Vec3(0, -950.5, -1), 950.0, mat_ground);
    scene_desc.addSphere(Vec3(-3.5, 0.45, -1.8), 0.8, mat_golden);
    scene_desc.addDisplacedSphere(Vec3(1.2, 0, -2), 0.5, mat_blue_rough, 0.2f, 0);
@@ -151,6 +176,7 @@ struct ProgramArgs
    int height = IMAGE_HEIGHT;
    int start_samples = 32;      // Number of samples to render initially when moving camera
    bool auto_accumulate = true; // Enable auto-accumulation by default
+   const char* scene_file = nullptr;  // Optional scene file to load
 };
 
 ProgramArgs parseInput(int argc, char *argv[])
@@ -170,6 +196,7 @@ ProgramArgs parseInput(int argc, char *argv[])
               << ")\n";
          cout << "  -r <height>            Set vertical resolution (allowed: 2160, 1080, 720, 360, 180, default: "
               << IMAGE_HEIGHT << ")\n";
+         cout << "  --scene <file>         Load scene from YAML file (default: built-in scene)\n";
          cout << "  --start-samples <n>    Set initial samples when moving camera in interactive mode (default: 32)\n";
          cout << "  --no-auto-accumulate   Disable automatic sample accumulation in interactive mode\n";
          args.samples = -1;
@@ -198,6 +225,10 @@ ProgramArgs parseInput(int argc, char *argv[])
       {
          args.auto_accumulate = false;
       }
+      else if (strcmp(argv[i], "--scene") == 0 && i + 1 < argc)
+      {
+         args.scene_file = argv[++i];
+      }
       else if (strcmp(argv[i], "--start-samples") == 0 && i + 1 < argc)
       {
          args.start_samples = atoi(argv[++i]);
@@ -218,6 +249,7 @@ ProgramArgs parseInput(int argc, char *argv[])
               << ")\n";
          cout << "  -r <height>            Set vertical resolution (allowed: 2160, 1080, 720, 360, 180, default: "
               << IMAGE_HEIGHT << ")\n";
+         cout << "  --scene <file>         Load scene from YAML file (default: built-in scene)\n";
          cout << "  --start-samples <n>    Set initial samples when moving camera in interactive mode (default: 32)\n";
          cout << "  --no-auto-accumulate   Disable automatic sample accumulation in interactive mode\n";
          args.samples = -1;
@@ -245,6 +277,9 @@ int main(int argc, char *argv[])
    {
       return 1;
    }
+   
+   // Set global scene file for scene loading
+   g_scene_file = args.scene_file;
 
    // Calculate width maintaining aspect ratio (16:9)
    int image_height = args.height;
@@ -316,7 +351,7 @@ int main(int argc, char *argv[])
       break;
    }
 
-   // Create res directory if it doesn't exist
+   // Save output image to resources directory
    dumpImageToFile(localImage, c.image_width, c.image_height, "res/output.png");
 
    cout.imbue(locale("en_US.UTF-8"));

@@ -93,7 +93,7 @@ class RendererCUDAProgressive : virtual public CameraBase
       SliderBounds samples_slider_bounds = {0, 0, 0, 0, 1.0f, 256.0f, &samples_per_batch_float};
       SliderBounds intensity_slider_bounds = {0, 0, 0, 0, 0.1f, 3.0f, &light_intensity};
       SliderBounds background_slider_bounds = {0, 0, 0, 0, 0.0f, 3.0f, &background_intensity};
-      SliderBounds fuzziness_slider_bounds = {0, 0, 0, 0, 0.0f, 1.0f, &metal_fuzziness};
+      SliderBounds fuzziness_slider_bounds = {0, 0, 0, 0, 0.0f, 5.0f, &metal_fuzziness};
       SDL_Rect toggle_button_rect = {0, 0, 0, 0};
       SDL_Rect orbit_button_rect = {0, 0, 0, 0};
       bool dragging_slider = false;

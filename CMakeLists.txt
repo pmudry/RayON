@@ -80,6 +80,8 @@ set ( SOURCE_302_RAYTRACER
   # Scene description (NEW)
   src/302_raytracer/scene_description.h
   src/302_raytracer/scene_builder.h
+  src/302_raytracer/yaml_scene_loader.h
+  src/302_raytracer/yaml_scene_loader.cc
   
   # Camera and renderers
   src/302_raytracer/camera/camera.h

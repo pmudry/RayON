@@ -808,9 +808,9 @@ __device__ float3_simple ray_color(const ray_simple &r, const CudaScene::Scene& 
          // If we hit a light source, accumulate its emission and stop
          if (rec.material == LIGHT)
          {
-            accumulated_color = accumulated_color + float3_simple(accumulated_attenuation.x * rec.emission.x,
-                                                                  accumulated_attenuation.y * rec.emission.y,
-                                                                  accumulated_attenuation.z * rec.emission.z);
+            accumulated_color = accumulated_color + float3_simple(accumulated_attenuation.x * rec.emission.x * g_light_intensity,
+                                                                  accumulated_attenuation.y * rec.emission.y * g_light_intensity,
+                                                                  accumulated_attenuation.z * rec.emission.z * g_light_intensity);
             return accumulated_color;
          }
 
