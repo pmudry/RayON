@@ -2,6 +2,7 @@
 #include "constants.h"
 #include "hittable_list.h"
 #include "sphere.h"
+#include "utils.h"
 
 #include <filesystem>
 #include <iostream>
@@ -10,6 +11,7 @@
 #include "../external/stb_image_write.h"
 
 using namespace constants;
+using namespace utils;
 
 // Function to write image buffer to PNG file
 void writeImage(const vector<unsigned char> &image, int image_width, int image_height, const string &filename)
@@ -167,6 +169,9 @@ ProgramArgs parseInput(int argc, char *argv[])
 
 int main(int argc, char *argv[])
 {
+   // Enable colored error output (all cerr messages will be displayed in red)
+   enable_colored_cerr();
+
    ProgramArgs args = parseInput(argc, argv);
 
    if (args.samples < 0)
