@@ -1,6 +1,6 @@
 /**
  * @class RendererProgressiveSDL
- * @brief Interactive SDL renderer with progressive sample accumulation in CUDA
+ * @brief Interactive renderer with progressive samples accumulation in CUDA
  *
  * This renderer focuses on ray-tracing logic with progressive quality improvement.
  * GUI and camera control are delegated to separate handler classes.
@@ -9,7 +9,7 @@
 
 #ifdef SDL2_FOUND
 
-#include "../camera_base.h"
+#include "camera/camera_base.h"
 #include "gpu_renderers/renderer_cuda.h"
 #include "interval.h"
 #include "sdl_gui_controls.h"
@@ -25,7 +25,7 @@ extern "C"
    void setLightIntensity(float intensity);
    void setBackgroundIntensity(float intensity);
    void setMetalFuzziness(float fuzziness);
-   unsigned long long renderPixelsSDLAccumulative(unsigned char *image, float *accum_buffer, int width, int height,
+   unsigned long long renderPixelsCUDAAccumulative(unsigned char *image, float *accum_buffer, int width, int height,
                                                   double cam_center_x, double cam_center_y, double cam_center_z,
                                                   double pixel00_x, double pixel00_y, double pixel00_z,
                                                   double delta_u_x, double delta_u_y, double delta_u_z,
@@ -82,10 +82,10 @@ class RendererCUDAProgressive : virtual public CameraBase
       float samples_per_batch_float = static_cast<float>(samples_per_batch); // Float version for slider
 
       // Set initial rendering parameters
-      ::setLightIntensity(light_intensity);
-      ::setBackgroundIntensity(background_intensity);
-      ::setMetalFuzziness(metal_fuzziness);
-      ::setStratifiedSampling(use_stratified_sampling ? 1 : 0);
+      setLightIntensity(light_intensity);
+      setBackgroundIntensity(background_intensity);
+      setMetalFuzziness(metal_fuzziness);
+      setStratifiedSampling(use_stratified_sampling ? 1 : 0);
 
       // UI state
       SliderBounds samples_slider_bounds = {0, 0, 0, 0, 1.0f, 256.0f, &samples_per_batch_float};
@@ -328,7 +328,7 @@ class RendererCUDAProgressive : virtual public CameraBase
          actual_samples_to_add = max_samples - (current_samples - samples_per_batch);
 
       // Call CUDA to render and accumulate samples
-      unsigned long long cuda_ray_count = ::renderPixelsSDLAccumulative(
+      unsigned long long cuda_ray_count = ::renderPixelsCUDAAccumulative(
           display_image.data(), accum_buffer.data(), image_width, image_height, camera_center.x(), camera_center.y(),
           camera_center.z(), pixel00_loc.x(), pixel00_loc.y(), pixel00_loc.z(), pixel_delta_u.x(), pixel_delta_u.y(),
           pixel_delta_u.z(), pixel_delta_v.x(), pixel_delta_v.y(), pixel_delta_v.z(), actual_samples_to_add,

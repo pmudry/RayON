@@ -20,10 +20,6 @@
 #include <curand_kernel.h>
 #include <device_launch_parameters.h>
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846f
-#endif
-
 // Global light intensity multiplier (can be updated per render)
 __constant__ float g_light_intensity = 1.0f;
 
@@ -130,8 +126,6 @@ struct hit_record_simple
    float roughness;         ///< Surface roughness for rough mirrors
 };
 
-
-
 /**
  * @brief Generate fuzzy reflection direction for rough mirror surfaces
  * @param v Incident ray direction (normalized)
@@ -208,12 +202,9 @@ __device__ float smoothstep(float edge0, float edge1, float x)
    return t * t * (3.0f - 2.0f * t);
 }
 
-
-
 //==============================================================================
 // PROCEDURAL GENERATION UTILITIES
 //==============================================================================
-
 
 // Device function for sphere intersection
 __device__ bool hit_sphere(const float3_simple &center, float radius, const ray_simple &r, float t_min, float t_max,
@@ -933,8 +924,8 @@ __global__ void renderKernel(unsigned char *image, int width, int height, int sa
    // Debug: Print sampling mode once (only for first pixel)
    if (x == 0 && y == 0)
    {
-      printf("Kernel: g_use_stratified_sampling = %d, samples_per_pixel = %d\n", 
-             g_use_stratified_sampling, samples_per_pixel);
+      printf("Kernel: g_use_stratified_sampling = %d, samples_per_pixel = %d\n", g_use_stratified_sampling,
+             samples_per_pixel);
    }
 
    if (g_use_stratified_sampling)
@@ -942,18 +933,18 @@ __global__ void renderKernel(unsigned char *image, int width, int height, int sa
       // Stratified sampling: divide pixel into grid of strata and sample once per stratum
       // Calculate grid dimensions (e.g., 2x2 for 4 samples, 3x3 for 9 samples, etc.)
       int grid_size = (int)sqrtf((float)actual_samples);
-      
+
       if (grid_size * grid_size < actual_samples)
          grid_size++; // Round up if not perfect square
-      
+
       if (x == 0 && y == 0)
       {
          printf("Stratified: grid_size = %d (for %d samples)\n", grid_size, actual_samples);
       }
-      
+
       float stratum_size = 1.0f / (float)grid_size; // Size of each stratum
       int sample_idx = 0;
-      
+
       for (int strat_y = 0; strat_y < grid_size && sample_idx < actual_samples; strat_y++)
       {
          for (int strat_x = 0; strat_x < grid_size && sample_idx < actual_samples; strat_x++)
@@ -961,15 +952,15 @@ __global__ void renderKernel(unsigned char *image, int width, int height, int sa
             // Random offset within the current stratum
             float jitter_u = rand_float(local_rand_state) * stratum_size;
             float jitter_v = rand_float(local_rand_state) * stratum_size;
-            
+
             // Offset relative to pixel center [-0.5, 0.5]
             float offset_u = (strat_x * stratum_size + jitter_u) - 0.5f;
             float offset_v = (strat_y * stratum_size + jitter_v) - 0.5f;
 
             if (x == 0 && y == 0 && sample_idx < 5)
             {
-               printf("  Stratified sample %d: offset_u=%.3f, offset_v=%.3f (strat %d,%d)\n", 
-                      sample_idx, offset_u, offset_v, strat_x, strat_y);
+               printf("  Stratified sample %d: offset_u=%.3f, offset_v=%.3f (strat %d,%d)\n", sample_idx, offset_u,
+                      offset_v, strat_x, strat_y);
             }
 
             float3_simple pixel_center =
@@ -989,7 +980,7 @@ __global__ void renderKernel(unsigned char *image, int width, int height, int sa
       {
          printf("Uniform: actual_samples = %d\n", actual_samples);
       }
-      
+
       for (int s = 0; s < actual_samples; s++)
       {
          // Random offset within pixel for anti-aliasing
@@ -1032,9 +1023,154 @@ __global__ void renderKernel(unsigned char *image, int width, int height, int sa
    image[base_idx + 2] = b;
 }
 
+
+/**
+ * @brief CUDA kernel for accumulative rendering (progressive sampling) in real-time
+ * Adds new samples to existing accumulated color buffer. For the rest see renderKernel.
+ */
+__global__ void renderAccKernel(float *accum_buffer, unsigned char *image, int width, int height,
+                                             int samples_to_add, int total_samples_so_far, int max_depth,
+                                             float cam_center_x, float cam_center_y, float cam_center_z,
+                                             float pixel00_x, float pixel00_y, float pixel00_z, float delta_u_x,
+                                             float delta_u_y, float delta_u_z, float delta_v_x, float delta_v_y,
+                                             float delta_v_z, unsigned long long *ray_count, curandState *rand_states)
+{
+   int x = blockIdx.x * blockDim.x + threadIdx.x;
+   int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+   if (x >= width || y >= height)
+      return;
+
+   int pixel_idx = y * width + x;
+   int base_idx = pixel_idx * 3;
+
+   if (pixel_idx >= width * height || base_idx + 2 >= width * height * 3)
+      return;
+
+   curandState *local_rand_state = &rand_states[pixel_idx];
+
+   float3_simple camera_center(cam_center_x, cam_center_y, cam_center_z);
+   float3_simple pixel00_loc(pixel00_x, pixel00_y, pixel00_z);
+   float3_simple pixel_delta_u(delta_u_x, delta_u_y, delta_u_z);
+   float3_simple pixel_delta_v(delta_v_x, delta_v_y, delta_v_z);
+
+   // Read existing accumulated color
+   float3_simple accumulated_color(accum_buffer[base_idx], accum_buffer[base_idx + 1], accum_buffer[base_idx + 2]);
+   int local_ray_count = 0;
+
+   // Debug: Print sampling mode once (only for first pixel)
+   if (x == 0 && y == 0)
+   {
+      printf("PixelsKernel: g_use_stratified_sampling = %d\n", g_use_stratified_sampling);
+   }
+
+   if (g_use_stratified_sampling)
+   {
+      // Stratified sampling: divide pixel into grid of strata and sample once per stratum
+      // Calculate grid dimensions (e.g., 2x2 for 4 samples, 3x3 for 9 samples, etc.)
+      int grid_size = (int)sqrtf((float)samples_to_add);
+      if (grid_size * grid_size < samples_to_add)
+         grid_size++; // Round up if not perfect square
+
+      float stratum_size = 1.0f / (float)grid_size; // Size of each stratum
+      int sample_idx = 0;
+
+      for (int strat_y = 0; strat_y < grid_size && sample_idx < samples_to_add; strat_y++)
+      {
+         for (int strat_x = 0; strat_x < grid_size && sample_idx < samples_to_add; strat_x++)
+         {
+            // Random offset within the current stratum
+            float jitter_u = rand_float(local_rand_state) * stratum_size;
+            float jitter_v = rand_float(local_rand_state) * stratum_size;
+
+            // Offset relative to pixel center [-0.5, 0.5]
+            float offset_u = (strat_x * stratum_size + jitter_u) - 0.5f;
+            float offset_v = (strat_y * stratum_size + jitter_v) - 0.5f;
+
+            float3_simple pixel_center =
+                pixel00_loc + ((float)x + offset_u) * pixel_delta_u + ((float)y + offset_v) * pixel_delta_v;
+            float3_simple ray_direction = pixel_center - camera_center;
+            ray_simple r(camera_center, ray_direction);
+
+            accumulated_color = accumulated_color + ray_color(r, local_rand_state, min(max_depth, 6), local_ray_count);
+            sample_idx++;
+         }
+      }
+   }
+   else
+   {
+      // Uniform sampling: random offsets within pixel [-0.5, 0.5]
+      for (int s = 0; s < samples_to_add; s++)
+      {
+         float offset_u = rand_float(local_rand_state) - 0.5f;
+         float offset_v = rand_float(local_rand_state) - 0.5f;
+
+         float3_simple pixel_center =
+             pixel00_loc + ((float)x + offset_u) * pixel_delta_u + ((float)y + offset_v) * pixel_delta_v;
+         float3_simple ray_direction = pixel_center - camera_center;
+         ray_simple r(camera_center, ray_direction);
+
+         accumulated_color = accumulated_color + ray_color(r, local_rand_state, min(max_depth, 6), local_ray_count);
+      }
+   }
+
+   // Atomically add thread's local ray count to global counter (one atomic per thread instead of per ray)
+   atomicAdd(ray_count, (unsigned long long)local_ray_count);
+
+   // Store accumulated color back to buffer
+   accum_buffer[base_idx] = accumulated_color.x;
+   accum_buffer[base_idx + 1] = accumulated_color.y;
+   accum_buffer[base_idx + 2] = accumulated_color.z;
+
+   // Note: Display conversion (gamma/intensity) is done on CPU side for flexibility
+   // Just copy raw accumulated values to image buffer for now (will be processed on CPU)
+   image[base_idx] = 0;
+   image[base_idx + 1] = 0;
+   image[base_idx + 2] = 0;
+}
+
+
 //==============================================================================
 // HOST INTERFACE FUNCTIONS
 //==============================================================================
+extern "C" void setLightIntensity(float intensity) { cudaMemcpyToSymbol(g_light_intensity, &intensity, sizeof(float)); }
+
+extern "C" void setBackgroundIntensity(float intensity)
+{
+   cudaMemcpyToSymbol(g_background_intensity, &intensity, sizeof(float));
+}
+
+extern "C" void setMetalFuzziness(float fuzziness) { cudaMemcpyToSymbol(g_metal_fuzziness, &fuzziness, sizeof(float)); }
+
+extern "C" void setStratifiedSampling(int use_stratified)
+{
+   printf("setStratifiedSampling called with value: %d\n", use_stratified);
+   cudaError_t err = cudaMemcpyToSymbol(g_use_stratified_sampling, &use_stratified, sizeof(int));
+   if (err != cudaSuccess)
+   {
+      printf("ERROR: Failed to set stratified sampling: %s\n", cudaGetErrorString(err));
+   }
+   else
+   {
+      printf("Successfully set g_use_stratified_sampling to %d\n", use_stratified);
+   }
+}
+
+extern "C" void freeDeviceRandomStates(void *d_rand_states)
+{
+   if (d_rand_states != nullptr)
+   {
+      cudaFree(d_rand_states);
+   }
+}
+
+extern "C" void freeDeviceAccumBuffer(void *d_accum_buffer)
+{
+   if (d_accum_buffer != nullptr)
+   {
+      cudaFree(d_accum_buffer);
+   }
+}
 
 /**
  * @brief Host function for tile-based rendering (useful for real-time display)
@@ -1151,149 +1287,6 @@ extern "C" unsigned long long renderPixelsCUDA(unsigned char *image, int width, 
    return host_ray_count;
 }
 
-extern "C" void setLightIntensity(float intensity) { cudaMemcpyToSymbol(g_light_intensity, &intensity, sizeof(float)); }
-
-extern "C" void setBackgroundIntensity(float intensity)
-{
-   cudaMemcpyToSymbol(g_background_intensity, &intensity, sizeof(float));
-}
-
-extern "C" void setMetalFuzziness(float fuzziness) { cudaMemcpyToSymbol(g_metal_fuzziness, &fuzziness, sizeof(float)); }
-
-extern "C" void setStratifiedSampling(int use_stratified)
-{
-   printf("setStratifiedSampling called with value: %d\n", use_stratified);
-   cudaError_t err = cudaMemcpyToSymbol(g_use_stratified_sampling, &use_stratified, sizeof(int));
-   if (err != cudaSuccess)
-   {
-      printf("ERROR: Failed to set stratified sampling: %s\n", cudaGetErrorString(err));
-   }
-   else
-   {
-      printf("Successfully set g_use_stratified_sampling to %d\n", use_stratified);
-   }
-}
-
-extern "C" void freeDeviceRandomStates(void *d_rand_states)
-{
-   if (d_rand_states != nullptr)
-   {
-      cudaFree(d_rand_states);
-   }
-}
-
-extern "C" void freeDeviceAccumBuffer(void *d_accum_buffer)
-{
-   if (d_accum_buffer != nullptr)
-   {
-      cudaFree(d_accum_buffer);
-   }
-}
-
-/**
- * @brief CUDA kernel for accumulative rendering (progressive sampling)
- * Adds new samples to existing accumulated color buffer
- */
-__global__ void renderPixelsKernel(float *accum_buffer, unsigned char *image, int width, int height, int samples_to_add,
-                                   int total_samples_so_far, int max_depth, float cam_center_x, float cam_center_y,
-                                   float cam_center_z, float pixel00_x, float pixel00_y, float pixel00_z,
-                                   float delta_u_x, float delta_u_y, float delta_u_z, float delta_v_x, float delta_v_y,
-                                   float delta_v_z, unsigned long long *ray_count, curandState *rand_states)
-{
-   int x = blockIdx.x * blockDim.x + threadIdx.x;
-   int y = blockIdx.y * blockDim.y + threadIdx.y;
-
-   if (x >= width || y >= height)
-      return;
-
-   int pixel_idx = y * width + x;
-   int base_idx = pixel_idx * 3;
-
-   if (pixel_idx >= width * height || base_idx + 2 >= width * height * 3)
-      return;
-
-   curandState *local_rand_state = &rand_states[pixel_idx];
-
-   float3_simple camera_center(cam_center_x, cam_center_y, cam_center_z);
-   float3_simple pixel00_loc(pixel00_x, pixel00_y, pixel00_z);
-   float3_simple pixel_delta_u(delta_u_x, delta_u_y, delta_u_z);
-   float3_simple pixel_delta_v(delta_v_x, delta_v_y, delta_v_z);
-
-   // Read existing accumulated color
-   float3_simple accumulated_color(accum_buffer[base_idx], accum_buffer[base_idx + 1], accum_buffer[base_idx + 2]);
-   int local_ray_count = 0;
-
-   // Debug: Print sampling mode once (only for first pixel)
-   if (x == 0 && y == 0)
-   {
-      printf("PixelsKernel: g_use_stratified_sampling = %d\n", g_use_stratified_sampling);
-   }
-
-   if (g_use_stratified_sampling)
-   {
-      // Stratified sampling: divide pixel into grid of strata and sample once per stratum
-      // Calculate grid dimensions (e.g., 2x2 for 4 samples, 3x3 for 9 samples, etc.)
-      int grid_size = (int)sqrtf((float)samples_to_add);
-      if (grid_size * grid_size < samples_to_add)
-         grid_size++; // Round up if not perfect square
-      
-      float stratum_size = 1.0f / (float)grid_size; // Size of each stratum
-      int sample_idx = 0;
-      
-      for (int strat_y = 0; strat_y < grid_size && sample_idx < samples_to_add; strat_y++)
-      {
-         for (int strat_x = 0; strat_x < grid_size && sample_idx < samples_to_add; strat_x++)
-         {
-            // Random offset within the current stratum
-            float jitter_u = rand_float(local_rand_state) * stratum_size;
-            float jitter_v = rand_float(local_rand_state) * stratum_size;
-            
-            // Offset relative to pixel center [-0.5, 0.5]
-            float offset_u = (strat_x * stratum_size + jitter_u) - 0.5f;
-            float offset_v = (strat_y * stratum_size + jitter_v) - 0.5f;
-
-            float3_simple pixel_center =
-                pixel00_loc + ((float)x + offset_u) * pixel_delta_u + ((float)y + offset_v) * pixel_delta_v;
-            float3_simple ray_direction = pixel_center - camera_center;
-            ray_simple r(camera_center, ray_direction);
-
-            accumulated_color = accumulated_color + ray_color(r, local_rand_state, min(max_depth, 6), local_ray_count);
-            sample_idx++;
-         }
-      }
-   }
-   else
-   {
-      // Uniform sampling: random offsets within pixel [-0.5, 0.5]
-      for (int s = 0; s < samples_to_add; s++)
-      {
-         float offset_u = rand_float(local_rand_state) - 0.5f;
-         float offset_v = rand_float(local_rand_state) - 0.5f;
-
-         float3_simple pixel_center =
-             pixel00_loc + ((float)x + offset_u) * pixel_delta_u + ((float)y + offset_v) * pixel_delta_v;
-         float3_simple ray_direction = pixel_center - camera_center;
-         ray_simple r(camera_center, ray_direction);
-
-         accumulated_color = accumulated_color + ray_color(r, local_rand_state, min(max_depth, 6), local_ray_count);
-      }
-   }
-
-   // Atomically add thread's local ray count to global counter (one atomic per thread instead of per ray)
-   atomicAdd(ray_count, (unsigned long long)local_ray_count);
-
-   // Store accumulated color back to buffer
-   accum_buffer[base_idx] = accumulated_color.x;
-   accum_buffer[base_idx + 1] = accumulated_color.y;
-   accum_buffer[base_idx + 2] = accumulated_color.z;
-
-   // Note: Display conversion (gamma/intensity) is done on CPU side for flexibility
-   // Just copy raw accumulated values to image buffer for now (will be processed on CPU)
-   image[base_idx] = 0;
-   image[base_idx + 1] = 0;
-   image[base_idx + 2] = 0;
-}
-
 /**
  * @brief Accumulative rendering function that adds new samples to existing accumulated color buffer
  *
@@ -1316,7 +1309,7 @@ __global__ void renderPixelsKernel(float *accum_buffer, unsigned char *image, in
  * @return Number of rays traced
  */
 extern "C" unsigned long long
-renderPixelsSDLAccumulative(unsigned char *image, float *accum_buffer, int width, int height, double cam_center_x,
+renderPixelsCUDAAccumulative(unsigned char *image, float *accum_buffer, int width, int height, double cam_center_x,
                             double cam_center_y, double cam_center_z, double pixel00_x, double pixel00_y,
                             double pixel00_z, double delta_u_x, double delta_u_y, double delta_u_z, double delta_v_x,
                             double delta_v_y, double delta_v_z, int samples_to_add, int total_samples_so_far,
@@ -1379,11 +1372,11 @@ renderPixelsSDLAccumulative(unsigned char *image, float *accum_buffer, int width
    // Otherwise random states continue from where they left off in the previous batch
 
    // Launch accumulative rendering kernel
-   renderPixelsKernel<<<blocks, threads>>>(d_accum_buffer, d_image, width, height, samples_to_add, total_samples_so_far,
-                                           max_depth, (float)cam_center_x, (float)cam_center_y, (float)cam_center_z,
-                                           (float)pixel00_x, (float)pixel00_y, (float)pixel00_z, (float)delta_u_x,
-                                           (float)delta_u_y, (float)delta_u_z, (float)delta_v_x, (float)delta_v_y,
-                                           (float)delta_v_z, d_ray_count, d_rand_states);
+   renderAccKernel<<<blocks, threads>>>(
+       d_accum_buffer, d_image, width, height, samples_to_add, total_samples_so_far, max_depth, (float)cam_center_x,
+       (float)cam_center_y, (float)cam_center_z, (float)pixel00_x, (float)pixel00_y, (float)pixel00_z, (float)delta_u_x,
+       (float)delta_u_y, (float)delta_u_z, (float)delta_v_x, (float)delta_v_y, (float)delta_v_z, d_ray_count,
+       d_rand_states);
 
    cudaDeviceSynchronize();
 

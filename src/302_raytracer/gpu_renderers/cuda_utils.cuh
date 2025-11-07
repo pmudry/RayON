@@ -66,8 +66,6 @@ __device__ float3_simple randPosInSphere(curandState *state, float3_simple cente
 //==============================================================================
 // Geometry transformations
 //==============================================================================
-
-
 /**
  * @brief Convert 3D point to spherical coordinates with 90-degree rotation around x-axis
  * @param p 3D point on sphere surface

@@ -1,8 +1,10 @@
 #pragma once
 
+#include <string>
+
 namespace constants
 {
-    const char* const ver_major = "1.1.2";
+    const std::string ver_major = "1.1.2";
 
     // Image specifics settings
     const double ASPECT_RATIO = 16.0 / 9.0;
