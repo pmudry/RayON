@@ -10,10 +10,9 @@
 #include "../camera/camera_base.h"
 #include <vector>
 
-#ifdef __cplusplus
+// Forward declarations of CUDA functions
 extern "C"
 {
-#endif
    // Host function declaration for tile-based CUDA rendering (for real-time display)
    unsigned long long renderPixelsCUDA(unsigned char *image, int width, int height, double cam_center_x,
                                        double cam_center_y, double cam_center_z, double pixel00_x, double pixel00_y,
@@ -21,17 +20,6 @@ extern "C"
                                        double delta_v_x, double delta_v_y, double delta_v_z, int samples_per_pixel,
                                        int max_depth);
 
-   // Host function for accumulative rendering (adds samples to existing buffer)
-   // d_rand_states_ptr: Pass pointer to nullptr to initialize, pass existing pointer to reuse
-   // d_accum_buffer_ptr: Pass pointer to nullptr to initialize, pass existing pointer to reuse (stays on device)
-   unsigned long long renderPixelsSDLAccumulative(unsigned char *image, float *accum_buffer,
-                                                    int width, int height,
-                                                    double cam_center_x, double cam_center_y, double cam_center_z,
-                                                    double pixel00_x, double pixel00_y, double pixel00_z,
-                                                    double delta_u_x, double delta_u_y, double delta_u_z,
-                                                    double delta_v_x, double delta_v_y, double delta_v_z,
-                                                    int samples_to_add, int total_samples_so_far, int max_depth,
-                                                    void **d_rand_states_ptr, void **d_accum_buffer_ptr);
    
    // Helper to free device random states
    void freeDeviceRandomStates(void *d_rand_states);
@@ -51,17 +39,7 @@ extern "C"
    // Set sampling strategy (0 = uniform, 1 = stratified)
    void setStratifiedSampling(int use_stratified);
 
-   #ifdef __cplusplus
 }
-#endif
-
-// Forward declaration of CUDA functions
-extern "C" unsigned long long renderPixelsCUDA(unsigned char *image, int width, int height,
-                                               double cam_center_x, double cam_center_y, double cam_center_z,
-                                               double pixel00_x, double pixel00_y, double pixel00_z,
-                                               double delta_u_x, double delta_u_y, double delta_u_z,
-                                               double delta_v_x, double delta_v_y, double delta_v_z,
-                                               int samples_per_pixel, int max_depth);
 
 class RendererCUDA : virtual public CameraBase
 {

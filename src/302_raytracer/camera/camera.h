@@ -13,7 +13,7 @@
  * - renderer_cpu.h: Single-threaded CPU renderer
  * - renderer_cpu_parallel.h: Multi-threaded CPU renderer
  * - renderer_cuda.h: CUDA GPU renderer
- * - renderer_progressive_sdl.h: Interactive SDL renderer with progressive sampling
+ * - renderer_cuda_progressive.h: Interactive CUDA renderer with progressive sampling
  */
 #pragma once
 
@@ -23,7 +23,7 @@
 #include "../gpu_renderers/renderer_cuda.h"
 
 #ifdef SDL2_FOUND
-#include "sdl/camera_progressive_sdl_cuda.h"
+#include "../gpu_renderers/renderer_cuda_progressive.h"
 #endif
 
 /**
@@ -36,7 +36,7 @@
 class Camera : public RendererCPU, public RendererCPUParallel, public RendererCUDA
 #ifdef SDL2_FOUND
                ,
-               public RendererProgressiveSDL
+               public RendererCUDAProgressive
 #endif
 {
  public:
@@ -53,5 +53,5 @@ class Camera : public RendererCPU, public RendererCPUParallel, public RendererCU
    // - renderPixels() from RendererCPU
    // - renderPixelsParallel() from RendererCPUParallel
    // - renderPixelsCUDA() from RendererCUDA
-   // - renderPixelsSDLContinuous() and renderTiled() from RendererProgressiveSDL (if SDL2_FOUND)
+   // - renderPixelsSDLContinuous() from RendererCUDAProgressive (if SDL2_FOUND)
 };

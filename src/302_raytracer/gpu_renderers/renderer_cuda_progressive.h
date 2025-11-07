@@ -9,7 +9,7 @@
 
 #ifdef SDL2_FOUND
 
-#include "../camera_base.h"
+#include "camera/camera_base.h"
 #include "gpu_renderers/renderer_cuda.h"
 #include "interval.h"
 #include "sdl_gui_controls.h"

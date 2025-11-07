@@ -36,7 +36,7 @@
 class Camera : public RendererCPU, public RendererCPUParallel, public RendererCUDA
 #ifdef SDL2_FOUND
                ,
-               public RendererProgressiveSDL
+               public RendererCUDAProgressive
 #endif
 {
  public:
@@ -53,5 +53,5 @@ class Camera : public RendererCPU, public RendererCPUParallel, public RendererCU
    // - renderPixels() from RendererCPU
    // - renderPixelsParallel() from RendererCPUParallel
    // - renderPixelsCUDA() from RendererCUDA
-   // - renderPixelsSDLContinuous() and renderTiled() from RendererProgressiveSDL (if SDL2_FOUND)
+   // - renderPixelsSDLContinuous() and renderTiled() from RendererCUDAProgressive (if SDL2_FOUND)
 };
