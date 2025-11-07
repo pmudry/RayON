@@ -32,8 +32,8 @@ class CameraBase
 
    // Camera parameters
    double vfov = 35.0;                   // Vertical field of view in degrees
-   Point3 lookfrom = Point3(-2, 2, 5);   // Point camera is looking from
-   Point3 lookat = Point3(-2, -0.5, -1); // Point camera is looking at
+   Point3 look_from = Point3(-2, 2, 5);   // Point camera is looking from
+   Point3 look_at = Point3(-2, -0.5, -1); // Point camera is looking at
    Vec3 vup = Vec3(0, 1, 0);             // Camera-relative "up" direction
 
    // Ray tracing
@@ -62,10 +62,10 @@ class CameraBase
 
    void initialize()
    {
-      camera_center = lookfrom;
+      camera_center = look_from;
 
       // Determine viewport dimensions
-      auto focal_length = (lookfrom - lookat).length();
+      auto focal_length = (look_from - look_at).length();
       auto theta = utils::degrees_to_radians(vfov);
       auto h = tan(theta / 2);
 
@@ -73,7 +73,7 @@ class CameraBase
       auto viewport_width = viewport_height * (double(image_width) / image_height);
 
       // Compute camera basis vectors
-      w = unit_vector(lookfrom - lookat);
+      w = unit_vector(look_from - look_at);
       u = unit_vector(cross(vup, w));
       v = cross(w, u);
 

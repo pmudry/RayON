@@ -65,7 +65,7 @@ class RendererCUDAProgressive : virtual public CameraBase
 
       // Initialize camera controls
       CameraControlHandler camera_control;
-      camera_control.initializeCameraControls(lookfrom, lookat);
+      camera_control.initializeCameraControls(look_from, look_at);
 
       // Ray-tracing state
       bool running = true;
@@ -185,7 +185,7 @@ class RendererCUDAProgressive : virtual public CameraBase
                                                     intensity_slider_bounds, background_slider_bounds,
                                                     fuzziness_slider_bounds, samples_per_batch_float, light_intensity,
                                                     background_intensity, metal_fuzziness, needs_rerender,
-                                                    camera_changed, lookfrom, lookat, vup, w, gui.getShowControls()))
+                                                    camera_changed, look_from, look_at, vup, w, gui.getShowControls()))
                {
                   // Sync samples_per_batch from float slider value
                   samples_per_batch = static_cast<int>(samples_per_batch_float);
@@ -201,7 +201,7 @@ class RendererCUDAProgressive : virtual public CameraBase
             }
             else if (event.type == SDL_MOUSEWHEEL)
             {
-               if (camera_control.handleMouseWheel(event, lookfrom, lookat))
+               if (camera_control.handleMouseWheel(event, look_from, look_at))
                {
                   camera_changed = true;
                }
@@ -213,7 +213,7 @@ class RendererCUDAProgressive : virtual public CameraBase
          std::chrono::duration<float> delta = current_frame_time - last_frame_time;
          last_frame_time = current_frame_time;
 
-         if (camera_control.updateAutoOrbit(lookfrom, lookat, delta.count()))
+         if (camera_control.updateAutoOrbit(look_from, look_at, delta.count()))
          {
             camera_changed = true;
          }
