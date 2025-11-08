@@ -42,7 +42,12 @@ extern "C"
    void setBackgroundIntensity(float intensity);
    
    // Set metal roughness/fuzziness multiplier
-   void setMetalFuzziness(float fuzziness);      
+   void setMetalFuzziness(float fuzziness);
+   
+   // Depth of Field controls
+   void setDOFEnabled(bool enabled);
+   void setDOFAperture(float aperture);
+   void setDOFFocusDistance(float distance);
 }
 
 class RendererCUDA : virtual public CameraBase

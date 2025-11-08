@@ -14,6 +14,11 @@ extern __constant__ float g_light_intensity;
 extern __constant__ float g_background_intensity;
 extern __constant__ float g_metal_fuzziness;
 
+// Depth of Field parameters
+extern __constant__ bool g_dof_enabled;
+extern __constant__ float g_dof_aperture;
+extern __constant__ float g_dof_focus_distance;
+
 // Forward declarations for golf-ball helpers implemented in shader_golf.cu
 struct ray_simple;
 struct hit_record_simple;
@@ -108,6 +113,34 @@ __device__ inline float smoothstep(float edge0, float edge1, float x)
 {
    float t = fmaxf(0.0f, fminf(1.0f, (x - edge0) / (edge1 - edge0)));
    return t * t * (3.0f - 2.0f * t);
+}
+
+/**
+ * @brief Generate a random point in the unit disk for DOF
+ * @param state Random state
+ * @return Random 2D point in unit disk
+ */
+__device__ inline float2_simple random_in_unit_disk(curandState *state)
+{
+   float2_simple p;
+   do
+   {
+      p = 2.0f * float2_simple(rand_float(state), rand_float(state)) - float2_simple(1.0f, 1.0f);
+   } while (p.x * p.x + p.y * p.y >= 1.0f);
+   return p;
+}
+
+/**
+ * @brief Sample a point on the aperture disk for DOF
+ * @param cam_u Camera u basis vector
+ * @param cam_v Camera v basis vector
+ * @param state Random state
+ * @return Offset on aperture disk
+ */
+__device__ inline float3_simple sample_aperture_disk(const float3_simple &cam_u, const float3_simple &cam_v, curandState *state)
+{
+   float2_simple disk = random_in_unit_disk(state);
+   return g_dof_aperture * (disk.x * cam_u + disk.y * cam_v);
 }
 
 //==============================================================================

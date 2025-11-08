@@ -18,6 +18,11 @@ __constant__ float g_light_intensity = 1.0f;
 __constant__ float g_background_intensity = 1.0f;
 __constant__ float g_metal_fuzziness = 0.8f;
 
+// Depth of Field constants
+__constant__ bool g_dof_enabled = false;
+__constant__ float g_dof_aperture = 0.1f;
+__constant__ float g_dof_focus_distance = 10.0f;
+
 //==================== HOST INTERFACE FUNCTIONS ====================
 extern "C" void setLightIntensity(float intensity) { cudaMemcpyToSymbol(g_light_intensity, &intensity, sizeof(float)); }
 
@@ -27,6 +32,15 @@ extern "C" void setBackgroundIntensity(float intensity)
 }
 
 extern "C" void setMetalFuzziness(float fuzziness) { cudaMemcpyToSymbol(g_metal_fuzziness, &fuzziness, sizeof(float)); }
+
+// Depth of Field setters
+extern "C" void setDOFEnabled(bool enabled) { cudaMemcpyToSymbol(g_dof_enabled, &enabled, sizeof(bool)); }
+
+extern "C" void setDOFAperture(float aperture) { cudaMemcpyToSymbol(g_dof_aperture, &aperture, sizeof(float)); }
+
+extern "C" void setDOFFocusDistance(float distance) { cudaMemcpyToSymbol(g_dof_focus_distance, &distance, sizeof(float)); }
+
+//==================== DEVICE MEMORY MANAGEMENT ====================
 
 /**
  * @brief Calculate optimal thread block configuration for 2D image rendering
@@ -98,7 +112,8 @@ extern "C" unsigned long long renderPixelsCUDAAccumulative(
     unsigned char *image, float *accum_buffer, CudaScene::Scene *scene, int width, int height, double cam_center_x,
     double cam_center_y, double cam_center_z, double pixel00_x, double pixel00_y, double pixel00_z, double delta_u_x,
     double delta_u_y, double delta_u_z, double delta_v_x, double delta_v_y, double delta_v_z, int samples_to_add,
-    int total_samples_so_far, int max_depth, void **d_rand_states_ptr, void **d_accum_buffer_ptr)
+    int total_samples_so_far, int max_depth, void **d_rand_states_ptr, void **d_accum_buffer_ptr,
+    double cam_u_x, double cam_u_y, double cam_u_z, double cam_v_x, double cam_v_y, double cam_v_z)
 {
    if (!scene) return 0ULL;
 
@@ -153,7 +168,9 @@ extern "C" unsigned long long renderPixelsCUDAAccumulative(
                                         max_depth, (float)cam_center_x, (float)cam_center_y, (float)cam_center_z,
                                         (float)pixel00_x, (float)pixel00_y, (float)pixel00_z, (float)delta_u_x,
                                         (float)delta_u_y, (float)delta_u_z, (float)delta_v_x, (float)delta_v_y,
-                                        (float)delta_v_z, d_ray_count, d_rand_states);
+                                        (float)delta_v_z, d_ray_count, d_rand_states,
+                                        (float)cam_u_x, (float)cam_u_y, (float)cam_u_z,
+                                        (float)cam_v_x, (float)cam_v_y, (float)cam_v_z);
    cudaDeviceSynchronize();
 
    cudaMemcpy(accum_buffer, d_accum, accum_size, cudaMemcpyDeviceToHost);

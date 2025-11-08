@@ -15,6 +15,37 @@
 //==============================================================================
 
 /**
+ * @brief Simple 2D vector structure for DOF calculations
+ */
+struct float2_simple
+{
+   float x, y;
+
+   __host__ __device__ float2_simple() : x(0), y(0) {}
+   __host__ __device__ float2_simple(float x_, float y_) : x(x_), y(y_) {}
+
+   __host__ __device__ float2_simple operator+(const float2_simple &other) const
+   {
+      return float2_simple(x + other.x, y + other.y);
+   }
+
+   __host__ __device__ float2_simple operator-(const float2_simple &other) const
+   {
+      return float2_simple(x - other.x, y - other.y);
+   }
+
+   __host__ __device__ float2_simple operator*(float t) const { return float2_simple(x * t, y * t); }
+
+   __host__ __device__ float2_simple operator/(float t) const { return float2_simple(x / t, y / t); }
+};
+
+/** @brief Scalar multiplication from left */
+__device__ __forceinline__ float2_simple operator*(float t, const float2_simple &v)
+{
+   return float2_simple(t * v.x, t * v.y);
+}
+
+/**
  * @brief Simple 3D vector structure optimized for CUDA
  * Provides basic vector operations for ray tracing computations
  */
