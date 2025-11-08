@@ -89,11 +89,12 @@ class CameraControlHandler
    bool handleMouseButtonDown(SDL_Event &event, bool &dragging_slider, SliderBounds *&active_slider,
                               SliderBounds &samples_slider_bounds, SliderBounds &intensity_slider_bounds,
                               SliderBounds &background_slider_bounds, SliderBounds &fuzziness_slider_bounds,
+                              SliderBounds &glass_ior_slider_bounds,
                               SliderBounds &dof_aperture_slider_bounds, SliderBounds &dof_focus_slider_bounds,
                               SDL_Rect &toggle_button_rect, SDL_Rect &orbit_button_rect, SDL_Rect &dof_button_rect,
                               bool &accumulation_enabled, bool &dof_enabled,
                               float &samples_per_batch, float &light_intensity, float &background_intensity, 
-                              float &metal_fuzziness, float &dof_aperture, float &dof_focus_distance,
+                              float &metal_fuzziness, float &glass_refraction_index, float &dof_aperture, float &dof_focus_distance,
                               bool &needs_rerender, bool &camera_changed, bool show_controls)
    {
       if (event.button.button == SDL_BUTTON_LEFT)
@@ -150,6 +151,12 @@ class CameraControlHandler
                camera_changed = true;
                return true;
             }
+            else if (checkSliderClick(mx, my, glass_ior_slider_bounds, dragging_slider, active_slider,
+                                      glass_refraction_index, needs_rerender, camera_changed))
+            {
+               camera_changed = true;
+               return true;
+            }
             else if (checkSliderClick(mx, my, dof_aperture_slider_bounds, dragging_slider, active_slider,
                                       dof_aperture, needs_rerender, camera_changed))
             {
@@ -197,9 +204,10 @@ class CameraControlHandler
    bool handleMouseMotion(SDL_Event &event, bool &dragging_slider, SliderBounds *&active_slider,
                           SliderBounds &samples_slider_bounds, SliderBounds &intensity_slider_bounds,
                           SliderBounds &background_slider_bounds, SliderBounds &fuzziness_slider_bounds,
+                          SliderBounds &glass_ior_slider_bounds,
                           SliderBounds &dof_aperture_slider_bounds, SliderBounds &dof_focus_slider_bounds,
                           float &samples_per_batch, float &light_intensity, float &background_intensity, 
-                          float &metal_fuzziness, float &dof_aperture, float &dof_focus_distance,
+                          float &metal_fuzziness, float &glass_refraction_index, float &dof_aperture, float &dof_focus_distance,
                           bool &needs_rerender, bool &camera_changed, Point3 &lookfrom,
                           Point3 &lookat, const Vec3 &vup, const Vec3 &w, bool show_controls)
    {
@@ -233,6 +241,11 @@ class CameraControlHandler
          else if (active_slider == &fuzziness_slider_bounds)
          {
             metal_fuzziness = new_value;
+            camera_changed = true;
+         }
+         else if (active_slider == &glass_ior_slider_bounds)
+         {
+            glass_refraction_index = new_value;
             camera_changed = true;
          }
          else if (active_slider == &dof_aperture_slider_bounds)

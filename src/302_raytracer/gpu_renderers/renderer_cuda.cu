@@ -17,6 +17,7 @@
 __constant__ float g_light_intensity = 1.0f;
 __constant__ float g_background_intensity = 1.0f;
 __constant__ float g_metal_fuzziness = 0.8f;
+__constant__ float g_glass_refraction_index = 1.5f;  // Default glass index
 
 // Depth of Field constants
 __constant__ bool g_dof_enabled = false;
@@ -32,6 +33,8 @@ extern "C" void setBackgroundIntensity(float intensity)
 }
 
 extern "C" void setMetalFuzziness(float fuzziness) { cudaMemcpyToSymbol(g_metal_fuzziness, &fuzziness, sizeof(float)); }
+
+extern "C" void setGlassRefractionIndex(float index) { cudaMemcpyToSymbol(g_glass_refraction_index, &index, sizeof(float)); }
 
 // Depth of Field setters
 extern "C" void setDOFEnabled(bool enabled) { cudaMemcpyToSymbol(g_dof_enabled, &enabled, sizeof(bool)); }

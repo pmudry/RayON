@@ -44,6 +44,9 @@ extern "C"
    // Set metal roughness/fuzziness multiplier
    void setMetalFuzziness(float fuzziness);
    
+   // Set glass refraction index
+   void setGlassRefractionIndex(float index);
+   
    // Depth of Field controls
    void setDOFEnabled(bool enabled);
    void setDOFAperture(float aperture);

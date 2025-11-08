@@ -203,10 +203,11 @@ class SDLGuiHandler
    }
 
    void drawUIControls(int samples_per_batch, float light_intensity, float background_intensity, float metal_fuzziness,
+                       float glass_refraction_index,
                        bool accumulation_enabled, bool auto_orbit_enabled,
                        SliderBounds &samples_slider_bounds,
                        SliderBounds &intensity_slider_bounds, SliderBounds &background_slider_bounds,
-                       SliderBounds &fuzziness_slider_bounds,
+                       SliderBounds &fuzziness_slider_bounds, SliderBounds &glass_ior_slider_bounds,
                        SDL_Rect &toggle_button_rect, SDL_Rect &orbit_button_rect)
    {
       // Don't draw controls if they're hidden
@@ -228,12 +229,12 @@ class SDLGuiHandler
       int slider_height = 25;
       int spacing = 8;
       int button_row_height = slider_height; // Height for row with two buttons
-      int start_y = image_height - (5 * slider_height + button_row_height + 5 * spacing + padding);
+      int start_y = image_height - (6 * slider_height + button_row_height + 6 * spacing + padding);
 
       SDL_Color white = {255, 255, 255, 255};
 
       SDL_Rect bg_rect = {padding - 5, start_y - 5, control_width + 10,
-                          5 * slider_height + button_row_height + 5 * spacing + 10};
+                          5 * slider_height + button_row_height + 6 * spacing + 10};
       SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
       SDL_SetRenderDrawColor(renderer, 0, 0, 0, 200);
       SDL_RenderFillRect(renderer, &bg_rect);
@@ -253,6 +254,8 @@ class SDLGuiHandler
                            control_width, background_intensity, white, background_slider_bounds, label_width);
       drawFuzzinessSlider(small_font, padding, start_y + button_row_height + 3 * slider_height + 4 * spacing,
                           control_width, metal_fuzziness, white, fuzziness_slider_bounds, label_width);
+      drawGlassIORSlider(small_font, padding, start_y + button_row_height + 4 * slider_height + 5 * spacing,
+                         control_width, glass_refraction_index, white, glass_ior_slider_bounds, label_width);
 
       if (small_font != ttf_font)
       {
@@ -637,6 +640,49 @@ class SDLGuiHandler
       int fill_w = static_cast<int>(slider_w * fuzz_ratio);
       SDL_Rect slider_fill = {slider_x, y + 8, fill_w, 8};
       SDL_SetRenderDrawColor(renderer, 200, 200, 100, 255);
+      SDL_RenderFillRect(renderer, &slider_fill);
+
+      int handle_x = slider_x + fill_w - 3;
+      SDL_Rect handle = {handle_x, y + 4, 6, 16};
+      SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+      SDL_RenderFillRect(renderer, &handle);
+   }
+
+   void drawGlassIORSlider(TTF_Font *ttf_font, int padding, int y, int control_width, float glass_ior,
+                           SDL_Color white, SliderBounds &glass_ior_slider, int label_width)
+   {
+      char label[32];
+      snprintf(label, sizeof(label), "Glass IOR: %.2f", glass_ior);
+      SDL_Surface *text_surface = TTF_RenderText_Blended(ttf_font, label, white);
+      if (text_surface)
+      {
+         SDL_Texture *text_texture = SDL_CreateTextureFromSurface(renderer, text_surface);
+         if (text_texture)
+         {
+            SDL_Rect text_rect = {padding, y + 5, text_surface->w, text_surface->h};
+            SDL_RenderCopy(renderer, text_texture, nullptr, &text_rect);
+            SDL_DestroyTexture(text_texture);
+         }
+         SDL_FreeSurface(text_surface);
+      }
+
+      int slider_x = padding + label_width;
+      int slider_w = control_width - label_width;
+      SDL_Rect slider_bg = {slider_x, y + 8, slider_w, 8};
+      SDL_SetRenderDrawColor(renderer, 60, 60, 60, 255);
+      SDL_RenderFillRect(renderer, &slider_bg);
+
+      glass_ior_slider.x = slider_x;
+      glass_ior_slider.y = y + 8;
+      glass_ior_slider.width = slider_w;
+      glass_ior_slider.height = 8;
+      glass_ior_slider.min_val = 1.0f;
+      glass_ior_slider.max_val = 2.5f;
+
+      float ior_ratio = (glass_ior - 1.0f) / (2.5f - 1.0f);
+      int fill_w = static_cast<int>(slider_w * ior_ratio);
+      SDL_Rect slider_fill = {slider_x, y + 8, fill_w, 8};
+      SDL_SetRenderDrawColor(renderer, 100, 200, 255, 255);
       SDL_RenderFillRect(renderer, &slider_fill);
 
       int handle_x = slider_x + fill_w - 3;

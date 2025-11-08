@@ -72,7 +72,7 @@ void dumpImageToFile(vector<unsigned char> &image, int image_width, int image_he
 
 /**
  * @brief Create unified scene description used by all rendering options
- * This is the single source of truth for the scene - matches the original CUDA scene
+ * This is the single source of truth for the scene
  * Uses global g_scene_file if set, otherwise creates default scene
  */
 Scene::SceneDescription create_scene_description()
@@ -117,16 +117,19 @@ Scene::SceneDescription create_scene_description()
    int mat_torus_orange = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(1.0, 0.6, 0.2)));
 
    // === Default scene - Geometry ===
-   scene_desc.addSphere(Vec3(0, -950.5, -1), 950.0, mat_ground);
+   scene_desc.addSphere(Vec3(0, -950.5, -1), 950.0, mat_ground); // Ground "plane"
    scene_desc.addSphere(Vec3(-3.5, 0.45, -1.8), 0.8, mat_golden);
    scene_desc.addDisplacedSphere(Vec3(1.2, 0, -2), 0.5, mat_blue_rough, 0.2f, 0);
    scene_desc.addSphere(Vec3(-1.3, 0.18, -5), 0.7, mat_red_dots);
    scene_desc.addSphere(Vec3(-0.7, 0.2, -0.3), 0.6, mat_glass);
+   
+   // ISC spheres
    scene_desc.addSphere(Vec3(-3.5, -0.3, 1.2), 0.2, mat_yellow);
    scene_desc.addSphere(Vec3(-3.0, -0.3, 1.2), 0.2, mat_blue);
    scene_desc.addSphere(Vec3(-2.5, -0.3, 1.2), 0.2, mat_violet);
    scene_desc.addSphere(Vec3(-2.0, -0.3, 1.2), 0.2, mat_rose);
    scene_desc.addSphere(Vec3(-1.5, -0.3, 1.2), 0.2, mat_green);
+
    scene_desc.addRectangle(Vec3(-1.0, 3.0, -2.0), Vec3(2.5, 0, 0), Vec3(0, 0, 1.5), mat_light);
 
    // === NEW SDF SHAPES from Íñigo Quilez's distance functions ===
@@ -155,16 +158,16 @@ Scene::SceneDescription create_scene_description()
    // Original SDF Torus - rotated to show hole better
    scene_desc.addSDFTorus(Vec3(1.5, 0.7, -3.5), 0.6, 0.2, mat_torus_orange, Vec3(M_PI * 0.3, M_PI * 0.2, 0));
 
-   // // Add many more spheres to test BVH performance
-   // for (int i = 0; i < 10; i++) {
-   //    for (int j = 0; j < 10; j++) {
-   //       double x = -4.5 + i * 1.0;
-   //       double z = -8.0 + j * 1.0;
-   //       int mat = (i + j) % 4;
-   //       int material = mat == 0 ? mat_yellow : (mat == 1 ? mat_blue : (mat == 2 ? mat_violet : mat_rose));
-   //       scene_desc.addSphere(Vec3(x, -0.4, z), 0.15, material);
-   //    }
-   // }
+   // Add many more spheres to test BVH performance
+   for (int i = 0; i < 10; i++) {
+      for (int j = 0; j < 10; j++) {
+         double x = -4.5 + i * 1.0;
+         double z = -8.0 + j * 1.0;
+         int mat = (i + j) % 4;
+         int material = mat == 0 ? mat_yellow : (mat == 1 ? mat_blue : (mat == 2 ? mat_violet : mat_rose));
+         scene_desc.addSphere(Vec3(x, -0.4, z), 0.15, material);
+      }
+   }
 
    // Build BVH for default scene (always enabled for default)
    scene_desc.use_bvh = true;

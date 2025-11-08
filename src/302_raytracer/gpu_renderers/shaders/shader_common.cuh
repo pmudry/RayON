@@ -13,6 +13,7 @@
 extern __constant__ float g_light_intensity;
 extern __constant__ float g_background_intensity;
 extern __constant__ float g_metal_fuzziness;
+extern __constant__ float g_glass_refraction_index;
 
 // Depth of Field parameters
 extern __constant__ bool g_dof_enabled;
@@ -500,7 +501,9 @@ __device__ inline float3_simple ray_color(const ray_simple &r, const CudaScene::
          else if (rec.material == GLASS)
          {
             float3_simple unit_direction = unit_vector(current_ray.dir);
-            float refraction_ratio = rec.front_face ? (1.0f / rec.refractive_index) : rec.refractive_index;
+            // Use global refraction index override
+            float effective_refraction_index = g_glass_refraction_index;
+            float refraction_ratio = rec.front_face ? (1.0f / effective_refraction_index) : effective_refraction_index;
             float cos_theta = fminf(dot(-unit_direction, rec.normal), 1.0f);
             float sin_theta = sqrtf(1.0f - cos_theta * cos_theta);
             bool cannot_refract = refraction_ratio * sin_theta > 1.0f;

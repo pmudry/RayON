@@ -85,6 +85,7 @@ class RendererCUDAProgressive : virtual public CameraBase
       float light_intensity = 1.0f;
       float background_intensity = 1.0f;
       float metal_fuzziness = 1.0f;
+      float glass_refraction_index = 1.5f;  // Default glass index
       bool dof_enabled = false;
       float dof_aperture = 0.1f;
       float dof_focus_distance = 10.0f;
@@ -100,7 +101,6 @@ class RendererCUDAProgressive : virtual public CameraBase
       // Adaptive sample rate for smooth target FPS
       int adaptive_samples_per_batch = samples_per_batch; // Actual samples to render (adapts during motion)
       int user_samples_per_batch = samples_per_batch;     // User's preferred samples (from UI slider)
-      auto last_render_time = std::chrono::high_resolution_clock::now();
       const float target_frame_time_ms = 1000.0f / target_fps; // Calculate target frame time from FPS
       const float adaptive_speed = 0.2f; // How quickly to adapt sample rate (lower = smoother)
 
@@ -108,6 +108,7 @@ class RendererCUDAProgressive : virtual public CameraBase
       ::setLightIntensity(light_intensity);
       ::setBackgroundIntensity(background_intensity);
       ::setMetalFuzziness(metal_fuzziness);
+      ::setGlassRefractionIndex(glass_refraction_index);
       ::setDOFEnabled(dof_enabled);
       ::setDOFAperture(dof_aperture);
       ::setDOFFocusDistance(dof_focus_distance);
@@ -117,6 +118,7 @@ class RendererCUDAProgressive : virtual public CameraBase
       SliderBounds intensity_slider_bounds = {0, 0, 0, 0, 0.1f, 3.0f, &light_intensity};
       SliderBounds background_slider_bounds = {0, 0, 0, 0, 0.0f, 3.0f, &background_intensity};
       SliderBounds fuzziness_slider_bounds = {0, 0, 0, 0, 0.0f, 5.0f, &metal_fuzziness};
+      SliderBounds glass_ior_slider_bounds = {0, 0, 0, 0, 1.0f, 2.5f, &glass_refraction_index};
       SliderBounds dof_aperture_slider_bounds = {0, 0, 0, 0, 0.0f, 1.0f, &dof_aperture};
       SliderBounds dof_focus_slider_bounds = {0, 0, 0, 0, 1.0f, 50.0f, &dof_focus_distance};
       SDL_Rect toggle_button_rect = {0, 0, 0, 0};
@@ -183,10 +185,10 @@ class RendererCUDAProgressive : virtual public CameraBase
 
                if (camera_control.handleMouseButtonDown(
                        event, dragging_slider, active_slider, samples_slider_bounds, intensity_slider_bounds,
-                       background_slider_bounds, fuzziness_slider_bounds, dof_aperture_slider_bounds,
-                       dof_focus_slider_bounds, toggle_button_rect, orbit_button_rect, dof_button_rect,
+                       background_slider_bounds, fuzziness_slider_bounds, glass_ior_slider_bounds,
+                       dof_aperture_slider_bounds, dof_focus_slider_bounds, toggle_button_rect, orbit_button_rect, dof_button_rect,
                        accumulation_enabled, dof_enabled, samples_per_batch_float, light_intensity, background_intensity,
-                       metal_fuzziness, dof_aperture, dof_focus_distance, needs_rerender, camera_changed, gui.getShowControls()))
+                       metal_fuzziness, glass_refraction_index, dof_aperture, dof_focus_distance, needs_rerender, camera_changed, gui.getShowControls()))
                {
                   // Sync samples_per_batch from float slider value after modification
                   samples_per_batch = static_cast<int>(samples_per_batch_float);
@@ -196,6 +198,7 @@ class RendererCUDAProgressive : virtual public CameraBase
                      ::setLightIntensity(light_intensity);
                      ::setBackgroundIntensity(background_intensity);
                      ::setMetalFuzziness(metal_fuzziness);
+                     ::setGlassRefractionIndex(glass_refraction_index);
                      ::setDOFEnabled(dof_enabled);
                      ::setDOFAperture(dof_aperture);
                      ::setDOFFocusDistance(dof_focus_distance);
@@ -214,9 +217,9 @@ class RendererCUDAProgressive : virtual public CameraBase
             {
                if (camera_control.handleMouseMotion(event, dragging_slider, active_slider, samples_slider_bounds,
                                                     intensity_slider_bounds, background_slider_bounds,
-                                                    fuzziness_slider_bounds, dof_aperture_slider_bounds,
-                                                    dof_focus_slider_bounds, samples_per_batch_float, light_intensity,
-                                                    background_intensity, metal_fuzziness, dof_aperture,
+                                                    fuzziness_slider_bounds, glass_ior_slider_bounds,
+                                                    dof_aperture_slider_bounds, dof_focus_slider_bounds, samples_per_batch_float, light_intensity,
+                                                    background_intensity, metal_fuzziness, glass_refraction_index, dof_aperture,
                                                     dof_focus_distance, needs_rerender,
                                                     camera_changed, look_from, look_at, vup, w, gui.getShowControls()))
                {
@@ -228,6 +231,7 @@ class RendererCUDAProgressive : virtual public CameraBase
                      ::setLightIntensity(light_intensity);
                      ::setBackgroundIntensity(background_intensity);
                      ::setMetalFuzziness(metal_fuzziness);
+                     ::setGlassRefractionIndex(glass_refraction_index);
                      ::setDOFEnabled(dof_enabled);
                      ::setDOFAperture(dof_aperture);
                      ::setDOFFocusDistance(dof_focus_distance);
@@ -291,10 +295,10 @@ class RendererCUDAProgressive : virtual public CameraBase
          {
             applyGammaCorrection(display_image, accum_buffer, current_samples, gamma);
             displayFrame(gui, display_image, current_samples, adaptive_samples_per_batch, light_intensity, background_intensity,
-                         metal_fuzziness, accumulation_enabled, camera_control.isAutoOrbitEnabled(),
+                         metal_fuzziness, glass_refraction_index, accumulation_enabled, camera_control.isAutoOrbitEnabled(),
                          dof_enabled, dof_aperture, dof_focus_distance,
                          samples_slider_bounds, intensity_slider_bounds, background_slider_bounds,
-                         fuzziness_slider_bounds, dof_aperture_slider_bounds, dof_focus_slider_bounds,
+                         fuzziness_slider_bounds, glass_ior_slider_bounds, dof_aperture_slider_bounds, dof_focus_slider_bounds,
                          toggle_button_rect, orbit_button_rect, dof_button_rect);
             image = display_image;
             needs_rerender = false;
@@ -351,10 +355,10 @@ class RendererCUDAProgressive : virtual public CameraBase
             }
 
             displayFrame(gui, display_image, current_samples, adaptive_samples_per_batch, light_intensity, background_intensity,
-                         metal_fuzziness, accumulation_enabled, camera_control.isAutoOrbitEnabled(),
+                         metal_fuzziness, glass_refraction_index, accumulation_enabled, camera_control.isAutoOrbitEnabled(),
                          dof_enabled, dof_aperture, dof_focus_distance,
                          samples_slider_bounds, intensity_slider_bounds,
-                         background_slider_bounds, fuzziness_slider_bounds, dof_aperture_slider_bounds,
+                         background_slider_bounds, fuzziness_slider_bounds, glass_ior_slider_bounds, dof_aperture_slider_bounds,
                          dof_focus_slider_bounds, toggle_button_rect, orbit_button_rect, dof_button_rect);
 
             image = display_image;
@@ -363,10 +367,10 @@ class RendererCUDAProgressive : virtual public CameraBase
          {
             // Refresh display even when idle to show logo and UI
             displayFrame(gui, display_image, current_samples, adaptive_samples_per_batch, light_intensity, background_intensity,
-                         metal_fuzziness, accumulation_enabled, camera_control.isAutoOrbitEnabled(),
+                         metal_fuzziness, glass_refraction_index, accumulation_enabled, camera_control.isAutoOrbitEnabled(),
                          dof_enabled, dof_aperture, dof_focus_distance,
                          samples_slider_bounds, intensity_slider_bounds,
-                         background_slider_bounds, fuzziness_slider_bounds, dof_aperture_slider_bounds,
+                         background_slider_bounds, fuzziness_slider_bounds, glass_ior_slider_bounds, dof_aperture_slider_bounds,
                          dof_focus_slider_bounds, toggle_button_rect, orbit_button_rect, dof_button_rect);
             SDL_Delay(8); // ~60 FPS event polling
          }
@@ -374,10 +378,10 @@ class RendererCUDAProgressive : virtual public CameraBase
          {
             // Refresh display even when idle to show logo and UI
             displayFrame(gui, display_image, current_samples, adaptive_samples_per_batch, light_intensity, background_intensity,
-                         metal_fuzziness, accumulation_enabled, camera_control.isAutoOrbitEnabled(),
+                         metal_fuzziness, glass_refraction_index, accumulation_enabled, camera_control.isAutoOrbitEnabled(),
                          dof_enabled, dof_aperture, dof_focus_distance,
                          samples_slider_bounds, intensity_slider_bounds,
-                         background_slider_bounds, fuzziness_slider_bounds, dof_aperture_slider_bounds,
+                         background_slider_bounds, fuzziness_slider_bounds, glass_ior_slider_bounds, dof_aperture_slider_bounds,
                          dof_focus_slider_bounds, toggle_button_rect, orbit_button_rect, dof_button_rect);
             SDL_Delay(8); // ~60 FPS event polling (already rendered once, waiting for user input)
          }
@@ -507,10 +511,12 @@ class RendererCUDAProgressive : virtual public CameraBase
     */
    void displayFrame(SDLGuiHandler &gui, const vector<unsigned char> &display_image, int current_samples,
                      int samples_per_batch, float light_intensity, float background_intensity, float metal_fuzziness,
+                     float glass_refraction_index,
                      bool accumulation_enabled, bool auto_orbit_enabled, bool dof_enabled,
                      float dof_aperture, float dof_focus_distance,
                      SliderBounds &samples_slider_bounds, SliderBounds &intensity_slider_bounds,
                      SliderBounds &background_slider_bounds, SliderBounds &fuzziness_slider_bounds,
+                     SliderBounds &glass_ior_slider_bounds,
                      SliderBounds &dof_aperture_slider_bounds, SliderBounds &dof_focus_slider_bounds,
                      SDL_Rect &toggle_button_rect, SDL_Rect &orbit_button_rect, SDL_Rect &dof_button_rect)
    {
@@ -518,9 +524,9 @@ class RendererCUDAProgressive : virtual public CameraBase
       gui.drawLogo();
       gui.drawSampleCountText(current_samples);
       gui.drawUIControls(samples_per_batch, light_intensity, background_intensity, metal_fuzziness,
-                         accumulation_enabled, auto_orbit_enabled, samples_slider_bounds,
+                         glass_refraction_index, accumulation_enabled, auto_orbit_enabled, samples_slider_bounds,
                          intensity_slider_bounds, background_slider_bounds, fuzziness_slider_bounds,
-                         toggle_button_rect, orbit_button_rect);
+                         glass_ior_slider_bounds, toggle_button_rect, orbit_button_rect);
       gui.drawEffectsPanel(dof_enabled, dof_aperture, dof_focus_distance,
                           dof_aperture_slider_bounds, dof_focus_slider_bounds, dof_button_rect);
       gui.present();
