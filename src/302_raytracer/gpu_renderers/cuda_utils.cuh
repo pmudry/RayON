@@ -12,22 +12,22 @@
  * @brief Fast RNG state using PCG (Permuted Congruential Generator)
  * Much faster than curand_uniform (~5x speedup)
  */
-struct FastRNG {
-    unsigned int state;
-    
-    __device__ FastRNG(unsigned int seed) : state(seed) {}
-    
-    // PCG hash function - fast and high quality
-    __device__ inline unsigned int pcg_hash() {
-        state = state * 747796405u + 2891336453u;
-        unsigned int word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
-        return (word >> 22u) ^ word;
-    }
-    
-    // Generate float in [0, 1)
-    __device__ inline float next() {
-        return pcg_hash() * (1.0f / 4294967296.0f);
-    }
+struct FastRNG
+{
+   unsigned int state;
+
+   __device__ FastRNG(unsigned int seed) : state(seed) {}
+
+   // PCG hash function - fast and high quality
+   __device__ inline unsigned int pcg_hash()
+   {
+      state = state * 747796405u + 2891336453u;
+      unsigned int word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+      return (word >> 22u) ^ word;
+   }
+
+   // Generate float in [0, 1)
+   __device__ inline float next() { return pcg_hash() * (1.0f / 4294967296.0f); }
 };
 
 /**
@@ -40,21 +40,40 @@ struct FastRNG {
 // Forward declaration only. Implemented in cuda_utils.cu to avoid multiple definition at device link.
 __global__ void init_random_states(curandState *rand_states, int num_states, unsigned long long seed, int width);
 
-/** 
+/**
  * @brief Generate random float in range [0,1) using fast PCG generator
  * Replaces slow curand_uniform with much faster custom RNG
  */
-static __device__ inline float rand_float(curandState *state) { 
-    // Use curandState as storage for our FastRNG state
-    // We reinterpret the curandState pointer as containing our simple uint state
-    unsigned int *fast_state = (unsigned int*)state;
-    
-    // PCG hash inline for maximum speed
-    *fast_state = *fast_state * 747796405u + 2891336453u;
-    unsigned int word = ((*fast_state >> ((*fast_state >> 28u) + 4u)) ^ *fast_state) * 277803737u;
-    unsigned int result = (word >> 22u) ^ word;
-    
-    return result * (1.0f / 4294967296.0f);
+static __device__ inline float rand_float(curandState *state)
+{
+   // Use curandState as storage for our FastRNG state
+   // We reinterpret the curandState pointer as containing our simple uint state
+   unsigned int *fast_state = (unsigned int *)state;
+
+   // PCG hash inline for maximum speed
+   *fast_state = *fast_state * 747796405u + 2891336453u;
+   unsigned int word = ((*fast_state >> ((*fast_state >> 28u) + 4u)) ^ *fast_state) * 277803737u;
+   unsigned int result = (word >> 22u) ^ word;
+
+   return result * (1.0f / 4294967296.0f);
+}
+
+/**
+ * @brief Generate a random unit vector uniformly distributed on the unit sphere
+ * @param state Random state for random number generation
+ * @return Random unit vector as float3_simple
+ */
+static __device__ inline float3_simple randOnUnitSphere(curandState *state)
+{
+   float theta = 2.0f * M_PI * rand_float(state);      // Azimuth [0, 2π]
+   float phi = acosf(1.0f - 2.0f * rand_float(state)); // Polar [0, π]
+
+   // Convert spherical to cartesian coordinates
+   float x = sinf(phi) * cosf(theta);
+   float y = sinf(phi) * sinf(theta);
+   float z = cosf(phi);
+
+   return float3_simple(x, y, z);
 }
 
 /**

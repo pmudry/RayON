@@ -54,7 +54,7 @@ class Lambertian : public Material
 
    virtual bool scatter(const Ray &r_in, const Hit_record &rec, Color &attenuation, Ray &scattered) const override
    {
-      Vec3 scatter_direction = rec.normal + Vec3::random_in_hemisphere(rec.normal);
+      Vec3 scatter_direction = rec.normal + Vec3::random_in_unit_sphere();
 
       // Catch degenerate scatter direction
       if (scatter_direction.near_zero())

@@ -4,7 +4,6 @@
 #include "../cuda_scene.cuh"
 #include "../cuda_utils.cuh"
 
-
 #include <cfloat>
 #include <cmath>
 #include <curand_kernel.h>
@@ -24,8 +23,8 @@ extern __constant__ float g_dof_focus_distance;
 struct ray_simple;
 struct hit_record_simple;
 __device__ float3_simple fibonacci_point(int i, int n);
-__device__ bool hit_golf_ball_sphere(float3_simple center, float radius, const ray_simple &r, float t_min,
-                                     float t_max, hit_record_simple &rec);
+__device__ bool hit_golf_ball_sphere(float3_simple center, float radius, const ray_simple &r, float t_min, float t_max,
+                                     hit_record_simple &rec);
 
 //==============================================================================
 // RAY TRACING DATA STRUCTURES
@@ -82,32 +81,10 @@ __device__ __forceinline__ float reflectance(float cosine, float ref_idx)
 }
 
 __device__ __forceinline__ float3_simple reflect_fuzzy(const float3_simple &v, const float3_simple &n, float roughness,
-                                              curandState *state)
+                                                       curandState *state)
 {
-   float3_simple random_in_sphere;
-   do
-   {
-      random_in_sphere = 2.0f * float3_simple(rand_float(state), rand_float(state), rand_float(state)) -
-                         float3_simple(1.0f, 1.0f, 1.0f);
-   } while (random_in_sphere.length_squared() >= 1.0f);
-
-   float3_simple perturbed_normal = unit_vector(n + roughness * random_in_sphere);
+   float3_simple perturbed_normal = unit_vector(n + roughness * randOnUnitSphere(state));
    return reflect(v, perturbed_normal);
-}
-
-__device__ __forceinline__ float3_simple random_in_hemisphere(const float3_simple &normal, curandState *state)
-{
-   float3_simple in_unit_sphere;
-   do
-   {
-      in_unit_sphere = 2.0f * float3_simple(rand_float(state), rand_float(state), rand_float(state)) -
-                       float3_simple(1.0f, 1.0f, 1.0f);
-   } while (in_unit_sphere.length_squared() >= 1.0f);
-
-   if (dot(in_unit_sphere, normal) > 0.0f)
-      return in_unit_sphere;
-   else
-      return float3_simple(-in_unit_sphere.x, -in_unit_sphere.y, -in_unit_sphere.z);
 }
 
 __device__ inline float smoothstep(float edge0, float edge1, float x)
@@ -157,45 +134,48 @@ __device__ inline float3_simple sample_aperture_disk(const float3_simple &cam_u,
  * @param t_max Maximum ray parameter
  * @return true if ray intersects AABB in range [t_min, t_max]
  */
-__device__ inline bool hit_aabb(const ray_simple &r, const float3_simple &box_min, const float3_simple &box_max,
-                                float t_min, float t_max)
+__device__ inline bool hit_aabb(const ray_simple &r, const float3_simple &box_min, const float3_simple &box_max, float t_min,
+                                float t_max)
 {
    // Compute inverse ray direction once
    float inv_dir_x = 1.0f / r.dir.x;
    float inv_dir_y = 1.0f / r.dir.y;
    float inv_dir_z = 1.0f / r.dir.z;
-   
+
    // X slab
    float t0_x = (box_min.x - r.orig.x) * inv_dir_x;
    float t1_x = (box_max.x - r.orig.x) * inv_dir_x;
-   if (inv_dir_x < 0.0f) {
+   if (inv_dir_x < 0.0f)
+   {
       float temp = t0_x;
       t0_x = t1_x;
       t1_x = temp;
    }
-   
+
    // Y slab
    float t0_y = (box_min.y - r.orig.y) * inv_dir_y;
    float t1_y = (box_max.y - r.orig.y) * inv_dir_y;
-   if (inv_dir_y < 0.0f) {
+   if (inv_dir_y < 0.0f)
+   {
       float temp = t0_y;
       t0_y = t1_y;
       t1_y = temp;
    }
-   
+
    // Z slab
    float t0_z = (box_min.z - r.orig.z) * inv_dir_z;
    float t1_z = (box_max.z - r.orig.z) * inv_dir_z;
-   if (inv_dir_z < 0.0f) {
+   if (inv_dir_z < 0.0f)
+   {
       float temp = t0_z;
       t0_z = t1_z;
       t1_z = temp;
    }
-   
+
    // Compute intersection interval
    float t_enter = fmaxf(fmaxf(t0_x, t0_y), t0_z);
    float t_exit = fminf(fminf(t1_x, t1_y), t1_z);
-   
+
    // Check if ray intersects AABB
    return t_enter <= t_exit && t_exit >= t_min && t_enter <= t_max;
 }
@@ -204,8 +184,8 @@ __device__ inline bool hit_aabb(const ray_simple &r, const float3_simple &box_mi
 // INTERSECTIONS AND PROCEDURAL UTILS
 //==============================================================================
 
-__device__ inline bool hit_sphere(const float3_simple &center, float radius, const ray_simple &r, float t_min,
-                                  float t_max, hit_record_simple &rec)
+__device__ inline bool hit_sphere(const float3_simple &center, float radius, const ray_simple &r, float t_min, float t_max,
+                                  hit_record_simple &rec)
 {
    float3_simple oc = r.orig - center;
    float a = dot(r.dir, r.dir);
@@ -253,13 +233,12 @@ __device__ inline bool hit_rectangle(const float3_simple &corner, const float3_s
    return true;
 }
 
-
 //==============================================================================
 // SCENE & MATERIAL APPLICATION
 //==============================================================================
 
-__device__ __forceinline__ bool intersect_geometry(const CudaScene::Geometry &geom, const ray_simple &r, float t_min,
-                                                   float t_max, hit_record_simple &rec)
+__device__ __forceinline__ bool intersect_geometry(const CudaScene::Geometry &geom, const ray_simple &r, float t_min, float t_max,
+                                                   hit_record_simple &rec)
 {
    using namespace CudaScene;
    switch (geom.type)
@@ -289,7 +268,6 @@ __device__ inline float nearestAngularDistanceFibonacci(float3_simple dir, int N
    max_dp = fmaxf(fminf(max_dp, 1.0f), -1.0f);
    return acosf(max_dp);
 }
-
 
 __device__ inline float3_simple apply_procedural_pattern(CudaScene::ProceduralPattern pattern, const float3_simple &base_color,
                                                          const float3_simple &pattern_color, float param1, float param2,
@@ -324,28 +302,45 @@ __device__ __forceinline__ void apply_material(const CudaScene::Material &mat, h
    switch (mat.type)
    {
    case MaterialType::LAMBERTIAN:
-      rec.material = LAMBERTIAN; rec.color = mat.albedo; break;
+      rec.material = LAMBERTIAN;
+      rec.color = mat.albedo;
+      break;
    case MaterialType::METAL:
    case MaterialType::MIRROR:
-      rec.material = MIRROR; rec.color = mat.albedo; break;
+      rec.material = MIRROR;
+      rec.color = mat.albedo;
+      break;
    case MaterialType::ROUGH_MIRROR:
-      rec.material = ROUGH_MIRROR; rec.color = mat.albedo; rec.roughness = mat.roughness; break;
+      rec.material = ROUGH_MIRROR;
+      rec.color = mat.albedo;
+      rec.roughness = mat.roughness;
+      break;
    case MaterialType::GLASS:
    case MaterialType::DIELECTRIC:
-      rec.material = GLASS; rec.refractive_index = mat.refractive_index; break;
+      rec.material = GLASS;
+      rec.refractive_index = mat.refractive_index;
+      break;
    case MaterialType::LIGHT:
-      rec.material = LIGHT; rec.emission = mat.emission; break;
-   case MaterialType::CONSTANT:
-      rec.material = LAMBERTIAN; rec.color = mat.albedo; break;
-   case MaterialType::SHOW_NORMALS:
-      rec.material = LAMBERTIAN; rec.color = float3_simple(1, 1, 1); break;
-   case MaterialType::SDF_MATERIAL:
-      rec.material = LAMBERTIAN; rec.color = mat.albedo; break;
+      rec.material = LIGHT;
+      rec.emission = mat.emission;
+      break;
+   case MaterialType::CONSTANT: // TODO: Implement constant materials
+      rec.material = LAMBERTIAN;
+      rec.color = mat.albedo;
+      break;
+   case MaterialType::SHOW_NORMALS: // TODO: Implement normal visualization
+      rec.material = LAMBERTIAN;
+      rec.color = float3_simple(1, 1, 1);
+      break;
+   case MaterialType::SDF_MATERIAL: // TODO: Implement SDF materials
+      rec.material = LAMBERTIAN;
+      rec.color = mat.albedo;
+      break;
    }
    if (mat.pattern != CudaScene::ProceduralPattern::NONE)
    {
-      rec.color = apply_procedural_pattern(mat.pattern, rec.color, mat.pattern_color, mat.pattern_param1,
-                                           mat.pattern_param2, rec.p, geometry_center);
+      rec.color = apply_procedural_pattern(mat.pattern, rec.color, mat.pattern_color, mat.pattern_param1, mat.pattern_param2,
+                                           rec.p, geometry_center);
    }
 }
 
@@ -365,22 +360,22 @@ __device__ inline bool hit_scene(const CudaScene::Scene &scene, const ray_simple
       int stack[32];
       int stack_ptr = 0;
       stack[stack_ptr++] = scene.bvh_root_idx;
-      
+
       while (stack_ptr > 0)
       {
          int node_idx = stack[--stack_ptr];
          const CudaScene::BVHNode &node = scene.bvh_nodes[node_idx];
-         
+
          // Test ray against node's AABB
          if (!hit_aabb(r, node.bounds_min, node.bounds_max, t_min, closest_so_far))
             continue;
-         
+
          if (node.is_leaf)
          {
             // Leaf node: test all geometries
             int first = node.data.leaf.first_geom_idx;
             int count = node.data.leaf.geom_count;
-            
+
             for (int i = 0; i < count; ++i)
             {
                const CudaScene::Geometry &geom = scene.geometries[first + i];
@@ -400,27 +395,30 @@ __device__ inline bool hit_scene(const CudaScene::Scene &scene, const ray_simple
             // Push farther child first for better traversal order
             int left_child = node.data.interior.left_child;
             int right_child = node.data.interior.right_child;
-            
+
             // Simple heuristic: test which child is closer
-            float3_simple left_center = (scene.bvh_nodes[left_child].bounds_min + 
-                                         scene.bvh_nodes[left_child].bounds_max) * 0.5f;
-            float3_simple right_center = (scene.bvh_nodes[right_child].bounds_min + 
-                                          scene.bvh_nodes[right_child].bounds_max) * 0.5f;
-            
+            float3_simple left_center = (scene.bvh_nodes[left_child].bounds_min + scene.bvh_nodes[left_child].bounds_max) * 0.5f;
+            float3_simple right_center =
+                (scene.bvh_nodes[right_child].bounds_min + scene.bvh_nodes[right_child].bounds_max) * 0.5f;
+
             float dist_left = (left_center - r.orig).length_squared();
             float dist_right = (right_center - r.orig).length_squared();
-            
+
             if (dist_left < dist_right)
             {
                // Right is farther, push it first
-               if (stack_ptr < 32) stack[stack_ptr++] = right_child;
-               if (stack_ptr < 32) stack[stack_ptr++] = left_child;
+               if (stack_ptr < 32)
+                  stack[stack_ptr++] = right_child;
+               if (stack_ptr < 32)
+                  stack[stack_ptr++] = left_child;
             }
             else
             {
                // Left is farther, push it first
-               if (stack_ptr < 32) stack[stack_ptr++] = left_child;
-               if (stack_ptr < 32) stack[stack_ptr++] = right_child;
+               if (stack_ptr < 32)
+                  stack[stack_ptr++] = left_child;
+               if (stack_ptr < 32)
+                  stack[stack_ptr++] = right_child;
             }
          }
       }
@@ -442,7 +440,7 @@ __device__ inline bool hit_scene(const CudaScene::Scene &scene, const ray_simple
          }
       }
    }
-   
+
    if (hit_anything && closest_material_id >= 0 && closest_material_id < scene.num_materials)
    {
       float3_simple geom_center(0, 0, 0);
@@ -459,8 +457,8 @@ __device__ inline bool hit_scene(const CudaScene::Scene &scene, const ray_simple
    return hit_anything;
 }
 
-__device__ inline float3_simple ray_color(const ray_simple &r, const CudaScene::Scene &scene, curandState *state,
-                                          int depth, int &local_ray_count)
+__device__ inline float3_simple ray_color(const ray_simple &r, const CudaScene::Scene &scene, curandState *state, int depth,
+                                          int &local_ray_count)
 {
    float3_simple accumulated_color(0, 0, 0);
    float3_simple accumulated_attenuation(1.0f, 1.0f, 1.0f);
@@ -474,18 +472,25 @@ __device__ inline float3_simple ray_color(const ray_simple &r, const CudaScene::
       {
          if (rec.material == LIGHT)
          {
-            accumulated_color =
-                accumulated_color + float3_simple(accumulated_attenuation.x * rec.emission.x * g_light_intensity,
-                                                  accumulated_attenuation.y * rec.emission.y * g_light_intensity,
-                                                  accumulated_attenuation.z * rec.emission.z * g_light_intensity);
+            accumulated_color = accumulated_color + float3_simple(accumulated_attenuation.x * rec.emission.x * g_light_intensity,
+                                                                  accumulated_attenuation.y * rec.emission.y * g_light_intensity,
+                                                                  accumulated_attenuation.z * rec.emission.z * g_light_intensity);
             return accumulated_color;
          }
+
          float3_simple scattered_direction;
          float3_simple attenuation;
+
          if (rec.material == LAMBERTIAN)
          {
-            float3_simple target = rec.p + rec.normal + random_in_hemisphere(rec.normal, state);
-            scattered_direction = target - rec.p;
+            // Lambertian (diffuse) scattering using cosine-weighted hemisphere distribution
+            // Adding a random unit vector to the normal creates the correct cosine weighting
+            scattered_direction = rec.normal + randOnUnitSphere(state);
+
+            // Catch degenerate case where random vector exactly cancels normal
+            if (scattered_direction.length_squared() < 1e-8f)
+               scattered_direction = rec.normal;
+
             attenuation = rec.color;
          }
          else if (rec.material == MIRROR)
@@ -495,7 +500,8 @@ __device__ inline float3_simple ray_color(const ray_simple &r, const CudaScene::
          }
          else if (rec.material == ROUGH_MIRROR)
          {
-            scattered_direction = reflect_fuzzy(unit_vector(current_ray.dir), rec.normal, rec.roughness * g_metal_fuzziness, state);
+            scattered_direction =
+                reflect_fuzzy(unit_vector(current_ray.dir), rec.normal, rec.roughness * g_metal_fuzziness, state);
             attenuation = rec.color;
          }
          else if (rec.material == GLASS)
@@ -522,25 +528,24 @@ __device__ inline float3_simple ray_color(const ray_simple &r, const CudaScene::
             return accumulated_color;
          }
          current_ray = ray_simple(rec.p, scattered_direction);
-         accumulated_attenuation = float3_simple(accumulated_attenuation.x * attenuation.x,
-                                                 accumulated_attenuation.y * attenuation.y,
-                                                 accumulated_attenuation.z * attenuation.z);
-         
+         accumulated_attenuation =
+             float3_simple(accumulated_attenuation.x * attenuation.x, accumulated_attenuation.y * attenuation.y,
+                           accumulated_attenuation.z * attenuation.z);
+
          // Russian Roulette path termination (after minimum bounces)
          // This is an unbiased optimization that terminates low-contribution paths early
          if (bounce > 3)
          {
             // Use maximum component of attenuation as survival probability
-            float max_component = fmaxf(accumulated_attenuation.x, 
-                                       fmaxf(accumulated_attenuation.y, accumulated_attenuation.z));
+            float max_component = fmaxf(accumulated_attenuation.x, fmaxf(accumulated_attenuation.y, accumulated_attenuation.z));
             float survival_prob = fminf(max_component, 0.95f); // Cap at 95% to avoid never terminating
-            
+
             if (rand_float(state) > survival_prob)
             {
                // Terminate this path
                return accumulated_color;
             }
-            
+
             // Boost attenuation to maintain unbiased estimate
             accumulated_attenuation = accumulated_attenuation / survival_prob;
          }

@@ -63,6 +63,7 @@ class Vec3
 
    static Vec3 random_in_unit_sphere()
    {
+      // FIXME: This one is wrong, on purpose. It samples in unit cube, not unit sphere (for asking the students)
       while (true)
       {
          auto p = Vec3::random(-1, 1);
