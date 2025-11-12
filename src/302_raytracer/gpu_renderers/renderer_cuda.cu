@@ -5,7 +5,6 @@
 #include "cuda_scene.cuh"
 #include "cuda_utils.cuh"
 #include "shaders/render_acc_kernel.cuh"
-#include "shaders/render_scene_kernel.cuh"
 #include "shaders/shader_common.cuh"
 
 #include <cuda_runtime.h>

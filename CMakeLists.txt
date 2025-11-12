@@ -110,9 +110,7 @@ set ( SOURCE_302_RAYTRACER
     src/302_raytracer/gpu_renderers/shaders/shader_golf.cuh
     src/302_raytracer/gpu_renderers/shaders/shader_common.cuh
     src/302_raytracer/gpu_renderers/shaders/render_acc_kernel.cuh
-    src/302_raytracer/gpu_renderers/shaders/render_scene_kernel.cuh
     src/302_raytracer/gpu_renderers/shaders/render_acc_kernel.cu
-    src/302_raytracer/gpu_renderers/shaders/render_scene_kernel.cu    
     src/302_raytracer/gpu_renderers/shaders/shader_golf.cu  
 )
 
