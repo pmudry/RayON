@@ -14,7 +14,7 @@ The original checkerboard texture implementation had a critical flaw: **pattern 
 ### Original Flawed Approach
 ```cuda
 // PROBLEMATIC: Direct world coordinates
-__device__ float3_simple checkerboard_texture(float3_simple p, float scale) {
+__device__ f3 checkerboard_texture(f3 p, float scale) {
     p = p * scale;
     int x = (int)floorf(p.x);
     int y = (int)floorf(p.y); 
@@ -40,9 +40,9 @@ __device__ float3_simple checkerboard_texture(float3_simple p, float scale) {
 
 ### Corrected Implementation
 ```cuda
-__device__ float3_simple checkerboard_texture(float3_simple p, float3_simple sphere_center, float sphere_radius, float scale) {
+__device__ f3 checkerboard_texture(f3 p, f3 sphere_center, float sphere_radius, float scale) {
     // Convert world position to sphere-local coordinates
-    float3_simple local_p = p - sphere_center;
+    f3 local_p = p - sphere_center;
     
     // Convert to spherical coordinates (theta, phi)
     float theta = atan2f(sqrtf(local_p.x * local_p.x + local_p.z * local_p.z), local_p.y); // 0 to PI
@@ -109,11 +109,11 @@ v = θ / π             // Normalize θ from [0,π] to [0,1]
 ```cuda
 // Enhanced material handling
 else if (rec.material == CHECKERBOARD) {
-    float3_simple target = rec.p + rec.normal + random_in_hemisphere(rec.normal, state);
+    f3 target = rec.p + rec.normal + random_in_hemisphere(rec.normal, state);
     scattered = ray_simple(rec.p, target - rec.p);
     
     // Proper spherical mapping with sphere parameters
-    attenuation = checkerboard_texture(rec.p, float3_simple(0, -150.5f, -1), 150.0f, 8.0f);
+    attenuation = checkerboard_texture(rec.p, f3(0, -150.5f, -1), 150.0f, 8.0f);
 }
 ```
 

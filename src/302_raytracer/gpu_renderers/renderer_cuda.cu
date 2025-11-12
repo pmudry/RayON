@@ -4,20 +4,20 @@
 #include "cuda_float3.cuh"
 #include "cuda_scene.cuh"
 #include "cuda_utils.cuh"
-#include "shaders/shader_common.cuh"
 #include "shaders/render_acc_kernel.cuh"
 #include "shaders/render_scene_kernel.cuh"
+#include "shaders/shader_common.cuh"
 
 #include <cuda_runtime.h>
 #include <curand_kernel.h>
 #include <device_launch_parameters.h>
-#include <cstdio>
 
+//==================== HOST MODIFIED PARAMETERS ====================
 // Global device constants (single definition here)
 __constant__ float g_light_intensity = 1.0f;
 __constant__ float g_background_intensity = 1.0f;
 __constant__ float g_metal_fuzziness = 0.8f;
-__constant__ float g_glass_refraction_index = 1.5f;  // Default glass index
+__constant__ float g_glass_refraction_index = 1.5f; // Default glass index
 
 // Depth of Field constants
 __constant__ bool g_dof_enabled = false;
@@ -34,14 +34,20 @@ extern "C" void setBackgroundIntensity(float intensity)
 
 extern "C" void setMetalFuzziness(float fuzziness) { cudaMemcpyToSymbol(g_metal_fuzziness, &fuzziness, sizeof(float)); }
 
-extern "C" void setGlassRefractionIndex(float index) { cudaMemcpyToSymbol(g_glass_refraction_index, &index, sizeof(float)); }
+extern "C" void setGlassRefractionIndex(float index)
+{
+   cudaMemcpyToSymbol(g_glass_refraction_index, &index, sizeof(float));
+}
 
 // Depth of Field setters
 extern "C" void setDOFEnabled(bool enabled) { cudaMemcpyToSymbol(g_dof_enabled, &enabled, sizeof(bool)); }
 
 extern "C" void setDOFAperture(float aperture) { cudaMemcpyToSymbol(g_dof_aperture, &aperture, sizeof(float)); }
 
-extern "C" void setDOFFocusDistance(float distance) { cudaMemcpyToSymbol(g_dof_focus_distance, &distance, sizeof(float)); }
+extern "C" void setDOFFocusDistance(float distance)
+{
+   cudaMemcpyToSymbol(g_dof_focus_distance, &distance, sizeof(float));
+}
 
 //==================== DEVICE MEMORY MANAGEMENT ====================
 
@@ -56,20 +62,20 @@ static dim3 getOptimalBlockSize(int width, int height)
    // Query device properties
    cudaDeviceProp prop;
    cudaGetDeviceProperties(&prop, 0);
-   
+
    // For modern GPUs, 256 threads per block is often optimal
    // Use rectangular blocks (32x8) for better memory coalescing
    // 32 threads in x-direction aligns with warp size for coalesced memory access
    int blockSizeX = 32;
    int blockSizeY = 8;
-   
+
    // For older/smaller GPUs, fall back to 16x16
    if (prop.maxThreadsPerBlock < 256)
    {
       blockSizeX = 16;
       blockSizeY = 16;
    }
-   
+
    return dim3(blockSizeX, blockSizeY);
 }
 
@@ -115,10 +121,11 @@ extern "C" unsigned long long renderPixelsCUDAAccumulative(
     unsigned char *image, float *accum_buffer, CudaScene::Scene *scene, int width, int height, double cam_center_x,
     double cam_center_y, double cam_center_z, double pixel00_x, double pixel00_y, double pixel00_z, double delta_u_x,
     double delta_u_y, double delta_u_z, double delta_v_x, double delta_v_y, double delta_v_z, int samples_to_add,
-    int total_samples_so_far, int max_depth, void **d_rand_states_ptr, void **d_accum_buffer_ptr,
-    double cam_u_x, double cam_u_y, double cam_u_z, double cam_v_x, double cam_v_y, double cam_v_z)
+    int total_samples_so_far, int max_depth, void **d_rand_states_ptr, void **d_accum_buffer_ptr, double cam_u_x,
+    double cam_u_y, double cam_u_z, double cam_v_x, double cam_v_y, double cam_v_z)
 {
-   if (!scene) return 0ULL;
+   if (!scene)
+      return 0ULL;
 
    unsigned char *d_image = nullptr;
    float *d_accum = nullptr;
@@ -167,13 +174,12 @@ extern "C" unsigned long long renderPixelsCUDAAccumulative(
       cudaDeviceSynchronize();
    }
 
-   renderAccKernel<<<blocks, threads>>>(d_accum, d_image, scene, width, height, samples_to_add, total_samples_so_far,
-                                        max_depth, (float)cam_center_x, (float)cam_center_y, (float)cam_center_z,
-                                        (float)pixel00_x, (float)pixel00_y, (float)pixel00_z, (float)delta_u_x,
-                                        (float)delta_u_y, (float)delta_u_z, (float)delta_v_x, (float)delta_v_y,
-                                        (float)delta_v_z, d_ray_count, d_rand_states,
-                                        (float)cam_u_x, (float)cam_u_y, (float)cam_u_z,
-                                        (float)cam_v_x, (float)cam_v_y, (float)cam_v_z);
+   renderAccKernel<<<blocks, threads>>>(
+       d_accum, d_image, scene, width, height, samples_to_add, total_samples_so_far, max_depth, (float)cam_center_x,
+       (float)cam_center_y, (float)cam_center_z, (float)pixel00_x, (float)pixel00_y, (float)pixel00_z, (float)delta_u_x,
+       (float)delta_u_y, (float)delta_u_z, (float)delta_v_x, (float)delta_v_y, (float)delta_v_z, d_ray_count,
+       d_rand_states, (float)cam_u_x, (float)cam_u_y, (float)cam_u_z, (float)cam_v_x, (float)cam_v_y, (float)cam_v_z);
+
    cudaDeviceSynchronize();
 
    cudaMemcpy(accum_buffer, d_accum, accum_size, cudaMemcpyDeviceToHost);
@@ -184,10 +190,6 @@ extern "C" unsigned long long renderPixelsCUDAAccumulative(
    cudaFree(d_ray_count);
    return host_ray_count;
 }
-
-//==============================================================================
-// NEW SCENE-BASED RENDERING (Phase 3)
-//==============================================================================
 
 /**
  * @brief CUDA kernel for rendering with scene description data structure
@@ -228,7 +230,7 @@ extern "C" unsigned long long renderPixelsCUDAWithScene(unsigned char *image, Cu
                                                         double delta_v_z, int samples_per_pixel, int max_depth)
 {
    if (!scene)
-      return 0;
+      return 0ULL;
 
    // Allocate device memory
    unsigned char *d_image;
@@ -253,7 +255,7 @@ extern "C" unsigned long long renderPixelsCUDAWithScene(unsigned char *image, Cu
    cudaMemset(d_ray_count, 0, sizeof(unsigned long long));
 
    // Launch rendering kernel - pass scene pointer instead of dereferencing
-   renderKernelWithScene<<<blocks, threads>>>(
+   renderKernel<<<blocks, threads>>>(
        d_image, scene, width, height, samples_per_pixel, max_depth, (float)cam_center_x, (float)cam_center_y,
        (float)cam_center_z, (float)pixel00_x, (float)pixel00_y, (float)pixel00_z, (float)delta_u_x, (float)delta_u_y,
        (float)delta_u_z, (float)delta_v_x, (float)delta_v_y, (float)delta_v_z, d_ray_count, d_rand_states);

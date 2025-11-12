@@ -59,11 +59,32 @@ static __device__ inline float rand_float(curandState *state)
 }
 
 /**
+ * @brief Generate a random vector with components in [-1, 1]
+ * @param state Random state for random number generation
+ * @return Random vector as f3 (not normalized)
+ */
+static __device__ inline f3 randUnitVector(curandState *state)
+{
+    float x = 2.0f * rand_float(state) - 1.0f;
+    float y = 2.0f * rand_float(state) - 1.0f;
+    float z = 2.0f * rand_float(state) - 1.0f;
+    
+    float length = sqrtf(x*x + y*y + z*z);
+    // Avoid division by zero (extremely rare)
+    if (length > 1e-8f) {
+        x /= length;
+        y /= length;
+        z /= length;
+    }
+    return f3(x, y, z);
+}
+
+/**
  * @brief Generate a random unit vector uniformly distributed on the unit sphere
  * @param state Random state for random number generation
- * @return Random unit vector as float3_simple
+ * @return Random unit vector as f3
  */
-static __device__ inline float3_simple randOnUnitSphere(curandState *state)
+static __device__ inline f3 randOnUnitSphere(curandState *state)
 {
    float theta = 2.0f * M_PI * rand_float(state);      // Azimuth [0, 2π]
    float phi = acosf(1.0f - 2.0f * rand_float(state)); // Polar [0, π]
@@ -73,7 +94,7 @@ static __device__ inline float3_simple randOnUnitSphere(curandState *state)
    float y = sinf(phi) * sinf(theta);
    float z = cosf(phi);
 
-   return float3_simple(x, y, z);
+   return f3(x, y, z);
 }
 
 /**
@@ -83,7 +104,7 @@ static __device__ inline float3_simple randOnUnitSphere(curandState *state)
  * @param radius Sphere radius
  * @return Random point on sphere surface
  */
-static __device__ inline float3_simple randPosInSphere(curandState *state, float3_simple center, float radius)
+static __device__ inline f3 randPosInSphere(curandState *state, f3 center, float radius)
 {
    float theta = 2.0f * M_PI * rand_float(state);      // Azimuth [0, 2π]
    float phi = acosf(1.0f - 2.0f * rand_float(state)); // Polar [0, π]
@@ -93,7 +114,7 @@ static __device__ inline float3_simple randPosInSphere(curandState *state, float
    float y = sinf(phi) * sinf(theta);
    float z = cosf(phi);
 
-   return center + float3_simple(x * radius, y * radius, z * radius);
+   return center + f3(x * radius, y * radius, z * radius);
 }
 
 //==============================================================================
@@ -105,7 +126,7 @@ static __device__ inline float3_simple randPosInSphere(curandState *state, float
  * @param theta Output azimuthal angle (0 to 2π)
  * @param phi Output polar angle (0 to π)
  */
-static __device__ inline void cartesianToSpherical(float3_simple p, float &theta, float &phi)
+static __device__ inline void cartesianToSpherical(f3 p, float &theta, float &phi)
 {
    float r = p.length();
    if (r < 1e-6f)
@@ -116,7 +137,7 @@ static __device__ inline void cartesianToSpherical(float3_simple p, float &theta
    }
 
    // Apply 90-degree rotation around x-axis: (x,y,z) -> (x,-z,y)
-   float3_simple rotated = float3_simple(p.x, -p.z, p.y);
+   f3 rotated = f3(p.x, -p.z, p.y);
 
    theta = atan2f(rotated.y, rotated.x);
    if (theta < 0.0f)

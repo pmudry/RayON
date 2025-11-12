@@ -22,8 +22,8 @@ extern __constant__ float g_dof_focus_distance;
 // Forward declarations for golf-ball helpers implemented in shader_golf.cu
 struct ray_simple;
 struct hit_record_simple;
-__device__ float3_simple fibonacci_point(int i, int n);
-__device__ bool hit_golf_ball_sphere(float3_simple center, float radius, const ray_simple &r, float t_min, float t_max,
+__device__ f3 fibonacci_point(int i, int n);
+__device__ bool hit_golf_ball_sphere(f3 center, float radius, const ray_simple &r, float t_min, float t_max,
                                      hit_record_simple &rec);
 
 //==============================================================================
@@ -32,10 +32,10 @@ __device__ bool hit_golf_ball_sphere(float3_simple center, float radius, const r
 
 struct ray_simple
 {
-   float3_simple orig, dir;
+   f3 orig, dir;
    __device__ ray_simple() {}
-   __device__ ray_simple(const float3_simple &origin, const float3_simple &direction) : orig(origin), dir(direction) {}
-   __device__ float3_simple at(float t) const { return orig + t * dir; }
+   __device__ ray_simple(const f3 &origin, const f3 &direction) : orig(origin), dir(direction) {}
+   __device__ f3 at(float t) const { return orig + t * dir; }
 };
 
 enum LegacyMaterialType
@@ -49,13 +49,13 @@ enum LegacyMaterialType
 
 struct hit_record_simple
 {
-   float3_simple p, normal;
+   f3 p, normal;
    float t;
    bool front_face;
    LegacyMaterialType material;
-   float3_simple color;
+   f3 color;
    float refractive_index;
-   float3_simple emission;
+   f3 emission;
    float roughness;
 };
 
@@ -63,13 +63,13 @@ struct hit_record_simple
 // OPTICAL PHYSICS FUNCTIONS
 //==============================================================================
 
-__device__ __forceinline__ float3_simple reflect(const float3_simple &v, const float3_simple &n) { return v - 2 * dot(v, n) * n; }
+__device__ __forceinline__ f3 reflect(const f3 &v, const f3 &n) { return v - 2 * dot(v, n) * n; }
 
-__device__ __forceinline__ float3_simple refract(const float3_simple &uv, const float3_simple &n, float etai_over_etat)
+__device__ __forceinline__ f3 refract(const f3 &uv, const f3 &n, float etai_over_etat)
 {
    float cos_theta = fminf(dot(-uv, n), 1.0f);
-   float3_simple r_out_perp = etai_over_etat * (uv + cos_theta * n);
-   float3_simple r_out_parallel = -sqrtf(fabsf(1.0f - r_out_perp.length_squared())) * n;
+   f3 r_out_perp = etai_over_etat * (uv + cos_theta * n);
+   f3 r_out_parallel = -sqrtf(fabsf(1.0f - r_out_perp.length_squared())) * n;
    return r_out_perp + r_out_parallel;
 }
 
@@ -80,10 +80,10 @@ __device__ __forceinline__ float reflectance(float cosine, float ref_idx)
    return r0 + (1 - r0) * powf((1 - cosine), 5);
 }
 
-__device__ __forceinline__ float3_simple reflect_fuzzy(const float3_simple &v, const float3_simple &n, float roughness,
+__device__ __forceinline__ f3 reflect_fuzzy(const f3 &v, const f3 &n, float roughness,
                                                        curandState *state)
 {
-   float3_simple perturbed_normal = unit_vector(n + roughness * randOnUnitSphere(state));
+   f3 perturbed_normal = unit_vector(n + roughness * randOnUnitSphere(state));
    return reflect(v, perturbed_normal);
 }
 
@@ -98,12 +98,12 @@ __device__ inline float smoothstep(float edge0, float edge1, float x)
  * @param state Random state
  * @return Random 2D point in unit disk
  */
-__device__ inline float2_simple random_in_unit_disk(curandState *state)
+__device__ inline f2 random_in_unit_disk(curandState *state)
 {
-   float2_simple p;
+   f2 p;
    do
    {
-      p = 2.0f * float2_simple(rand_float(state), rand_float(state)) - float2_simple(1.0f, 1.0f);
+      p = 2.0f * f2(rand_float(state), rand_float(state)) - f2(1.0f, 1.0f);
    } while (p.x * p.x + p.y * p.y >= 1.0f);
    return p;
 }
@@ -115,9 +115,9 @@ __device__ inline float2_simple random_in_unit_disk(curandState *state)
  * @param state Random state
  * @return Offset on aperture disk
  */
-__device__ inline float3_simple sample_aperture_disk(const float3_simple &cam_u, const float3_simple &cam_v, curandState *state)
+__device__ inline f3 sample_aperture_disk(const f3 &cam_u, const f3 &cam_v, curandState *state)
 {
-   float2_simple disk = random_in_unit_disk(state);
+   f2 disk = random_in_unit_disk(state);
    return g_dof_aperture * (disk.x * cam_u + disk.y * cam_v);
 }
 
@@ -134,7 +134,7 @@ __device__ inline float3_simple sample_aperture_disk(const float3_simple &cam_u,
  * @param t_max Maximum ray parameter
  * @return true if ray intersects AABB in range [t_min, t_max]
  */
-__device__ inline bool hit_aabb(const ray_simple &r, const float3_simple &box_min, const float3_simple &box_max, float t_min,
+__device__ inline bool hit_aabb(const ray_simple &r, const f3 &box_min, const f3 &box_max, float t_min,
                                 float t_max)
 {
    // Compute inverse ray direction once
@@ -184,10 +184,10 @@ __device__ inline bool hit_aabb(const ray_simple &r, const float3_simple &box_mi
 // INTERSECTIONS AND PROCEDURAL UTILS
 //==============================================================================
 
-__device__ inline bool hit_sphere(const float3_simple &center, float radius, const ray_simple &r, float t_min, float t_max,
+__device__ inline bool hit_sphere(const f3 &center, float radius, const ray_simple &r, float t_min, float t_max,
                                   hit_record_simple &rec)
 {
-   float3_simple oc = r.orig - center;
+   f3 oc = r.orig - center;
    float a = dot(r.dir, r.dir);
    float half_b = dot(oc, r.dir);
    float c = dot(oc, oc) - radius * radius;
@@ -204,32 +204,45 @@ __device__ inline bool hit_sphere(const float3_simple &center, float radius, con
    }
    rec.t = root;
    rec.p = r.at(rec.t);
-   float3_simple outward_normal = (rec.p - center) / radius;
+   f3 outward_normal = (rec.p - center) / radius;
    rec.front_face = dot(r.dir, outward_normal) < 0;
-   rec.normal = rec.front_face ? outward_normal : float3_simple(-outward_normal.x, -outward_normal.y, -outward_normal.z);
+   rec.normal = rec.front_face ? outward_normal : f3(-outward_normal.x, -outward_normal.y, -outward_normal.z);
    return true;
 }
 
-__device__ inline bool hit_rectangle(const float3_simple &corner, const float3_simple &u, const float3_simple &v,
+__device__ inline bool hit_rectangle(const f3 &corner, const f3 &u, const f3 &v,
                                      const ray_simple &r, float t_min, float t_max, hit_record_simple &rec)
 {
-   float3_simple normal = unit_vector(float3_simple(u.y * v.z - u.z * v.y, u.z * v.x - u.x * v.z, u.x * v.y - u.y * v.x));
+   // Compute rectangle normal via cross product (u × v)
+   f3 normal = unit_vector(f3(u.y * v.z - u.z * v.y, u.z * v.x - u.x * v.z, u.x * v.y - u.y * v.x));
+   
+   // Check if ray is parallel to rectangle plane
    float denom = dot(normal, r.dir);
    if (fabsf(denom) < 1e-8f)
       return false;
+   
+   // Compute ray parameter t at plane intersection
    float t = dot(normal, corner - r.orig) / denom;
    if (t < t_min || t > t_max)
       return false;
-   float3_simple intersection = r.at(t);
-   float3_simple p = intersection - corner;
+   
+   // Find intersection point and convert to rectangle's local coordinates
+   f3 intersection = r.at(t);
+   f3 p = intersection - corner;
+   
+   // Project onto u and v vectors to get parametric coordinates
    float alpha = dot(p, u) / dot(u, u);
    float beta = dot(p, v) / dot(v, v);
+   
+   // Check if intersection is within rectangle bounds [0,1] × [0,1]
    if (alpha < 0.0f || alpha > 1.0f || beta < 0.0f || beta > 1.0f)
       return false;
+   
+   // Fill hit record with intersection data
    rec.t = t;
    rec.p = intersection;
    rec.front_face = dot(r.dir, normal) < 0;
-   rec.normal = rec.front_face ? normal : float3_simple(-normal.x, -normal.y, -normal.z);
+   rec.normal = rec.front_face ? normal : f3(-normal.x, -normal.y, -normal.z);
    return true;
 }
 
@@ -254,13 +267,13 @@ __device__ __forceinline__ bool intersect_geometry(const CudaScene::Geometry &ge
    }
 }
 
-__device__ inline float nearestAngularDistanceFibonacci(float3_simple dir, int N)
+__device__ inline float nearestAngularDistanceFibonacci(f3 dir, int N)
 {
-   float3_simple q = unit_vector(dir);
+   f3 q = unit_vector(dir);
    float max_dp = -1.0f;
    for (int i = 0; i < N; ++i)
    {
-      float3_simple c = fibonacci_point(i, N);
+      f3 c = fibonacci_point(i, N);
       float d = dot(q, c);
       if (d > max_dp)
          max_dp = d;
@@ -269,23 +282,23 @@ __device__ inline float nearestAngularDistanceFibonacci(float3_simple dir, int N
    return acosf(max_dp);
 }
 
-__device__ inline float3_simple apply_procedural_pattern(CudaScene::ProceduralPattern pattern, const float3_simple &base_color,
-                                                         const float3_simple &pattern_color, float param1, float param2,
-                                                         const float3_simple &surface_point, const float3_simple &geometry_center)
+__device__ inline f3 apply_procedural_pattern(CudaScene::ProceduralPattern pattern, const f3 &base_color,
+                                                         const f3 &pattern_color, float param1, float param2,
+                                                         const f3 &surface_point, const f3 &geometry_center)
 {
    using namespace CudaScene;
    switch (pattern)
    {
    case ProceduralPattern::FIBONACCI_DOTS:
    {
-      float3_simple local = float3_simple(surface_point.x - geometry_center.x, surface_point.y - geometry_center.y,
+      f3 local = f3(surface_point.x - geometry_center.x, surface_point.y - geometry_center.y,
                                           surface_point.z - geometry_center.z);
-      float3_simple dir = unit_vector(local);
+      f3 dir = unit_vector(local);
       int dot_count = static_cast<int>(param1);
       float dot_radius = param2;
       float ang = nearestAngularDistanceFibonacci(dir, dot_count);
       float mask = ang < dot_radius ? 0.0f : 1.0f;
-      return float3_simple(base_color.x * mask + pattern_color.x * (1.0f - mask),
+      return f3(base_color.x * mask + pattern_color.x * (1.0f - mask),
                            base_color.y * mask + pattern_color.y * (1.0f - mask),
                            base_color.z * mask + pattern_color.z * (1.0f - mask));
    }
@@ -296,7 +309,7 @@ __device__ inline float3_simple apply_procedural_pattern(CudaScene::ProceduralPa
 }
 
 __device__ __forceinline__ void apply_material(const CudaScene::Material &mat, hit_record_simple &rec,
-                                               const float3_simple &geometry_center)
+                                               const f3 &geometry_center)
 {
    using namespace CudaScene;
    switch (mat.type)
@@ -330,7 +343,7 @@ __device__ __forceinline__ void apply_material(const CudaScene::Material &mat, h
       break;
    case MaterialType::SHOW_NORMALS: // TODO: Implement normal visualization
       rec.material = LAMBERTIAN;
-      rec.color = float3_simple(1, 1, 1);
+      rec.color = f3(1, 1, 1);
       break;
    case MaterialType::SDF_MATERIAL: // TODO: Implement SDF materials
       rec.material = LAMBERTIAN;
@@ -397,8 +410,8 @@ __device__ inline bool hit_scene(const CudaScene::Scene &scene, const ray_simple
             int right_child = node.data.interior.right_child;
 
             // Simple heuristic: test which child is closer
-            float3_simple left_center = (scene.bvh_nodes[left_child].bounds_min + scene.bvh_nodes[left_child].bounds_max) * 0.5f;
-            float3_simple right_center =
+            f3 left_center = (scene.bvh_nodes[left_child].bounds_min + scene.bvh_nodes[left_child].bounds_max) * 0.5f;
+            f3 right_center =
                 (scene.bvh_nodes[right_child].bounds_min + scene.bvh_nodes[right_child].bounds_max) * 0.5f;
 
             float dist_left = (left_center - r.orig).length_squared();
@@ -443,7 +456,7 @@ __device__ inline bool hit_scene(const CudaScene::Scene &scene, const ray_simple
 
    if (hit_anything && closest_material_id >= 0 && closest_material_id < scene.num_materials)
    {
-      float3_simple geom_center(0, 0, 0);
+      f3 geom_center(0, 0, 0);
       if (closest_geom_idx >= 0)
       {
          const CudaScene::Geometry &geom = scene.geometries[closest_geom_idx];
@@ -457,11 +470,11 @@ __device__ inline bool hit_scene(const CudaScene::Scene &scene, const ray_simple
    return hit_anything;
 }
 
-__device__ inline float3_simple ray_color(const ray_simple &r, const CudaScene::Scene &scene, curandState *state, int depth,
+__device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scene, curandState *state, int depth,
                                           int &local_ray_count)
 {
-   float3_simple accumulated_color(0, 0, 0);
-   float3_simple accumulated_attenuation(1.0f, 1.0f, 1.0f);
+   f3 accumulated_color(0, 0, 0);
+   f3 accumulated_attenuation(1.0f, 1.0f, 1.0f);
    ray_simple current_ray = r;
 
    for (int bounce = 0; bounce < depth; bounce++)
@@ -472,20 +485,20 @@ __device__ inline float3_simple ray_color(const ray_simple &r, const CudaScene::
       {
          if (rec.material == LIGHT)
          {
-            accumulated_color = accumulated_color + float3_simple(accumulated_attenuation.x * rec.emission.x * g_light_intensity,
+            accumulated_color = accumulated_color + f3(accumulated_attenuation.x * rec.emission.x * g_light_intensity,
                                                                   accumulated_attenuation.y * rec.emission.y * g_light_intensity,
                                                                   accumulated_attenuation.z * rec.emission.z * g_light_intensity);
             return accumulated_color;
          }
 
-         float3_simple scattered_direction;
-         float3_simple attenuation;
+         f3 scattered_direction;
+         f3 attenuation;
 
          if (rec.material == LAMBERTIAN)
          {
             // Lambertian (diffuse) scattering using cosine-weighted hemisphere distribution
             // Adding a random unit vector to the normal creates the correct cosine weighting
-            scattered_direction = rec.normal + randOnUnitSphere(state);
+            scattered_direction = rec.normal + randUnitVector(state);
 
             // Catch degenerate case where random vector exactly cancels normal
             if (scattered_direction.length_squared() < 1e-8f)
@@ -506,7 +519,7 @@ __device__ inline float3_simple ray_color(const ray_simple &r, const CudaScene::
          }
          else if (rec.material == GLASS)
          {
-            float3_simple unit_direction = unit_vector(current_ray.dir);
+            f3 unit_direction = unit_vector(current_ray.dir);
             // Use global refraction index override
             float effective_refraction_index = g_glass_refraction_index;
             float refraction_ratio = rec.front_face ? (1.0f / effective_refraction_index) : effective_refraction_index;
@@ -521,7 +534,7 @@ __device__ inline float3_simple ray_color(const ray_simple &r, const CudaScene::
             {
                scattered_direction = refract(unit_direction, rec.normal, refraction_ratio);
             }
-            attenuation = float3_simple(1.0f, 1.0f, 1.0f);
+            attenuation = f3(1.0f, 1.0f, 1.0f);
          }
          else
          {
@@ -529,7 +542,7 @@ __device__ inline float3_simple ray_color(const ray_simple &r, const CudaScene::
          }
          current_ray = ray_simple(rec.p, scattered_direction);
          accumulated_attenuation =
-             float3_simple(accumulated_attenuation.x * attenuation.x, accumulated_attenuation.y * attenuation.y,
+             f3(accumulated_attenuation.x * attenuation.x, accumulated_attenuation.y * attenuation.y,
                            accumulated_attenuation.z * attenuation.z);
 
          // Russian Roulette path termination (after minimum bounces)
@@ -552,10 +565,10 @@ __device__ inline float3_simple ray_color(const ray_simple &r, const CudaScene::
       }
       else
       {
-         float3_simple unit_direction = unit_vector(current_ray.dir);
+         f3 unit_direction = unit_vector(current_ray.dir);
          float t = 0.5f * (unit_direction.y + 1.0f);
-         float3_simple sky_color = (1.0f - t) * float3_simple(1.0f, 1.0f, 1.0f) + t * float3_simple(0.5f, 0.7f, 1.0f);
-         accumulated_color = accumulated_color + float3_simple(accumulated_attenuation.x * sky_color.x * g_background_intensity,
+         f3 sky_color = (1.0f - t) * f3(1.0f, 1.0f, 1.0f) + t * f3(0.5f, 0.7f, 1.0f);
+         accumulated_color = accumulated_color + f3(accumulated_attenuation.x * sky_color.x * g_background_intensity,
                                                                accumulated_attenuation.y * sky_color.y * g_background_intensity,
                                                                accumulated_attenuation.z * sky_color.z * g_background_intensity);
          return accumulated_color;

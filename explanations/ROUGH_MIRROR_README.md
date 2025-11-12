@@ -25,13 +25,13 @@ Enhanced the `hit_record_simple` structure to include roughness information:
 
 ```cpp
 struct hit_record_simple {
-    float3_simple p, normal;
+    f3 p, normal;
     float t;
     bool front_face;
     MaterialType material;
-    float3_simple color;
+    f3 color;
     float refractive_index;
-    float3_simple emission;
+    f3 emission;
     float roughness;  // New field for surface roughness
 };
 ```
@@ -41,15 +41,15 @@ struct hit_record_simple {
 Implemented a new device function for imperfect reflections:
 
 ```cpp
-__device__ float3_simple reflect_fuzzy(const float3_simple& v, const float3_simple& n, 
+__device__ f3 reflect_fuzzy(const f3& v, const f3& n, 
                                        float roughness, curandState* state) {
-    float3_simple reflected = reflect(v, n);  // Perfect reflection direction
+    f3 reflected = reflect(v, n);  // Perfect reflection direction
     
     // Generate random vector in unit sphere for surface roughness
-    float3_simple random_in_sphere;
+    f3 random_in_sphere;
     do {
-        random_in_sphere = 2.0f * float3_simple(random_float(state), random_float(state), random_float(state)) 
-                          - float3_simple(1.0f, 1.0f, 1.0f);
+        random_in_sphere = 2.0f * f3(random_float(state), random_float(state), random_float(state)) 
+                          - f3(1.0f, 1.0f, 1.0f);
     } while (random_in_sphere.length_squared() >= 1.0f);
     
     // Add scaled random perturbation to the perfect reflection
@@ -70,16 +70,16 @@ Added rough mirror handling in the `ray_color` function:
 ```cpp
 else if (rec.material == ROUGH_MIRROR) {
     // Rough mirror reflection with surface imperfections
-    float3_simple reflected = reflect_fuzzy(unit_vector(r.dir), rec.normal, rec.roughness, state);
+    f3 reflected = reflect_fuzzy(unit_vector(r.dir), rec.normal, rec.roughness, state);
     scattered = ray_simple(rec.p, reflected);
     
     // Check if the scattered ray is absorbed (going into the surface)
     if (dot(scattered.dir, rec.normal) > 0) {
         // Rough mirrors have slightly reduced reflectivity and warmer tone
-        attenuation = float3_simple(0.7f, 0.75f, 0.8f); // Slightly warm-tinted rough mirror
+        attenuation = f3(0.7f, 0.75f, 0.8f); // Slightly warm-tinted rough mirror
     } else {
         // Ray absorbed by surface roughness
-        attenuation = float3_simple(0.0f, 0.0f, 0.0f);
+        attenuation = f3(0.0f, 0.0f, 0.0f);
     }
 }
 ```
@@ -95,7 +95,7 @@ Modified the left sphere in the scene to use the rough mirror material:
 
 ```cpp
 // Left sphere (rough mirror)
-if (hit_sphere(float3_simple(-2, 0, -1), 0.5f, r, t_min, closest_so_far, temp_rec)) {
+if (hit_sphere(f3(-2, 0, -1), 0.5f, r, t_min, closest_so_far, temp_rec)) {
     hit_anything = true;
     closest_so_far = temp_rec.t;
     rec = temp_rec;

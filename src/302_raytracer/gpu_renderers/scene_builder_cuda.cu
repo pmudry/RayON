@@ -31,12 +31,12 @@ static CudaScene::Material convertMaterial(const MaterialDesc& desc) {
     mat.type = static_cast<CudaScene::MaterialType>(static_cast<uint8_t>(desc.type));
     
     // Convert vectors
-    mat.albedo = float3_simple(
+    mat.albedo = f3(
         static_cast<float>(desc.albedo.x()),
         static_cast<float>(desc.albedo.y()),
         static_cast<float>(desc.albedo.z())
     );
-    mat.emission = float3_simple(
+    mat.emission = f3(
         static_cast<float>(desc.emission.x()),
         static_cast<float>(desc.emission.y()),
         static_cast<float>(desc.emission.z())
@@ -51,7 +51,7 @@ static CudaScene::Material convertMaterial(const MaterialDesc& desc) {
     
     // Copy pattern information
     mat.pattern = static_cast<CudaScene::ProceduralPattern>(static_cast<uint8_t>(desc.pattern));
-    mat.pattern_color = float3_simple(
+    mat.pattern_color = f3(
         static_cast<float>(desc.pattern_color.x()),
         static_cast<float>(desc.pattern_color.y()),
         static_cast<float>(desc.pattern_color.z())
@@ -73,12 +73,12 @@ static CudaScene::Geometry convertGeometry(const GeometryDesc& desc) {
     geom.material_id = desc.material_id;
     
     // Convert bounding box
-    geom.bounds_min = float3_simple(
+    geom.bounds_min = f3(
         static_cast<float>(desc.bounds_min.x()),
         static_cast<float>(desc.bounds_min.y()),
         static_cast<float>(desc.bounds_min.z())
     );
-    geom.bounds_max = float3_simple(
+    geom.bounds_max = f3(
         static_cast<float>(desc.bounds_max.x()),
         static_cast<float>(desc.bounds_max.y()),
         static_cast<float>(desc.bounds_max.z())
@@ -87,7 +87,7 @@ static CudaScene::Geometry convertGeometry(const GeometryDesc& desc) {
     // Convert geometry-specific data
     switch(desc.type) {
         case GeometryType::SPHERE:
-            geom.data.sphere.center = float3_simple(
+            geom.data.sphere.center = f3(
                 static_cast<float>(desc.data.sphere.center.x()),
                 static_cast<float>(desc.data.sphere.center.y()),
                 static_cast<float>(desc.data.sphere.center.z())
@@ -96,17 +96,17 @@ static CudaScene::Geometry convertGeometry(const GeometryDesc& desc) {
             break;
             
         case GeometryType::RECTANGLE:
-            geom.data.rectangle.corner = float3_simple(
+            geom.data.rectangle.corner = f3(
                 static_cast<float>(desc.data.rectangle.corner.x()),
                 static_cast<float>(desc.data.rectangle.corner.y()),
                 static_cast<float>(desc.data.rectangle.corner.z())
             );
-            geom.data.rectangle.u = float3_simple(
+            geom.data.rectangle.u = f3(
                 static_cast<float>(desc.data.rectangle.u.x()),
                 static_cast<float>(desc.data.rectangle.u.y()),
                 static_cast<float>(desc.data.rectangle.u.z())
             );
-            geom.data.rectangle.v = float3_simple(
+            geom.data.rectangle.v = f3(
                 static_cast<float>(desc.data.rectangle.v.x()),
                 static_cast<float>(desc.data.rectangle.v.y()),
                 static_cast<float>(desc.data.rectangle.v.z())
@@ -114,7 +114,7 @@ static CudaScene::Geometry convertGeometry(const GeometryDesc& desc) {
             break;
             
         case GeometryType::DISPLACED_SPHERE:
-            geom.data.displaced_sphere.center = float3_simple(
+            geom.data.displaced_sphere.center = f3(
                 static_cast<float>(desc.data.displaced_sphere.center.x()),
                 static_cast<float>(desc.data.displaced_sphere.center.y()),
                 static_cast<float>(desc.data.displaced_sphere.center.z())
@@ -174,12 +174,12 @@ CudaScene::Scene* CudaSceneBuilder::buildGPUScene(const SceneDescription& desc) 
             CudaScene::BVHNode& device_node = host_bvh_nodes[i];
             
             // Copy bounding box
-            device_node.bounds_min = float3_simple(
+            device_node.bounds_min = f3(
                 static_cast<float>(host_node.bounds_min.x()),
                 static_cast<float>(host_node.bounds_min.y()),
                 static_cast<float>(host_node.bounds_min.z())
             );
-            device_node.bounds_max = float3_simple(
+            device_node.bounds_max = f3(
                 static_cast<float>(host_node.bounds_max.x()),
                 static_cast<float>(host_node.bounds_max.y()),
                 static_cast<float>(host_node.bounds_max.z())
