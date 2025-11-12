@@ -13,6 +13,18 @@
 },
 {
   "directory": "/home/pmudry/git/302_raytracer/build",
+  "command": "/usr/local/cuda/bin/nvcc -forward-unknown-to-host-compiler -DSDL2_FOUND -DSDL2_TTF_FOUND --options-file CMakeFiles/302_raytracer.dir/includes_CUDA.rsp  -t 0 -O3 -DNDEBUG -std=c++17 \"--generate-code=arch=compute_75,code=[compute_75,sm_75]\" -Xcompiler=-fno-strict-aliasing -rdynamic -lineinfo --expt-relaxed-constexpr --expt-extended-lambda -O3 -x cu -rdc=true -c /home/pmudry/git/302_raytracer/src/302_raytracer/gpu_renderers/cuda_utils.cu -o CMakeFiles/302_raytracer.dir/src/302_raytracer/gpu_renderers/cuda_utils.cu.o",
+  "file": "/home/pmudry/git/302_raytracer/src/302_raytracer/gpu_renderers/cuda_utils.cu",
+  "output": "CMakeFiles/302_raytracer.dir/src/302_raytracer/gpu_renderers/cuda_utils.cu.o"
+},
+{
+  "directory": "/home/pmudry/git/302_raytracer/build",
+  "command": "/usr/local/cuda/bin/nvcc -forward-unknown-to-host-compiler -DSDL2_FOUND -DSDL2_TTF_FOUND --options-file CMakeFiles/302_raytracer.dir/includes_CUDA.rsp  -t 0 -O3 -DNDEBUG -std=c++17 \"--generate-code=arch=compute_75,code=[compute_75,sm_75]\" -Xcompiler=-fno-strict-aliasing -rdynamic -lineinfo --expt-relaxed-constexpr --expt-extended-lambda -O3 -x cu -rdc=true -c /home/pmudry/git/302_raytracer/src/302_raytracer/gpu_renderers/scene_builder_cuda.cu -o CMakeFiles/302_raytracer.dir/src/302_raytracer/gpu_renderers/scene_builder_cuda.cu.o",
+  "file": "/home/pmudry/git/302_raytracer/src/302_raytracer/gpu_renderers/scene_builder_cuda.cu",
+  "output": "CMakeFiles/302_raytracer.dir/src/302_raytracer/gpu_renderers/scene_builder_cuda.cu.o"
+},
+{
+  "directory": "/home/pmudry/git/302_raytracer/build",
   "command": "/usr/local/cuda/bin/nvcc -forward-unknown-to-host-compiler -DSDL2_FOUND -DSDL2_TTF_FOUND --options-file CMakeFiles/302_raytracer.dir/includes_CUDA.rsp  -t 0 -O3 -DNDEBUG -std=c++17 \"--generate-code=arch=compute_75,code=[compute_75,sm_75]\" -Xcompiler=-fno-strict-aliasing -rdynamic -lineinfo --expt-relaxed-constexpr --expt-extended-lambda -O3 -x cu -rdc=true -c /home/pmudry/git/302_raytracer/src/302_raytracer/gpu_renderers/renderer_cuda.cu -o CMakeFiles/302_raytracer.dir/src/302_raytracer/gpu_renderers/renderer_cuda.cu.o",
   "file": "/home/pmudry/git/302_raytracer/src/302_raytracer/gpu_renderers/renderer_cuda.cu",
   "output": "CMakeFiles/302_raytracer.dir/src/302_raytracer/gpu_renderers/renderer_cuda.cu.o"
@@ -31,8 +43,8 @@
 },
 {
   "directory": "/home/pmudry/git/302_raytracer/build",
-  "command": "/usr/local/cuda/bin/nvcc -forward-unknown-to-host-compiler -DSDL2_FOUND -DSDL2_TTF_FOUND --options-file CMakeFiles/302_raytracer.dir/includes_CUDA.rsp  -t 0 -O3 -DNDEBUG -std=c++17 \"--generate-code=arch=compute_75,code=[compute_75,sm_75]\" -Xcompiler=-fno-strict-aliasing -rdynamic -lineinfo --expt-relaxed-constexpr --expt-extended-lambda -O3 -x cu -rdc=true -c /home/pmudry/git/302_raytracer/src/302_raytracer/gpu_renderers/scene_builder_cuda.cu -o CMakeFiles/302_raytracer.dir/src/302_raytracer/gpu_renderers/scene_builder_cuda.cu.o",
-  "file": "/home/pmudry/git/302_raytracer/src/302_raytracer/gpu_renderers/scene_builder_cuda.cu",
-  "output": "CMakeFiles/302_raytracer.dir/src/302_raytracer/gpu_renderers/scene_builder_cuda.cu.o"
+  "command": "/usr/local/cuda/bin/nvcc -forward-unknown-to-host-compiler -DSDL2_FOUND -DSDL2_TTF_FOUND --options-file CMakeFiles/302_raytracer.dir/includes_CUDA.rsp  -t 0 -O3 -DNDEBUG -std=c++17 \"--generate-code=arch=compute_75,code=[compute_75,sm_75]\" -Xcompiler=-fno-strict-aliasing -rdynamic -lineinfo --expt-relaxed-constexpr --expt-extended-lambda -O3 -x cu -rdc=true -c /home/pmudry/git/302_raytracer/src/302_raytracer/gpu_renderers/shaders/shader_golf.cu -o CMakeFiles/302_raytracer.dir/src/302_raytracer/gpu_renderers/shaders/shader_golf.cu.o",
+  "file": "/home/pmudry/git/302_raytracer/src/302_raytracer/gpu_renderers/shaders/shader_golf.cu",
+  "output": "CMakeFiles/302_raytracer.dir/src/302_raytracer/gpu_renderers/shaders/shader_golf.cu.o"
 }
 ]

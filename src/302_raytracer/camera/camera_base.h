@@ -91,6 +91,21 @@ class CameraBase
    }
 
    /**
+    * @brief Apply gamma correction to a single color channel
+    * 
+    * Converts linear color space to gamma-corrected space for display.
+    * Gamma 2.0 approximates sRGB standard for most displays.
+    * 
+    * @param linear_value Linear color value (typically 0.0-1.0)
+    * @param gamma Gamma correction exponent (typically 2.0 for sRGB)
+    * @return Gamma-corrected value
+    */
+   inline float applyGammaCorrection(double linear_value, float gamma) const
+   {
+      return pow(static_cast<float>(linear_value), 1.0f / gamma);
+   }
+
+   /**
     * @brief Sets the pixel color in the image buffer
     */
    inline void setPixel(vector<unsigned char> &image, int x, int y, Color &c)
@@ -100,11 +115,10 @@ class CameraBase
       static const Interval intensity(0.0, 0.999);
 
       // Apply gamma correction (linear to sRGB) for proper display
-      auto linear_to_gamma = [](double linear) { return sqrt(linear); };
-
-      image[index + 0] = static_cast<int>(intensity.clamp(linear_to_gamma(c.x())) * 256);
-      image[index + 1] = static_cast<int>(intensity.clamp(linear_to_gamma(c.y())) * 256);
-      image[index + 2] = static_cast<int>(intensity.clamp(linear_to_gamma(c.z())) * 256);
+      // Using default gamma of 2.0
+      image[index + 0] = static_cast<int>(intensity.clamp(applyGammaCorrection(c.x(), 2.0f)) * 256);
+      image[index + 1] = static_cast<int>(intensity.clamp(applyGammaCorrection(c.y(), 2.0f)) * 256);
+      image[index + 2] = static_cast<int>(intensity.clamp(applyGammaCorrection(c.z(), 2.0f)) * 256);
    }
 
    /**
@@ -160,5 +174,49 @@ class CameraBase
       }
 
       return s.str();
+   }
+
+   /**
+    * @brief Convert accumulation buffer to final image with gamma correction
+    * 
+    * This method averages the accumulated samples and applies gamma correction
+    * to produce the final display image. Used by both one-shot and progressive renderers.
+    * 
+    * @param image Output image buffer (unsigned char RGB)
+    * @param accum_buffer Accumulation buffer (float RGB with accumulated samples)
+    * @param num_samples Number of samples accumulated per pixel
+    * @param gamma Gamma correction value (typically 2.0 for sRGB)
+    */
+   void convertAccumBufferToImage(vector<unsigned char> &image, const vector<float> &accum_buffer,
+                                  int num_samples, float gamma = 2.0f)
+   {
+      static const Interval intensity_range(0.0, 0.999);
+
+      for (int j = 0; j < image_height; j++)
+      {
+         for (int i = 0; i < image_width; i++)
+         {
+            int pixel_idx = j * image_width + i;
+            int image_idx = pixel_idx * image_channels;
+            int accum_idx = pixel_idx * 3;
+
+            // Average the accumulated samples
+            float r = accum_buffer[accum_idx + 0] / num_samples;
+            float g = accum_buffer[accum_idx + 1] / num_samples;
+            float b = accum_buffer[accum_idx + 2] / num_samples;
+
+            // Apply gamma correction using shared helper function
+            r = applyGammaCorrection(r, gamma);
+            g = applyGammaCorrection(g, gamma);
+            b = applyGammaCorrection(b, gamma);
+
+            // Clamp and convert to unsigned char
+            image[image_idx + 0] = static_cast<unsigned char>(256 * intensity_range.clamp(r));
+            image[image_idx + 1] = static_cast<unsigned char>(256 * intensity_range.clamp(g));
+            image[image_idx + 2] = static_cast<unsigned char>(256 * intensity_range.clamp(b));
+            if (image_channels == 4)
+               image[image_idx + 3] = 255;
+         }
+      }
    }
 };

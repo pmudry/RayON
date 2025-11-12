@@ -122,7 +122,7 @@ Scene::SceneDescription create_scene_description()
    scene_desc.addDisplacedSphere(Vec3(1.2, 0, -2), 0.5, mat_blue_rough, 0.2f, 0);
    scene_desc.addSphere(Vec3(-1.3, 0.18, -5), 0.7, mat_red_dots);
    scene_desc.addSphere(Vec3(-0.7, 0.2, -0.3), 0.6, mat_glass);
-   
+
    // ISC spheres
    scene_desc.addSphere(Vec3(-3.5, -0.3, 1.2), 0.2, mat_yellow);
    scene_desc.addSphere(Vec3(-3.0, -0.3, 1.2), 0.2, mat_blue);
@@ -136,25 +136,25 @@ Scene::SceneDescription create_scene_description()
    // All SDF shapes now support rotation! Last parameter is Vec3(rotX, rotY, rotZ) in radians
    // Rotation is applied in X, Y, Z order using Euler angles
    // Example: Vec3(M_PI * 0.25, 0, 0) rotates 45 degrees around X axis
-   
+
    // Materials for new SDF shapes
    int mat_death_star = scene_desc.addMaterial(MaterialDesc::metal(Vec3(0.6, 0.6, 0.65), 0.1));
    int mat_hollow_sphere = scene_desc.addMaterial(MaterialDesc::roughMirror(Vec3(0.9, 0.7, 0.3), 0.2));
    int mat_octahedron = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(0.2, 0.8, 0.4)));
    int mat_pyramid = scene_desc.addMaterial(MaterialDesc::roughMirror(Vec3(0.8, 0.3, 0.3), 0.15));
-   
+
    // Death Star - positioned at back left, rotated to show cutout
    scene_desc.addSDFDeathStar(Vec3(-3.5, 1.2, -4.5), 0.8, 0.5, 1.0, mat_death_star, Vec3(0, M_PI * 0.3, 0));
-   
+
    // Cut Hollow Sphere - positioned center back, tilted for better view
    scene_desc.addSDFCutHollowSphere(Vec3(0.0, 0.8, -5.0), 0.7, 0.3, 0.1, mat_hollow_sphere, Vec3(M_PI * 0.15, 0, 0));
-   
+
    // Octahedron - positioned at front right, rotated 45 degrees
    scene_desc.addSDFOctahedron(Vec3(2.5, 0.5, -2.0), 0.6, mat_octahedron, Vec3(0, M_PI * 0.25, M_PI * 0.25));
-   
+
    // Pyramid - positioned at right back, rotated to face camera
    scene_desc.addSDFPyramid(Vec3(3.0, 0.0, -4.0), 0.8, mat_pyramid, Vec3(0, M_PI * 0.4, 0));
-   
+
    // Original SDF Torus - rotated to show hole better
    scene_desc.addSDFTorus(Vec3(1.5, 0.7, -3.5), 0.6, 0.2, mat_torus_orange, Vec3(M_PI * 0.3, M_PI * 0.2, 0));
 
@@ -178,7 +178,6 @@ Scene::SceneDescription create_scene_description()
    return scene_desc;
 }
 
-
 // Implementation of RendererCUDA::createDefaultScene() - uses unified scene
 Scene::SceneDescription RendererCUDA::createDefaultScene() { return create_scene_description(); }
 
@@ -195,6 +194,22 @@ struct ProgramArgs
    const char *scene_file = nullptr; // Optional scene file to load
 };
 
+void dumpHelp()
+{
+   cout << "Options:\n";
+   cout << "  -h, --help, /?         Show this help message\n";
+   cout << "  -s <samples>           Set the number of samples per pixel (default: " << SAMPLES_PER_PIXEL << ")\n";
+   cout << "  -r <height>            Set vertical resolution (allowed: 2160, 1080, 720, 360, 180, default: "
+        << IMAGE_HEIGHT << ")\n";
+   cout << "  --scene <file>         Load scene from YAML file (default: built-in scene)\n";
+   cout << "  --start-samples <n>    Set initial samples when moving camera in interactive mode (default: 32)\n";
+   cout << "  --target-fps <fps>     Set target frame rate for interactive rendering (default: 60)\n";
+   cout << "                         Higher values = smoother motion but lower quality preview\n";
+   cout << "                         Lower values = better quality preview but less smooth motion\n";
+   cout << "  --adaptive-depth       Enable adaptive depth in interactive mode (progressively increases max depth)\n";
+   cout << "  --no-auto-accumulate   Disable automatic sample accumulation in interactive mode\n";
+}
+
 ProgramArgs parseInput(int argc, char *argv[])
 {
    ProgramArgs args;
@@ -206,20 +221,8 @@ ProgramArgs parseInput(int argc, char *argv[])
       if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "/?") == 0)
       {
          cout << "Usage: " << argv[0] << " [options]\n";
-         cout << "Options:\n";
-         cout << "  -h, --help, /?         Show this help message\n";
-         cout << "  -s <samples>           Set the number of samples per pixel (default: " << SAMPLES_PER_PIXEL
-              << ")\n";
-         cout << "  -r <height>            Set vertical resolution (allowed: 2160, 1080, 720, 360, 180, default: "
-              << IMAGE_HEIGHT << ")\n";
-         cout << "  --scene <file>         Load scene from YAML file (default: built-in scene)\n";
-         cout << "  --start-samples <n>    Set initial samples when moving camera in interactive mode (default: 32)\n";
-         cout << "  --target-fps <fps>     Set target frame rate for interactive rendering (default: 60)\n";
-         cout << "                         Higher values = smoother motion but lower quality preview\n";
-         cout << "                         Lower values = better quality preview but less smooth motion\n";
-         cout << "  --adaptive-depth       Enable adaptive depth in interactive mode (progressively increases max depth)\n";
-         cout << "  --no-auto-accumulate   Disable automatic sample accumulation in interactive mode\n";
-         args.samples = -1;
+         dumpHelp();
+         args.samples = -1; // Indicate error
          return args;
       }
       else if (strcmp(argv[i], "-s") == 0 && i + 1 < argc)
@@ -237,7 +240,7 @@ ProgramArgs parseInput(int argc, char *argv[])
          {
             cerr << "Invalid resolution height: " << height << "\n";
             cerr << "Allowed values: 2160, 1080, 720, 360, 180\n";
-            args.samples = -1;
+            args.samples = -1; // Indicate error
             return args;
          }
       }
@@ -259,7 +262,7 @@ ProgramArgs parseInput(int argc, char *argv[])
          if (args.start_samples < 1)
          {
             cerr << "Invalid start-samples value: " << args.start_samples << " (must be >= 1)\n";
-            args.samples = -1;
+            args.samples = -1; // Indicate error
             return args;
          }
       }
@@ -269,32 +272,21 @@ ProgramArgs parseInput(int argc, char *argv[])
          if (args.target_fps < 1 || args.target_fps > 1000)
          {
             cerr << "Invalid target-fps value: " << args.target_fps << " (must be 1-1000)\n";
-            args.samples = -1;
+            args.samples = -1; // Indicate error
             return args;
          }
       }
       else if (argv[i][0] == '-')
       {
          cerr << "Unknown argument: " << argv[i] << "\n";
-         cout << "Usage: " << argv[0] << " [options]\n";
-         cout << "Options:\n";
-         cout << "  -h, --help, /?         Show this help message\n";
-         cout << "  -s <samples>           Set the number of samples per pixel (default: " << SAMPLES_PER_PIXEL
-              << ")\n";
-         cout << "  -r <height>            Set vertical resolution (allowed: 2160, 1080, 720, 360, 180, default: "
-              << IMAGE_HEIGHT << ")\n";
-         cout << "  --scene <file>         Load scene from YAML file (default: built-in scene)\n";
-         cout << "  --target-fps <fps>     Set target frame rate for interactive rendering (default: 60)\n";
-         cout << "  --adaptive-depth       Enable adaptive depth in interactive mode (progressively increases max depth)\n";
-         cout << "  --start-samples <n>    Set initial samples when moving camera in interactive mode (default: 32)\n";
-         cout << "  --no-auto-accumulate   Disable automatic sample accumulation in interactive mode\n";
-         args.samples = -1;
+         dumpHelp();
+         args.samples = -1; // Indicate error
          return args;
       }
       else
       {
          cerr << "Unexpected argument: " << argv[i] << "\n";
-         args.samples = -1;
+         args.samples = -1; // Indicate error
          return args;
       }
    }
@@ -310,38 +302,7 @@ int main(int argc, char *argv[])
    ProgramArgs args = parseInput(argc, argv);
 
    if (args.samples < 0)
-   {
       return 1;
-   }
-
-   // Set global scene file for scene loading
-   g_scene_file = args.scene_file;
-
-   // Calculate width maintaining aspect ratio (16:9)
-   int image_height = args.height;
-   int image_width = (image_height * 16) / 9;
-
-   Camera c(Vec3(0, 0, 0), image_width, image_height, CHANNELS, args.samples);
-
-   vector<unsigned char> image(c.image_width * c.image_height * CHANNELS);
-
-   cout << endl;
-   cout << "======================================================" << endl;
-   cout << " 302 Ray tracer project v" << ver_major << " -- P.-A. Mudry, ISC 2026" << endl;
-   cout << "======================================================" << endl << endl;
-   cout << "Using features : yaml_scene_loader, unified_scene_descriptions, cuda_optimization_1, BVH" << endl;
-   cout << "fast random (no curand_uniform), thread_block_optimal, inlining, atomic_reduction, russian_roulette," << endl;
-   cout << "inter_adaptive_depth, inter_target_fps" << endl << endl;
-   cout << "Rendering at resolution: " << c.image_width << " x " << c.image_height << " pixels - ";
-   cout << "Samples per pixel: " << args.samples << endl << endl;
-
-   RndGen::set_seed(123);
-
-   // Create unified scene description and convert to CPU scene
-   Scene::SceneDescription scene_desc = create_scene_description();
-   Hittable_list cpu_scene = Scene::CPUSceneBuilder::buildCPUScene(scene_desc);
-
-   vector<unsigned char> localImage(image.size());
 
    // Choose rendering method
    cout << "Choose rendering method:" << endl;
@@ -368,6 +329,35 @@ int main(int argc, char *argv[])
       choice = stoi(input);
    }
 
+
+   // Calculate width maintaining aspect ratio (16:9)
+   int image_height = args.height;
+   int image_width = (image_height * 16) / 9;
+
+   cout << endl;
+   cout << "======================================================" << endl;
+   cout << " 302 Ray tracer project v" << ver_major << " -- P.-A. Mudry, ISC 2026" << endl;
+   cout << "======================================================" << endl << endl;
+   cout << "Using features : yaml_scene_loader, unified_scene_descriptions, cuda_optimization_1, BVH" << endl;
+   cout << "fast random (no curand_uniform), thread_block_optimal, inlining, atomic_reduction, russian_roulette,"
+        << endl;
+   cout << "inter_adaptive_depth, inter_target_fps" << endl << endl;
+   cout << "Rendering at resolution: " << image_width << " x " << image_height<< " pixels - ";
+   cout << "Samples per pixel: " << args.samples << endl << endl;
+
+   RndGen::set_seed(123);
+
+   // Set global scene file for scene loading
+   g_scene_file = args.scene_file;
+   Camera c(Vec3(0, 0, 0), image_width, image_height, CHANNELS, args.samples);   
+
+   vector<unsigned char> localImage(c.image_width * c.image_height * CHANNELS);
+
+   // Create unified scene description and convert to CPU scene
+   Scene::SceneDescription scene_desc = create_scene_description();
+   Hittable_list cpu_scene = Scene::CPUSceneBuilder::buildCPUScene(scene_desc);
+
+
    switch (choice)
    {
    case 0:
@@ -382,7 +372,9 @@ int main(int argc, char *argv[])
 #ifdef SDL2_FOUND
    case 3:
       cout << "Using CUDA GPU with interactive SDL display..." << endl;
-      c.renderPixelsSDLContinuous(localImage, args.start_samples, args.auto_accumulate, args.target_fps, args.adaptive_depth);
+      c.samples_per_pixel = 10000; // Set high SPP for interactive mode
+      c.renderPixelsSDLContinuous(localImage, args.start_samples, args.auto_accumulate, args.target_fps,
+                                  args.adaptive_depth);
       break;
 #endif
    default:

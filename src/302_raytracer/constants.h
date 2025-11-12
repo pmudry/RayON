@@ -14,6 +14,6 @@ namespace constants
     const int CHANNELS = 3; // RGB
 
     // Renderer specific settings
-    const int SAMPLES_PER_PIXEL = 32; // Number of samples per pixel for anti-aliasing
+    const int SAMPLES_PER_PIXEL = 64; // Number of samples per pixel for anti-aliasing
     const int MAX_DEPTH = 16;         // Maximum recursion depth for ray tracing
 }; 
