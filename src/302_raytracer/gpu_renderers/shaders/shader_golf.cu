@@ -1,5 +1,5 @@
 #include "shader_golf.cuh"
-#include "shader_common.cuh"
+#include "cuda_raytracer.cuh"
 
 __device__ f3 fibonacci_point(int i, int n)
 {

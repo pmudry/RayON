@@ -2,10 +2,11 @@
 // Device-side kernels and ray tracing logic live in gpu_renderers/shaders/*.cu(h).
 
 #include "cuda_float3.cuh"
+#include "cuda_raytracer.cuh"
 #include "cuda_scene.cuh"
 #include "cuda_utils.cuh"
+
 #include "shaders/render_acc_kernel.cuh"
-#include "shaders/shader_common.cuh"
 
 #include <cuda_runtime.h>
 #include <curand_kernel.h>

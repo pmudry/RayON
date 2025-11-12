@@ -107,8 +107,8 @@ set ( SOURCE_302_RAYTRACER
   src/302_raytracer/gpu_renderers/scene_builder_cuda.cu
 
   src/302_raytracer/gpu_renderers/renderer_cuda.cu
-    src/302_raytracer/gpu_renderers/shaders/shader_golf.cuh
-    src/302_raytracer/gpu_renderers/shaders/shader_common.cuh
+    src/302_raytracer/gpu_renderers/cuda_raytracer.cuh
+    src/302_raytracer/gpu_renderers/shaders/shader_golf.cuh    
     src/302_raytracer/gpu_renderers/shaders/render_acc_kernel.cuh
     src/302_raytracer/gpu_renderers/shaders/render_acc_kernel.cu
     src/302_raytracer/gpu_renderers/shaders/shader_golf.cu  
@@ -120,6 +120,8 @@ include_directories(src/302_raytracer)
 include_directories(src/302_raytracer/camera)
 include_directories(src/302_raytracer/camera/sdl)
 include_directories(src/302_raytracer/cpu_renderers)
+include_directories(src/302_raytracer/gpu_renderers)
+include_directories(src/302_raytracer/gpu_renderers)
 include_directories(src/302_raytracer/gpu_renderers)
 
 # Ensure compile_commands.json is generated in the source directory

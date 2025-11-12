@@ -70,6 +70,7 @@ static __device__ inline f3 randUnitVector(curandState *state)
     float z = 2.0f * rand_float(state) - 1.0f;
     
     float length = sqrtf(x*x + y*y + z*z);
+    
     // Avoid division by zero (extremely rare)
     if (length > 1e-8f) {
         x /= length;

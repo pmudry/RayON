@@ -1,8 +1,8 @@
 // Common device-side utilities and shading routines shared by CUDA shaders
 #pragma once
-#include "../cuda_float3.cuh"
-#include "../cuda_scene.cuh"
-#include "../cuda_utils.cuh"
+#include "cuda_float3.cuh"
+#include "cuda_scene.cuh"
+#include "cuda_utils.cuh"
 
 #include <cfloat>
 #include <cmath>
@@ -44,7 +44,9 @@ enum LegacyMaterialType
    MIRROR = 1,
    GLASS = 2,
    LIGHT = 3,
-   ROUGH_MIRROR = 4
+   ROUGH_MIRROR = 4,
+   CONSTANT = 5,
+   SHOW_NORMALS = 6
 };
 
 struct hit_record_simple
@@ -58,6 +60,8 @@ struct hit_record_simple
    f3 emission;
    float roughness;
 };
+
+#include "materials/material_dispatcher.cuh"
 
 //==============================================================================
 // OPTICAL PHYSICS FUNCTIONS
@@ -337,12 +341,12 @@ __device__ __forceinline__ void apply_material(const CudaScene::Material &mat, h
       rec.material = LIGHT;
       rec.emission = mat.emission;
       break;
-   case MaterialType::CONSTANT: // TODO: Implement constant materials
-      rec.material = LAMBERTIAN;
+   case MaterialType::CONSTANT:
+      rec.material = CONSTANT;
       rec.color = mat.albedo;
       break;
-   case MaterialType::SHOW_NORMALS: // TODO: Implement normal visualization
-      rec.material = LAMBERTIAN;
+   case MaterialType::SHOW_NORMALS:
+      rec.material = SHOW_NORMALS;
       rec.color = f3(1, 1, 1);
       break;
    case MaterialType::SDF_MATERIAL: // TODO: Implement SDF materials
@@ -470,10 +474,18 @@ __device__ inline bool hit_scene(const CudaScene::Scene &scene, const ray_simple
    return hit_anything;
 }
 
+/**
+ * @brief Ray color computation using new material system
+ * 
+ * This version uses compile-time material dispatch via CRTP templates.
+ * The compiler generates optimized code for each material type with zero overhead.
+ */
 __device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scene, curandState *state, int depth,
                                           int &local_ray_count)
 {
-   f3 accumulated_color(0, 0, 0);
+   using namespace Materials;
+   
+   f3 accumulated_color(0.0f, 0.0f, 0.0f);
    f3 accumulated_attenuation(1.0f, 1.0f, 1.0f);
    ray_simple current_ray = r;
 
@@ -481,96 +493,97 @@ __device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scen
    {
       local_ray_count++;
       hit_record_simple rec;
+
       if (hit_scene(scene, current_ray, 0.001f, FLT_MAX, rec))
       {
-         if (rec.material == LIGHT)
-         {
-            accumulated_color = accumulated_color + f3(accumulated_attenuation.x * rec.emission.x * g_light_intensity,
-                                                                  accumulated_attenuation.y * rec.emission.y * g_light_intensity,
-                                                                  accumulated_attenuation.z * rec.emission.z * g_light_intensity);
+         // Create material descriptor from hit record
+         // TODO: This is a temporary adapter - ideally hit_scene would return MaterialDescriptor directly
+         MaterialDescriptor mat_desc;
+         
+         switch (rec.material) {
+            case LAMBERTIAN:
+               mat_desc = MaterialDescriptor::makeLambertian(rec.color);
+               break;
+            case MIRROR:
+               mat_desc = MaterialDescriptor::makeMirror(rec.color);
+               break;
+            case ROUGH_MIRROR:
+               mat_desc = MaterialDescriptor::makeRoughMirror(rec.color, rec.roughness);
+               break;
+            case GLASS:
+               mat_desc = MaterialDescriptor::makeGlass(rec.refractive_index);
+               break;
+            case LIGHT:
+               mat_desc = MaterialDescriptor::makeLight(rec.emission);
+               break;
+            case CONSTANT:
+               mat_desc = MaterialDescriptor::makeConstant(rec.color);
+               break;
+            case SHOW_NORMALS:
+               mat_desc = MaterialDescriptor::makeShowNormals(f3(1.0f, 1.0f, 1.0f));
+               break;
+         }
+         
+         // Dispatch to appropriate material using compile-time template magic
+         bool scattered = dispatch_material_bool(mat_desc, 
+            [&](auto material) -> bool {
+               // Check if emissive first
+               f3 emitted = material.emission();
+               if (emitted.length_squared() > 0.0f) {
+                  accumulated_color = accumulated_color + f3(
+                     accumulated_attenuation.x * emitted.x,
+                     accumulated_attenuation.y * emitted.y,
+                     accumulated_attenuation.z * emitted.z
+                  );
+                  return false; // Light materials don't scatter
+               }
+               
+               // Scatter the ray
+               f3 attenuation;
+               ray_simple scattered_ray;
+               if (material.scatter(current_ray, rec, attenuation, scattered_ray, state)) {
+                  current_ray = scattered_ray;
+                  accumulated_attenuation = f3(
+                     accumulated_attenuation.x * attenuation.x,
+                     accumulated_attenuation.y * attenuation.y,
+                     accumulated_attenuation.z * attenuation.z
+                  );
+                  return true;
+               }
+               return false;
+            }
+         );
+         
+         if (!scattered) {
             return accumulated_color;
          }
-
-         f3 scattered_direction;
-         f3 attenuation;
-
-         if (rec.material == LAMBERTIAN)
-         {
-            // Lambertian (diffuse) scattering using cosine-weighted hemisphere distribution
-            // Adding a random unit vector to the normal creates the correct cosine weighting
-            scattered_direction = rec.normal + randUnitVector(state);
-
-            // Catch degenerate case where random vector exactly cancels normal
-            if (scattered_direction.length_squared() < 1e-8f)
-               scattered_direction = rec.normal;
-
-            attenuation = rec.color;
-         }
-         else if (rec.material == MIRROR)
-         {
-            scattered_direction = reflect(unit_vector(current_ray.dir), rec.normal);
-            attenuation = rec.color;
-         }
-         else if (rec.material == ROUGH_MIRROR)
-         {
-            scattered_direction =
-                reflect_fuzzy(unit_vector(current_ray.dir), rec.normal, rec.roughness * g_metal_fuzziness, state);
-            attenuation = rec.color;
-         }
-         else if (rec.material == GLASS)
-         {
-            f3 unit_direction = unit_vector(current_ray.dir);
-            // Use global refraction index override
-            float effective_refraction_index = g_glass_refraction_index;
-            float refraction_ratio = rec.front_face ? (1.0f / effective_refraction_index) : effective_refraction_index;
-            float cos_theta = fminf(dot(-unit_direction, rec.normal), 1.0f);
-            float sin_theta = sqrtf(1.0f - cos_theta * cos_theta);
-            bool cannot_refract = refraction_ratio * sin_theta > 1.0f;
-            if (cannot_refract || reflectance(cos_theta, refraction_ratio) > rand_float(state))
-            {
-               scattered_direction = reflect(unit_direction, rec.normal);
-            }
-            else
-            {
-               scattered_direction = refract(unit_direction, rec.normal, refraction_ratio);
-            }
-            attenuation = f3(1.0f, 1.0f, 1.0f);
-         }
-         else
-         {
-            return accumulated_color;
-         }
-         current_ray = ray_simple(rec.p, scattered_direction);
-         accumulated_attenuation =
-             f3(accumulated_attenuation.x * attenuation.x, accumulated_attenuation.y * attenuation.y,
-                           accumulated_attenuation.z * attenuation.z);
 
          // Russian Roulette path termination (after minimum bounces)
-         // This is an unbiased optimization that terminates low-contribution paths early
          if (bounce > 3)
          {
-            // Use maximum component of attenuation as survival probability
-            float max_component = fmaxf(accumulated_attenuation.x, fmaxf(accumulated_attenuation.y, accumulated_attenuation.z));
-            float survival_prob = fminf(max_component, 0.95f); // Cap at 95% to avoid never terminating
+            float max_component = fmaxf(accumulated_attenuation.x, 
+                                       fmaxf(accumulated_attenuation.y, accumulated_attenuation.z));
+            float survival_prob = fminf(max_component, 0.95f);
 
             if (rand_float(state) > survival_prob)
             {
-               // Terminate this path
                return accumulated_color;
             }
 
-            // Boost attenuation to maintain unbiased estimate
             accumulated_attenuation = accumulated_attenuation / survival_prob;
          }
       }
       else
       {
+         // Sky/background
          f3 unit_direction = unit_vector(current_ray.dir);
          float t = 0.5f * (unit_direction.y + 1.0f);
          f3 sky_color = (1.0f - t) * f3(1.0f, 1.0f, 1.0f) + t * f3(0.5f, 0.7f, 1.0f);
-         accumulated_color = accumulated_color + f3(accumulated_attenuation.x * sky_color.x * g_background_intensity,
-                                                               accumulated_attenuation.y * sky_color.y * g_background_intensity,
-                                                               accumulated_attenuation.z * sky_color.z * g_background_intensity);
+         accumulated_color = accumulated_color + f3(
+            accumulated_attenuation.x * sky_color.x * g_background_intensity,
+            accumulated_attenuation.y * sky_color.y * g_background_intensity,
+            accumulated_attenuation.z * sky_color.z * g_background_intensity
+         );
          return accumulated_color;
       }
    }
