@@ -42,14 +42,14 @@ class CameraBase
    const int max_depth = constants::MAX_DEPTH; // Maximum ray bounce depth
 
    CameraBase(const Point3 &center, const int image_width, const int image_height, const int image_channels,
-              int samples_per_pixel = 1)
+              int samples_per_pixel = 1, const char* scene_file = nullptr)
        : image_width(image_width), image_height(image_height), image_channels(image_channels),
          samples_per_pixel(samples_per_pixel), camera_center(center)
    {
       initialize();
    }
 
-   CameraBase() : CameraBase(Vec3(0, 0, 0), 720, 3, 1) {}
+   CameraBase() : CameraBase(Vec3(0, 0, 0), 720, 720, 3, 1, nullptr) {}
 
    virtual ~CameraBase() = default;
 

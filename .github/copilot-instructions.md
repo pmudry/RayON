@@ -217,6 +217,7 @@ Provided in `resources/`:
 ## Key Files Reference
 - **Main entry**: `src/302_raytracer/main.cc`
 - **Scene hub**: `src/302_raytracer/scene_description.h` (857 lines - read this first!)
+- **Scene factory**: `src/302_raytracer/scene_factory.h` - Functions to create scenes (from YAML or programmatically)
 - **GPU scene**: `src/302_raytracer/gpu_renderers/cuda_scene.cuh`
 - **CUDA kernels**: `src/302_raytracer/gpu_renderers/shaders/render_scene_kernel.cu`
 - **BVH builder**: `scene_description.h::buildBVH()` and `buildBVHRecursive()`

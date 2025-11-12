@@ -58,7 +58,7 @@ class RendererCUDAProgressive : virtual public CameraBase
     * @param target_fps Target frame rate for interactive rendering (default: 60)
     * @param adaptive_depth Enable adaptive depth (progressively increases max depth) (default: false)
     */
-   void renderPixelsSDLContinuous(vector<unsigned char> &image, int samples_per_batch = 8, bool auto_accumulate = true,
+   void renderPixelsSDLContinuous(const Scene::SceneDescription &scene, vector<unsigned char> &image, int samples_per_batch = 8, bool auto_accumulate = true,
                                   int target_fps = 60, bool adaptive_depth = false)
    {
       // Initialize GUI
@@ -132,9 +132,8 @@ class RendererCUDAProgressive : virtual public CameraBase
       void *d_rand_states = nullptr;
       void *d_accum_buffer = nullptr; // Persistent device accumulation buffer
 
-      // Build scene once
-      Scene::SceneDescription scene_desc = createDefaultScene();
-      CudaScene::Scene *gpu_scene = Scene::CudaSceneBuilder::buildGPUScene(scene_desc);
+      // Build scene once      
+      CudaScene::Scene *gpu_scene = Scene::CudaSceneBuilder::buildGPUScene(scene);
 
       // Timing for auto-orbit
       auto last_frame_time = std::chrono::high_resolution_clock::now();

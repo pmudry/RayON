@@ -74,19 +74,15 @@ class RendererCUDA : virtual public CameraBase
     *              the rendered pixel data will be stored. The buffer must be
     *              pre-allocated with a size of (image_width * image_height * image_channels).
     */
-   void renderPixelsCUDA(vector<unsigned char> &image)
+   void renderPixelsCUDA(const Scene::SceneDescription &scene, vector<unsigned char> &image)
    {
       using namespace Scene;
       
       auto start_time = std::chrono::high_resolution_clock::now();
       printf("CUDA renderer starting: %dx%d, %d samples, max_depth=%d\n", image_width, image_height, samples_per_pixel,
              max_depth);
-
-      // Build the scene description (create default scene)
-      SceneDescription scene_desc = createDefaultScene();
       
-      // Convert to GPU scene
-      CudaScene::Scene* gpu_scene = CudaSceneBuilder::buildGPUScene(scene_desc);
+      CudaScene::Scene* gpu_scene = CudaSceneBuilder::buildGPUScene(scene);
 
       // Allocate accumulation buffer for one-shot rendering
       // Uses renderPixelsCUDAAccumulative with samples_to_add = total samples, total_samples_so_far = 0
@@ -130,6 +126,7 @@ class RendererCUDA : virtual public CameraBase
 private:
    /**
     * @brief Create the default rendering scene - implemented in main.cc
+    * Uses scene_file from CameraBase if set, otherwise creates default scene
     */
-   static Scene::SceneDescription createDefaultScene();
+   Scene::SceneDescription createDefaultScene();
 };

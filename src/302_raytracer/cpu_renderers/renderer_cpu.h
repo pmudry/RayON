@@ -8,6 +8,8 @@
 #pragma once
 
 #include "cpu_ray_tracer.h"
+#include "scene_description.h"
+#include "scene_builder.h"
 
 class RendererCPU : virtual public CPURayTracer
 {
@@ -23,9 +25,11 @@ class RendererCPU : virtual public CPURayTracer
     * @param scene The hittable scene object containing all geometry to render
     * @param image Vector buffer to store the rendered RGB pixel data (modified in-place)
     */
-   void renderPixels(const Hittable &scene, vector<unsigned char> &image)
+   void renderPixels(const Scene::SceneDescription &scene, vector<unsigned char> &image)
    {
       auto start_time = std::chrono::high_resolution_clock::now();
+
+      Hittable_list cpu_scene = Scene::CPUSceneBuilder::buildCPUScene(scene);
 
       // Render each pixel in the image sequentially
       for (int y = 0; y < image_height; ++y)
@@ -33,7 +37,7 @@ class RendererCPU : virtual public CPURayTracer
          for (int x = 0; x < image_width; ++x)
          {
             // Compute the color for this pixel using ray tracing with anti-aliasing
-            Color pixel_color = computePixelColor(scene, x, y);
+            Color pixel_color = computePixelColor(cpu_scene, x, y);
 
             // Store the computed color in the image buffer
             setPixel(image, x, y, pixel_color);

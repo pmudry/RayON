@@ -47,7 +47,7 @@ class Camera : public RendererCPU, public RendererCPUParallel, public RendererCU
    {
    }
 
-   Camera() : CameraBase(Vec3(0, 0, 0), 720, 3, 1) {}
+   Camera() : CameraBase(Vec3(0, 0, 0), 720, 720, 3, 1, nullptr) {}
 
    // All rendering methods are inherited:
    // - renderPixels() from RendererCPU

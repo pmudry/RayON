@@ -8,6 +8,8 @@
 #pragma once
 
 #include "cpu_ray_tracer.h"
+#include "scene_description.h"
+#include "scene_builder.h"
 
 #include <mutex>
 #include <thread>
@@ -27,8 +29,10 @@ class RendererCPUParallel : virtual public CPURayTracer
     * @param scene The hittable scene object containing all geometry to render
     * @param image Vector buffer to store the rendered RGB pixel data (modified in-place)
     */
-   void renderPixelsParallel(const Hittable &scene, vector<unsigned char> &image)
+   void renderPixelsParallel(const Scene::SceneDescription &scene, vector<unsigned char> &image)
    {
+      Hittable_list cpu_scene = Scene::CPUSceneBuilder::buildCPUScene(scene);
+
       const int num_threads = std::thread::hardware_concurrency(); // Get the number of available hardware threads
       std::vector<std::thread> threads(num_threads);
       std::mutex progress_mutex;
@@ -43,7 +47,7 @@ class RendererCPUParallel : virtual public CPURayTracer
             for (int x = 0; x < image_width; ++x)
             {
                // Compute the color for this pixel using the shared helper method
-               Color pixel_color = computePixelColor(scene, x, y);
+               Color pixel_color = computePixelColor(cpu_scene, x, y);
 
                // Store the computed color in the image buffer
                setPixel(image, x, y, pixel_color);
