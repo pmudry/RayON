@@ -240,7 +240,8 @@ int main(int argc, char *argv[])
       scene_desc = Scene::SceneFactory::fromYAML(args.scene_file);
    }
      
-   vector<unsigned char> localImage(c.image_width * c.image_height * CHANNELS);
+   vector<unsigned char> localImage(image_width * image_height * CHANNELS);
+   
    Camera c(Vec3(0, 0, 0), image_width, image_height, CHANNELS, args.samples);   
    
    switch (choice)
