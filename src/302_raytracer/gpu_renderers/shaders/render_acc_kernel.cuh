@@ -2,6 +2,7 @@
 #pragma once
 
 #include "cuda_raytracer.cuh"
+#include "cuda_scene.cuh"
 
 __global__ void renderAccKernel(float *accum_buffer, unsigned char *image, const CudaScene::Scene * __restrict__ scene, int width,
                                 int height, int samples_to_add, int total_samples_so_far, int max_depth,

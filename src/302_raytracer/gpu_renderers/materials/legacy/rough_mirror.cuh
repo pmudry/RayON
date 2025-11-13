@@ -8,7 +8,7 @@
 
 #pragma once
 #include "../material_base.cuh"
-#include "../../gpu_renderers/cuda_utils.cuh"
+#include "cuda_utils.cuh"
 
 // Forward declarations from shader_common.cuh
 __device__ f3 randOnUnitSphere(curandState* state);

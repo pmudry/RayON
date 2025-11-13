@@ -11,7 +11,7 @@
  */
 
 #pragma once
-#include "cuda_float3.cuh"
+#include "../cuda_float3.cuh"
 #include <curand_kernel.h>
 
 // Forward declarations
