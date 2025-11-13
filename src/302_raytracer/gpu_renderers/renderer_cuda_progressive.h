@@ -11,7 +11,6 @@
 
 #include "camera_base.h"
 #include "renderer_cuda.h"
-#include "interval.h"
 #include "sdl_gui_controls.h"
 #include "sdl_gui_handler.h"
 #include "scene_builder.h"

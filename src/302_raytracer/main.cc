@@ -1,13 +1,8 @@
 #include "camera/camera.h"
 #include "constants.h"
-#include "gpu_renderers/renderer_cuda.h"
-#include "hittable_list.h"
-#include "scene_builder.h"
 #include "scene_description.h"
 #include "scene_factory.h"
-#include "sphere.h"
 #include "utils.h"
-#include "yaml_scene_loader.h"
 
 #include <filesystem>
 #include <iostream>
