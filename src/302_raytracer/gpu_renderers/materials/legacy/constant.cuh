@@ -49,10 +49,10 @@ struct Constant : public MaterialBase<Constant>
    }
 
    /**
-    * @brief Get emitted light (zero for non-emissive surfaces)
-    * @return Black (no emission)
+    * @brief Get emitted color
+    * @return The constant color (acts as self-emission to display the color)
     */
-   __device__ __forceinline__ f3 emission() const { return f3(0.0f, 0.0f, 0.0f); }
+   __device__ __forceinline__ f3 emission() const { return params.color; }
 };
 
 } // namespace Materials

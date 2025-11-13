@@ -93,10 +93,10 @@ struct MaterialDesc {
         return mat;
     }
     
-    static MaterialDesc normal(const Vec3& color) {
+    static MaterialDesc normal() {
         MaterialDesc mat;
         mat.type = MaterialType::SHOW_NORMALS;
-        mat.albedo = color;
+        mat.albedo = Vec3(1, 1, 1);
         return mat;
     }
 

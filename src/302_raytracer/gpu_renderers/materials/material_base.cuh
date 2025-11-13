@@ -117,7 +117,7 @@ struct ConstantParams {
  * @brief Show normals visualization material parameters
  */
 struct ShowNormalsParams {
-    f3 albedo;  // Base color (usually white)
+    f3 normal;  // Surface normal from hit record
 };
 
 //==============================================================================

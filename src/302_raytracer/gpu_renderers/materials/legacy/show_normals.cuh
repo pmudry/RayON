@@ -28,7 +28,7 @@ struct ShowNormals : public MaterialBase<ShowNormals>
 
    /**
     * @brief Construct show normals material
-    * @param p Material parameters (albedo)
+    * @param p Material parameters (albedo and normal)
     */
    __device__ __forceinline__ ShowNormals(const ShowNormalsParams &p) : params(p) {}
 
@@ -37,7 +37,7 @@ struct ShowNormals : public MaterialBase<ShowNormals>
     *
     * @param r_in Incident ray (unused)
     * @param rec Hit record containing surface normal
-    * @param attenuation Output: normal mapped to color space [0,1]³
+    * @param attenuation Output: not used
     * @param scattered Output: not set (ray absorbed)
     * @param state Random number generator state (unused)
     * @return false (ray absorbed, path terminates)
@@ -45,16 +45,17 @@ struct ShowNormals : public MaterialBase<ShowNormals>
    __device__ bool scatter(const ray_simple &r_in, const hit_record_simple &rec, f3 &attenuation, ray_simple &scattered,
                            curandState *state) const
    {
-      // Map normal from [-1,1]³ to [0,1]³ for color display
-      attenuation = f3(0.5f * (rec.normal.x + 1.0f), 0.5f * (rec.normal.y + 1.0f), 0.5f * (rec.normal.z + 1.0f));
-      return false; // Don't scatter - terminate path
+      return false; // Don't scatter - emit normal color instead
    }
 
    /**
-    * @brief Get emitted light (zero for non-emissive surfaces)
-    * @return Black (no emission)
+    * @brief Get emitted color (displays the surface normal as color)
+    * @return Normal vector mapped to RGB color space [0,1]³
     */
-   __device__ __forceinline__ f3 emission() const { return f3(0.0f, 0.0f, 0.0f); }
+   __device__ __forceinline__ f3 emission() const { 
+      // Map normal from [-1,1] to [0,1] for color display
+      return 0.5f * (params.normal + f3(1.0f, 1.0f, 1.0f)); 
+   }
 };
 
 } // namespace Materials

@@ -347,7 +347,6 @@ __device__ __forceinline__ void apply_material(const CudaScene::Material &mat, h
       break;
    case MaterialType::SHOW_NORMALS:
       rec.material = SHOW_NORMALS;
-      rec.color = f3(1, 1, 1);
       break;
    case MaterialType::SDF_MATERIAL: // TODO: Implement SDF materials
       rec.material = LAMBERTIAN;
@@ -520,7 +519,7 @@ __device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scen
                mat_desc = MaterialDescriptor::makeConstant(rec.color);
                break;
             case SHOW_NORMALS:
-               mat_desc = MaterialDescriptor::makeShowNormals(f3(1.0f, 1.0f, 1.0f));
+               mat_desc = MaterialDescriptor::makeShowNormals(rec.normal);
                break;
          }
          

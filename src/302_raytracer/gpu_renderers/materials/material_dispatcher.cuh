@@ -103,10 +103,10 @@ struct MaterialDescriptor {
         return desc;
     }
     
-    __device__ __host__ static MaterialDescriptor makeShowNormals(const f3& albedo) {
+    __device__ __host__ static MaterialDescriptor makeShowNormals(const f3& normal = f3(0,0,0)) {
         MaterialDescriptor desc;
         desc.type = SHOW_NORMALS;
-        desc.params.show_normals.albedo = albedo;
+        desc.params.show_normals.normal = normal;
         return desc;
     }
 };
