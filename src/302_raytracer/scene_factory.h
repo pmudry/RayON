@@ -67,8 +67,7 @@ class SceneFactory
       int mat_ground = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(0.44, 0.7, 0.95)));
       int mat_golden = scene_desc.addMaterial(MaterialDesc::roughMirror(Vec3(1.0, 0.85, 0.47), 0.03));
       int mat_blue_rough = scene_desc.addMaterial(MaterialDesc::roughMirror(Vec3(0.3, 0.3, 0.91), 0.3));
-      int mat_red_dots =
-          scene_desc.addMaterial(MaterialDesc::fibonacciDots(Vec3(0.9, 0.1, 0.1), Vec3(0.02, 0.02, 0.02), 12, 0.33f));
+      int mat_red_dots = scene_desc.addMaterial(MaterialDesc::fibonacciDots(Vec3(0.9, 0.1, 0.1), Vec3(0.02, 0.02, 0.02), 12, 0.33f));
       int mat_glass = scene_desc.addMaterial(MaterialDesc::glass(1.5));
       int mat_yellow = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(247 / 255.0, 241 / 255.0, 159 / 255.0)));
       int mat_blue = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(140 / 255.0, 198 / 255.0, 230 / 255.0)));
@@ -78,9 +77,11 @@ class SceneFactory
       int mat_light = scene_desc.addMaterial(MaterialDesc::light(Vec3(4.8, 4.1, 3.7)));
       int mat_torus_orange = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(1.0, 0.6, 0.2)));
 
+      int mat_normal = scene_desc.addMaterial(MaterialDesc::MaterialDesc::normal(Vec3(0,0,0)));
+
       // === Default scene - Geometry ===
       scene_desc.addSphere(Vec3(0, -950.5, -1), 950.0, mat_ground); // Ground "plane"
-      scene_desc.addSphere(Vec3(-3.5, 0.45, -1.8), 0.8, mat_golden);
+      scene_desc.addSphere(Vec3(-3.5, 0.45, -1.8), 0.8, mat_normal);
       scene_desc.addDisplacedSphere(Vec3(1.2, 0, -2), 0.5, mat_blue_rough, 0.2f, 0);
       scene_desc.addSphere(Vec3(-1.3, 0.18, -5), 0.7, mat_red_dots);
       scene_desc.addSphere(Vec3(-0.7, 0.2, -0.3), 0.6, mat_glass);

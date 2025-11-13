@@ -1,5 +1,5 @@
-#include "shader_golf.cuh"
 #include "cuda_raytracer.cuh"
+#include "shader_golf.cuh"
 
 __device__ f3 fibonacci_point(int i, int n)
 {
@@ -28,7 +28,6 @@ __device__ float distanceToNearestDimple(f3 p)
    return acosf(max_dot);
 }
 
-
 __device__ float hexagonalDimplePattern(f3 p)
 {
    float ang = distanceToNearestDimple(unit_vector(p));
@@ -51,8 +50,8 @@ __device__ float golfBallDisplacement(f3 p, f3 center, float radius)
    return displacement;
 }
 
-__device__ bool hit_golf_ball_sphere(f3 center, float radius, const ray_simple &r, float t_min,
-                                     float t_max, hit_record_simple &rec)
+__device__ bool hit_golf_ball_sphere(f3 center, float radius, const ray_simple &r, float t_min, float t_max,
+                                     hit_record_simple &rec)
 {
    if (!hit_sphere(center, radius, r, t_min, t_max, rec))
    {
@@ -72,7 +71,7 @@ __device__ bool hit_golf_ball_sphere(f3 center, float radius, const ray_simple &
    float d_norm = fminf(1.0f, fmaxf(0.0f, -base_displacement / dimple_depth_param));
    float outward_push = radius * geo_strength * (1.0f - d_norm);
    rec.p = f3(surface_point.x + base_outward.x * outward_push, surface_point.y + base_outward.y * outward_push,
-                         surface_point.z + base_outward.z * outward_push);
+              surface_point.z + base_outward.z * outward_push);
 
    f3 base_normal = unit_vector(f3(rec.p.x - center.x, rec.p.y - center.y, rec.p.z - center.z));
 
@@ -92,8 +91,8 @@ __device__ bool hit_golf_ball_sphere(f3 center, float radius, const ray_simple &
       float dd2 = (d2 - d0) / h;
       f3 grad_tan = f3(dd1 * t1.x + dd2 * t2.x, dd1 * t1.y + dd2 * t2.y, dd1 * t1.z + dd2 * t2.z);
 
-      f3 delta_n = f3(-displacement_scale * grad_tan.x, -displacement_scale * grad_tan.y,
-                                            -displacement_scale * grad_tan.z);
+      f3 delta_n =
+          f3(-displacement_scale * grad_tan.x, -displacement_scale * grad_tan.y, -displacement_scale * grad_tan.z);
 
       f3 view_dir = unit_vector(f3(-r.dir.x, -r.dir.y, -r.dir.z));
       float ndv = fmaxf(0.0f, dot(base_normal, view_dir));
@@ -132,11 +131,11 @@ __device__ bool hit_golf_ball_sphere(f3 center, float radius, const ray_simple &
    rec.front_face = ndotv < 0;
    if (!rec.front_face)
    {
-     rec.normal = f3(-rec.normal.x, -rec.normal.y, -rec.normal.z);
+      rec.normal = f3(-rec.normal.x, -rec.normal.y, -rec.normal.z);
    }
 
    const float surface_epsilon = 1e-3f;
    rec.p = f3(rec.p.x + rec.normal.x * surface_epsilon, rec.p.y + rec.normal.y * surface_epsilon,
-                         rec.p.z + rec.normal.z * surface_epsilon);
+              rec.p.z + rec.normal.z * surface_epsilon);
    return true;
 }

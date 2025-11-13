@@ -7,10 +7,12 @@
  */
 #pragma once
 
-#include "camera/camera_base.h"
+#include "camera_base.h"
 #include "scene_description.h"
 #include "scene_builder.h"
 #include <vector>
+#include <chrono>
+#include <iostream>
 
 // Forward declaration for CudaScene::Scene
 namespace CudaScene {

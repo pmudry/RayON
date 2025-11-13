@@ -93,6 +93,13 @@ struct MaterialDesc {
         return mat;
     }
     
+    static MaterialDesc normal(const Vec3& color) {
+        MaterialDesc mat;
+        mat.type = MaterialType::SHOW_NORMALS;
+        mat.albedo = color;
+        return mat;
+    }
+
     static MaterialDesc metal(const Vec3& color, float roughness = 0.0f) {
         MaterialDesc mat;
         mat.type = MaterialType::METAL;
@@ -190,7 +197,7 @@ struct Triangle {
  * @brief Triangle mesh with optional BVH
  */
 struct TriangleMesh {
-    std::vector<Triangle> triangles;
+    std::vector<Triangle> triangles();
     int bvh_root_id;           // Index into BVH node array (-1 = not built)
     Vec3 bounds_min, bounds_max;
     
@@ -335,6 +342,7 @@ struct BVHNode {
 };
 
 struct BVHTree {
+    
     std::vector<BVHNode> nodes;
     int root_index;
     
@@ -357,7 +365,7 @@ public:
     std::vector<MaterialDesc> materials;
     std::vector<GeometryDesc> geometries;
     std::vector<TriangleMesh> meshes;
-    std::vector<BVHTree> bvh_trees;          // Per-mesh BVH
+    std::vector<BVHTree> bvh_trees;            // Per-mesh BVH
     BVHTree top_level_bvh;                    // Scene-level BVH
     
     // Scene properties

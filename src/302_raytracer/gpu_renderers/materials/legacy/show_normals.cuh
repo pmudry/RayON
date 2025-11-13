@@ -8,7 +8,6 @@
 
 #pragma once
 #include "cuda_raytracer.cuh"
-#include "cuda_utils.cuh"
 #include "material_base.cuh"
 
 namespace Materials

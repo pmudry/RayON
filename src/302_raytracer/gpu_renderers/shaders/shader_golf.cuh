@@ -1,7 +1,6 @@
 #pragma once
 
 #include "cuda_float3.cuh"
-#include "cuda_utils.cuh"
 
 // Forward declarations to avoid including shader_common.cuh here (prevents recursion/duplicates)
 struct ray_simple;
