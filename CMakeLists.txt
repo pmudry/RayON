@@ -129,15 +129,6 @@ set(SOURCE_302_RAYTRACER
 
 )
 
-# Add include directories to avoid ugly ../../ paths
-include_directories(src)
-include_directories(src/302_raytracer)
-include_directories(src/302_raytracer/camera)
-include_directories(src/302_raytracer/camera/sdl)
-include_directories(src/302_raytracer/cpu_renderers)
-include_directories(src/302_raytracer/gpu_renderers)
-include_directories(src/302_raytracer/gpu_renderers/materials)
-
 # Specific compiler flags below. We're not going to add options for all possible compilers, but if
 # you're new to CMake, the following may be a helpful example if you're using a
 # different compiler or want to set different compiler options.
@@ -186,6 +177,21 @@ endif()
 
 # Executables
 add_executable(302_raytracer ${EXTERNAL} ${SOURCE_302_RAYTRACER})
+
+# Add include directories using modern CMake target_include_directories
+# This is the proper way - affects only this target and propagates to clangd via compile_commands.json
+target_include_directories(302_raytracer PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/external
+    ${CMAKE_SOURCE_DIR}/src/302_raytracer
+    ${CMAKE_SOURCE_DIR}/src/302_raytracer/camera
+    ${CMAKE_SOURCE_DIR}/src/302_raytracer/camera/sdl
+    ${CMAKE_SOURCE_DIR}/src/302_raytracer/cpu_renderers
+    ${CMAKE_SOURCE_DIR}/src/302_raytracer/gpu_renderers
+    ${CMAKE_SOURCE_DIR}/src/302_raytracer/gpu_renderers/shaders
+    ${CMAKE_SOURCE_DIR}/src/302_raytracer/gpu_renderers/materials
+    ${CMAKE_SOURCE_DIR}/src/302_raytracer/gpu_renderers/materials/legacy
+)
 
 # Find and link SDL2 for real-time display (optional)
 find_package(SDL2 QUIET)

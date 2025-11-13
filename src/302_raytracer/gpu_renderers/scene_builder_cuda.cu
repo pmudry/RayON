@@ -6,7 +6,7 @@
  * host SceneDescription to GPU-friendly format and manages device memory.
  */
 
-#include "../scene_description.h"
+#include "scene_description.h"
 #include "cuda_scene.cuh"
 #include <cuda_runtime.h>
 

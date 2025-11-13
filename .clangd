@@ -3,6 +3,7 @@ CompileFlags:
     - -W*
     - -forward-unknown-to-host-compiler
     - --options-file
+    - --options-file=*
     - --generate-code=*
     - -Xcompiler=*
     - --expt-relaxed-constexpr
@@ -10,9 +11,27 @@ CompileFlags:
     - -rdc=true
     - -rdc
     - --relocatable-device-code=*
+    - -t
+    - -rdynamic
+    - -lineinfo
   Add:
     - --cuda-path=/usr/local/cuda
-    - --cuda-gpu-arch=sm_75,sm_50,sm_90
+    - --cuda-gpu-arch=sm_90
+    # Explicitly add all include paths so clangd can find headers
+    - -I/home/pmudry/git/302_raytracer/src
+    - -I/home/pmudry/git/302_raytracer/src/external
+    - -I/home/pmudry/git/302_raytracer/src/302_raytracer
+    - -I/home/pmudry/git/302_raytracer/src/302_raytracer/camera
+    - -I/home/pmudry/git/302_raytracer/src/302_raytracer/camera/sdl
+    - -I/home/pmudry/git/302_raytracer/src/302_raytracer/cpu_renderers
+    - -I/home/pmudry/git/302_raytracer/src/302_raytracer/gpu_renderers
+    - -I/home/pmudry/git/302_raytracer/src/302_raytracer/gpu_renderers/shaders
+    - -I/home/pmudry/git/302_raytracer/src/302_raytracer/gpu_renderers/materials
+    - -I/home/pmudry/git/302_raytracer/src/302_raytracer/gpu_renderers/materials/legacy
+    - -I/usr/local/cuda/include
 
 Diagnostics:
   UnusedIncludes: None
+  MissingIncludes: Relaxed
+  Suppress:
+    - "unknown-cuda-version"

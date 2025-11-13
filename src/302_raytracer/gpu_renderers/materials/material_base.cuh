@@ -11,12 +11,8 @@
  */
 
 #pragma once
-#include "../cuda_float3.cuh"
+#include "cuda_float3.cuh"
 #include <curand_kernel.h>
-
-// Forward declarations
-struct ray_simple;
-struct hit_record_simple;
 
 namespace Materials {
 

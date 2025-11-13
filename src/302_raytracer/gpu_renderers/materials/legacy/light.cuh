@@ -7,8 +7,9 @@
  */
 
 #pragma once
-#include "../material_base.cuh"
-#include "../../cuda_utils.cuh"
+#include "cuda_raytracer.cuh"
+#include "cuda_utils.cuh"
+#include "material_base.cuh"
 
 // Forward declaration for light intensity override
 extern __constant__ float g_light_intensity;

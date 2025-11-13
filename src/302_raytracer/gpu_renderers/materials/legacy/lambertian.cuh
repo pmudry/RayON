@@ -7,8 +7,9 @@
  */
 
 #pragma once
-#include "../material_base.cuh"
-#include "../../cuda_utils.cuh"
+#include "cuda_raytracer.cuh"
+#include "cuda_utils.cuh"
+#include "material_base.cuh"
 
 // Forward declaration from shader_common.cuh
 __device__ f3 randUnitVector(curandState *state);

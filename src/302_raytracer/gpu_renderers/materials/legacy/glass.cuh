@@ -7,8 +7,9 @@
  */
 
 #pragma once
-#include "../material_base.cuh"
-#include "../../cuda_utils.cuh"
+#include "cuda_raytracer.cuh"
+#include "cuda_utils.cuh"
+#include "material_base.cuh"
 
 // Forward declarations
 __device__ float rand_float(curandState *state);
