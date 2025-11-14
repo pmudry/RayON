@@ -53,7 +53,7 @@ struct Glass : public MaterialBase<Glass>
                            curandState *state) const
    {
 
-      f3 unit_direction = unit_vector(r_in.dir);
+      f3 unit_direction = normalize(r_in.dir);
 
       // Use global refraction index override if available
       float effective_refraction_index = g_glass_refraction_index;

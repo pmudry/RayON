@@ -1,7 +1,6 @@
 // Host-side CUDA renderer implementation.
 // Device-side kernels and ray tracing logic live in gpu_renderers/shaders/*.cu(h).
 
-#include "cuda_float3.cuh"
 #include "cuda_raytracer.cuh"
 #include "cuda_scene.cuh"
 #include "cuda_utils.cuh"

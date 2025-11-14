@@ -87,7 +87,7 @@ __device__ __forceinline__ float reflectance(float cosine, float ref_idx)
 __device__ __forceinline__ f3 reflect_fuzzy(const f3 &v, const f3 &n, float roughness,
                                                        curandState *state)
 {
-   f3 perturbed_normal = unit_vector(n + roughness * randOnUnitSphere(state));
+   f3 perturbed_normal = normalize(n + roughness * randOnUnitSphere(state));
    return reflect(v, perturbed_normal);
 }
 
@@ -218,7 +218,7 @@ __device__ inline bool hit_rectangle(const f3 &corner, const f3 &u, const f3 &v,
                                      const ray_simple &r, float t_min, float t_max, hit_record_simple &rec)
 {
    // Compute rectangle normal via cross product (u × v)
-   f3 normal = unit_vector(f3(u.y * v.z - u.z * v.y, u.z * v.x - u.x * v.z, u.x * v.y - u.y * v.x));
+   f3 normal = normalize(f3(u.y * v.z - u.z * v.y, u.z * v.x - u.x * v.z, u.x * v.y - u.y * v.x));
    
    // Check if ray is parallel to rectangle plane
    float denom = dot(normal, r.dir);
@@ -273,7 +273,7 @@ __device__ __forceinline__ bool intersect_geometry(const CudaScene::Geometry &ge
 
 __device__ inline float nearestAngularDistanceFibonacci(f3 dir, int N)
 {
-   f3 q = unit_vector(dir);
+   f3 q = normalize(dir);
    float max_dp = -1.0f;
    for (int i = 0; i < N; ++i)
    {
@@ -297,7 +297,7 @@ __device__ inline f3 apply_procedural_pattern(CudaScene::ProceduralPattern patte
    {
       f3 local = f3(surface_point.x - geometry_center.x, surface_point.y - geometry_center.y,
                                           surface_point.z - geometry_center.z);
-      f3 dir = unit_vector(local);
+      f3 dir = normalize(local);
       int dot_count = static_cast<int>(param1);
       float dot_radius = param2;
       float ang = nearestAngularDistanceFibonacci(dir, dot_count);
@@ -575,7 +575,7 @@ __device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scen
       else
       {
          // Sky/background
-         f3 unit_direction = unit_vector(current_ray.dir);
+         f3 unit_direction = normalize(current_ray.dir);
          float t = 0.5f * (unit_direction.y + 1.0f);
          f3 sky_color = (1.0f - t) * f3(1.0f, 1.0f, 1.0f) + t * f3(0.5f, 0.7f, 1.0f);
          accumulated_color = accumulated_color + f3(

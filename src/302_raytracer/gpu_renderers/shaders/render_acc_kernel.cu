@@ -55,7 +55,7 @@ __global__ void renderAccKernel(float *accum_buffer, unsigned char *image, const
       if (g_dof_enabled && g_dof_aperture > 0.0f)
       {
          // Find focus point along original ray direction
-         f3 normalized_dir = unit_vector(ray_direction);
+         f3 normalized_dir = normalize(ray_direction);
          f3 focus_point = camera_center + g_dof_focus_distance * normalized_dir;
 
          // Offset ray origin randomly on aperture disk

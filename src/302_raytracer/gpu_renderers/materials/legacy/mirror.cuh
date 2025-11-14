@@ -42,7 +42,7 @@ struct Mirror : public MaterialBase<Mirror>
    __device__ bool scatter(const ray_simple &r_in, const hit_record_simple &rec, f3 &attenuation, ray_simple &scattered,
                            curandState *state) const
    {
-      f3 reflected = do_reflect(unit_vector(r_in.dir), rec.normal);
+      f3 reflected = do_reflect(normalize(r_in.dir), rec.normal);
       scattered = ray_simple(rec.p, reflected);
       attenuation = params.albedo;
 

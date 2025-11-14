@@ -65,19 +65,20 @@ static __device__ inline float rand_float(curandState *state)
  */
 static __device__ inline f3 randUnitVector(curandState *state)
 {
-    float x = 2.0f * rand_float(state) - 1.0f;
-    float y = 2.0f * rand_float(state) - 1.0f;
-    float z = 2.0f * rand_float(state) - 1.0f;
-    
-    float length = sqrtf(x*x + y*y + z*z);
-    
-    // Avoid division by zero (extremely rare)
-    if (length > 1e-8f) {
-        x /= length;
-        y /= length;
-        z /= length;
-    }
-    return f3(x, y, z);
+   float x = 2.0f * rand_float(state) - 1.0f;
+   float y = 2.0f * rand_float(state) - 1.0f;
+   float z = 2.0f * rand_float(state) - 1.0f;
+
+   float length = sqrtf(x * x + y * y + z * z);
+
+   // Avoid division by zero (extremely rare)
+   if (length > 1e-8f)
+   {
+      x /= length;
+      y /= length;
+      z /= length;
+   }
+   return f3(x, y, z);
 }
 
 /**
@@ -116,6 +117,16 @@ static __device__ inline f3 randPosInSphere(curandState *state, f3 center, float
    float z = cosf(phi);
 
    return center + f3(x * radius, y * radius, z * radius);
+}
+
+static __device__ inline void build_orthonormal_basis(const f3 &n, f3 &u, f3 &v)
+{
+   // from "Building an Orthonormal Basis, Pixar" / Shirley
+   if (fabs(n.x) > fabs(n.z))   
+      u = normalize(f3(-n.y, n.x, 0.0f));   
+   else   
+      u = normalize(f3(0.0f, -n.z, n.y));   
+   v = cross(n, u);
 }
 
 //==============================================================================

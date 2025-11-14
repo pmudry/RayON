@@ -52,10 +52,10 @@ struct RoughMirror : public MaterialBase<RoughMirror>
                            curandState *state) const
    {
       // Perturb normal based on roughness (microfacet approximation)
-      f3 perturbed_normal = unit_vector(rec.normal + params.roughness * g_metal_fuzziness * randOnUnitSphere(state));
+      f3 perturbed_normal = normalize(rec.normal + params.roughness * g_metal_fuzziness * randOnUnitSphere(state));
 
       // Reflect off perturbed normal
-      f3 reflected = do_reflect(unit_vector(r_in.dir), perturbed_normal);
+      f3 reflected = do_reflect(normalize(r_in.dir), perturbed_normal);
 
       scattered = ray_simple(rec.p, reflected);
       attenuation = params.albedo;

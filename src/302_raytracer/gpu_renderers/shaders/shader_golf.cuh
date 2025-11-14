@@ -7,7 +7,6 @@ struct ray_simple;
 struct hit_record_simple;
 
 #include <cfloat>
-#include <cmath>
 #include <curand_kernel.h>
 
 __device__ f3 fibonacci_point(int i, int n);

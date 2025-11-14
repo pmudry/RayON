@@ -271,12 +271,7 @@ class RendererCUDAProgressive : virtual public CameraBase
             last_camera_change_time = now;
             is_camera_moving = true;
 
-            // Free and reset device buffers on camera change
-            if (d_rand_states != nullptr)
-            {
-               freeDeviceRandomStates(d_rand_states);
-               d_rand_states = nullptr;
-            }
+            // Reset only the accumulation buffer; keep RNG states alive to preserve jitter sequences
             if (d_accum_buffer != nullptr)
             {
                freeDeviceAccumBuffer(d_accum_buffer);

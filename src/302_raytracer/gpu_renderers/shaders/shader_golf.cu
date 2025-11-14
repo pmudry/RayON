@@ -14,7 +14,7 @@ __device__ f3 fibonacci_point(int i, int n)
 
 __device__ float distanceToNearestDimple(f3 p)
 {
-   f3 q = unit_vector(p);
+   f3 q = normalize(p);
    const int N = 150;
    float max_dot = -1.0f;
    for (int i = 0; i < N; ++i)
@@ -30,7 +30,7 @@ __device__ float distanceToNearestDimple(f3 p)
 
 __device__ float hexagonalDimplePattern(f3 p)
 {
-   float ang = distanceToNearestDimple(unit_vector(p));
+   float ang = distanceToNearestDimple(normalize(p));
    const float dimple_radius = 0.24f;
    const float dimple_depth = 0.35f;
    if (ang < dimple_radius)
@@ -45,7 +45,7 @@ __device__ float hexagonalDimplePattern(f3 p)
 __device__ float golfBallDisplacement(f3 p, f3 center, float radius)
 {
    f3 local_point = f3(p.x - center.x, p.y - center.y, p.z - center.z);
-   f3 normalized = unit_vector(local_point);
+   f3 normalized = normalize(local_point);
    float displacement = hexagonalDimplePattern(normalized);
    return displacement;
 }
@@ -66,26 +66,26 @@ __device__ bool hit_golf_ball_sphere(f3 center, float radius, const ray_simple &
    const float geo_strength = 0.35f;
 
    f3 base_outward =
-       unit_vector(f3(surface_point.x - center.x, surface_point.y - center.y, surface_point.z - center.z));
+       normalize(f3(surface_point.x - center.x, surface_point.y - center.y, surface_point.z - center.z));
 
    float d_norm = fminf(1.0f, fmaxf(0.0f, -base_displacement / dimple_depth_param));
    float outward_push = radius * geo_strength * (1.0f - d_norm);
    rec.p = f3(surface_point.x + base_outward.x * outward_push, surface_point.y + base_outward.y * outward_push,
               surface_point.z + base_outward.z * outward_push);
 
-   f3 base_normal = unit_vector(f3(rec.p.x - center.x, rec.p.y - center.y, rec.p.z - center.z));
+   f3 base_normal = normalize(f3(rec.p.x - center.x, rec.p.y - center.y, rec.p.z - center.z));
 
    if (base_displacement < -0.001f)
    {
       f3 helper = fabsf(base_normal.x) > 0.8f ? f3(0, 1, 0) : f3(1, 0, 0);
-      f3 t1 = unit_vector(cross(helper, base_normal));
+      f3 t1 = normalize(cross(helper, base_normal));
       f3 t2 = cross(base_normal, t1);
 
       const float h = 0.015f;
       f3 p_hat = base_normal;
       float d0 = hexagonalDimplePattern(p_hat);
-      float d1 = hexagonalDimplePattern(unit_vector(f3(p_hat.x + h * t1.x, p_hat.y + h * t1.y, p_hat.z + h * t1.z)));
-      float d2 = hexagonalDimplePattern(unit_vector(f3(p_hat.x + h * t2.x, p_hat.y + h * t2.y, p_hat.z + h * t2.z)));
+      float d1 = hexagonalDimplePattern(normalize(f3(p_hat.x + h * t1.x, p_hat.y + h * t1.y, p_hat.z + h * t1.z)));
+      float d2 = hexagonalDimplePattern(normalize(f3(p_hat.x + h * t2.x, p_hat.y + h * t2.y, p_hat.z + h * t2.z)));
 
       float dd1 = (d1 - d0) / h;
       float dd2 = (d2 - d0) / h;
@@ -94,7 +94,7 @@ __device__ bool hit_golf_ball_sphere(f3 center, float radius, const ray_simple &
       f3 delta_n =
           f3(-displacement_scale * grad_tan.x, -displacement_scale * grad_tan.y, -displacement_scale * grad_tan.z);
 
-      f3 view_dir = unit_vector(f3(-r.dir.x, -r.dir.y, -r.dir.z));
+      f3 view_dir = normalize(f3(-r.dir.x, -r.dir.y, -r.dir.z));
       float ndv = fmaxf(0.0f, dot(base_normal, view_dir));
       float atten = smoothstep(0.1f, 0.4f, ndv);
       delta_n = f3(delta_n.x * atten, delta_n.y * atten, delta_n.z * atten);
@@ -106,7 +106,7 @@ __device__ bool hit_golf_ball_sphere(f3 center, float radius, const ray_simple &
          delta_n = (max_len / len) * delta_n;
       }
 
-      f3 perturbed = unit_vector(f3(base_normal.x + delta_n.x, base_normal.y + delta_n.y, base_normal.z + delta_n.z));
+      f3 perturbed = normalize(f3(base_normal.x + delta_n.x, base_normal.y + delta_n.y, base_normal.z + delta_n.z));
       if (dot(perturbed, base_normal) < 0.0f)
       {
          perturbed = f3(-perturbed.x, -perturbed.y, -perturbed.z);

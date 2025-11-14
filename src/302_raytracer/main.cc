@@ -229,6 +229,7 @@ int main(int argc, char *argv[])
    if(args.scene_file == nullptr)
    {
       cout << "No scene file provided. Using default scene." << endl;
+      //scene_desc = Scene::SceneFactory::singleObjectScene();
       scene_desc = Scene::SceneFactory::createDefaultScene();
    }
    else{
@@ -237,7 +238,9 @@ int main(int argc, char *argv[])
      
    vector<unsigned char> localImage(image_width * image_height * CHANNELS);
    
-   Camera c(Vec3(0, 0, 0), image_width, image_height, CHANNELS, args.samples);   
+   Camera c(Vec3(0, 0, 0), image_width, image_height, CHANNELS, args.samples);
+   
+   c.look_at = Vec3(0, 0, -1);
    
    switch (choice)
    {

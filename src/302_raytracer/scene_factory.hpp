@@ -56,6 +56,23 @@ class SceneFactory
    }
 
    /**
+    * @brief Create a simple scene with a single red sphere
+    *
+    * @return SceneDescription Simple scene with one sphere and ground
+    */
+   static SceneDescription singleObjectScene()
+   {
+      using namespace Scene;
+      SceneDescription scene_desc;
+
+      int mat_red = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(0.9, 0.1, 0.1)));
+      int mat_grey = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(0.3, 0.3, 0.3)));
+      scene_desc.addSphere(Vec3(0, 0.6, -1), 0.5, mat_red);
+      scene_desc.addSphere(Vec3(0, -10000, -1), 10000, mat_grey); // Ground
+      return scene_desc;
+   }
+
+   /**
     * @brief Create the default programmatic scene
     *
     * @return SceneDescription Default scene with spheres, area lights, and various materials
