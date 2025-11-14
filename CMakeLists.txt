@@ -2,30 +2,26 @@
 # CMake Build Configuration for 302_RAYTRACE
 # See README.md for guidance.
 #---------------------------------------------------------------------------------------------------
-
-cmake_minimum_required(VERSION 3.1.0...4.0.0)
+cmake_minimum_required(VERSION 3.8)
 
 # Option to choose compiler (set before project())
-# Usage: cmake .. -DUSE_CLANG=OFF
 option(USE_CLANG "Use Clang compiler instead of GCC" ON)
+
+project(302_RAYTRACE LANGUAGES CXX CUDA)
 
 if(USE_CLANG)
     set(CMAKE_C_COMPILER "clang")
     set(CMAKE_CXX_COMPILER "clang++")
     message(STATUS "Using Clang compiler")
+else()
+    set(CMAKE_C_COMPILER "gcc")
+    set(CMAKE_CXX_COMPILER "g++")
+    message(STATUS "Using gcc / g++ compiler")
 endif()
 
-project(302_RAYTRACE LANGUAGES CXX CUDA)
 
 # Ensure compile_commands.json is generated in the source directory
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-# Create a symbolic link to compile_commands.json in the source directory for clangd
-file(CREATE_LINK
-  "${CMAKE_BINARY_DIR}/compile_commands.json"
-  "${CMAKE_SOURCE_DIR}/compile_commands.json"
-  SYMBOLIC
-)
 
 # Set default build type to Release if not specified
 if(NOT CMAKE_BUILD_TYPE)
@@ -40,17 +36,16 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 # CUDA settings
 include(CheckLanguage)
+
 check_language(CUDA)
+
 if(CMAKE_CUDA_COMPILER)
-    enable_language(CUDA)
+    enable_language(CUDA)    
     set(CMAKE_CUDA_STANDARD 17)
     set(CMAKE_CUDA_STANDARD_REQUIRED ON)
     set(CMAKE_CUDA_SEPARABLE_COMPILATION ON)
-
-    # Enable parallel CUDA compilation for faster builds
-    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -t 0")
-
-    message(STATUS "CUDA found and enabled")
+    set(CMAKE_CUDA_ARCHITECTURES sm_90)     # Set CUDA architectures (adjust based on your GPU - this covers common GPUs)
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -t 0")    # Enable parallel CUDA compilation for faster builds
     set(CUDA_FOUND TRUE)
 else()
     message(WARNING "CUDA not found. CUDA functionality will be disabled.")
@@ -68,46 +63,46 @@ set(SOURCE_302_RAYTRACER
     src/302_raytracer/main.cc
 
     # Core headers
-    src/302_raytracer/utils.h
-    src/302_raytracer/vec3.h
-    src/302_raytracer/color.h
-    src/302_raytracer/ray.h
-    src/302_raytracer/interval.h
-    src/302_raytracer/constants.h
-    src/302_raytracer/rnd_gen.h
+    src/302_raytracer/utils.hpp
+    src/302_raytracer/vec3.hpp
+    src/302_raytracer/color.hpp
+    src/302_raytracer/ray.hpp
+    src/302_raytracer/interval.hpp
+    src/302_raytracer/constants.hpp
+    src/302_raytracer/rnd_gen.hpp
 
     # Geometry
-    src/302_raytracer/hittable.h
-    src/302_raytracer/hittable_list.h
-    src/302_raytracer/sphere.h
-    src/302_raytracer/cube.h
-    src/302_raytracer/rectangle.h
+    src/302_raytracer/hittable.hpp
+    src/302_raytracer/hittable_list.hpp
+    src/302_raytracer/sphere.hpp
+    src/302_raytracer/cube.hpp
+    src/302_raytracer/rectangle.hpp
 
     # Materials
-    src/302_raytracer/material.h
+    src/302_raytracer/material.hpp
 
     # Scene description (NEW)
-    src/302_raytracer/scene_description.h
-    src/302_raytracer/scene_builder.h
-    src/302_raytracer/yaml_scene_loader.h
+    src/302_raytracer/scene_description.hpp
+    src/302_raytracer/scene_builder.hpp
+    src/302_raytracer/yaml_scene_loader.hpp
     src/302_raytracer/yaml_scene_loader.cc
 
     # Camera and renderers
-    src/302_raytracer/camera/camera.h
-    src/302_raytracer/camera/camera_base.h
+    src/302_raytracer/camera/camera.hpp
+    src/302_raytracer/camera/camera_base.hpp
 
     # SDL renderers (if SDL2 is available)  
-    src/302_raytracer/camera/sdl/sdl_gui_handler.h
-    src/302_raytracer/camera/sdl/sdl_gui_controls.h
+    src/302_raytracer/camera/sdl/sdl_gui_handler.hpp
+    src/302_raytracer/camera/sdl/sdl_gui_controls.hpp
 
     # CPU renderers
-    src/302_raytracer/cpu_renderers/cpu_ray_tracer.h
-    src/302_raytracer/cpu_renderers/renderer_cpu.h
-    src/302_raytracer/cpu_renderers/renderer_cpu_parallel.h
+    src/302_raytracer/cpu_renderers/cpu_ray_tracer.hpp
+    src/302_raytracer/cpu_renderers/renderer_cpu.hpp
+    src/302_raytracer/cpu_renderers/renderer_cpu_parallel.hpp
 
     # GPU renderers
-    src/302_raytracer/gpu_renderers/renderer_cuda.h
-    src/302_raytracer/gpu_renderers/renderer_cuda_progressive.h
+    src/302_raytracer/gpu_renderers/renderer_cuda.hpp
+    src/302_raytracer/gpu_renderers/renderer_cuda_progressive.hpp
 
     src/302_raytracer/gpu_renderers/cuda_float3.cuh
     src/302_raytracer/gpu_renderers/cuda_utils.cuh
@@ -129,27 +124,6 @@ set(SOURCE_302_RAYTRACER
 
 )
 
-# Specific compiler flags below. We're not going to add options for all possible compilers, but if
-# you're new to CMake, the following may be a helpful example if you're using a
-# different compiler or want to set different compiler options.
-message(STATUS "Compiler ID: " ${CMAKE_CXX_COMPILER_ID})
-message(STATUS "Release flags: " ${CMAKE_CXX_FLAGS_RELEASE})
-message(STATUS "Debug flags: " ${CMAKE_CXX_FLAGS_DEBUG})
-
-# Set to C++17
-include(ProcessorCount)
-ProcessorCount(N)
-message(STATUS "Number of processor cores: " ${N})
-if(NOT N EQUAL 0)
-    math(EXPR PARALLEL_CORES "${N} - 2")
-    if(PARALLEL_CORES LESS 1)
-        set(CMAKE_BUILD_PARALLEL_LEVEL 1)
-    else()
-        set(CMAKE_BUILD_PARALLEL_LEVEL ${PARALLEL_CORES})
-    endif()
-    message(STATUS "Setting parallel build level to: " ${CMAKE_BUILD_PARALLEL_LEVEL})
-endif()
-
 # Ninja-specific optimizations
 if(CMAKE_GENERATOR STREQUAL "Ninja")
     message(STATUS "Using Ninja generator - enabling optimizations")
@@ -165,14 +139,13 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     # Apply these warnings only to C++ files, not CUDA
     add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-Wnon-virtual-dtor>") # Class has virtual functions, but its destructor is not virtual
     add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-Wreorder>") # Data member will be initialized after [other] data member
-    add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-Wmaybe-uninitialized>") # Variable improperly initialized
+    add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-Wuninitialized>") # Variable improperly initialized
     add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-Wunused-variable>") # Variable is defined but unused
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     # Apply these warnings only to C++ files, not CUDA
     add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-Wnon-virtual-dtor>") # Class has virtual functions, but its destructor is not virtual
     add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-Wreorder>") # Data member will be initialized after [other] data member
     add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-Wsometimes-uninitialized>") # Variable improperly initialized
-    add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-Wunused-variable>") # Variable is defined but unused
 endif()
 
 # Executables
@@ -230,10 +203,6 @@ file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/res)
 if(CUDA_FOUND)
     set_property(TARGET 302_raytracer PROPERTY CUDA_SEPARABLE_COMPILATION ON)
     target_link_libraries(302_raytracer curand)
-
-    # CUDA optimization flags
-    # Set CUDA architectures (adjust based on your GPU - this covers common GPUs)
-    set(CMAKE_CUDA_ARCHITECTURES "all-major")
 
     # CUDA compiler flags for optimization and warning suppression
     target_compile_options(302_raytracer PRIVATE

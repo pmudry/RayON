@@ -15,10 +15,7 @@ CompileFlags:
     - -rdynamic
     - -lineinfo
   Add:
-    - --cuda-path=/usr/local/cuda
-    - --cuda-gpu-arch=sm_90
-    - -std=c++17
-    - --no-cuda-version-check
+    - --no-cuda-version-check    
     # Explicitly add all include paths so clangd can find headers
     - -I/home/pmudry/git/302_raytracer/src
     - -I/home/pmudry/git/302_raytracer/src/external
@@ -30,18 +27,9 @@ CompileFlags:
     - -I/home/pmudry/git/302_raytracer/src/302_raytracer/gpu_renderers/shaders
     - -I/home/pmudry/git/302_raytracer/src/302_raytracer/gpu_renderers/materials
     - -I/home/pmudry/git/302_raytracer/src/302_raytracer/gpu_renderers/materials/legacy
-    - -I/usr/local/cuda/include
-    # Add system includes explicitly (from clang++ -v)
-    - -isystem/usr/include/c++/13
-    - -isystem/usr/include/aarch64-linux-gnu/c++/13
-    - -isystem/usr/include/c++/13/backward
-    - -isystem/usr/lib/llvm-18/lib/clang/18/include
-    - -isystem/usr/include/aarch64-linux-gnu
-    - -isystem/usr/include
 
 Diagnostics:
   UnusedIncludes: Strict
-  MissingIncludes: None
   Suppress:
     - "unknown-cuda-version"
     - "drv_unknown_cuda_arch"

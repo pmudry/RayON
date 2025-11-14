@@ -1,8 +1,8 @@
-#include "camera/camera.h"
-#include "constants.h"
-#include "scene_description.h"
-#include "scene_factory.h"
-#include "utils.h"
+#include "camera/camera.hpp"
+#include "constants.hpp"
+#include "scene_description.hpp"
+#include "scene_factory.hpp"
+#include "utils.hpp"
 
 #include <filesystem>
 #include <iostream>

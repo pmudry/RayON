@@ -16,16 +16,18 @@ The project is declined in another version that serves as a starting point for t
 
 ## Using CMAKE to generate compilation scripts
 
-Either manually via : 
+Create manually via
 
 ```bash
 mkdir build
 cd build
-cmake .. --fresh -G 'Unix Makefiles' -DCMAKE_EXPORT_COMPILE_COMMANDS=1 && cp compile_commands.json ..
-make -j4
+cmake .. --fresh -G 'Unix Makefiles'
+make -j
 ```
 
-Then run via : 
+This will generate the appropriate `compile_commands.json` for `clangd` so that you get syntax highlighting, code completion etc. in VS Code.
+
+You can then run from the `build directory`
 
 ```bash
 ./302_raytracer
@@ -35,12 +37,14 @@ Or, all at once :
 
 ## Running
 ```bash
-ninja && echo "2" | ./302_raytracer
+make -j && echo "2" | ./302_raytracer
 ```
 
-## Whitin VSCode
+## Within VSCode
 
-Install extension `clangd` from `LLVM`. This is all you need. There are *tasks* created in the `.vscode` folder that can be launched with `CTRL+Shift+P` -> Tasks and then you can build, and run. You can even setup key bindings for that.
+Install extension `clangd` from `LLVM`. **WARNING** to make `clangd` work you must have `compile_commands.json` and the headers that are in C++ **MUST** be named with a `.hpp` extension (not `.h`). I spent I whole day trying to figure this out.
+
+This is all you need. There are *tasks* created in the `.vscode` folder that can be launched with `CTRL+Shift+P` -> Tasks and then you can build, and run. You can even setup key bindings for that.
 
 # TODOs 
 

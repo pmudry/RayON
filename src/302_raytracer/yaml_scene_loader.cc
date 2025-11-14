@@ -3,7 +3,7 @@
  * @brief Implementation of YAML scene loader
  */
 
-#include "yaml_scene_loader.h"
+#include "yaml_scene_loader.hpp"
 #include <fstream>
 #include <sstream>
 #include <map>
