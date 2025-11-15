@@ -13,6 +13,7 @@
 #include <cassert>
 #include <math_constants.h>
 
+#define COSINE_IMPLEMENTATION 1
 namespace Materials
 {
 
@@ -63,7 +64,7 @@ struct Lambertian : public MaterialBase<Lambertian>
       // This approach is simple
       // float u1 = rand_float(state);
       // float u2 = rand_float(state);
-      
+
       // This approach uses Owen scrambling for better stratification
       unsigned int salt = __float_as_uint(rand_float(state)) * 92837111u;
       float u1 = next_scrambled(state, salt);
@@ -80,6 +81,15 @@ struct Lambertian : public MaterialBase<Lambertian>
       return f3(x, y, z);
    }
 
+   __device__ __forceinline__ f3 random_in_hemisphere(const f3 &normal, curandState *rng) const
+   {
+      f3 in_unit_sphere = randOnUnitSphere(rng);
+      if (dot(in_unit_sphere, normal) > 0.0) // In the same hemisphere as the normal
+         return in_unit_sphere;
+      else
+         return -in_unit_sphere;
+   }
+
    /**
     * @brief Scatter incident ray using cosine-weighted hemisphere sampling
     *
@@ -93,6 +103,7 @@ struct Lambertian : public MaterialBase<Lambertian>
    __device__ bool scatter(const ray_simple &r_in, const hit_record_simple &rec, f3 &attenuation, ray_simple &scattered,
                            curandState *state) const
    {
+#if COSINE_IMPLEMENTATION
       f3 u, v;
       f3 w = normalize(rec.normal);
       build_orthonormal_basis(w, u, v);
@@ -101,10 +112,12 @@ struct Lambertian : public MaterialBase<Lambertian>
 
       f3 world_dir = local_dir.x * u + local_dir.y * v + local_dir.z * w;
       f3 scatter_direction = world_dir;
+#else
+      f3 scatter_direction = rec.normal + random_in_hemisphere(rec.normal, state);
+#endif
 
-      //      scatter_direction = w + randInHemisphere(rec.normal, state);
-      scattered = ray_simple(rec.p + 0.0001 * w,
-                             scatter_direction); // The offset avoids self-intersection artifacts on large objects
+      // The offset avoids self-intersection artifacts on large objects
+      scattered = ray_simple(rec.p + 0.0001 * rec.normal, scatter_direction);
       attenuation = params.albedo;
 
       return true;
