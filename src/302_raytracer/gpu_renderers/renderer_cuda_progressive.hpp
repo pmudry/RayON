@@ -127,6 +127,8 @@ class RendererCUDAProgressive : virtual public CameraBase
       // Rendering buffers
       SDL_Event event;
       vector<unsigned char> display_image(image_width * image_height * image_channels);
+      // SDL always uploads RGB textures; this scratch buffer lets us strip alpha while keeping gamma-corrected bytes.
+      vector<unsigned char> sdl_display_image;
       vector<float> accum_buffer(image_width * image_height * image_channels, 0.0f);
       void *d_rand_states = nullptr;
       void *d_accum_buffer = nullptr; // Persistent device accumulation buffer
@@ -285,7 +287,8 @@ class RendererCUDAProgressive : virtual public CameraBase
          if (needs_rerender && current_samples > 0)
          {
             convertAccumBufferToImage(display_image, accum_buffer, current_samples, gamma);
-            displayFrame(gui, display_image, current_samples, adaptive_samples_per_batch, light_intensity,
+            auto display_view = prepareDisplayBuffer(display_image, sdl_display_image);
+            displayFrame(gui, *display_view.buffer, display_view.channels, current_samples, adaptive_samples_per_batch, light_intensity,
                          background_intensity, metal_fuzziness, glass_refraction_index, accumulation_enabled,
                          camera_control.isAutoOrbitEnabled(), dof_enabled, dof_aperture, dof_focus_distance,
                          samples_slider_bounds, intensity_slider_bounds, background_slider_bounds,
@@ -345,7 +348,8 @@ class RendererCUDAProgressive : virtual public CameraBase
                adaptive_samples_per_batch = max(1, min(adaptive_samples_per_batch, user_samples_per_batch));
             }
 
-            displayFrame(gui, display_image, current_samples, adaptive_samples_per_batch, light_intensity,
+            auto display_view = prepareDisplayBuffer(display_image, sdl_display_image);
+            displayFrame(gui, *display_view.buffer, display_view.channels, current_samples, adaptive_samples_per_batch, light_intensity,
                          background_intensity, metal_fuzziness, glass_refraction_index, accumulation_enabled,
                          camera_control.isAutoOrbitEnabled(), dof_enabled, dof_aperture, dof_focus_distance,
                          samples_slider_bounds, intensity_slider_bounds, background_slider_bounds,
@@ -357,7 +361,8 @@ class RendererCUDAProgressive : virtual public CameraBase
          else if (current_samples >= max_samples && !camera_changed)
          {
             // Refresh display even when idle to show logo and UI
-            displayFrame(gui, display_image, current_samples, adaptive_samples_per_batch, light_intensity,
+            auto display_view = prepareDisplayBuffer(display_image, sdl_display_image);
+            displayFrame(gui, *display_view.buffer, display_view.channels, current_samples, adaptive_samples_per_batch, light_intensity,
                          background_intensity, metal_fuzziness, glass_refraction_index, accumulation_enabled,
                          camera_control.isAutoOrbitEnabled(), dof_enabled, dof_aperture, dof_focus_distance,
                          samples_slider_bounds, intensity_slider_bounds, background_slider_bounds,
@@ -368,7 +373,8 @@ class RendererCUDAProgressive : virtual public CameraBase
          else if (!accumulation_enabled && current_samples > 0 && !camera_changed)
          {
             // Refresh display even when idle to show logo and UI
-            displayFrame(gui, display_image, current_samples, adaptive_samples_per_batch, light_intensity,
+            auto display_view = prepareDisplayBuffer(display_image, sdl_display_image);
+            displayFrame(gui, *display_view.buffer, display_view.channels, current_samples, adaptive_samples_per_batch, light_intensity,
                          background_intensity, metal_fuzziness, glass_refraction_index, accumulation_enabled,
                          camera_control.isAutoOrbitEnabled(), dof_enabled, dof_aperture, dof_focus_distance,
                          samples_slider_bounds, intensity_slider_bounds, background_slider_bounds,
@@ -398,6 +404,41 @@ class RendererCUDAProgressive : virtual public CameraBase
    }
 
  private:
+    // Lightweight view describing which buffer SDL should read from after gamma correction.
+   struct DisplayBufferView
+   {
+      const vector<unsigned char> *buffer;
+      int channels;
+   };
+
+    // SDL textures are RGB only; when the underlying render uses 4 channels we drop alpha here instead of inside SDL.
+   DisplayBufferView prepareDisplayBuffer(const vector<unsigned char> &source, vector<unsigned char> &scratch)
+   {
+      if (image_channels == 3)
+      {
+         return {&source, 3};
+      }
+      if (image_channels < 3)
+      {
+         return {&source, image_channels};
+      }
+
+      const size_t pixel_count = static_cast<size_t>(image_width) * image_height;
+      scratch.resize(pixel_count * 3);
+
+      for (size_t idx = 0; idx < pixel_count; ++idx)
+      {
+         size_t src_idx = idx * image_channels;
+         size_t dst_idx = idx * 3;
+
+         scratch[dst_idx + 0] = source[src_idx + 0];
+         scratch[dst_idx + 1] = source[src_idx + 1];
+         scratch[dst_idx + 2] = source[src_idx + 2];
+      }
+
+      return {&scratch, 3};
+   }
+
    /**
     * @brief Calculate progressive max depth based on accumulated samples
     * Starts at depth 1, gradually increases to max 256 for final quality
@@ -462,14 +503,14 @@ class RendererCUDAProgressive : virtual public CameraBase
       n_rays.fetch_add(cuda_ray_count, std::memory_order_relaxed);
 
       // Apply gamma correction to display image using base class method
-      convertAccumBufferToImage(display_image, accum_buffer, current_samples, gamma);
+            convertAccumBufferToImage(display_image, accum_buffer, current_samples, gamma); // Keep display + disk paths identical.
    }
 
    /**
     * @brief Update the display with current frame and UI
     */
-   void displayFrame(SDLGuiHandler &gui, const vector<unsigned char> &display_image, int current_samples,
-                     int samples_per_batch, float light_intensity, float background_intensity, float metal_fuzziness,
+   void displayFrame(SDLGuiHandler &gui, const vector<unsigned char> &display_image, int display_channels,
+                     int current_samples, int samples_per_batch, float light_intensity, float background_intensity, float metal_fuzziness,
                      float glass_refraction_index, bool accumulation_enabled, bool auto_orbit_enabled, bool dof_enabled,
                      float dof_aperture, float dof_focus_distance, SliderBounds &samples_slider_bounds,
                      SliderBounds &intensity_slider_bounds, SliderBounds &background_slider_bounds,
@@ -477,7 +518,7 @@ class RendererCUDAProgressive : virtual public CameraBase
                      SliderBounds &dof_aperture_slider_bounds, SliderBounds &dof_focus_slider_bounds,
                      SDL_Rect &toggle_button_rect, SDL_Rect &orbit_button_rect, SDL_Rect &dof_button_rect)
    {
-      gui.updateDisplay(display_image, image_channels);
+      gui.updateDisplay(display_image, display_channels);
       gui.drawLogo();
       gui.drawSampleCountText(current_samples);
       gui.drawUIControls(samples_per_batch, light_intensity, background_intensity, metal_fuzziness,
