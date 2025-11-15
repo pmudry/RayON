@@ -7,29 +7,6 @@
 //==============================================================================
 // RANDOMNESS
 //==============================================================================
-
-/**
- * @brief Fast RNG state using PCG (Permuted Congruential Generator)
- * Much faster than curand_uniform (~5x speedup)
- */
-struct FastRNG
-{
-   unsigned int state;
-
-   __device__ FastRNG(unsigned int seed) : state(seed) {}
-
-   // PCG hash function - fast and high quality
-   __device__ inline unsigned int pcg_hash()
-   {
-      state = state * 747796405u + 2891336453u;
-      unsigned int word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
-      return (word >> 22u) ^ word;
-   }
-
-   // Generate float in [0, 1)
-   __device__ inline float next() { return pcg_hash() * (1.0f / 4294967296.0f); }
-};
-
 /**
  * @brief Initialize random states for all threads
  * This kernel should be called once at startup to initialize the shared random state array

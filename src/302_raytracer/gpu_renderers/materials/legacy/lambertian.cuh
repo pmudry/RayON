@@ -12,7 +12,6 @@
 #include "material_base.cuh"
 #include <cassert>
 #include <math_constants.h>
-#include <stdio.h>
 
 namespace Materials
 {
@@ -27,6 +26,32 @@ struct Lambertian : public MaterialBase<Lambertian>
 {
    LambertianParams params;
 
+   __device__ __forceinline__ unsigned int owen_hash(unsigned int x) const
+   {
+      x ^= x >> 17;
+      x *= 0xed5ad4bbU;
+      x ^= x >> 11;
+      x *= 0xac4c1b51U;
+      x ^= x >> 15;
+      x *= 0x31848babU;
+      x ^= x >> 14;
+      return x;
+   }
+
+   __device__ inline float next_scrambled(curandState *rng, unsigned int salt) const
+   {
+      // true random → uint
+      unsigned int r = __float_as_uint(rand_float(rng));
+
+      // mix with pixel/salt
+      r ^= salt;
+
+      // scramble
+      r = owen_hash(r);
+
+      return (r & 0x00FFFFFF) * (1.0f / 16777216.0f);
+   }
+
    /**
     * @brief Construct Lambertian material
     * @param p Material parameters (albedo)
@@ -35,9 +60,16 @@ struct Lambertian : public MaterialBase<Lambertian>
 
    __device__ __forceinline__ f3 sample_cosine_weighted_hemisphere(curandState *state) const
    {
-      float u1 = rand_float(state);
-      float u2 = rand_float(state);
+      // This approach is simple
+      // float u1 = rand_float(state);
+      // float u2 = rand_float(state);
+      
+      // This approach uses Owen scrambling for better stratification
+      unsigned int salt = __float_as_uint(rand_float(state)) * 92837111u;
+      float u1 = next_scrambled(state, salt);
+      float u2 = next_scrambled(state, salt ^ 0x6c8e9cf5u);
 
+      // Generate cosine-weighted direction
       float r = sqrtf(u1);
       float theta = 2.0f * CUDART_PI_F * u2;
 
