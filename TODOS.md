@@ -2,12 +2,12 @@
 
 ## Interactive renderer
 [x] Gamma correction in interactive renderer is wrong when displayed, but saved correctly
-[ ] Change of speeds in interactive renderer are not very nice
+[ ] Change of speeds in interactive renderer, as they are not very nice
 [ ] Add a ray/second counter somewhere
 
 ## CUDA renderer
 [ ] Implement anisotropic metals
-[ ] Refactor constants f3_ones, f3_zero
+[ ] Refactor constants f3_ones, f3_zero and others
 [ ] New sphere light types
 [ ] Textures loading (Venturi's style)
 [ ] SDF integration
@@ -19,7 +19,6 @@
 [ ] There are still discrepancies for the cuda renderers
     [ ] why renderer_cuda.cu AND .hpp
     [ ] cuda_raytracer name is badly chosen
-[ ] Implement benchmarks for static renderer on typical scenes (multiple renders + average)
 
 ## General
 [ ] Better skybox
@@ -31,3 +30,6 @@
 
 ## Idées à explorer
 [ ] ImGUI à ajouter ?
+[ ] Profiling and low-level optimisation
+[ ] Impact of different rendering optimisation reporting
+[ ] Implement benchmarks for static renderer on typical scenes (multiple renders + average)

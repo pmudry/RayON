@@ -1,6 +1,6 @@
 # CMake build directories
 build/
-res/
+rendered_images/
 out/
 .cache/
 CMakeFiles/

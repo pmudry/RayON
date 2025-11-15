@@ -257,7 +257,7 @@ This configuration demonstrates:
 
 ### Modified Files
 - `src/v0_single_threaded/camera_cuda.cu`: Enhanced rough mirror material handling
-- `res/output_tinted_rough_mirror.png`: Example render with tinted materials
+- `rendered_images/output_YYYY-MM-DD_HH-MM-SS.png`: Example render with tinted materials (timestamped)
 
 ### Documentation Files
 - `ROUGH_MIRROR_README.md`: Original rough mirror documentation

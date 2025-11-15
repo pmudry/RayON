@@ -201,8 +201,8 @@ else()
     message(STATUS "Continuing without SDL2...")
 endif()
 
-# Create an empty directory for storing the images
-file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/res)
+# Create an output directory for rendered images
+file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/rendered_images)
 
 if(CUDA_FOUND)
     set_property(TARGET 302_raytracer PROPERTY CUDA_SEPARABLE_COMPILATION ON)

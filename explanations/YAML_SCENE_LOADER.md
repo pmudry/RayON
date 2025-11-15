@@ -121,7 +121,7 @@ geometry:
 
 ### Test 1: Load Default YAML Scene
 ```bash
-echo "2" | ./302_raytracer --scene ../res/default_scene.yaml -s 5 -r 360
+echo "2" | ./302_raytracer --scene ../resources/default_scene.yaml -s 5 -r 360
 ```
 **Result:** ✅ Successfully loaded 11 materials and 11 objects
 

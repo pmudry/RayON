@@ -198,7 +198,7 @@ The current scene demonstrates material variety:
 
 ### Modified Files
 - `src/v0_single_threaded/camera_cuda.cu`: Main implementation
-- `res/output_rough_mirror.png`: Example render output
+- `rendered_images/output_YYYY-MM-DD_HH-MM-SS.png`: Example render output (timestamp varies per run)
 
 ### Generated Documentation
 - `ROUGH_MIRROR_README.md`: This documentation file
@@ -219,7 +219,7 @@ ninja
 
 ### Output
 - Renders at 1280x720 resolution with 256 samples per pixel
-- Generates `res/output0.png` with rough mirror demonstration
+- Generates `rendered_images/output_YYYY-MM-DD_HH-MM-SS.png` with rough mirror demonstration
 - Performance: ~520M rays/second on modern GPU hardware
 
 ## Mathematical Foundation

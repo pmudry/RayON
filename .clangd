@@ -14,6 +14,7 @@ CompileFlags:
     - -t
     - -rdynamic
     - -lineinfo
+    - -maxrregcount*
   Add:
     - --no-cuda-version-check    
     # Explicitly add all include paths so clangd can find headers
@@ -32,7 +33,7 @@ Diagnostics:
   UnusedIncludes: Strict
   Suppress:
     - "unknown-cuda-version"
-    - "drv_unknown_cuda_arch"
+    - "drv_unknown_cuda_arch"    
 
 Index:
   Background: Build

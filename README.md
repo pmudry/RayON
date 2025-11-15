@@ -40,6 +40,8 @@ Or, all at once :
 make -j && echo "2" | ./302_raytracer
 ```
 
+Rendered frames are written to `rendered_images/` with timestamped filenames such as `output_2025-11-15_14-22-09.png`. Each run produces a new PNG (timestamp uses local time, second precision), so you can sort files chronologically without overwriting previous renders.
+
 ## Within VSCode
 
 Install extension `clangd` from `LLVM`. **WARNING** to make `clangd` work you must have `compile_commands.json` and the headers that are in C++ **MUST** be named with a `.hpp` extension (not `.h`). I spent I whole day trying to figure this out.

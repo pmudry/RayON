@@ -4,8 +4,15 @@
 #include "scene_factory.hpp"
 #include "utils.hpp"
 
+#include <chrono>
+#include <cmath>
+#include <ctime>
 #include <filesystem>
+#include <fstream>
+#include <iomanip>
 #include <iostream>
+#include <sstream>
+#include <system_error>
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
@@ -70,6 +77,106 @@ void dumpImageToFile(vector<unsigned char> &image, int image_width, int image_he
 {
    // Write image to file
    writeImage(image, image_width, image_height, name);
+}
+
+string buildTimestampedOutputPath()
+{
+   auto now = chrono::system_clock::now();
+   time_t raw_time = chrono::system_clock::to_time_t(now);
+   std::tm local_tm;
+#ifdef _WIN32
+   localtime_s(&local_tm, &raw_time);
+#else
+   localtime_r(&raw_time, &local_tm);
+#endif
+
+   stringstream ss;
+   ss << "rendered_images/output_" << put_time(&local_tm, "%Y-%m-%d_%H-%M-%S") << ".png";
+   return ss.str();
+}
+
+string formatDuration(std::chrono::nanoseconds duration)
+{
+   auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(duration);
+   auto seconds = std::chrono::duration_cast<std::chrono::seconds>(duration);
+   auto minutes = std::chrono::duration_cast<std::chrono::minutes>(duration);
+
+   std::ostringstream s;
+
+   if (minutes.count() > 0)
+   {
+      s << minutes.count() << "m " << (seconds.count() % 60) << "s";
+   }
+   else if (seconds.count() >= 10)
+   {
+      s << seconds.count() << "s";
+   }
+   else if (seconds.count() >= 1)
+   {
+      double sec_with_decimal = ms.count() / 1000.0;
+      s << std::fixed << std::setprecision(2) << sec_with_decimal << "s";
+   }
+   else
+   {
+      s << ms.count() << "ms";
+   }
+
+   return s.str();
+}
+
+void writeRenderStats(const Camera &camera, const string &image_path, uintmax_t image_size_bytes,
+                      std::chrono::nanoseconds render_duration)
+{
+   filesystem::path stats_path(image_path);
+   stats_path.replace_extension(".txt");
+
+   ofstream stats_file(stats_path);
+   if (!stats_file)
+   {
+      cerr << "Failed to write stats to " << stats_path << endl;
+      return;
+   }
+
+   auto render_ms = std::chrono::duration_cast<std::chrono::milliseconds>(render_duration).count();
+   double render_seconds = std::chrono::duration_cast<std::chrono::duration<double>>(render_duration).count();
+   double rays_per_second = 0.0;
+   if (render_seconds > 0.0)
+   {
+      rays_per_second = static_cast<double>(camera.n_rays.load()) / render_seconds;
+   }
+   long long rays_per_second_int = static_cast<long long>(std::llround(rays_per_second));
+
+   stats_file << "image: " << filesystem::path(image_path).filename().string() << '\n';
+   stats_file << "samples_per_pixel: " << camera.samples_per_pixel << '\n';
+   stats_file << "resolution: " << camera.image_width << " x " << camera.image_height << '\n';
+   stats_file << "max_depth: " << camera.max_depth << '\n';
+   stats_file << "rays_traced: " << camera.n_rays.load() << '\n';
+   stats_file << "image_size_bytes: " << image_size_bytes << '\n';
+   stats_file << "rays_per_second: " << rays_per_second_int << '\n';
+   stats_file << "render_time_ms: " << render_ms << '\n';
+   stats_file << "render_time_pretty: " << formatDuration(render_duration) << '\n';
+
+   filesystem::path stats_json_path(image_path);
+   stats_json_path.replace_extension(".json");
+   ofstream stats_json(stats_json_path);
+   if (!stats_json)
+   {
+      cerr << "Failed to write stats JSON to " << stats_json_path << endl;
+      return;
+   }
+
+   stats_json << "{\n";
+   stats_json << "  \"image\": \"" << filesystem::path(image_path).filename().string() << "\",\n";
+   stats_json << "  \"samples_per_pixel\": " << camera.samples_per_pixel << ",\n";
+   stats_json << "  \"resolution\": { \"width\": " << camera.image_width << ", \"height\": "
+              << camera.image_height << " },\n";
+   stats_json << "  \"max_depth\": " << camera.max_depth << ",\n";
+   stats_json << "  \"rays_traced\": " << camera.n_rays.load() << ",\n";
+   stats_json << "  \"image_size_bytes\": " << image_size_bytes << ",\n";
+      stats_json << "  \"rays_per_second\": " << rays_per_second_int << ",\n";
+   stats_json << "  \"render_time_ms\": " << render_ms << ",\n";
+   stats_json << "  \"render_time_pretty\": \"" << formatDuration(render_duration) << "\"\n";
+   stats_json << "}\n";
 }
 
 struct ProgramArgs
@@ -285,6 +392,8 @@ int main(int argc, char *argv[])
 
    // c.look_at = Vec3(0, 0, -1);
 
+   auto render_start = chrono::high_resolution_clock::now();
+
    switch (renderType)
    {
    case 0:
@@ -310,11 +419,28 @@ int main(int argc, char *argv[])
       break;
    }
 
-   // Save output image to resources directory
-   dumpImageToFile(localImage, c.image_width, c.image_height, "res/output.png");
+   auto render_end = chrono::high_resolution_clock::now();
+   auto render_duration = render_end - render_start;
+
+   const string output_path = buildTimestampedOutputPath();
+   dumpImageToFile(localImage, c.image_width, c.image_height, output_path);
+
+   std::error_code file_size_ec;
+   uintmax_t image_size_bytes = filesystem::file_size(output_path, file_size_ec);
+   if (file_size_ec)
+      image_size_bytes = 0;
+
+   writeRenderStats(c, output_path, image_size_bytes, render_duration);
 
    cout.imbue(locale("en_US.UTF-8"));
    cout << "Rays traced: " << fixed << c.n_rays << endl;
+   double render_seconds = std::chrono::duration_cast<std::chrono::duration<double>>(render_duration).count();
+   long long rays_per_second_int = 0;
+   if (render_seconds > 0.0)
+   {
+      rays_per_second_int = static_cast<long long>(std::llround(static_cast<double>(c.n_rays.load()) / render_seconds));
+   }
+   cout << "Rays/sec:   " << rays_per_second_int << endl;
 
    return 0;
 }

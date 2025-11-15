@@ -80,7 +80,7 @@ Tested with Cornell Box scene:
 cd build
 make -j8
 ./302_raytracer --scene ../resources/cornell_box.yaml
-# Output: res/output.png (573K)
+# Output: rendered_images/output_YYYY-MM-DD_HH-MM-SS.png (≈573K)
 # Render time: 883ms
 ```
 
