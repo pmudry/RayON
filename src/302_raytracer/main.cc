@@ -65,6 +65,7 @@ void dumpImageToFile(vector<unsigned char> &image, int image_width, int image_he
 
 struct ProgramArgs
 {
+   int rendering_method = -1; // -1 means not specified, will ask user
    int samples = SAMPLES_PER_PIXEL;
    int height = IMAGE_HEIGHT;
    int start_samples = 32;           // Number of samples to render initially when moving camera
@@ -78,6 +79,8 @@ void dumpHelp()
 {
    cout << "Options:\n";
    cout << "  -h, --help, /?         Show this help message\n";
+   cout << "  -m <rendering method>  Set the rendering method (0: CPU sequential, 1: CPU parallel, 2: CUDA GPU, 3: "
+           "CUDA GPU with SDL interactive display)\n";
    cout << "  -s <samples>           Set the number of samples per pixel (default: " << SAMPLES_PER_PIXEL << ")\n";
    cout << "  -r <height>            Set vertical resolution (allowed: 2160, 1080, 720, 360, 180, default: "
         << IMAGE_HEIGHT << ")\n";
@@ -103,6 +106,24 @@ ProgramArgs parseInput(int argc, char *argv[])
          cout << "Usage: " << argv[0] << " [options]\n";
          dumpHelp();
          args.samples = -1; // Indicate error
+         return args;
+      }
+      else if (strcmp(argv[i], "-m") == 0 && i + 1 < argc)
+      {
+         // Validate rendering method
+         if (strcmp(argv[i + 1], "0") == 0 || strcmp(argv[i + 1], "1") == 0 || strcmp(argv[i + 1], "2") == 0
+#ifdef SDL2_FOUND
+             || strcmp(argv[i + 1], "3") == 0
+#endif
+         )
+         {
+            args.rendering_method = atoi(argv[++i]);            
+         }
+         else
+         {
+            cout << "Invalid rendering method specified after -m. Allowed values are 0, 1, 2, or 3.\n";
+            args.samples = -1; // Indicate error
+         }
          return args;
       }
       else if (strcmp(argv[i], "-s") == 0 && i + 1 < argc)
@@ -181,31 +202,39 @@ int main(int argc, char *argv[])
 
    ProgramArgs args = parseInput(argc, argv);
 
+   int renderType = 2; // Default to CUDA
+
    if (args.samples < 0)
       return 1;
 
-   // Choose rendering method
-   cout << "Choose rendering method:" << endl;
-   cout << "\t0. CPU sequential" << endl;
-   cout << "\t1. CPU parallel" << endl;
-   cout << "\t2. CUDA GPU (default)" << endl;
+   if (args.rendering_method != -1)
+   {
+      cout << "Using rendering method from command line: " << args.rendering_method << endl;
+      renderType = args.rendering_method;
+   }
+   else
+   {
+      // Choose rendering method
+      cout << "Choose rendering method:" << endl;
+      cout << "\t0. CPU sequential" << endl;
+      cout << "\t1. CPU parallel" << endl;
+      cout << "\t2. CUDA GPU (default)" << endl;
 #ifdef SDL2_FOUND
-   cout << "\t3. CUDA GPU with interactive SDL display" << endl;
+      cout << "\t3. CUDA GPU with interactive SDL display" << endl;
 #endif
-   cout << "Enter choice (0, 1, 2"
+      cout << "Enter choice (0, 1, 2"
 #ifdef SDL2_FOUND
-        << ", 3"
+           << ", 3"
 #endif
-        << "): ";
+           << "): ";
+      string input;
+      getline(cin, input);
 
-   int choice = 2; // Default to CUDA
-   string input;
-   getline(cin, input);
+      cout << endl;
 
-   cout << endl;
-
-   if (!input.empty())
-      choice = stoi(input);
+      if (!input.empty())
+         renderType = stoi(input);
+   }
 
    // Calculate width maintaining aspect ratio (16:9)
    int image_height = args.height;
@@ -216,33 +245,35 @@ int main(int argc, char *argv[])
    cout << " 302 Ray tracer project v" << ver_major << " -- P.-A. Mudry, ISC 2026" << endl;
    cout << "======================================================" << endl << endl;
    cout << "Using features : yaml_scene_loader, unified_scene_descriptions, cuda_optimization_1, BVH" << endl;
-   cout << "fast random (no curand_uniform), thread_block_optimal, inlining, atomic_reduction, russian_roulette" << endl;
+   cout << "fast random (no curand_uniform), thread_block_optimal, inlining, atomic_reduction, russian_roulette"
+        << endl;
    cout << "lambertian_cosine_weigthed_hemisphere_sampling, lambertian_owen_hash_distribution" << endl;
    cout << "inter_adaptive_depth, inter_target_fps" << endl << endl;
-   cout << "Rendering at resolution: " << image_width << " x " << image_height<< " pixels - ";
+   cout << "Rendering at resolution: " << image_width << " x " << image_height << " pixels - ";
    cout << "Samples per pixel: " << args.samples << endl << endl;
 
-   RndGen::set_seed(123);
+   RndGen::set_seed(1984);
 
    Scene::SceneDescription scene_desc;
 
-   if(args.scene_file == nullptr)
+   if (args.scene_file == nullptr)
    {
       cout << "No scene file provided. Using default scene." << endl;
-      //scene_desc = Scene::SceneFactory::singleObjectScene();
+      // scene_desc = Scene::SceneFactory::singleObjectScene();
       scene_desc = Scene::SceneFactory::createDefaultScene();
    }
-   else{
+   else
+   {
       scene_desc = Scene::SceneFactory::fromYAML(args.scene_file);
    }
-     
+
    vector<unsigned char> localImage(image_width * image_height * CHANNELS);
-   
+
    Camera c(Vec3(0, 0, 0), image_width, image_height, CHANNELS, args.samples);
-   
-   c.look_at = Vec3(0, 0, -1);
-   
-   switch (choice)
+
+   // c.look_at = Vec3(0, 0, -1);
+
+   switch (renderType)
    {
    case 0:
       cout << "Using CPU single threaded..." << endl;

@@ -68,6 +68,8 @@ struct f3
 
    __host__ __device__ f3 operator*(float t) const { return f3(x * t, y * t, z * t); }
 
+   __host__ __device__ f3 operator*(f3 other) const { return f3(x * other.x, y * other.y, z * other.y); }
+
    __host__ __device__ f3 operator/(float t) const { return f3(x / t, y / t, z / t); }
 
    __host__ __device__ f3 operator-() const { return f3(-x, -y, -z); }

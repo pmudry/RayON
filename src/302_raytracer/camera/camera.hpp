@@ -18,7 +18,7 @@
 #pragma once
 
 #include "camera_base.hpp"
-#include "cpu_renderers/renderer_cpu.hpp"
+#include "cpu_renderers/renderer_cpu_single_thread.hpp"
 #include "cpu_renderers/renderer_cpu_parallel.hpp"
 #include "gpu_renderers/renderer_cuda.hpp"
 

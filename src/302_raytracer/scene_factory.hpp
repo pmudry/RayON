@@ -140,18 +140,18 @@ class SceneFactory
       // Original SDF Torus - rotated to show hole better
       scene_desc.addSDFTorus(Vec3(1.5, 0.7, -3.5), 0.6, 0.2, mat_torus_orange, Vec3(M_PI * 0.3, M_PI * 0.2, 0));
 
-      // Add many more spheres to test BVH performance
-      for (int i = 0; i < 10; i++)
-      {
-         for (int j = 0; j < 10; j++)
-         {
-            double x = -4.5 + i * 1.0;
-            double z = -8.0 + j * 1.0;
-            int mat = (i + j) % 4;
-            int material = mat == 0 ? mat_yellow : (mat == 1 ? mat_blue : (mat == 2 ? mat_violet : mat_rose));
-            scene_desc.addSphere(Vec3(x, -0.4, z), 0.15, material);
-         }
-      }
+      // // Add many more spheres to test BVH performance
+      // for (int i = 0; i < 10; i++)
+      // {
+      //    for (int j = 0; j < 10; j++)
+      //    {
+      //       double x = -4.5 + i * 1.0;
+      //       double z = -8.0 + j * 1.0;
+      //       int mat = (i + j) % 4;
+      //       int material = mat == 0 ? mat_yellow : (mat == 1 ? mat_blue : (mat == 2 ? mat_violet : mat_rose));
+      //       scene_desc.addSphere(Vec3(x, -0.4, z), 0.15, material);
+      //    }
+      // }
 
       // Build BVH for default scene (always enabled for default)
       scene_desc.use_bvh = true;

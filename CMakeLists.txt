@@ -40,12 +40,12 @@ include(CheckLanguage)
 check_language(CUDA)
 
 if(CMAKE_CUDA_COMPILER)
-    enable_language(CUDA)    
+    enable_language(CUDA)
     set(CMAKE_CUDA_STANDARD 17)
     set(CMAKE_CUDA_STANDARD_REQUIRED ON)
     set(CMAKE_CUDA_SEPARABLE_COMPILATION ON)
-    set(CMAKE_CUDA_ARCHITECTURES 90)     # Set CUDA architectures (adjust based on your GPU - this covers common GPUs)
-    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -t 0")    # Enable parallel CUDA compilation for faster builds
+    set(CMAKE_CUDA_ARCHITECTURES 90) # Set CUDA architectures (adjust based on your GPU - this covers common GPUs)
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -t 0") # Enable parallel CUDA compilation for faster builds
     set(CUDA_FOUND TRUE)
 else()
     message(WARNING "CUDA not found. CUDA functionality will be disabled.")
@@ -97,11 +97,12 @@ set(SOURCE_302_RAYTRACER
 
     # CPU renderers
     src/302_raytracer/cpu_renderers/cpu_ray_tracer.hpp
-    src/302_raytracer/cpu_renderers/renderer_cpu.hpp
+    src/302_raytracer/cpu_renderers/renderer_cpu_single_thread.hpp
     src/302_raytracer/cpu_renderers/renderer_cpu_parallel.hpp
 
     # GPU renderers
     src/302_raytracer/gpu_renderers/renderer_cuda.hpp
+    src/302_raytracer/gpu_renderers/renderer_cuda.cu
     src/302_raytracer/gpu_renderers/renderer_cuda_progressive.hpp
 
     src/302_raytracer/gpu_renderers/cuda_float3.cuh
@@ -110,7 +111,6 @@ set(SOURCE_302_RAYTRACER
     src/302_raytracer/gpu_renderers/cuda_scene.cuh
     src/302_raytracer/gpu_renderers/scene_builder_cuda.cu
 
-    src/302_raytracer/gpu_renderers/renderer_cuda.cu
     src/302_raytracer/gpu_renderers/cuda_raytracer.cuh
     src/302_raytracer/gpu_renderers/shaders/shader_golf.cuh
     src/302_raytracer/gpu_renderers/shaders/render_acc_kernel.cuh
