@@ -28,8 +28,15 @@
 [ ] YAML scene should take camera positions
 [ ] Dynamic scenes loading
 
-## Idées à explorer
-[ ] ImGUI à ajouter ?
-[ ] Profiling and low-level optimisation
-[ ] Impact of different rendering optimisation reporting
+## Bug fixing
+[ ] Artifacts when rendering metallic ground (grazing angle)
+[ ] Artifacts when rendering glass (might be related to metallic ground somehow ?)
+
+## Optimisations
+[ ] Fast maths
+
+## Projet de semestre
+[ ] ImGUI à ajouter
+[ ] Profiling and low-level optimizations
+[ ] Impact of different rendering optimizations reporting
 [ ] Implement benchmarks for static renderer on typical scenes (multiple renders + average)

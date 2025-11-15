@@ -24,10 +24,7 @@ using namespace utils;
 #define RT_BUILD_TYPE_STRING "Unknown"
 #endif
 
-static constexpr const char *current_build_configuration()
-{
-   return RT_BUILD_TYPE_STRING;
-}
+static constexpr const char *current_build_configuration() { return RT_BUILD_TYPE_STRING; }
 
 // Function to ensure directory exists
 void ensureDirectoryExists(const string &filepath)
@@ -45,6 +42,7 @@ void writeImage(const vector<unsigned char> &image, int image_width, int image_h
 {
    ensureDirectoryExists(filename);
    const int channels = 3; // RGB
+
    if (stbi_write_png(filename.c_str(), image_width, image_height, channels, image.data(), image_width * channels))
    {
       cout << "Image saved successfully to " << filename << endl;
@@ -168,12 +166,12 @@ void writeRenderStats(const Camera &camera, const string &image_path, uintmax_t 
    stats_json << "{\n";
    stats_json << "  \"image\": \"" << filesystem::path(image_path).filename().string() << "\",\n";
    stats_json << "  \"samples_per_pixel\": " << camera.samples_per_pixel << ",\n";
-   stats_json << "  \"resolution\": { \"width\": " << camera.image_width << ", \"height\": "
-              << camera.image_height << " },\n";
+   stats_json << "  \"resolution\": { \"width\": " << camera.image_width << ", \"height\": " << camera.image_height
+              << " },\n";
    stats_json << "  \"max_depth\": " << camera.max_depth << ",\n";
    stats_json << "  \"rays_traced\": " << camera.n_rays.load() << ",\n";
    stats_json << "  \"image_size_bytes\": " << image_size_bytes << ",\n";
-      stats_json << "  \"rays_per_second\": " << rays_per_second_int << ",\n";
+   stats_json << "  \"rays_per_second\": " << rays_per_second_int << ",\n";
    stats_json << "  \"render_time_ms\": " << render_ms << ",\n";
    stats_json << "  \"render_time_pretty\": \"" << formatDuration(render_duration) << "\"\n";
    stats_json << "}\n";
@@ -233,14 +231,14 @@ ProgramArgs parseInput(int argc, char *argv[])
 #endif
          )
          {
-            args.rendering_method = atoi(argv[++i]);            
+            args.rendering_method = atoi(argv[++i]);
          }
          else
          {
             cout << "Invalid rendering method specified after -m. Allowed values are 0, 1, 2, or 3.\n";
             args.samples = -1; // Indicate error
             return args;
-         }         
+         }
       }
       else if (strcmp(argv[i], "-s") == 0 && i + 1 < argc)
       {
@@ -362,10 +360,9 @@ int main(int argc, char *argv[])
    cout << "==============================================" << endl;
    cout << " 302 Ray tracer project v" << ver_major << " - " << compiled_config << endl;
    cout << " P.-A. Mudry, ISC 2026" << endl;
-   cout << "==============================================" << endl;   
+   cout << "==============================================" << endl;
    cout << "Using features : yaml_scene_loader, unified_scene_descriptions, cuda_optimization_1, BVH" << endl;
-   cout << "fast_rnd, thread_block_optimal, inlining, atomic_reduction, russian_roulette"
-        << endl;
+   cout << "fast_rnd, thread_block_optimal, inlining, atomic_reduction, russian_roulette" << endl;
    cout << "lambertian_cosine_weigthed_hemisphere_sampling, lambertian_owen_hash_distribution" << endl;
    cout << "inter_adaptive_depth, inter_target_fps" << endl << endl;
    cout << "Rendering at resolution: " << image_width << " x " << image_height << " pixels - ";
@@ -423,6 +420,8 @@ int main(int argc, char *argv[])
    auto render_duration = render_end - render_start;
 
    const string output_path = buildTimestampedOutputPath();
+   
+   dumpImageToFile(localImage, c.image_width, c.image_height, "rendered_images/latest.png");
    dumpImageToFile(localImage, c.image_width, c.image_height, output_path);
 
    std::error_code file_size_ec;
@@ -436,11 +435,11 @@ int main(int argc, char *argv[])
    cout << "Rays traced: " << fixed << c.n_rays << endl;
    double render_seconds = std::chrono::duration_cast<std::chrono::duration<double>>(render_duration).count();
    long long rays_per_second_int = 0;
+
    if (render_seconds > 0.0)
-   {
       rays_per_second_int = static_cast<long long>(std::llround(static_cast<double>(c.n_rays.load()) / render_seconds));
-   }
-   cout << "Rays/sec:   " << rays_per_second_int << endl;
+
+   cout << "Rays/sec: " << rays_per_second_int << endl;
 
    return 0;
 }
