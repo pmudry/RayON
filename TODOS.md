@@ -1,7 +1,7 @@
 # TODO List
 
 ## Interactive renderer
-[x] Gamma correction in interactive renderer is wrong when displayed, but saved correctly
+[ ] Gamma correction in interactive renderer is wrong when displayed, but saved correctly
 [ ] Change of speeds in interactive renderer, as they are not very nice
 [ ] Add a ray/second counter somewhere
 
