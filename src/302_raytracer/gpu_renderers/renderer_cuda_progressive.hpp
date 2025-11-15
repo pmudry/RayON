@@ -363,7 +363,7 @@ class RendererCUDAProgressive : virtual public CameraBase
                          samples_slider_bounds, intensity_slider_bounds, background_slider_bounds,
                          fuzziness_slider_bounds, glass_ior_slider_bounds, dof_aperture_slider_bounds,
                          dof_focus_slider_bounds, toggle_button_rect, orbit_button_rect, dof_button_rect);
-            SDL_Delay(8); // ~60 FPS event polling
+            // SDL_Delay(8); // ~60 FPS event polling
          }
          else if (!accumulation_enabled && current_samples > 0 && !camera_changed)
          {
@@ -374,7 +374,7 @@ class RendererCUDAProgressive : virtual public CameraBase
                          samples_slider_bounds, intensity_slider_bounds, background_slider_bounds,
                          fuzziness_slider_bounds, glass_ior_slider_bounds, dof_aperture_slider_bounds,
                          dof_focus_slider_bounds, toggle_button_rect, orbit_button_rect, dof_button_rect);
-            SDL_Delay(8); // ~60 FPS event polling (already rendered once, waiting for user input)
+            // SDL_Delay(8); // ~60 FPS event polling (already rendered once, waiting for user input)
          }
       }
 

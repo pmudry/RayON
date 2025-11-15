@@ -13,6 +13,15 @@
 using namespace constants;
 using namespace utils;
 
+#ifndef RT_BUILD_TYPE_STRING
+#define RT_BUILD_TYPE_STRING "Unknown"
+#endif
+
+static constexpr const char *current_build_configuration()
+{
+   return RT_BUILD_TYPE_STRING;
+}
+
 // Function to ensure directory exists
 void ensureDirectoryExists(const string &filepath)
 {
@@ -123,8 +132,8 @@ ProgramArgs parseInput(int argc, char *argv[])
          {
             cout << "Invalid rendering method specified after -m. Allowed values are 0, 1, 2, or 3.\n";
             args.samples = -1; // Indicate error
-         }
-         return args;
+            return args;
+         }         
       }
       else if (strcmp(argv[i], "-s") == 0 && i + 1 < argc)
       {
@@ -240,12 +249,15 @@ int main(int argc, char *argv[])
    int image_height = args.height;
    int image_width = (image_height * 16) / 9;
 
+   string compiled_config = current_build_configuration();
+
    cout << endl;
-   cout << "======================================================" << endl;
-   cout << " 302 Ray tracer project v" << ver_major << " -- P.-A. Mudry, ISC 2026" << endl;
-   cout << "======================================================" << endl << endl;
+   cout << "==============================================" << endl;
+   cout << " 302 Ray tracer project v" << ver_major << " - " << compiled_config << endl;
+   cout << " P.-A. Mudry, ISC 2026" << endl;
+   cout << "==============================================" << endl;   
    cout << "Using features : yaml_scene_loader, unified_scene_descriptions, cuda_optimization_1, BVH" << endl;
-   cout << "fast random (no curand_uniform), thread_block_optimal, inlining, atomic_reduction, russian_roulette"
+   cout << "fast_rnd, thread_block_optimal, inlining, atomic_reduction, russian_roulette"
         << endl;
    cout << "lambertian_cosine_weigthed_hemisphere_sampling, lambertian_owen_hash_distribution" << endl;
    cout << "inter_adaptive_depth, inter_target_fps" << endl << endl;

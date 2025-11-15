@@ -166,6 +166,10 @@ target_include_directories(302_raytracer PRIVATE
     ${CMAKE_SOURCE_DIR}/src/302_raytracer/gpu_renderers/materials/legacy
 )
 
+target_compile_definitions(302_raytracer PRIVATE
+    RT_BUILD_TYPE_STRING="$<IF:$<BOOL:${CMAKE_BUILD_TYPE}>,${CMAKE_BUILD_TYPE},$<CONFIG>>"
+)
+
 # Find and link SDL2 for real-time display (optional)
 find_package(SDL2 QUIET)
 if(SDL2_FOUND)
@@ -207,6 +211,7 @@ if(CUDA_FOUND)
     # CUDA compiler flags for optimization and warning suppression
     target_compile_options(302_raytracer PRIVATE
         $<$<COMPILE_LANGUAGE:CUDA>:
+        -maxrregcount 80               # Limit max registers per thread for better occupancy (TO BE TUNED)
         -Xcompiler=-fno-strict-aliasing -rdynamic -lineinfo # Optimize memory access
         --expt-relaxed-constexpr # Allow relaxed constexpr
         --expt-extended-lambda # Enable extended lambda support
