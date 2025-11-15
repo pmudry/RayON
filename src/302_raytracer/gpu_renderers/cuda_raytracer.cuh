@@ -84,8 +84,7 @@ __device__ __forceinline__ float reflectance(float cosine, float ref_idx)
    return r0 + (1 - r0) * powf((1 - cosine), 5);
 }
 
-__device__ __forceinline__ f3 reflect_fuzzy(const f3 &v, const f3 &n, float roughness,
-                                                       curandState *state)
+__device__ __forceinline__ f3 reflect_fuzzy(const f3 &v, const f3 &n, float roughness, curandState *state)
 {
    f3 perturbed_normal = normalize(n + roughness * randOnUnitSphere(state));
    return reflect(v, perturbed_normal);
@@ -138,8 +137,7 @@ __device__ inline f3 sample_aperture_disk(const f3 &cam_u, const f3 &cam_v, cura
  * @param t_max Maximum ray parameter
  * @return true if ray intersects AABB in range [t_min, t_max]
  */
-__device__ inline bool hit_aabb(const ray_simple &r, const f3 &box_min, const f3 &box_max, float t_min,
-                                float t_max)
+__device__ inline bool hit_aabb(const ray_simple &r, const f3 &box_min, const f3 &box_max, float t_min, float t_max)
 {
    // Compute inverse ray direction once
    float inv_dir_x = 1.0f / r.dir.x;
@@ -214,34 +212,34 @@ __device__ inline bool hit_sphere(const f3 &center, float radius, const ray_simp
    return true;
 }
 
-__device__ inline bool hit_rectangle(const f3 &corner, const f3 &u, const f3 &v,
-                                     const ray_simple &r, float t_min, float t_max, hit_record_simple &rec)
+__device__ inline bool hit_rectangle(const f3 &corner, const f3 &u, const f3 &v, const ray_simple &r, float t_min,
+                                     float t_max, hit_record_simple &rec)
 {
    // Compute rectangle normal via cross product (u × v)
    f3 normal = normalize(f3(u.y * v.z - u.z * v.y, u.z * v.x - u.x * v.z, u.x * v.y - u.y * v.x));
-   
+
    // Check if ray is parallel to rectangle plane
    float denom = dot(normal, r.dir);
    if (fabsf(denom) < 1e-8f)
       return false;
-   
+
    // Compute ray parameter t at plane intersection
    float t = dot(normal, corner - r.orig) / denom;
    if (t < t_min || t > t_max)
       return false;
-   
+
    // Find intersection point and convert to rectangle's local coordinates
    f3 intersection = r.at(t);
    f3 p = intersection - corner;
-   
+
    // Project onto u and v vectors to get parametric coordinates
    float alpha = dot(p, u) / dot(u, u);
    float beta = dot(p, v) / dot(v, v);
-   
+
    // Check if intersection is within rectangle bounds [0,1] × [0,1]
    if (alpha < 0.0f || alpha > 1.0f || beta < 0.0f || beta > 1.0f)
       return false;
-   
+
    // Fill hit record with intersection data
    rec.t = t;
    rec.p = intersection;
@@ -254,8 +252,8 @@ __device__ inline bool hit_rectangle(const f3 &corner, const f3 &u, const f3 &v,
 // SCENE & MATERIAL APPLICATION
 //==============================================================================
 
-__device__ __forceinline__ bool intersect_geometry(const CudaScene::Geometry &geom, const ray_simple &r, float t_min, float t_max,
-                                                   hit_record_simple &rec)
+__device__ __forceinline__ bool intersect_geometry(const CudaScene::Geometry &geom, const ray_simple &r, float t_min,
+                                                   float t_max, hit_record_simple &rec)
 {
    using namespace CudaScene;
    switch (geom.type)
@@ -263,9 +261,11 @@ __device__ __forceinline__ bool intersect_geometry(const CudaScene::Geometry &ge
    case GeometryType::SPHERE:
       return hit_sphere(geom.data.sphere.center, geom.data.sphere.radius, r, t_min, t_max, rec);
    case GeometryType::RECTANGLE:
-      return hit_rectangle(geom.data.rectangle.corner, geom.data.rectangle.u, geom.data.rectangle.v, r, t_min, t_max, rec);
+      return hit_rectangle(geom.data.rectangle.corner, geom.data.rectangle.u, geom.data.rectangle.v, r, t_min, t_max,
+                           rec);
    case GeometryType::DISPLACED_SPHERE:
-      return hit_golf_ball_sphere(geom.data.displaced_sphere.center, geom.data.displaced_sphere.radius, r, t_min, t_max, rec);
+      return hit_golf_ball_sphere(geom.data.displaced_sphere.center, geom.data.displaced_sphere.radius, r, t_min, t_max,
+                                  rec);
    default:
       return false;
    }
@@ -287,8 +287,8 @@ __device__ inline float nearestAngularDistanceFibonacci(f3 dir, int N)
 }
 
 __device__ inline f3 apply_procedural_pattern(CudaScene::ProceduralPattern pattern, const f3 &base_color,
-                                                         const f3 &pattern_color, float param1, float param2,
-                                                         const f3 &surface_point, const f3 &geometry_center)
+                                              const f3 &pattern_color, float param1, float param2,
+                                              const f3 &surface_point, const f3 &geometry_center)
 {
    using namespace CudaScene;
    switch (pattern)
@@ -296,15 +296,15 @@ __device__ inline f3 apply_procedural_pattern(CudaScene::ProceduralPattern patte
    case ProceduralPattern::FIBONACCI_DOTS:
    {
       f3 local = f3(surface_point.x - geometry_center.x, surface_point.y - geometry_center.y,
-                                          surface_point.z - geometry_center.z);
+                    surface_point.z - geometry_center.z);
       f3 dir = normalize(local);
       int dot_count = static_cast<int>(param1);
       float dot_radius = param2;
       float ang = nearestAngularDistanceFibonacci(dir, dot_count);
       float mask = ang < dot_radius ? 0.0f : 1.0f;
       return f3(base_color.x * mask + pattern_color.x * (1.0f - mask),
-                           base_color.y * mask + pattern_color.y * (1.0f - mask),
-                           base_color.z * mask + pattern_color.z * (1.0f - mask));
+                base_color.y * mask + pattern_color.y * (1.0f - mask),
+                base_color.z * mask + pattern_color.z * (1.0f - mask));
    }
    case ProceduralPattern::NONE:
    default:
@@ -355,8 +355,8 @@ __device__ __forceinline__ void apply_material(const CudaScene::Material &mat, h
    }
    if (mat.pattern != CudaScene::ProceduralPattern::NONE)
    {
-      rec.color = apply_procedural_pattern(mat.pattern, rec.color, mat.pattern_color, mat.pattern_param1, mat.pattern_param2,
-                                           rec.p, geometry_center);
+      rec.color = apply_procedural_pattern(mat.pattern, rec.color, mat.pattern_color, mat.pattern_param1,
+                                           mat.pattern_param2, rec.p, geometry_center);
    }
 }
 
@@ -475,15 +475,15 @@ __device__ inline bool hit_scene(const CudaScene::Scene &scene, const ray_simple
 
 /**
  * @brief Ray color computation using new material system
- * 
+ *
  * This version uses compile-time material dispatch via CRTP templates.
  * The compiler generates optimized code for each material type with zero overhead.
  */
 __device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scene, curandState *state, int depth,
-                                          int &local_ray_count)
+                               int &local_ray_count)
 {
    using namespace Materials;
-   
+
    f3 accumulated_color(0.0f, 0.0f, 0.0f);
    f3 accumulated_attenuation(1.0f, 1.0f, 1.0f);
    ray_simple current_ray = r;
@@ -498,70 +498,71 @@ __device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scen
          // Create material descriptor from hit record
          // TODO: This is a temporary adapter - ideally hit_scene would return MaterialDescriptor directly
          MaterialDescriptor mat_desc;
-         
-         switch (rec.material) {
-            case LAMBERTIAN:
-               mat_desc = MaterialDescriptor::makeLambertian(rec.color);
-               break;
-            case MIRROR:
-               mat_desc = MaterialDescriptor::makeMirror(rec.color);
-               break;
-            case ROUGH_MIRROR:
-               mat_desc = MaterialDescriptor::makeRoughMirror(rec.color, rec.roughness);
-               break;
-            case GLASS:
-               mat_desc = MaterialDescriptor::makeGlass(rec.refractive_index);
-               break;
-            case LIGHT:
-               mat_desc = MaterialDescriptor::makeLight(rec.emission);
-               break;
-            case CONSTANT:
-               mat_desc = MaterialDescriptor::makeConstant(rec.color);
-               break;
-            case SHOW_NORMALS:
-               mat_desc = MaterialDescriptor::makeShowNormals(rec.normal);
-               break;
+
+         switch (rec.material)
+         {
+         case LAMBERTIAN:
+            mat_desc = MaterialDescriptor::makeLambertian(rec.color);
+            break;
+         case MIRROR:
+            mat_desc = MaterialDescriptor::makeMirror(rec.color);
+            break;
+         case ROUGH_MIRROR:
+            mat_desc = MaterialDescriptor::makeRoughMirror(rec.color, rec.roughness);
+            break;
+         case GLASS:
+            mat_desc = MaterialDescriptor::makeGlass(rec.refractive_index);
+            break;
+         case LIGHT:
+            mat_desc = MaterialDescriptor::makeLight(rec.emission);
+            break;
+         case CONSTANT:
+            mat_desc = MaterialDescriptor::makeConstant(rec.color);
+            break;
+         case SHOW_NORMALS:
+            mat_desc = MaterialDescriptor::makeShowNormals(rec.normal);
+            break;
          }
-         
+
          // Dispatch to appropriate material using compile-time template magic
-         bool scattered = dispatch_material_bool(mat_desc, 
-            [&](auto material) -> bool {
-               // Check if emissive first
-               f3 emitted = material.emission();
-               if (emitted.length_squared() > 0.0f) {
-                  accumulated_color = accumulated_color + f3(
-                     accumulated_attenuation.x * emitted.x,
-                     accumulated_attenuation.y * emitted.y,
-                     accumulated_attenuation.z * emitted.z
-                  );
-                  return false; // Light materials don't scatter
-               }
-               
-               // Scatter the ray
-               f3 attenuation;
-               ray_simple scattered_ray;
-               if (material.scatter(current_ray, rec, attenuation, scattered_ray, state)) {
-                  current_ray = scattered_ray;
-                  accumulated_attenuation = f3(
-                     accumulated_attenuation.x * attenuation.x,
-                     accumulated_attenuation.y * attenuation.y,
-                     accumulated_attenuation.z * attenuation.z
-                  );
-                  return true;
-               }
-               return false;
-            }
-         );
-         
-         if (!scattered) {
+         bool scattered = dispatch_material_bool(
+             mat_desc,
+             [&](auto material) -> bool
+             {
+                // Check if emissive first
+                f3 emitted = material.emission();
+                if (emitted.length_squared() > 0.0f)
+                {
+                   accumulated_color = accumulated_color + f3(accumulated_attenuation.x * emitted.x,
+                                                              accumulated_attenuation.y * emitted.y,
+                                                              accumulated_attenuation.z * emitted.z);
+                   return false; // Light materials don't scatter
+                }
+
+                // Scatter the ray
+                f3 attenuation;
+                ray_simple scattered_ray;
+                if (material.scatter(current_ray, rec, attenuation, scattered_ray, state))
+                {
+                   current_ray = scattered_ray;
+                   accumulated_attenuation =
+                       f3(accumulated_attenuation.x * attenuation.x, accumulated_attenuation.y * attenuation.y,
+                          accumulated_attenuation.z * attenuation.z);
+                   return true;
+                }
+                return false;
+             });
+
+         if (!scattered)
+         {
             return accumulated_color;
          }
 
          // Russian Roulette path termination (after minimum bounces)
          if (bounce > 3)
          {
-            float max_component = fmaxf(accumulated_attenuation.x, 
-                                       fmaxf(accumulated_attenuation.y, accumulated_attenuation.z));
+            float max_component =
+                fmaxf(accumulated_attenuation.x, fmaxf(accumulated_attenuation.y, accumulated_attenuation.z));
             float survival_prob = fminf(max_component, 0.95f);
 
             if (rand_float(state) > survival_prob)
@@ -577,9 +578,8 @@ __device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scen
          // Sky/background
          f3 unit_direction = normalize(current_ray.dir);
          float t = 0.5f * (unit_direction.y + 1.0f);
-         f3 sky_color = (1.0f - t) * f3(0.6f, 0.6f, .9f) + t * f3(0.5f, 0.7f, 1.0f);
-
-         accumulated_color = accumulated_attenuation * sky_color * g_background_intensity;         
+         f3 sky_color = (1.0f - t) * f3(1.0f, 1.0f, 1.0f) + t * f3(0.5f, 0.7f, 1.0f);         
+         accumulated_color = accumulated_color + accumulated_attenuation * sky_color * g_background_intensity;
          return accumulated_color;
       }
    }
