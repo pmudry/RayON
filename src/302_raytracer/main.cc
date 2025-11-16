@@ -267,7 +267,7 @@ int main(int argc, char *argv[])
    case 3:
    {
       cout << "Using CUDA GPU with interactive SDL display..." << endl;
-      camera.samples_per_pixel = 10000;
+      camera.samples_per_pixel = 2000;
       RendererCUDAProgressive renderer;
       RendererCUDAProgressive::Settings settings;
       settings.samples_per_batch = args.start_samples;
