@@ -112,6 +112,7 @@ target_include_directories(302_raytracer PRIVATE
     ${CMAKE_SOURCE_DIR}/src/302_raytracer/cpu_renderers
     ${CMAKE_SOURCE_DIR}/src/302_raytracer/cpu_renderers/data_structures
     ${CMAKE_SOURCE_DIR}/src/302_raytracer/cpu_renderers/utils
+    ${CMAKE_SOURCE_DIR}/src/302_raytracer/cpu_renderers/cpu_shapes
     
     # GPU renderers
     ${CMAKE_SOURCE_DIR}/src/302_raytracer/gpu_renderers
