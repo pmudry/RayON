@@ -61,8 +61,10 @@ set(EXTERNAL
 set(SOURCE_302_RAYTRACER
     # Main source, only CC and CU files here
     src/302_raytracer/main.cc
+    src/302_raytracer/render/render_coordinator.cpp
     src/302_raytracer/scenes/yaml_scene_loader.cc
-    src/302_raytracer/gpu_renderers/renderer_cuda.cu
+    src/302_raytracer/gpu_renderers/renderer_cuda_device.cu
+    src/302_raytracer/gpu_renderers/cuda_raytracer.cu
     src/302_raytracer/gpu_renderers/cuda_utils.cu
     src/302_raytracer/gpu_renderers/scene_builder_cuda.cu
     src/302_raytracer/gpu_renderers/shaders/render_acc_kernel.cu

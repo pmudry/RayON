@@ -3,6 +3,15 @@
 #include "scene_description.hpp"
 #include "scene_factory.hpp"
 #include "camera/camera.hpp"
+#include "cpu_renderers/renderer_cpu_single_thread.hpp"
+#include "cpu_renderers/renderer_cpu_parallel.hpp"
+#include "gpu_renderers/renderer_cuda_host.hpp"
+
+#ifdef SDL2_FOUND
+#include "gpu_renderers/renderer_cuda_progressive_host.hpp"
+#endif
+
+#include "render/render_coordinator.hpp"
 
 #include <chrono>
 #include <cmath>
@@ -11,7 +20,6 @@
 #include <iostream>
 
 #include <system_error>
-
 
 using namespace constants;
 using namespace utils;
@@ -232,35 +240,52 @@ int main(int argc, char *argv[])
 
    vector<unsigned char> localImage(image_width * image_height * CHANNELS);
 
-   Camera c(Vec3(0, 0, 0), image_width, image_height, CHANNELS, args.samples);
+   Camera camera(Vec3(0, 0, 0), image_width, image_height, CHANNELS, args.samples);
 
-   // c.look_at = Vec3(0, 0, -1);
+   RenderCoordinator coordinator(camera, scene_desc);
 
    auto render_start = chrono::high_resolution_clock::now();
 
    switch (renderType)
    {
    case 0:
+   {
       cout << "Using CPU single threaded..." << endl;
-      c.renderPixels(scene_desc, localImage);
+      RendererCPU renderer;
+      coordinator.render(renderer, localImage);
       break;
+   }
    case 1:
+   {
       cout << "Using CPU parallel rendering..." << endl;
-      c.renderPixelsParallel(scene_desc, localImage);
+      RendererCPUParallel renderer;
+      coordinator.render(renderer, localImage);
       break;
+   }
 
 #ifdef SDL2_FOUND
    case 3:
+   {
       cout << "Using CUDA GPU with interactive SDL display..." << endl;
-      c.samples_per_pixel = 10000; // Set high SPP for interactive mode
-      c.renderPixelsSDLContinuous(scene_desc, localImage, args.start_samples, args.auto_accumulate, args.target_fps,
-                                  args.adaptive_depth);
+      camera.samples_per_pixel = 10000;
+      RendererCUDAProgressive renderer;
+      RendererCUDAProgressive::Settings settings;
+      settings.samples_per_batch = args.start_samples;
+      settings.auto_accumulate = args.auto_accumulate;
+      settings.target_fps = args.target_fps;
+      settings.adaptive_depth = args.adaptive_depth;
+      renderer.setSettings(settings);
+      coordinator.render(renderer, localImage);
       break;
+   }
 #endif
    default:
+   {
       cout << "Using CUDA GPU rendering..." << endl;
-      c.renderPixelsCUDA(scene_desc, localImage);
+      RendererCUDA renderer;
+      coordinator.render(renderer, localImage);
       break;
+   }
    }
 
    auto render_end = chrono::high_resolution_clock::now();
@@ -268,23 +293,24 @@ int main(int argc, char *argv[])
 
    const string output_path = utils::FileUtils::buildTimestampedOutputPath();
    
-   utils::FileUtils::dumpImageToFile(localImage, c.image_width, c.image_height, "rendered_images/latest.png");
-   utils::FileUtils::dumpImageToFile(localImage, c.image_width, c.image_height, output_path);
+   utils::FileUtils::dumpImageToFile(localImage, camera.image_width, camera.image_height, "rendered_images/latest.png");
+   utils::FileUtils::dumpImageToFile(localImage, camera.image_width, camera.image_height, output_path);
 
    std::error_code file_size_ec;
    uintmax_t image_size_bytes = filesystem::file_size(output_path, file_size_ec);
    if (file_size_ec)
       image_size_bytes = 0;
 
-   utils::FileUtils::writeRenderStats(c, output_path, image_size_bytes, render_duration);
+   utils::FileUtils::writeRenderStats(camera, output_path, image_size_bytes, render_duration);
 
    cout.imbue(locale("en_US.UTF-8"));
-   cout << "Rays traced: " << fixed << c.n_rays << endl;
+   cout << "Rays traced: " << fixed << camera.n_rays << endl;
    double render_seconds = std::chrono::duration_cast<std::chrono::duration<double>>(render_duration).count();
    long long rays_per_second_int = 0;
 
    if (render_seconds > 0.0)
-      rays_per_second_int = static_cast<long long>(std::llround(static_cast<double>(c.n_rays.load()) / render_seconds));
+        rays_per_second_int =
+           static_cast<long long>(std::llround(static_cast<double>(camera.n_rays.load()) / render_seconds));
 
    cout << "Rays/sec: " << rays_per_second_int << endl;
 

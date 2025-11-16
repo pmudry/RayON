@@ -7,51 +7,39 @@
  */
 #pragma once
 
+#include <chrono>
+#include <iostream>
+
 #include "cpu_ray_tracer.hpp"
-#include "scene_description.hpp"
+#include "render/render_utils.hpp"
+#include "render/renderer_interface.hpp"
 #include "scene_builder.hpp"
 
-class RendererCPU : virtual public CPURayTracer
+class RendererCPU : public IRenderer
 {
  public:
-   using CPURayTracer::CPURayTracer;
-
-   /**
-    * @brief Renders the entire image sequentially pixel by pixel using ray tracing
-    *
-    * This method performs sequential rendering by iterating through each pixel in the image
-    * from top-left to bottom-right.
-    *
-    * @param scene The hittable scene object containing all geometry to render
-    * @param image Vector buffer to store the rendered RGB pixel data (modified in-place)
-    */
-   void renderPixels(const Scene::SceneDescription &scene, vector<unsigned char> &image)
+   void render(const RenderRequest &request, RenderContext &context) override
    {
       auto start_time = std::chrono::high_resolution_clock::now();
 
-      Hittable_list cpu_scene = Scene::CPUSceneBuilder::buildCPUScene(scene);
+      const CameraFrame frame = request.camera.buildFrame();
+      Hittable_list cpu_scene = Scene::CPUSceneBuilder::buildCPUScene(request.scene);
 
-      // Render each pixel in the image sequentially
-      for (int y = 0; y < image_height; ++y)
+      for (int y = 0; y < frame.image_height; ++y)
       {
-         for (int x = 0; x < image_width; ++x)
+         for (int x = 0; x < frame.image_width; ++x)
          {
-            // Compute the color for this pixel using ray tracing with anti-aliasing
-            Color pixel_color = computePixelColor(cpu_scene, x, y);
-
-            // Store the computed color in the image buffer
-            setPixel(image, x, y, pixel_color);
+            const Color pixel_color = CPURayTracer::computePixelColor(frame, cpu_scene, x, y, context.ray_counter);
+            render::writePixel(request.target, x, y, pixel_color, context.gamma);
          }
 
-         // Show progress after completing each row
-         showProgress(y, image_height);
+         render::showProgress(y, frame.image_height);
       }
-
-      showProgress(image_height - 1, image_height);
 
       auto end_time = std::chrono::high_resolution_clock::now();
 
-      cout << endl;
-      cout << "CPU single thread rendering completed in " << timeStr(end_time - start_time) << endl;
+      std::cout << std::endl;
+      std::cout << "CPU single thread rendering completed in "
+                << render::timeStr(end_time - start_time) << std::endl;
    }
 };

@@ -8,16 +8,9 @@
 #pragma once
 
 #include "constants.hpp"
-
+#include "camera_frame.hpp"
 
 #include <atomic>
-#include <chrono>
-#include <iomanip>
-#include <iostream>
-#include <sstream>
-#include <vector>
-#include "data_structures/color.hpp"
-#include "data_structures/interval.hpp"
 #include "data_structures/vec3.hpp"
 
 class CameraBase
@@ -40,11 +33,11 @@ class CameraBase
    const int max_depth = constants::MAX_DEPTH; // Maximum ray bounce depth
 
    CameraBase(const Point3 &center, const int image_width, const int image_height, const int image_channels,
-              int samples_per_pixel = 1, const char* scene_file = nullptr)
+              int samples_per_pixel = 1, const char *scene_file = nullptr)
        : image_width(image_width), image_height(image_height), image_channels(image_channels),
          samples_per_pixel(samples_per_pixel), camera_center(center)
    {
-      initialize();
+      updateFrame();
    }
 
    CameraBase() : CameraBase(Vec3(0, 0, 0), 720, 720, 3, 1, nullptr) {}
@@ -52,6 +45,26 @@ class CameraBase
    virtual ~CameraBase() = default;
 
    static inline double degrees_to_radians(double degrees) { return degrees * M_PI / 180.0; }
+
+   CameraFrame buildFrame() const
+   {
+      CameraFrame frame;
+      frame.image_width = image_width;
+      frame.image_height = image_height;
+      frame.image_channels = image_channels;
+      frame.samples_per_pixel = samples_per_pixel;
+      frame.max_depth = max_depth;
+      frame.camera_center = camera_center;
+      frame.pixel00_loc = pixel00_loc;
+      frame.pixel_delta_u = pixel_delta_u;
+      frame.pixel_delta_v = pixel_delta_v;
+      frame.u = u;
+      frame.v = v;
+      frame.w = w;
+      return frame;
+   }
+
+   void updateFrame() { initialize(); }
 
  protected:
    Point3 camera_center; // Camera center
@@ -64,162 +77,24 @@ class CameraBase
    {
       camera_center = look_from;
 
-      // Determine viewport dimensions
-      auto focal_length = (look_from - look_at).length();
-      auto theta = degrees_to_radians(vfov);
-      auto h = tan(theta / 2);
+      const auto focal_length = (look_from - look_at).length();
+      const auto theta = degrees_to_radians(vfov);
+      const auto h = tan(theta / 2);
 
-      auto viewport_height = 2 * h * focal_length;
-      auto viewport_width = viewport_height * (double(image_width) / image_height);
+      const auto viewport_height = 2 * h * focal_length;
+      const auto viewport_width = viewport_height * (double(image_width) / image_height);
 
-      // Compute camera basis vectors
       w = unit_vector(look_from - look_at);
       u = unit_vector(cross(vup, w));
       v = cross(w, u);
 
-      // Calculate the vectors across the horizontal and down the vertical viewport edges
-      auto viewport_u = viewport_width * u;
-      auto viewport_v = viewport_height * -v;
+      const auto viewport_u = viewport_width * u;
+      const auto viewport_v = viewport_height * -v;
 
-      // Calculate the horizontal and vertical delta vectors from pixel to pixel
       pixel_delta_u = viewport_u / image_width;
       pixel_delta_v = viewport_v / image_height;
 
-      // Calculate the location of the upper left pixel
-      auto viewport_upper_left = camera_center - (focal_length * w) - viewport_u / 2 - viewport_v / 2;
+      const auto viewport_upper_left = camera_center - (focal_length * w) - viewport_u / 2 - viewport_v / 2;
       pixel00_loc = viewport_upper_left + 0.5 * (pixel_delta_u + pixel_delta_v);
-   }
-
-   /**
-    * @brief Apply gamma correction to a single color channel
-    * 
-    * Converts linear color space to gamma-corrected space for display.
-    * Gamma 2.0 approximates sRGB standard for most displays.
-    * 
-    * @param linear_value Linear color value (typically 0.0-1.0)
-    * @param gamma Gamma correction exponent (typically 2.0 for sRGB)
-    * @return Gamma-corrected value
-    */
-   inline float applyGammaCorrection(double linear_value, float gamma) const
-   {
-      return pow(static_cast<float>(linear_value), 1.0f / gamma);
-   }
-
-   /**
-    * @brief Sets the pixel color in the image buffer
-    */
-   inline void setPixel(vector<unsigned char> &image, int x, int y, Color &c)
-   {
-      int index = (y * image_width + x) * image_channels;
-
-      static const Interval intensity(0.0, 0.999);
-
-      // Apply gamma correction (linear to sRGB) for proper display
-      // Using default gamma of 2.0
-      image[index + 0] = static_cast<int>(intensity.clamp(applyGammaCorrection(c.x(), 2.0f)) * 256);
-      image[index + 1] = static_cast<int>(intensity.clamp(applyGammaCorrection(c.y(), 2.0f)) * 256);
-      image[index + 2] = static_cast<int>(intensity.clamp(applyGammaCorrection(c.z(), 2.0f)) * 256);
-   }
-
-   /**
-    * @brief Display progress bar for rendering
-    */
-   void showProgress(int current, int total)
-   {
-      using namespace std;
-      const int barWidth = 70;
-      static int frame = 0;
-      const char *spinner = "|/-\\";
-      float progress = (float)(current + 1) / total;
-      int pos = barWidth * progress;
-
-      cout << "Rendering: " << spinner[frame++ % 4] << " [";
-      for (int i = 0; i < barWidth; ++i)
-      {
-         if (i < pos)
-            std::cout << "█";
-         else
-            cout << "░";
-      }
-      cout << "] " << int(progress * 100.0) << " %\r";
-      cout.flush();
-   }
-
-   /**
-    * @brief Convert duration to human-readable time string
-    */
-   string timeStr(std::chrono::nanoseconds duration)
-   {
-      auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(duration);
-      auto seconds = std::chrono::duration_cast<std::chrono::seconds>(duration);
-      auto minutes = std::chrono::duration_cast<std::chrono::minutes>(duration);
-
-      using namespace std;
-      std::ostringstream s;
-
-      if (minutes.count() > 0)
-      {
-         s << minutes.count() << " minutes and " << (seconds.count() % 60) << " seconds";
-      }
-      else if (seconds.count() >= 10)
-      {
-         s << seconds.count() << " seconds";
-      }
-      else if (seconds.count() >= 1)
-      {
-         double sec_with_decimal = ms.count() / 1000.0;
-         s << std::fixed << std::setprecision(2) << sec_with_decimal << " seconds";
-      }
-      else
-      {
-         s << ms.count() << " milliseconds";
-      }
-
-      return s.str();
-   }
-
-   /**
-    * @brief Convert accumulation buffer to final image with gamma correction
-    * 
-    * This method averages the accumulated samples and applies gamma correction
-    * to produce the final display image. Used by both one-shot and progressive renderers.
-    * 
-    * @param image Output image buffer (unsigned char RGB)
-    * @param accum_buffer Accumulation buffer (float RGB with accumulated samples)
-    * @param num_samples Number of samples accumulated per pixel
-    * @param gamma Gamma correction value (typically 2.0 for sRGB)
-    */
-   void convertAccumBufferToImage(vector<unsigned char> &image, const vector<float> &accum_buffer,
-                                  int num_samples, float gamma = 2.0f)
-   {
-      static const Interval intensity_range(0.0, 0.999);
-
-      for (int j = 0; j < image_height; j++)
-      {
-         for (int i = 0; i < image_width; i++)
-         {
-            int pixel_idx = j * image_width + i;
-            int image_idx = pixel_idx * image_channels;
-            int accum_idx = pixel_idx * 3;
-
-            // Average the accumulated samples
-            float r = accum_buffer[accum_idx + 0] / num_samples;
-            float g = accum_buffer[accum_idx + 1] / num_samples;
-            float b = accum_buffer[accum_idx + 2] / num_samples;
-
-            // // Apply gamma correction using shared helper function
-            r = applyGammaCorrection(r, gamma);
-            g = applyGammaCorrection(g, gamma);
-            b = applyGammaCorrection(b, gamma);
-
-            // Clamp and convert to unsigned char
-            image[image_idx + 0] = static_cast<unsigned char>(256 * intensity_range.clamp(r));
-            image[image_idx + 1] = static_cast<unsigned char>(256 * intensity_range.clamp(g));
-            image[image_idx + 2] = static_cast<unsigned char>(256 * intensity_range.clamp(b));
-
-            if (image_channels == 4)
-               image[image_idx + 3] = 255;
-         }
-      }
    }
 };

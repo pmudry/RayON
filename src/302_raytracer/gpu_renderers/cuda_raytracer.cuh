@@ -8,7 +8,7 @@
 #include <cmath>
 #include <curand_kernel.h>
 
-// Extern declarations for device-side global constants (defined once in renderer_cuda.cu)
+// Extern declarations for device-side global constants (defined once in renderer_cuda_device.cu)
 extern __constant__ float g_light_intensity;
 extern __constant__ float g_background_intensity;
 extern __constant__ float g_metal_fuzziness;

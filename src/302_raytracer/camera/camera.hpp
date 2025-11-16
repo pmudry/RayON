@@ -12,19 +12,12 @@
  * - camera_base.h: Common camera parameters and ray tracing logic
  * - renderer_cpu.h: Single-threaded CPU renderer
  * - renderer_cpu_parallel.h: Multi-threaded CPU renderer
- * - renderer_cuda.h: CUDA GPU renderer
- * - renderer_cuda_progressive.h: Interactive CUDA renderer with progressive sampling
+ * - renderer_cuda_host.hpp: CUDA GPU renderer interface
+ * - renderer_cuda_progressive_host.hpp: Interactive CUDA renderer with progressive sampling
  */
 #pragma once
 
 #include "camera_base.hpp"
-#include "cpu_renderers/renderer_cpu_single_thread.hpp"
-#include "cpu_renderers/renderer_cpu_parallel.hpp"
-#include "gpu_renderers/renderer_cuda.hpp"
-
-#ifdef SDL2_FOUND
-#include "gpu_renderers/renderer_cuda_progressive.hpp"
-#endif
 
 /**
  * @class Camera
@@ -33,14 +26,9 @@
  * This class inherits from all renderer classes to provide a unified interface.
  * Virtual inheritance is used to avoid the diamond problem with CameraBase.
  */
-class Camera : public RendererCPU, public RendererCPUParallel, public RendererCUDA
-#ifdef SDL2_FOUND
-               ,
-               public RendererCUDAProgressive
-#endif
+class Camera : public CameraBase
 {
  public:
-   // Constructor that initializes the virtual base class CameraBase
    Camera(const Point3 &center, const int image_width, const int image_height, const int image_channels,
           int samples_per_pixel = 1)
        : CameraBase(center, image_width, image_height, image_channels, samples_per_pixel)
@@ -48,11 +36,4 @@ class Camera : public RendererCPU, public RendererCPUParallel, public RendererCU
    }
 
    Camera() : CameraBase(Vec3(0, 0, 0), 720, 720, 3, 1, nullptr) {}
-
-
-   // All rendering methods are inherited:
-   // - renderPixels() from RendererCPU
-   // - renderPixelsParallel() from RendererCPUParallel
-   // - renderPixelsCUDA() from RendererCUDA
-   // - renderPixelsSDLContinuous() from RendererCUDAProgressive (if SDL2_FOUND)
 };

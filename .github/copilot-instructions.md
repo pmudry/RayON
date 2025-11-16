@@ -51,12 +51,12 @@ Use predefined tasks (Ctrl+Shift+P → Run Task):
 
 ### C++ ↔ CUDA Boundary
 - **Principle**: Keep CUDA code in `.cu` files, expose via `extern "C"` functions
-- **Example**: `renderer_cuda.cu` exports `renderPixelsCUDAAccumulative()`, called from C++ `renderer_cuda.h`
+- **Example**: `renderer_cuda_device.cu` exports `renderPixelsCUDAAccumulative()`, called from C++ `renderer_cuda_host.hpp`
 - **State transfer**: Use `cudaMemcpyToSymbol()` for global GPU constants (see `setLightIntensity()`)
 
 ### GPU Memory Management
 ```cpp
-// Typical pattern in renderer_cuda.cu
+// Typical pattern in renderer_cuda_device.cu
 CudaScene::Scene* allocateAndTransferScene(const Scene::SceneDescription& desc) {
     CudaScene::Scene* d_scene;
     cudaMalloc(&d_scene, sizeof(CudaScene::Scene));
@@ -85,7 +85,7 @@ Enabled with option 3 in runtime menu (requires `SDL2_FOUND`):
 - **Space**: Force re-render
 - **GUI sliders**: Adjust samples, light intensity, DOF, etc.
 
-**Accumulation logic** (`renderer_cuda_progressive.h`):
+**Accumulation logic** (`renderer_cuda_progressive_host.hpp`):
 - Low samples during camera motion (e.g., 8 samples)
 - Automatic accumulation when stationary (up to `max_samples`)
 - Adaptive depth increases ray bounce limit progressively
@@ -138,7 +138,7 @@ All inherit virtually from `CameraBase` to avoid diamond problem.
 - `renderer_cpu.h`: Single-threaded `renderPixels()`
 - `renderer_cpu_parallel.h`: Thread pool with `std::async`
 - `renderer_cuda.h`: One-shot CUDA render
-- `renderer_cuda_progressive.h`: Interactive SDL + accumulation
+- `renderer_cuda_progressive_host.hpp`: Interactive SDL + accumulation
 
 ### Shader Organization
 CUDA device code split into modules:

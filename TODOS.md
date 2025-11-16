@@ -17,7 +17,7 @@
 
 ## General code organization
 [ ] There are still discrepancies for the cuda renderers
-    [ ] why renderer_cuda.cu AND .hpp
+    [x] clarify renderer_cuda_host.hpp vs renderer_cuda_device.cu responsibilities
     [ ] cuda_raytracer name is badly chosen
 
 ## General
