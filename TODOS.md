@@ -1,7 +1,7 @@
 # TODO List
 
 ## Interactive renderer
-[ ] Gamma correction in interactive renderer is wrong when displayed, but saved correctly
+[ ] Gamma correction in interactive renderer is wrong when displayed, but saved correctly -> it's related to how program handle color profiles.
 [ ] Change of speeds in interactive renderer, as they are not very nice
 [ ] Add a ray/second counter somewhere
 
@@ -16,14 +16,14 @@
 [ ] Ray-marching
 
 ## General code organization
-[ ] There are still discrepancies for the cuda renderers
+[x] There are still discrepancies for the cuda renderers
     [x] clarify renderer_cuda_host.hpp vs renderer_cuda_device.cu responsibilities
-    [ ] cuda_raytracer name is badly chosen
+    [x] cuda_raytracer name is badly chosen
 
 ## General
 [ ] Better skybox
 [ ] Skybox as HDR, dynamic loading
-[ ] Doxygen documentation
+[x] Doxygen documentation
 
 ## Scenes
 [ ] YAML scene should take camera positions
