@@ -8,13 +8,15 @@
 #pragma once
 
 #include "camera_base.hpp"
-#include "color.hpp"
-#include "hittable.hpp"
-#include "interval.hpp"
-#include "material.hpp"
-#include "ray.hpp"
-#include "rnd_gen.hpp"
-#include "vec3.hpp"
+
+#include "data_structures/color.hpp"
+#include "data_structures/hittable.hpp"
+#include "data_structures/interval.hpp"
+#include "data_structures/material.hpp"
+#include "data_structures/ray.hpp"
+#include "data_structures/vec3.hpp"
+
+#include "utils/rnd_gen.hpp"
 
 class CPURayTracer : virtual public CameraBase
 {

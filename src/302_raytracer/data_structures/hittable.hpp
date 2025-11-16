@@ -19,17 +19,22 @@
  */
 #pragma once
 
-#include "vec3.hpp"
+#include <memory>
+
 #include "interval.hpp"
 #include "ray.hpp"
+#include "vec3.hpp"
+
+class Hittable;
+class Hit_record;
 
 class Hit_record
 {
  public:
-   Point3 p;         // The point where the ray hits the object
-   Vec3 normal;      // The normal vector at the hit point
-   double t;         // The ray distance at the hit point
-   bool frontFacing; // True if the ray hits the front face of the object
+   Point3 p;                           // The point where the ray hits the object
+   Vec3 normal;                        // The normal vector at the hit point
+   double t;                           // The ray distance at the hit point
+   bool frontFacing;                   // True if the ray hits the front face of the object
    shared_ptr<class Material> mat_ptr; // Pointer to the material of the hit object
 
    void set_face_normal(const Ray &r, const Vec3 &outward_normal)

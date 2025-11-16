@@ -20,7 +20,6 @@
 #pragma once
 
 #include "hittable.hpp"
-#include "utils.hpp"
 #include "material.hpp"
 
 class Sphere : public Hittable{

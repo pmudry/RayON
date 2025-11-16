@@ -13,9 +13,10 @@
 
 #pragma once
 
-#include "utils.hpp"
+#include <algorithm>
+#include <limits>
 
-using namespace utils;
+const double inf = std::numeric_limits<double>::infinity();
 
 class Interval
 {

@@ -7,11 +7,8 @@
  */
 #pragma once
 
-#include "vec3.hpp"
-#include "color.hpp"
 #include "constants.hpp"
-#include "interval.hpp"
-#include "utils.hpp"
+
 
 #include <atomic>
 #include <chrono>
@@ -19,8 +16,9 @@
 #include <iostream>
 #include <sstream>
 #include <vector>
-
-using namespace std;
+#include "data_structures/color.hpp"
+#include "data_structures/interval.hpp"
+#include "data_structures/vec3.hpp"
 
 class CameraBase
 {
@@ -53,6 +51,8 @@ class CameraBase
 
    virtual ~CameraBase() = default;
 
+   static inline double degrees_to_radians(double degrees) { return degrees * M_PI / 180.0; }
+
  protected:
    Point3 camera_center; // Camera center
    Point3 pixel00_loc;   // Location of pixel 0, 0
@@ -66,7 +66,7 @@ class CameraBase
 
       // Determine viewport dimensions
       auto focal_length = (look_from - look_at).length();
-      auto theta = utils::degrees_to_radians(vfov);
+      auto theta = degrees_to_radians(vfov);
       auto h = tan(theta / 2);
 
       auto viewport_height = 2 * h * focal_length;
@@ -126,6 +126,7 @@ class CameraBase
     */
    void showProgress(int current, int total)
    {
+      using namespace std;
       const int barWidth = 70;
       static int frame = 0;
       const char *spinner = "|/-\\";
@@ -136,7 +137,7 @@ class CameraBase
       for (int i = 0; i < barWidth; ++i)
       {
          if (i < pos)
-            cout << "█";
+            std::cout << "█";
          else
             cout << "░";
       }
@@ -153,6 +154,7 @@ class CameraBase
       auto seconds = std::chrono::duration_cast<std::chrono::seconds>(duration);
       auto minutes = std::chrono::duration_cast<std::chrono::minutes>(duration);
 
+      using namespace std;
       std::ostringstream s;
 
       if (minutes.count() > 0)

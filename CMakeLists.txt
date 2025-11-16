@@ -59,69 +59,14 @@ set(EXTERNAL
 )
 
 set(SOURCE_302_RAYTRACER
-    # Main source
+    # Main source, only CC and CU files here
     src/302_raytracer/main.cc
-
-    # Core headers
-    src/302_raytracer/utils.hpp
-    src/302_raytracer/vec3.hpp
-    src/302_raytracer/color.hpp
-    src/302_raytracer/ray.hpp
-    src/302_raytracer/interval.hpp
-    src/302_raytracer/constants.hpp
-    src/302_raytracer/rnd_gen.hpp
-
-    # Geometry
-    src/302_raytracer/hittable.hpp
-    src/302_raytracer/hittable_list.hpp
-    src/302_raytracer/sphere.hpp
-    src/302_raytracer/cube.hpp
-    src/302_raytracer/rectangle.hpp
-
-    # Materials
-    src/302_raytracer/material.hpp
-
-    # Scene description (NEW)
-    src/302_raytracer/scene_description.hpp
-    src/302_raytracer/scene_builder.hpp
-    src/302_raytracer/yaml_scene_loader.hpp
-    src/302_raytracer/yaml_scene_loader.cc
-
-    # Camera and renderers
-    src/302_raytracer/camera/camera.hpp
-    src/302_raytracer/camera/camera_base.hpp
-
-    # SDL renderers (if SDL2 is available)  
-    src/302_raytracer/camera/sdl/sdl_gui_handler.hpp
-    src/302_raytracer/camera/sdl/sdl_gui_controls.hpp
-
-    # CPU renderers
-    src/302_raytracer/cpu_renderers/cpu_ray_tracer.hpp
-    src/302_raytracer/cpu_renderers/renderer_cpu_single_thread.hpp
-    src/302_raytracer/cpu_renderers/renderer_cpu_parallel.hpp
-
-    # GPU renderers
-    src/302_raytracer/gpu_renderers/renderer_cuda.hpp
+    src/302_raytracer/scenes/yaml_scene_loader.cc
     src/302_raytracer/gpu_renderers/renderer_cuda.cu
-    src/302_raytracer/gpu_renderers/renderer_cuda_progressive.hpp
-
-    src/302_raytracer/gpu_renderers/cuda_float3.cuh
-    src/302_raytracer/gpu_renderers/cuda_utils.cuh
     src/302_raytracer/gpu_renderers/cuda_utils.cu
-    src/302_raytracer/gpu_renderers/cuda_scene.cuh
     src/302_raytracer/gpu_renderers/scene_builder_cuda.cu
-
-    src/302_raytracer/gpu_renderers/cuda_raytracer.cuh
-    src/302_raytracer/gpu_renderers/shaders/shader_golf.cuh
-    src/302_raytracer/gpu_renderers/shaders/render_acc_kernel.cuh
     src/302_raytracer/gpu_renderers/shaders/render_acc_kernel.cu
     src/302_raytracer/gpu_renderers/shaders/shader_golf.cu
-
-    # Shaders
-    src/302_raytracer/gpu_renderers/materials/material_base.cuh
-    src/302_raytracer/gpu_renderers/materials/material_dispatcher.cuh
-    src/302_raytracer/gpu_renderers/materials/legacy/constant.cuh
-
 )
 
 # Ninja-specific optimizations
@@ -156,10 +101,19 @@ add_executable(302_raytracer ${EXTERNAL} ${SOURCE_302_RAYTRACER})
 target_include_directories(302_raytracer PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/src/external
+
     ${CMAKE_SOURCE_DIR}/src/302_raytracer
     ${CMAKE_SOURCE_DIR}/src/302_raytracer/camera
     ${CMAKE_SOURCE_DIR}/src/302_raytracer/camera/sdl
+    ${CMAKE_SOURCE_DIR}/src/302_raytracer/scenes
+    ${CMAKE_SOURCE_DIR}/src/302_raytracer/data_structures
+    
+    # CPU renderers
     ${CMAKE_SOURCE_DIR}/src/302_raytracer/cpu_renderers
+    ${CMAKE_SOURCE_DIR}/src/302_raytracer/cpu_renderers/data_structures
+    ${CMAKE_SOURCE_DIR}/src/302_raytracer/cpu_renderers/utils
+    
+    # GPU renderers
     ${CMAKE_SOURCE_DIR}/src/302_raytracer/gpu_renderers
     ${CMAKE_SOURCE_DIR}/src/302_raytracer/gpu_renderers/shaders
     ${CMAKE_SOURCE_DIR}/src/302_raytracer/gpu_renderers/materials

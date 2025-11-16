@@ -1,7 +1,7 @@
 #pragma once
 
 #include "hittable.hpp"
-#include "utils.hpp"
+#include <math.h>
 
 // This one was completely written using vibe coding, no human involvement at all
 class Cube : public Hittable
@@ -31,9 +31,9 @@ class Cube : public Hittable
    // Compute rotation matrix from Euler angles (XYZ order)
    void compute_rotation_matrix()
    {
-      double rx = rotation.x() * PI / 180.0;
-      double ry = rotation.y() * PI / 180.0;
-      double rz = rotation.z() * PI / 180.0;
+      double rx = rotation.x() * M_PI / 180.0;
+      double ry = rotation.y() * M_PI / 180.0;
+      double rz = rotation.z() * M_PI / 180.0;
       double cx = cos(rx), sx = sin(rx);
       double cy = cos(ry), sy = sin(ry);
       double cz = cos(rz), sz = sin(rz);
