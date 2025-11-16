@@ -48,15 +48,11 @@ Install extension `clangd` from `LLVM`. **WARNING** to make `clangd` work you mu
 
 This is all you need. There are *tasks* created in the `.vscode` folder that can be launched with `CTRL+Shift+P` -> Tasks and then you can build, and run. You can even setup key bindings for that.
 
-# TODOs 
+## Build documentation
 
-- Prepare basic GPU version rendering pipeline
-- Prepare basic C++ version for students
-- Check tools installation (ninja), libs and stuff
-- Github students
+If required, the documentation can be built with `doxygen`, which should be run in the main directory. The results are not saved in the git repository to save space.
 
 # Notes for PA
-
 - Trucs cools : ImGUI à installer ?
 - Ce serait probablement une idée qu'ils se fassent la main en regardant comment fonctionne le code pour faire le rendu d'une sphère dans un premier temps, sans vibe code.
 - Ensuite rendu des normales
