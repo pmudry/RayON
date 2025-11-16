@@ -22,7 +22,6 @@
 #include "vec3.hpp"
 #include "interval.hpp"
 #include "ray.hpp"
-#include "utils.hpp"
 
 class Hit_record
 {

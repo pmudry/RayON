@@ -142,6 +142,7 @@ extern "C" unsigned long long renderPixelsCUDAAccumulative(
    cudaMalloc(&d_ray_count, sizeof(unsigned long long));
 
    bool need_rand_init = false;
+   
    if (*d_rand_states_ptr == nullptr)
    {
       cudaMalloc(&d_rand_states, num_pixels * sizeof(curandState));

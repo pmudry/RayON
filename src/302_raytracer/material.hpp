@@ -3,6 +3,7 @@
 #include "color.hpp"
 #include "hittable.hpp"
 #include "ray.hpp"
+#include "vec3.hpp"
 
 class Material
 {
@@ -38,8 +39,8 @@ class ShowNormals : public Material
 
    virtual bool scatter(const Ray &r_in, const Hit_record &rec, Color &attenuation, Ray &scattered) const override
    {            
-      attenuation = 0.5 * (rec.normal + Color(1, 1, 1));
-      scattered = Ray(rec.p, Vec3(0,0,0)); // No scattering
+      attenuation = 0.5 * (rec.normal + Vec3_ONES);
+      scattered = Ray(rec.p, Vec3_ZEROES); // No scattering
       return true;
    }
 

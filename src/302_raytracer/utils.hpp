@@ -1,10 +1,9 @@
 #pragma once
 
-#include <memory>
-#include <vector>
 #include <cmath>
 #include <limits>
 #include <iostream>
+#include <memory>
 
 using namespace std;
 
@@ -14,7 +13,7 @@ namespace utils{
     const double PI = 3.1415926535897932385;
 
     // ANSI color codes for terminal output
-    namespace colors {
+    namespace ansi_colors {
         const char* const RESET = "\033[0m";
         const char* const RED = "\033[31m";
         const char* const GREEN = "\033[32m";
@@ -51,7 +50,7 @@ namespace utils{
             
             if (c == '\n') {
                 // Write reset code before newline
-                for (const char* p = colors::RESET; *p; ++p) {
+                for (const char* p = ansi_colors::RESET; *p; ++p) {
                     original_buf->sputc(*p);
                 }
                 at_line_start = true;
@@ -71,7 +70,7 @@ namespace utils{
     // Function to enable colored cerr output
     inline void enable_colored_cerr() {
         if (!colored_cerr_buf) {
-            colored_cerr_buf = new ColoredStreamBuf(std::cerr.rdbuf(), colors::BOLD_RED);
+            colored_cerr_buf = new ColoredStreamBuf(std::cerr.rdbuf(), ansi_colors::BOLD_RED);
             std::cerr.rdbuf(colored_cerr_buf);
         }
     }

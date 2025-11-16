@@ -54,6 +54,7 @@ struct f3
    float x, y, z;
 
    __host__ __device__ f3() : x(0), y(0), z(0) {}
+   
    __host__ __device__ f3(float x_, float y_, float z_) : x(x_), y(y_), z(z_) {}
 
    __host__ __device__ f3 operator+(const f3 &other) const
@@ -78,6 +79,9 @@ struct f3
 
    __host__ __device__ float length_squared() const { return x * x + y * y + z * z; }
 };
+
+const f3 f3_ZEROES(0.0f, 0.0f, 0.0f);
+const f3 f3_ONES(1.0f, 1.0f, 1.0f);
 
 /** @brief Scalar multiplication from left */
 __device__ __forceinline__ f3 operator*(float t, const f3 &v)

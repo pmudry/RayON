@@ -1,9 +1,9 @@
 #pragma once
 
 #include "hittable.hpp"
-#include "utils.hpp"
 #include "color.hpp"
 #include "material.hpp"
+#include "vec3.hpp"
 #include <memory>
 
 /**
@@ -13,7 +13,7 @@ class Rectangle : public Hittable
 {
  public:
    Rectangle(const Point3 &corner, const Vec3 &u, const Vec3 &v, shared_ptr<Material> mat = nullptr)
-       : corner(corner), u(u), v(v), mat_ptr(mat), is_light(false), light_color(Color(1, 1, 1)), light_intensity(1.0)
+       : corner(corner), u(u), v(v), mat_ptr(mat), is_light(false), light_color(Vec3_ONES), light_intensity(1.0)
    {
       normal = unit_vector(cross(u, v));
       area = u.length() * v.length();

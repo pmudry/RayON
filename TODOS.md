@@ -41,3 +41,5 @@
 [ ] Profiling and low-level optimizations
 [ ] Impact of different rendering optimizations reporting
 [ ] Implement benchmarks for static renderer on typical scenes (multiple renders + average)
+[ ] Tests unitaires qui détectent les régressions dans le renderer GPU et CPU en comparant avec des scènes de référence, notamment lors d'optimisations
+[ ] Pipeline CI/CD pour runner les tests unitaires ci-dessus (si possible, besoin CUDA sur Github)
