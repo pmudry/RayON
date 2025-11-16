@@ -193,6 +193,5 @@ extern "C" unsigned long long renderPixelsCUDAAccumulative(
    return host_ray_count;
 }
 
-// Note: renderPixelsCUDAWithScene has been removed.
 // Use renderPixelsCUDAAccumulative for all rendering (one-shot and progressive).
 // For one-shot rendering: call with samples_to_add = total samples, total_samples_so_far = 0

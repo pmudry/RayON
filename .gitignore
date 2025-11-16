@@ -2,6 +2,7 @@
 build/
 rendered_images/
 out/
+docs/
 .cache/
 CMakeFiles/
 CMakeCache.txt

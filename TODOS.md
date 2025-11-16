@@ -23,6 +23,7 @@
 ## General
 [ ] Better skybox
 [ ] Skybox as HDR, dynamic loading
+[ ] Doxygen documentation
 
 ## Scenes
 [ ] YAML scene should take camera positions

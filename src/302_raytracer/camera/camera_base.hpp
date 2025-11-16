@@ -205,7 +205,7 @@ class CameraBase
             float g = accum_buffer[accum_idx + 1] / num_samples;
             float b = accum_buffer[accum_idx + 2] / num_samples;
 
-            // Apply gamma correction using shared helper function
+            // // Apply gamma correction using shared helper function
             r = applyGammaCorrection(r, gamma);
             g = applyGammaCorrection(g, gamma);
             b = applyGammaCorrection(b, gamma);
@@ -214,6 +214,7 @@ class CameraBase
             image[image_idx + 0] = static_cast<unsigned char>(256 * intensity_range.clamp(r));
             image[image_idx + 1] = static_cast<unsigned char>(256 * intensity_range.clamp(g));
             image[image_idx + 2] = static_cast<unsigned char>(256 * intensity_range.clamp(b));
+
             if (image_channels == 4)
                image[image_idx + 3] = 255;
          }
