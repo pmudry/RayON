@@ -9,12 +9,12 @@
 
 #ifdef SDL2_FOUND
 
+#include "render/render_utils.hpp"
 #include "render/renderer_interface.hpp"
 #include "renderer_cuda_host.hpp"
-#include "render/render_utils.hpp"
+#include "scene_builder.hpp"
 #include "sdl_gui_controls.hpp"
 #include "sdl_gui_handler.hpp"
-#include "scene_builder.hpp"
 
 #include <SDL.h>
 #include <algorithm>
@@ -121,7 +121,8 @@ class RendererCUDAProgressive : public IRenderer
       const float target_frame_time_ms = 1000.0f / target_fps; // Calculate target frame time from FPS
       const float adaptive_speed = 0.2f;                       // How quickly to adapt sample rate (lower = smoother)
 
-      auto syncSamplesFromSlider = [&]() { samples_per_batch = std::max(1, static_cast<int>(samples_per_batch_float)); };
+      auto syncSamplesFromSlider = [&]()
+      { samples_per_batch = std::max(1, static_cast<int>(samples_per_batch_float)); };
 
       auto applySceneSettings = [&]()
       {
@@ -161,11 +162,11 @@ class RendererCUDAProgressive : public IRenderer
       vector<unsigned char> display_image(image_width * image_height * image_channels);
       vector<float> accum_buffer(image_width * image_height * image_channels, 0.0f);
       RenderTargetView display_view{&display_image, image_width, image_height, image_channels};
-      
+
       void *d_rand_states = nullptr;
       void *d_accum_buffer = nullptr; // Persistent device accumulation buffer
 
-      // Build scene once      
+      // Build scene once
       CudaScene::Scene *gpu_scene = Scene::CudaSceneBuilder::buildGPUScene(scene);
 
       // Timing for auto-orbit
@@ -285,18 +286,18 @@ class RendererCUDAProgressive : public IRenderer
             refreshCameraFrame();
          }
 
+         // Only happens once at start or after toggling accumulation
          if (needs_rerender && current_samples > 0)
          {
             render::convertAccumBufferToImage(display_view, accum_buffer, current_samples, gamma);
 
-            displayFrame(gui, display_image, current_samples, adaptive_samples_per_batch, light_intensity,
-                         background_intensity, metal_fuzziness, glass_refraction_index, accumulation_enabled,
-                         camera_control.isAutoOrbitEnabled(), dof_enabled, dof_aperture, dof_focus_distance,
-                         samples_slider_bounds, intensity_slider_bounds, background_slider_bounds,
-                         fuzziness_slider_bounds, glass_ior_slider_bounds, dof_aperture_slider_bounds,
-                         dof_focus_slider_bounds, toggle_button_rect, orbit_button_rect, dof_button_rect,
-                         image_channels);
-                         
+            displayFrame(
+                gui, display_image, current_samples, adaptive_samples_per_batch, light_intensity, background_intensity,
+                metal_fuzziness, glass_refraction_index, accumulation_enabled, camera_control.isAutoOrbitEnabled(),
+                dof_enabled, dof_aperture, dof_focus_distance, samples_slider_bounds, intensity_slider_bounds,
+                background_slider_bounds, fuzziness_slider_bounds, glass_ior_slider_bounds, dof_aperture_slider_bounds,
+                dof_focus_slider_bounds, toggle_button_rect, orbit_button_rect, dof_button_rect, image_channels);
+
             if (target.pixels)
                *target.pixels = display_image;
             needs_rerender = false;
@@ -317,7 +318,7 @@ class RendererCUDAProgressive : public IRenderer
             // Adaptive sample rate: use fewer samples during motion for smooth 60 FPS
             if (is_camera_moving)
             {
-               adaptive_samples_per_batch = std::max(1, adaptive_samples_per_batch);
+               adaptive_samples_per_batch = std::max(5, adaptive_samples_per_batch);
             }
             else
             {
@@ -328,9 +329,8 @@ class RendererCUDAProgressive : public IRenderer
             // Start timing this frame
             auto frame_start = std::chrono::high_resolution_clock::now();
 
-            renderBatch(frame, accum_buffer, display_view, current_samples, max_samples,
-                        adaptive_samples_per_batch, gamma, d_rand_states, d_accum_buffer, gpu_scene,
-                        is_camera_moving, adaptive_depth, context);
+            renderBatch(frame, accum_buffer, display_view, current_samples, max_samples, adaptive_samples_per_batch,
+                        gamma, d_rand_states, d_accum_buffer, gpu_scene, is_camera_moving, adaptive_depth, context);
 
             // Measure frame time and adapt sample rate for next frame
             auto frame_end = std::chrono::high_resolution_clock::now();
@@ -339,23 +339,20 @@ class RendererCUDAProgressive : public IRenderer
             // Adaptive adjustment only during motion
             if (is_camera_moving)
             {
-               const float time_ratio = target_frame_time_ms / frame_time.count();
-               const float target_samples = adaptive_samples_per_batch * time_ratio;
-               adaptive_samples_per_batch = std::max(
-                   1, static_cast<int>(adaptive_samples_per_batch * (1.0f - adaptive_speed) +
-                                       target_samples * adaptive_speed));
-
-               adaptive_samples_per_batch =
-                   std::max(1, std::min(adaptive_samples_per_batch, user_samples_per_batch));
+               // const float time_ratio = target_frame_time_ms / frame_time.count();
+               // const float target_samples = adaptive_samples_per_batch * time_ratio;
+               // adaptive_samples_per_batch =
+               //     std::max(5, static_cast<int>(adaptive_samples_per_batch * (1.0f - adaptive_speed) +
+               //                                  target_samples * adaptive_speed));
+               adaptive_samples_per_batch = 5; // Fixed low sample count during motion for simplicity
             }
 
-            displayFrame(gui, display_image, current_samples, adaptive_samples_per_batch, light_intensity,
-                         background_intensity, metal_fuzziness, glass_refraction_index, accumulation_enabled,
-                         camera_control.isAutoOrbitEnabled(), dof_enabled, dof_aperture, dof_focus_distance,
-                         samples_slider_bounds, intensity_slider_bounds, background_slider_bounds,
-                         fuzziness_slider_bounds, glass_ior_slider_bounds, dof_aperture_slider_bounds,
-                         dof_focus_slider_bounds, toggle_button_rect, orbit_button_rect, dof_button_rect,
-                         image_channels);
+            displayFrame(
+                gui, display_image, current_samples, adaptive_samples_per_batch, light_intensity, background_intensity,
+                metal_fuzziness, glass_refraction_index, accumulation_enabled, camera_control.isAutoOrbitEnabled(),
+                dof_enabled, dof_aperture, dof_focus_distance, samples_slider_bounds, intensity_slider_bounds,
+                background_slider_bounds, fuzziness_slider_bounds, glass_ior_slider_bounds, dof_aperture_slider_bounds,
+                dof_focus_slider_bounds, toggle_button_rect, orbit_button_rect, dof_button_rect, image_channels);
 
             if (target.pixels)
                *target.pixels = display_image;
@@ -382,9 +379,9 @@ class RendererCUDAProgressive : public IRenderer
    }
 
  private:
-    Settings settings_{};
+   Settings settings_{};
 
-    // Lightweight view describing which buffer SDL should read from after gamma correction.
+   // Lightweight view describing which buffer SDL should read from after gamma correction.
    struct DisplayBufferView
    {
       const vector<unsigned char> *buffer;
@@ -427,8 +424,8 @@ class RendererCUDAProgressive : public IRenderer
     */
    void renderBatch(const CameraFrame &frame, vector<float> &accum_buffer, RenderTargetView display_target,
                     int &current_samples, int max_samples, int samples_per_batch, float gamma, void *&d_rand_states,
-                    void *&d_accum_buffer, CudaScene::Scene *gpu_scene,
-                    bool is_moving, bool adaptive_depth, RenderContext &context)
+                    void *&d_accum_buffer, CudaScene::Scene *gpu_scene, bool is_moving, bool adaptive_depth,
+                    RenderContext &context)
    {
       current_samples += samples_per_batch;
 
@@ -439,10 +436,9 @@ class RendererCUDAProgressive : public IRenderer
       if (current_samples > max_samples)
          actual_samples_to_add = max_samples - (current_samples - samples_per_batch);
 
-      const int progressive_depth = adaptive_depth
-                                        ? calculateProgressiveMaxDepth(current_samples, max_samples, is_moving,
-                                                                       frame.max_depth)
-                                        : frame.max_depth;
+      const int progressive_depth =
+          adaptive_depth ? calculateProgressiveMaxDepth(current_samples, max_samples, is_moving, frame.max_depth)
+                         : frame.max_depth;
 
       // Call CUDA to render and accumulate samples with progressive depth
       // Note: First parameter (image) is unused by the kernel - it only updates accum_buffer
@@ -463,14 +459,15 @@ class RendererCUDAProgressive : public IRenderer
    /**
     * @brief Update the display with current frame and UI
     */
-   void displayFrame(SDLGuiHandler &gui, const vector<unsigned char> &display_image,
-                     int current_samples, int samples_per_batch, float light_intensity, float background_intensity, float metal_fuzziness,
+   void displayFrame(SDLGuiHandler &gui, const vector<unsigned char> &display_image, int current_samples,
+                     int samples_per_batch, float light_intensity, float background_intensity, float metal_fuzziness,
                      float glass_refraction_index, bool accumulation_enabled, bool auto_orbit_enabled, bool dof_enabled,
                      float dof_aperture, float dof_focus_distance, SliderBounds &samples_slider_bounds,
                      SliderBounds &intensity_slider_bounds, SliderBounds &background_slider_bounds,
                      SliderBounds &fuzziness_slider_bounds, SliderBounds &glass_ior_slider_bounds,
                      SliderBounds &dof_aperture_slider_bounds, SliderBounds &dof_focus_slider_bounds,
-                     SDL_Rect &toggle_button_rect, SDL_Rect &orbit_button_rect, SDL_Rect &dof_button_rect, int image_channels)
+                     SDL_Rect &toggle_button_rect, SDL_Rect &orbit_button_rect, SDL_Rect &dof_button_rect,
+                     int image_channels)
    {
       gui.updateDisplay(display_image, image_channels);
       gui.drawLogo();
@@ -483,7 +480,6 @@ class RendererCUDAProgressive : public IRenderer
                            dof_focus_slider_bounds, dof_button_rect);
       gui.present();
    }
-
 };
 
 #endif // SDL2_FOUND
