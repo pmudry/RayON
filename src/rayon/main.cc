@@ -212,22 +212,14 @@ int main(int argc, char *argv[])
    string compiled_config = current_build_configuration();
 
    cout << "\n";
-   cout << "===================================="
-           "\n";
+   cout << "====================================" << "\n";
    cout << " RayON raytracer v" << version << " - " << compiled_config << "\n";
-   cout << " Dr P.-A. Mudry, 2025"
-           "\n";
-   cout << "===================================="
-           "\n";
-   cout << "Using features : yaml_scene_loader, unified_scene_descriptions, cuda_optimization_1, BVH"
-           "\n";
-   cout << "fast_rnd, thread_block_optimal, inlining, atomic_reduction, russian_roulette"
-           "\n";
-   cout << "lambertian_cosine_weighted_hemisphere_sampling, lambertian_owen_hash_distribution"
-           "\n";
-   cout << "inter_adaptive_depth, inter_target_fps"
-           "\n"
-           "\n";
+   cout << " Dr P.-A. Mudry, 2025" << "\n";
+   cout << "====================================" << "\n";
+   cout << "Using features : yaml_scene_loader, unified_scene_descriptions, cuda_optimization_1, BVH" << "\n";
+   cout << "fast_rnd, thread_block_optimal, inlining, atomic_reduction, russian_roulette" << "\n";
+   cout << "lambertian_cosine_weighted_hemisphere_sampling, lambertian_owen_hash_distribution" << "\n";
+   cout << "inter_adaptive_depth, inter_target_fps" << "\n\n";
    cout << "Rendering at resolution: " << image_width << " x " << image_height << " pixels - ";
    cout << "Samples per pixel: " << args.samples << "\n\n";
 

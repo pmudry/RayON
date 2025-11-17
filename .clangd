@@ -19,7 +19,6 @@ CompileFlags:
     - --no-cuda-version-check
     # The include section is automatically generated my cmake at build, do NOT modify.
     - -I/home/pmudry/git/302_raytracer/src
-    - -I/home/pmudry/git/302_raytracer/src/302_raytracer
     - -I/home/pmudry/git/302_raytracer/src/external
     - -I/home/pmudry/git/302_raytracer/src/rayon
     - -I/home/pmudry/git/302_raytracer/src/rayon/camera
