@@ -3,20 +3,20 @@
 # A CPP/CUDA (interactive) ray-tracer for ISC 302
 
 ---
-Dr Pierre-André Mudry 2025, AGPL 3.0 License
+Dr Pierre-André Mudry, November 2025.
 
 <p align="center">
     <img src="images/real_time_raytrace.png" alt="Interactive path tracer rendering spheres with various materials including reflective metal, glass with refraction, and diffuse surfaces, displayed at 2000 samples per pixel in continuous accumulation mode with depth of field controls and real-time camera manipulation via mouse orbit, pan, and zoom" width="60%">
 </p>
 
-Based on <https://github.com/RayTracing/raytracing.github.io/tree/release/src/InOneWeekend>, an amazing resource ! 
+Based on the [Ray-tracing In One Weekend](https://github.com/RayTracing/raytracing.github.io/tree/release/src/InOneWeekend) series, an amazing resource for discovering ray-tracing magic! 
 
-This is a complete (mostly) hand-made re-implementation of the `InOneWeekend` version, to get started and understand how it works. There are multiple renderers available : 
+This project started as a hand-made re-implementation of the `InOneWeekend` raytracer version to get started and understand how it works. It went out of control rapidly and it turned out as an interactive accumulative samples real-time ray-tracer. As a result, there are multiple renderers available: 
 
-- CPU single-threaded (useless)
-- CPU multi-threaded
-- GPU CUDA accelerated
-- GPU CUDA real-time raytracing with accumulative sampling
+1. CPU single-threaded (useless)
+1. CPU multi-threaded
+1. GPU CUDA accelerated
+1. GPU CUDA real-time raytracing with accumulative sampling
 
 It uses [single-file public domain (or MIT licensed) libraries for C/C++](https://github.com/nothings/stb/tree/master) for opening and saving images.
 
