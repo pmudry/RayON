@@ -1,4 +1,4 @@
-# A realt-time ray-tracer in CPP/CUDA for CS302 HPC
+# A real-time ray-tracer in CPP/CUDA for CS302 HPC
 
 Based on <https://github.com/RayTracing/raytracing.github.io/tree/release/src/InOneWeekend>, an amazing resource ! 
 
