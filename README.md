@@ -1,16 +1,26 @@
-# A real-time ray-tracer in CPP/CUDA for CS302 HPC
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0) 
+
+# A CPP/CUDA (interactive) ray-tracer for ISC 302
+
+---
+Dr Pierre-André Mudry 2025, AGPL 3.0 License
+
+<p align="center">
+    <img src="images/real_time_raytrace.png" alt="Interactive path tracer rendering spheres with various materials including reflective metal, glass with refraction, and diffuse surfaces, displayed at 2000 samples per pixel in continuous accumulation mode with depth of field controls and real-time camera manipulation via mouse orbit, pan, and zoom" width="60%">
+</p>
 
 Based on <https://github.com/RayTracing/raytracing.github.io/tree/release/src/InOneWeekend>, an amazing resource ! 
 
-This is a complete hand-made re-implementation of the `InOneWeekend` version, to get started and understand how it works. There are multiple implementations : 
+This is a complete (mostly) hand-made re-implementation of the `InOneWeekend` version, to get started and understand how it works. There are multiple renderers available : 
 
-- single-threaded
-- multi-threaded
-- CUDA accelerated
+- CPU single-threaded (useless)
+- CPU multi-threaded
+- GPU CUDA accelerated
+- GPU CUDA real-time raytracing with accumulative sampling
 
-It uses [single-file public domain (or MIT licensed) libraries for C/C++](https://github.com/nothings/stb/tree/master).
+It uses [single-file public domain (or MIT licensed) libraries for C/C++](https://github.com/nothings/stb/tree/master) for opening and saving images.
 
-The project is declined in another version that serves as a starting point for the studnets.
+The project is declined (in another branch) in a much simpler form that serves as a reference implementation for the students of [ISC degree programme](https://isc.hevs.ch) _302 High-performance computing_ part.
 
 # How to compile and environment setup in VSCode
 
@@ -49,3 +59,11 @@ This is all you need. There are *tasks* created in the `.vscode` folder that can
 ## Build documentation
 
 If required, the documentation can be built with `doxygen`, which should be run in the main directory. The results are not saved in the git repository to save space.
+
+# Contributing
+PR's are welcome, please feel free to contribute !
+
+# Known issues
+
+- Compilation has been tested on DGX Spark, other platforms are untested yet.
+- The code depends on a proper installation of [`libsdl`](https://www.libsdl.org/) for creating the real-time rendering context. It might work without it in non-interactive mode but this has not been tested. Use at you own risks (or create a PR)

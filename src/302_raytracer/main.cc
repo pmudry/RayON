@@ -218,7 +218,7 @@ int main(int argc, char *argv[])
    cout << "==============================================" << endl;
    cout << "Using features : yaml_scene_loader, unified_scene_descriptions, cuda_optimization_1, BVH" << endl;
    cout << "fast_rnd, thread_block_optimal, inlining, atomic_reduction, russian_roulette" << endl;
-   cout << "lambertian_cosine_weigthed_hemisphere_sampling, lambertian_owen_hash_distribution" << endl;
+   cout << "lambertian_cosine_weighted_hemisphere_sampling, lambertian_owen_hash_distribution" << endl;
    cout << "inter_adaptive_depth, inter_target_fps" << endl << endl;
    cout << "Rendering at resolution: " << image_width << " x " << image_height << " pixels - ";
    cout << "Samples per pixel: " << args.samples << endl << endl;
