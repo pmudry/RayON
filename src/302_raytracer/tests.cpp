@@ -1,9 +1,9 @@
 /**
- * @file cuda_float3.cuh
- * @brief Simple 3D vector math operations optimized for CUDA
+ * @file tests.cpp
+ * @brief Unit tests for vector math operations
  *
- * Provides a lightweight f3 struct with common vector operations
- * needed for ray tracing computations on the GPU.
+ * Contains test implementations and standalone tests for vector operations,
+ * including orthonormal basis generation validation.
  */
 #pragma once
 
