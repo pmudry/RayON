@@ -8,14 +8,14 @@
 ```bash
 cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release
-make -j 12
+make -j
 ```
 
 **For Debug build (with debug symbols, slower):**
 ```bash
 cd build
 cmake .. -DCMAKE_BUILD_TYPE=Debug
-make -j 12
+make -j 
 ```
 
 ### Method 3: Switching between builds
@@ -25,7 +25,7 @@ If you want to switch from Release to Debug (or vice versa), you should clean fi
 cd build
 make clean
 cmake .. -DCMAKE_BUILD_TYPE=Debug  # or Release
-make -j8
+make -j
 ```
 
 ## Default Build Type
