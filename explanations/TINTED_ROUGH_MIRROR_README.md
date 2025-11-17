@@ -8,7 +8,7 @@ This document describes the enhanced implementation of **Tinted Rough Mirrors** 
 ### Previous Implementation
 The original rough mirror used a fixed warm tint:
 ```cpp
-attenuation = float3_simple(0.7f, 0.75f, 0.8f); // Fixed warm tint
+attenuation = f3(0.7f, 0.75f, 0.8f); // Fixed warm tint
 ```
 
 ### New Tinted Implementation
@@ -16,7 +16,7 @@ The enhanced version uses the existing `color` field as a tint multiplier:
 ```cpp
 // Rough mirrors use stored color as tint with reduced reflectivity
 float base_reflectivity = 0.7f;
-attenuation = float3_simple(
+attenuation = f3(
     rec.color.x * base_reflectivity,
     rec.color.y * base_reflectivity,  
     rec.color.z * base_reflectivity
@@ -41,21 +41,21 @@ Where:
 ```cpp
 else if (rec.material == ROUGH_MIRROR) {
     // Rough mirror reflection with surface imperfections and custom tint
-    float3_simple reflected = reflect_fuzzy(unit_vector(r.dir), rec.normal, rec.roughness, state);
+    f3 reflected = reflect_fuzzy(unit_vector(r.dir), rec.normal, rec.roughness, state);
     scattered = ray_simple(rec.p, reflected);
     
     // Check if the scattered ray is absorbed (going into the surface)
     if (dot(scattered.dir, rec.normal) > 0) {
         // Rough mirrors use stored color as tint with reduced reflectivity
         float base_reflectivity = 0.7f;
-        attenuation = float3_simple(
+        attenuation = f3(
             rec.color.x * base_reflectivity,
             rec.color.y * base_reflectivity,  
             rec.color.z * base_reflectivity
         );
     } else {
         // Ray absorbed by surface roughness
-        attenuation = float3_simple(0.0f, 0.0f, 0.0f);
+        attenuation = f3(0.0f, 0.0f, 0.0f);
     }
 }
 ```
@@ -65,12 +65,12 @@ else if (rec.material == ROUGH_MIRROR) {
 ### 1. Golden Rough Mirror (Left Sphere)
 ```cpp
 // Left sphere (rough mirror with golden tint)
-if (hit_sphere(float3_simple(-2, 0, -1), 0.5f, r, t_min, closest_so_far, temp_rec)) {
+if (hit_sphere(f3(-2, 0, -1), 0.5f, r, t_min, closest_so_far, temp_rec)) {
     hit_anything = true;
     closest_so_far = temp_rec.t;
     rec = temp_rec;
     rec.material = ROUGH_MIRROR;
-    rec.color = float3_simple(1.0f, 0.85f, 0.57f); // Golden tint (brass/gold color)
+    rec.color = f3(1.0f, 0.85f, 0.57f); // Golden tint (brass/gold color)
     rec.roughness = 0.25f; // Moderate surface roughness
 }
 ```
@@ -84,11 +84,11 @@ if (hit_sphere(float3_simple(-2, 0, -1), 0.5f, r, t_min, closest_so_far, temp_re
 ### 2. Blue-Tinted Ground Surface
 ```cpp
 // Ground sphere with rough mirror surface and slight blue tint
-if (hit_sphere(float3_simple(0, -350.5f, -1), 350.0f, r, t_min, closest_so_far, temp_rec)) {
+if (hit_sphere(f3(0, -350.5f, -1), 350.0f, r, t_min, closest_so_far, temp_rec)) {
     hit_anything = true;
     closest_so_far = temp_rec.t;
     rec = temp_rec;
-    rec.color = float3_simple(0.85f, 0.9f, 1.0f); // Slight blue tint (cool metal)
+    rec.color = f3(0.85f, 0.9f, 1.0f); // Slight blue tint (cool metal)
     rec.material = ROUGH_MIRROR;
     rec.roughness = 0.4f; // Higher roughness for ground surface
 }
@@ -150,22 +150,22 @@ The system maintains energy conservation by ensuring reflected energy never exce
 ```cpp
 // Polished Gold Mirror
 rec.material = ROUGH_MIRROR;
-rec.color = float3_simple(1.0f, 0.85f, 0.57f);
+rec.color = f3(1.0f, 0.85f, 0.57f);
 rec.roughness = 0.1f;
 
 // Weathered Copper
 rec.material = ROUGH_MIRROR;
-rec.color = float3_simple(0.6f, 0.8f, 0.7f);
+rec.color = f3(0.6f, 0.8f, 0.7f);
 rec.roughness = 0.5f;
 
 // Brushed Aluminum
 rec.material = ROUGH_MIRROR;
-rec.color = float3_simple(0.85f, 0.9f, 0.95f);
+rec.color = f3(0.85f, 0.9f, 0.95f);
 rec.roughness = 0.3f;
 
 // Aged Iron
 rec.material = ROUGH_MIRROR;
-rec.color = float3_simple(0.7f, 0.4f, 0.3f);
+rec.color = f3(0.7f, 0.4f, 0.3f);
 rec.roughness = 0.6f;
 ```
 
@@ -174,12 +174,12 @@ rec.roughness = 0.6f;
 ```cpp
 // Rainbow Metal (shifting between colors could be texture-driven)
 rec.material = ROUGH_MIRROR;
-rec.color = float3_simple(0.8f, 0.6f, 0.9f); // Purple base
+rec.color = f3(0.8f, 0.6f, 0.9f); // Purple base
 rec.roughness = 0.2f;
 
 // Sci-Fi Blue Metal
 rec.material = ROUGH_MIRROR;
-rec.color = float3_simple(0.3f, 0.6f, 1.0f);
+rec.color = f3(0.3f, 0.6f, 1.0f);
 rec.roughness = 0.15f;
 ```
 
@@ -201,14 +201,14 @@ rec.roughness = 0.15f;
 
 1. **Texture-Based Tinting**
    ```cpp
-   float3_simple tint = sample_texture(uv_coordinates);
+   f3 tint = sample_texture(uv_coordinates);
    attenuation = tint * base_reflectivity;
    ```
 
 2. **Fresnel-Based Tint Variation**
    ```cpp
    float fresnel_factor = compute_fresnel(incident_angle);
-   float3_simple tint = lerp(base_tint, edge_tint, fresnel_factor);
+   f3 tint = lerp(base_tint, edge_tint, fresnel_factor);
    ```
 
 3. **Roughness-Dependent Tinting**
@@ -257,7 +257,7 @@ This configuration demonstrates:
 
 ### Modified Files
 - `src/v0_single_threaded/camera_cuda.cu`: Enhanced rough mirror material handling
-- `res/output_tinted_rough_mirror.png`: Example render with tinted materials
+- `rendered_images/output_YYYY-MM-DD_HH-MM-SS.png`: Example render with tinted materials (timestamped)
 
 ### Documentation Files
 - `ROUGH_MIRROR_README.md`: Original rough mirror documentation

@@ -8,28 +8,14 @@
 ```bash
 cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release
-make -j8
+make -j 12
 ```
 
 **For Debug build (with debug symbols, slower):**
 ```bash
 cd build
 cmake .. -DCMAKE_BUILD_TYPE=Debug
-make -j8
-```
-
-### Method 2: Using helper scripts
-
-**For Release build:**
-```bash
-cd build
-rm -rf * && cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=1 && cp compile_commands.json .. && make -j8
-```
-
-**For Debug build:**
-```bash
-cd build
-rm -rf * && cmake .. -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=1 && cp compile_commands.json .. && make -j8
+make -j 12
 ```
 
 ### Method 3: Switching between builds
