@@ -1,5 +1,5 @@
 /**
- * @file sdf.h
+ * @file sdf.hpp
  * @brief Signed Distance Field (SDF) functions and ray marching utilities
  *
  * This file provides:
