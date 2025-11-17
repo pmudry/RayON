@@ -1,5 +1,5 @@
 /**
- * @file sdf_shape.h
+ * @file sdf_shape.hpp
  * @brief Hittable wrapper for SDF primitives
  *
  * This file provides a bridge between the SDF system and the traditional
