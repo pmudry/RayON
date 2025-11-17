@@ -197,7 +197,7 @@ struct Triangle {
  * @brief Triangle mesh with optional BVH
  */
 struct TriangleMesh {
-    std::vector<Triangle> triangles();
+    std::vector<Triangle> triangles;
     int bvh_root_id;           // Index into BVH node array (-1 = not built)
     Vec3 bounds_min, bounds_max;
     
