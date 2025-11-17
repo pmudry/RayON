@@ -212,10 +212,10 @@ int main(int argc, char *argv[])
    string compiled_config = current_build_configuration();
 
    cout << endl;
-   cout << "==============================================" << endl;
-   cout << " 302 Ray tracer project v" << ver_major << " - " << compiled_config << endl;
-   cout << " P.-A. Mudry, ISC 2026" << endl;
-   cout << "==============================================" << endl;
+   cout << "====================================" << endl;
+   cout << " RayON raytracer v" << ver_major << " - " << compiled_config << endl;
+   cout << " Dr P.-A. Mudry, 2025" << endl;
+   cout << "====================================" << endl;
    cout << "Using features : yaml_scene_loader, unified_scene_descriptions, cuda_optimization_1, BVH" << endl;
    cout << "fast_rnd, thread_block_optimal, inlining, atomic_reduction, russian_roulette" << endl;
    cout << "lambertian_cosine_weighted_hemisphere_sampling, lambertian_owen_hash_distribution" << endl;

@@ -26,7 +26,7 @@
 		{
 			"type": "shell",
 			"label": "Launch",
-			"command": "cd ${workspaceFolder}/build && ./302_raytracer",
+			"command": "cd ${workspaceFolder}/build && ./rayon",
 			"problemMatcher": [],
 			"detail": "Launch the program",
 			"presentation": {
@@ -46,7 +46,7 @@
 		{
 			"label": "Launch",
 			"type": "shell",
-			"command": "cd ${workspaceFolder}/build && ./302_raytracer",
+			"command": "cd ${workspaceFolder}/build && ./rayon",
 			"isBackground": false,
 			"problemMatcher": [],
 			"group": "build"

@@ -7,7 +7,7 @@
 
 ## CUDA renderer
 - [ ] Implement anisotropic metals
-- [ ] Refactor constants f3_ones, f3_zero and others
+- [x] Refactor constants f3_ones, f3_zero and others
 - [ ] New sphere light types
 - [ ] Textures loading (Venturi's style)
 - [ ] SDF integration
@@ -37,12 +37,14 @@
 - [ ] Fast maths
 
 ## Semester project
-- [ ] `ImGUI` GUI integration for controls
-- [ ] Impact of different rendering optimizations reporting
+- [ ] `ImGUI` GUI integration for controls -> reimplement existing controls + add more
 - [ ] Implement benchmarks for static renderer on typical scenes (multiple renders + average)
-- [ ] Tests unitaires qui détectent les régressions dans le renderer GPU et CPU en comparant avec des scènes de référence, notamment lors d'optimisations
-- [ ] Profiling and low-level optimizations + document changes
+- [ ] Implement benchmarks for interactive rendering
+- [ ] `sdl` texture blitting integration + performance assessment
+- [ ] Impact of different rendering optimizations reporting -> find a way and report
 - [ ] Implement NVIDIA OptiX image denoising
+- [ ] Profiling and low-level optimizations + document changes
+- [ ] screen rescaling ?
+- [ ] Tests unitaires qui détectent les régressions dans le renderer GPU et CPU en comparant avec des scènes de référence, notamment lors d'optimisations
 - [ ] Pipeline CI/CD pour runner les tests unitaires ci-dessus (si possible, besoin CUDA sur Github)
-
-- [ ] Save as OpenEXR format
+- [ ] Save image as OpenEXR format

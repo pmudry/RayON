@@ -12,6 +12,7 @@
  */
 #pragma once
 
+#include "constants.hpp"
 #ifdef SDL2_FOUND
 
 #include <SDL.h>
@@ -70,9 +71,11 @@ class SDLGuiHandler
       }
 #endif
 
-      window =
-          SDL_CreateWindow("ISC - 302 ray tracer (mui) / Continuous mode (LMB:Rotate RMB:Pan Wheel:Zoom)",
-                           SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, image_width, image_height, SDL_WINDOW_SHOWN);
+      std::string window_title = "RayON (mui) v" + std::string(constants::version) + 
+                     " - Interactive mode (LMB:Rotate RMB:Pan Wheel:Zoom)";
+      window = SDL_CreateWindow(window_title.c_str(),
+                    SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 
+                    image_width, image_height, SDL_WINDOW_SHOWN);
       if (!window)
       {
          cerr << "Window creation failed: " << SDL_GetError() << endl;

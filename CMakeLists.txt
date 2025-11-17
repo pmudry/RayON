@@ -1,5 +1,5 @@
 #---------------------------------------------------------------------------------------------------
-# CMake Build Configuration for 302_RAYTRACE
+# CMake Build Configuration for RayON Raytracer
 # See README.md for guidance.
 #---------------------------------------------------------------------------------------------------
 cmake_minimum_required(VERSION 3.8)
@@ -7,7 +7,7 @@ cmake_minimum_required(VERSION 3.8)
 # Option to choose compiler (set before project())
 option(USE_CLANG "Use Clang compiler instead of GCC" ON)
 
-project(302_RAYTRACE LANGUAGES CXX CUDA)
+project(RAYON_RAYTRACER LANGUAGES CXX CUDA)
 
 if(USE_CLANG)
     set(CMAKE_C_COMPILER "clang")
@@ -58,17 +58,17 @@ set(EXTERNAL
     src/external/stb_image.h
 )
 
-set(SOURCE_302_RAYTRACER
+set(SOURCE_RAYON
     # Main source, only CC and CU files here
-    src/302_raytracer/main.cc
-    src/302_raytracer/render/render_coordinator.cpp
-    src/302_raytracer/scenes/yaml_scene_loader.cc
-    src/302_raytracer/gpu_renderers/renderer_cuda_device.cu
-    src/302_raytracer/gpu_renderers/cuda_raytracer.cu
-    src/302_raytracer/gpu_renderers/cuda_utils.cu
-    src/302_raytracer/gpu_renderers/scene_builder_cuda.cu
-    src/302_raytracer/gpu_renderers/shaders/render_acc_kernel.cu
-    src/302_raytracer/gpu_renderers/shaders/shader_golf.cu
+    src/rayon/main.cc
+    src/rayon/render/render_coordinator.cpp
+    src/rayon/scenes/yaml_scene_loader.cc
+    src/rayon/gpu_renderers/renderer_cuda_device.cu
+    src/rayon/gpu_renderers/cuda_raytracer.cu
+    src/rayon/gpu_renderers/cuda_utils.cu
+    src/rayon/gpu_renderers/scene_builder_cuda.cu
+    src/rayon/gpu_renderers/shaders/render_acc_kernel.cu
+    src/rayon/gpu_renderers/shaders/shader_golf.cu
 )
 
 # Ninja-specific optimizations
@@ -96,34 +96,34 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 # Executables
-add_executable(302_raytracer ${EXTERNAL} ${SOURCE_302_RAYTRACER})
+add_executable(rayon ${EXTERNAL} ${SOURCE_RAYON})
 
 # Add include directories using modern CMake target_include_directories
 # This is the proper way - affects only this target and propagates to clangd via compile_commands.json
-target_include_directories(302_raytracer PRIVATE
+target_include_directories(rayon PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/src/external
 
-    ${CMAKE_SOURCE_DIR}/src/302_raytracer
-    ${CMAKE_SOURCE_DIR}/src/302_raytracer/camera
-    ${CMAKE_SOURCE_DIR}/src/302_raytracer/camera/sdl
-    ${CMAKE_SOURCE_DIR}/src/302_raytracer/scenes
-    ${CMAKE_SOURCE_DIR}/src/302_raytracer/data_structures
+    ${CMAKE_SOURCE_DIR}/src/rayon
+    ${CMAKE_SOURCE_DIR}/src/rayon/camera
+    ${CMAKE_SOURCE_DIR}/src/rayon/camera/sdl
+    ${CMAKE_SOURCE_DIR}/src/rayon/scenes
+    ${CMAKE_SOURCE_DIR}/src/rayon/data_structures
     
     # CPU renderers
-    ${CMAKE_SOURCE_DIR}/src/302_raytracer/cpu_renderers
-    ${CMAKE_SOURCE_DIR}/src/302_raytracer/cpu_renderers/data_structures
-    ${CMAKE_SOURCE_DIR}/src/302_raytracer/cpu_renderers/utils
-    ${CMAKE_SOURCE_DIR}/src/302_raytracer/cpu_renderers/cpu_shapes
+    ${CMAKE_SOURCE_DIR}/src/rayon/cpu_renderers
+    ${CMAKE_SOURCE_DIR}/src/rayon/cpu_renderers/data_structures
+    ${CMAKE_SOURCE_DIR}/src/rayon/cpu_renderers/utils
+    ${CMAKE_SOURCE_DIR}/src/rayon/cpu_renderers/cpu_shapes
     
     # GPU renderers
-    ${CMAKE_SOURCE_DIR}/src/302_raytracer/gpu_renderers
-    ${CMAKE_SOURCE_DIR}/src/302_raytracer/gpu_renderers/shaders
-    ${CMAKE_SOURCE_DIR}/src/302_raytracer/gpu_renderers/materials
-    ${CMAKE_SOURCE_DIR}/src/302_raytracer/gpu_renderers/materials/legacy
+    ${CMAKE_SOURCE_DIR}/src/rayon/gpu_renderers
+    ${CMAKE_SOURCE_DIR}/src/rayon/gpu_renderers/shaders
+    ${CMAKE_SOURCE_DIR}/src/rayon/gpu_renderers/materials
+    ${CMAKE_SOURCE_DIR}/src/rayon/gpu_renderers/materials/legacy
 )
 
-target_compile_definitions(302_raytracer PRIVATE
+target_compile_definitions(rayon PRIVATE
     RT_BUILD_TYPE_STRING="$<IF:$<BOOL:${CMAKE_BUILD_TYPE}>,${CMAKE_BUILD_TYPE},$<CONFIG>>"
 )
 
@@ -131,7 +131,7 @@ target_compile_definitions(302_raytracer PRIVATE
 find_package(SDL2 QUIET)
 if(SDL2_FOUND)
     include_directories(${SDL2_INCLUDE_DIRS})
-    target_link_libraries(302_raytracer ${SDL2_LIBRARIES})
+    target_link_libraries(rayon ${SDL2_LIBRARIES})
     add_definitions(-DSDL2_FOUND)
     message(STATUS "SDL2 found and linked for real-time display")
 
@@ -141,7 +141,7 @@ if(SDL2_FOUND)
         pkg_check_modules(SDL2_TTF QUIET SDL2_ttf)
         if(SDL2_TTF_FOUND)
             include_directories(${SDL2_TTF_INCLUDE_DIRS})
-            target_link_libraries(302_raytracer ${SDL2_TTF_LIBRARIES})
+            target_link_libraries(rayon ${SDL2_TTF_LIBRARIES})
             add_definitions(-DSDL2_TTF_FOUND)
             message(STATUS "SDL2_ttf found and linked for TrueType font rendering")
         else()
@@ -162,11 +162,11 @@ endif()
 file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/rendered_images)
 
 if(CUDA_FOUND)
-    set_property(TARGET 302_raytracer PROPERTY CUDA_SEPARABLE_COMPILATION ON)
-    target_link_libraries(302_raytracer curand)
+    set_property(TARGET rayon PROPERTY CUDA_SEPARABLE_COMPILATION ON)
+    target_link_libraries(rayon curand)
 
     # CUDA compiler flags for optimization and warning suppression
-    target_compile_options(302_raytracer PRIVATE
+    target_compile_options(rayon PRIVATE
         $<$<COMPILE_LANGUAGE:CUDA>:
         -maxrregcount 80               # Limit max registers per thread for better occupancy (TO BE TUNED)
         -Xcompiler=-fno-strict-aliasing -rdynamic -lineinfo # Optimize memory access
@@ -182,14 +182,14 @@ if(CUDA_FOUND)
     )
 
     # Set device link options to suppress nvlink warnings
-    set_target_properties(302_raytracer PROPERTIES
+    set_target_properties(rayon PROPERTIES
         CUDA_RESOLVE_DEVICE_SYMBOLS ON
         CUDA_SEPARABLE_COMPILATION ON
         CUDA_LINK_OPTIONS_INIT "-Xnvlink=--suppress-stack-size-warning,-w"
     )
 
     # Additional nvlink flags to suppress all warnings
-    target_link_options(302_raytracer PRIVATE
+    target_link_options(rayon PRIVATE
         $<DEVICE_LINK:-Xnvlink=--suppress-stack-size-warning,-w>
     )
 endif()

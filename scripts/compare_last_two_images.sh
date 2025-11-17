@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# 302 Raytracer helper script — made for this project
+# RayON Raytracer helper script — made for this project
 # Compare the two most recent image files using ImageMagick RMSE and generate a visual diff.
 # Usage: compare_last_two_images.sh [--open|--no-open] [directory]
 # Examples:
@@ -10,7 +10,7 @@ set -euo pipefail
 
 usage() {
   cat <<EOF
-302 Raytracer - compare last two images
+RayON util -- Compare last two rendered images
 Usage: $(basename "$0") [--open|--no-open] [directory]
   --open      Open newest image after comparison (default)
   --no-open   Do not open image
