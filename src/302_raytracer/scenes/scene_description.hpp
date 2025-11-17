@@ -1,5 +1,5 @@
 /**
- * @file scene_description.h
+ * @file scene_description.hpp
  * @brief Unified scene description format for CPU and GPU renderers
  * 
  * This file provides a common scene representation that can be:
