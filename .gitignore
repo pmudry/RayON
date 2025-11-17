@@ -3,6 +3,7 @@ build/
 res/
 out/
 .cache/
+docs/
 CMakeFiles/
 CMakeCache.txt
 cmake_install.cmake
