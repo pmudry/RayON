@@ -1,5 +1,5 @@
 /**
- * @file yaml_scene_loader.h
+ * @file yaml_scene_loader.hpp
  * @brief YAML scene loader for SceneDescription
  * 
  * Loads scenes from YAML files. Uses minimal dependencies.
