@@ -1,5 +1,5 @@
 /**
- * @file scene_builder.h
+ * @file scene_builder.hpp
  * @brief Converts SceneDescription to renderer-specific formats
  *
  * This file provides builders that convert the unified SceneDescription format to:
