@@ -489,23 +489,6 @@ public:
         geometries.push_back(geom);
     }
     
-    void addDisplacedSphere(const Vec3& center, double radius, int mat_id, int pattern_type = 0) {
-        GeometryDesc geom;
-        geom.type = GeometryType::DISPLACED_SPHERE;
-        geom.material_id = mat_id;
-        geom.data.displaced_sphere.center = center;
-        geom.data.displaced_sphere.radius = radius;
-        geom.data.displaced_sphere.displacement_scale = 0.05f;  // Default
-        geom.data.displaced_sphere.pattern_type = pattern_type;
-        
-        // Compute bounding box (slightly larger for displacement)
-        Vec3 r(radius * 1.1, radius * 1.1, radius * 1.1);
-        geom.bounds_min = center - r;
-        geom.bounds_max = center + r;
-        
-        geometries.push_back(geom);
-    }
-    
     void addTriangle(const Vec3& v0, const Vec3& v1, const Vec3& v2, int mat_id) {
         GeometryDesc geom;
         geom.type = GeometryType::TRIANGLE;
