@@ -96,7 +96,7 @@ class SceneFactory
       int mat_green = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(152 / 255.0, 199 / 255.0, 191 / 255.0)));
       int mat_light = scene_desc.addMaterial(MaterialDesc::light(Vec3(4.8, 4.1, 3.7)));
       int mat_torus_orange = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(1.0, 0.6, 0.2)));
-      int mat_normal = scene_desc.addMaterial(MaterialDesc::MaterialDesc::normal());
+      int mat_normal = scene_desc.addMaterial(MaterialDesc::normal());
 
       // === Default scene - Geometry ===
       scene_desc.addSphere(Vec3(0, -950.5, -1), 950.0, mat_ground); // Ground "plane"
