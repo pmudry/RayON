@@ -35,7 +35,7 @@ cmake .. --fresh
 make -j
 ```
 
-This will generate the appropriate `compile_commands.json` for `clangd` so that you get syntax highlighting, code completion etc. in VS Code. You can then run from the `build directory`
+This will generate the appropriate `compile_commands.json` for `clangd` so that you get syntax highlighting, code completion etc. in VS Code. Additionally, CMake automatically updates the `.clangd` file with include paths for all subdirectories under `src/`, ensuring clangd has the correct `-I` flags without manual maintenance. You can then run from the `build directory`
 
 ```bash
 ./302_raytracer --help
@@ -53,6 +53,8 @@ Rendered frames are written to `rendered_images/` with timestamped filenames suc
 ## Within VSCode
 
 Install extension `clangd` from `LLVM`. **WARNING** to make `clangd` work you must have `compile_commands.json` (which are now generated automatically from `CMakeLists.txt` called during the `cmake` phase above). :warning: In addition, the headers that are in C++ **MUST** be named with a `.hpp` extension (not `.h`). I spent I whole day trying to figure this out.
+
+The project also integrates `clang-tidy` for static analysis. If `clang-tidy` is installed, CMake will enable it automatically during builds to check for code issues, style violations, and potential bugs. A `.clang-tidy` configuration file is provided to customize the checks.
 
 This is all you need. There are *tasks* created in the `.vscode` folder that can be launched with `CTRL+Shift+P` -> Tasks and then you can build, and run. You can even setup key bindings for that.
 

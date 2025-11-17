@@ -38,11 +38,11 @@ class FileUtils
 
       if (stbi_write_png(filename.c_str(), image_width, image_height, channels, image.data(), image_width * channels))
       {
-         cout << "Image saved successfully to " << filename << endl;
+         cout << "Image saved successfully to " << filename << "\n";
       }
       else
       {
-         cerr << "Failed to save image to " << filename << endl;
+         cerr << "Failed to save image to " << filename << "\n";
       }
    }
 
@@ -124,7 +124,7 @@ class FileUtils
       ofstream stats_file(stats_path);
       if (!stats_file)
       {
-         cerr << "Failed to write stats to " << stats_path << endl;
+         cerr << "Failed to write stats to " << stats_path << "\n";
          return;
       }
 
@@ -152,7 +152,7 @@ class FileUtils
       ofstream stats_json(stats_json_path);
       if (!stats_json)
       {
-         cerr << "Failed to write stats JSON to " << stats_json_path << endl;
+         cerr << "Failed to write stats JSON to " << stats_json_path << "\n";
          return;
       }
 
@@ -166,7 +166,7 @@ class FileUtils
       stats_json << "  \"image_size_bytes\": " << image_size_bytes << ",\n";
       stats_json << "  \"rays_per_second\": " << rays_per_second_int << ",\n";
       stats_json << "  \"render_time_ms\": " << render_ms << ",\n";
-      stats_json << "  \"render_time_pretty\": \"" << formatDuration(render_duration) << "\"\n";
+      stats_json << "  \"render_time_pretty\": \"" << formatDuration(render_duration) << "\n";
       stats_json << "}\n";
    }
 }; // class FileUtils

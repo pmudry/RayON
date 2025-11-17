@@ -58,27 +58,26 @@ class SDLGuiHandler
    {
       if (SDL_Init(SDL_INIT_VIDEO) < 0)
       {
-         cerr << "SDL initialization failed: " << SDL_GetError() << endl;
+         cerr << "SDL initialization failed: " << SDL_GetError() << "\n";
          return false;
       }
 
 #ifdef SDL2_TTF_FOUND
       if (TTF_Init() < 0)
       {
-         cerr << "SDL_ttf initialization failed: " << TTF_GetError() << endl;
+         cerr << "SDL_ttf initialization failed: " << TTF_GetError() << "\n";
          SDL_Quit();
          return false;
       }
 #endif
 
-      std::string window_title = "RayON (mui) v" + std::string(constants::version) + 
-                     " - Interactive mode (LMB:Rotate RMB:Pan Wheel:Zoom)";
-      window = SDL_CreateWindow(window_title.c_str(),
-                    SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 
-                    image_width, image_height, SDL_WINDOW_SHOWN);
+      std::string window_title =
+          "RayON (mui) v" + std::string(constants::version) + " - Interactive mode (LMB:Rotate RMB:Pan Wheel:Zoom)";
+      window = SDL_CreateWindow(window_title.c_str(), SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, image_width,
+                                image_height, SDL_WINDOW_SHOWN);
       if (!window)
       {
-         cerr << "Window creation failed: " << SDL_GetError() << endl;
+         cerr << "Window creation failed: " << SDL_GetError() << "\n";
          cleanupSDL();
          return false;
       }
@@ -86,7 +85,7 @@ class SDLGuiHandler
       renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
       if (!renderer)
       {
-         cerr << "Renderer creation failed: " << SDL_GetError() << endl;
+         cerr << "Renderer creation failed: " << SDL_GetError() << "\n";
          SDL_DestroyWindow(window);
          cleanupSDL();
          return false;
@@ -96,7 +95,7 @@ class SDLGuiHandler
           SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STREAMING, image_width, image_height);
       if (!texture)
       {
-         cerr << "Texture creation failed: " << SDL_GetError() << endl;
+         cerr << "Texture creation failed: " << SDL_GetError() << "\n";
          SDL_DestroyRenderer(renderer);
          SDL_DestroyWindow(window);
          cleanupSDL();
@@ -204,12 +203,10 @@ class SDLGuiHandler
    }
 
    void drawUIControls(int samples_per_batch, float light_intensity, float background_intensity, float metal_fuzziness,
-                       float glass_refraction_index,
-                       bool accumulation_enabled, bool auto_orbit_enabled,
-                       SliderBounds &samples_slider_bounds,
-                       SliderBounds &intensity_slider_bounds, SliderBounds &background_slider_bounds,
-                       SliderBounds &fuzziness_slider_bounds, SliderBounds &glass_ior_slider_bounds,
-                       SDL_Rect &toggle_button_rect, SDL_Rect &orbit_button_rect)
+                       float glass_refraction_index, bool accumulation_enabled, bool auto_orbit_enabled,
+                       SliderBounds &samples_slider_bounds, SliderBounds &intensity_slider_bounds,
+                       SliderBounds &background_slider_bounds, SliderBounds &fuzziness_slider_bounds,
+                       SliderBounds &glass_ior_slider_bounds, SDL_Rect &toggle_button_rect, SDL_Rect &orbit_button_rect)
    {
       // Don't draw controls if they're hidden
       if (!show_controls)
@@ -234,29 +231,25 @@ class SDLGuiHandler
 
       SDL_Color white = {255, 255, 255, 255};
 
-      SDL_Rect bg_rect = {padding - 5, start_y - 5, control_width + 10,
-                          5 * slider_height + button_row_height + 6 * spacing + 10};
-      SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
-      SDL_SetRenderDrawColor(renderer, 0, 0, 0, 200);
-      SDL_RenderFillRect(renderer, &bg_rect);
+      drawPanelBackground(padding, start_y, control_width, 5 * slider_height + button_row_height + 6 * spacing);
 
       // Draw two toggle buttons side by side
       int button_width = (control_width - spacing) / 2;
       drawToggleButton(small_font, padding, start_y, accumulation_enabled, white, toggle_button_rect, "Auto-Accum",
                        button_width);
-      drawOrbitButton(small_font, padding + button_width + spacing, start_y, auto_orbit_enabled, white,
+      drawToggleButton(small_font, padding + button_width + spacing, start_y, auto_orbit_enabled, white,
                       orbit_button_rect, "Auto-Orbit", button_width);
 
       drawSamplesSlider(small_font, padding, start_y + button_row_height + spacing, control_width, samples_per_batch,
-                        white, samples_slider_bounds, label_width);
+                        samples_slider_bounds, label_width);
       drawLightSlider(small_font, padding, start_y + button_row_height + slider_height + 2 * spacing, control_width,
-                      light_intensity, white, intensity_slider_bounds, label_width);
+                      light_intensity, intensity_slider_bounds, label_width);
       drawBackgroundSlider(small_font, padding, start_y + button_row_height + 2 * slider_height + 3 * spacing,
-                           control_width, background_intensity, white, background_slider_bounds, label_width);
+                           control_width, background_intensity, background_slider_bounds, label_width);
       drawFuzzinessSlider(small_font, padding, start_y + button_row_height + 3 * slider_height + 4 * spacing,
-                          control_width, metal_fuzziness, white, fuzziness_slider_bounds, label_width);
+                          control_width, metal_fuzziness, fuzziness_slider_bounds, label_width);
       drawGlassIORSlider(small_font, padding, start_y + button_row_height + 4 * slider_height + 5 * spacing,
-                         control_width, glass_refraction_index, white, glass_ior_slider_bounds, label_width);
+                         control_width, glass_refraction_index, glass_ior_slider_bounds, label_width);
 
       if (small_font != ttf_font)
       {
@@ -294,7 +287,7 @@ class SDLGuiHandler
       int slider_height = 25;
       int spacing = 8;
       int button_row_height = slider_height;
-      
+
       // Position at top-right corner
       int start_x = image_width - control_width - padding;
       int start_y = padding + 40; // Below the sample count
@@ -302,11 +295,7 @@ class SDLGuiHandler
       SDL_Color white = {255, 255, 255, 255};
 
       // Background for effects panel
-      SDL_Rect bg_rect = {start_x - 5, start_y - 5, control_width + 10,
-                          button_row_height + 2 * slider_height + 3 * spacing + 10};
-      SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
-      SDL_SetRenderDrawColor(renderer, 0, 0, 0, 200);
-      SDL_RenderFillRect(renderer, &bg_rect);
+      drawPanelBackground(start_x, start_y, control_width, button_row_height + 2 * slider_height + 3 * spacing);
 
       // DOF toggle button (full width)
       drawToggleButton(small_font, start_x, start_y, dof_enabled, white, dof_button_rect, "Depth of Field",
@@ -314,9 +303,9 @@ class SDLGuiHandler
 
       // DOF sliders
       drawDOFApertureSlider(small_font, start_x, start_y + button_row_height + spacing, control_width, dof_aperture,
-                           white, dof_aperture_slider_bounds, label_width);
-      drawDOFFocusSlider(small_font, start_x, start_y + button_row_height + slider_height + 2 * spacing,
-                        control_width, dof_focus_distance, white, dof_focus_slider_bounds, label_width);
+                            dof_aperture_slider_bounds, label_width);
+      drawDOFFocusSlider(small_font, start_x, start_y + button_row_height + slider_height + 2 * spacing, control_width,
+                         dof_focus_distance, dof_focus_slider_bounds, label_width);
 
       if (small_font != ttf_font)
       {
@@ -325,26 +314,26 @@ class SDLGuiHandler
 #endif
    }
 
-   void printControls(int samples_per_batch, int max_samples, bool auto_accumulate)
+   static void printControls(int samples_per_batch, int max_samples, bool auto_accumulate)
    {
-      cout << "\n=== Interactive Ray Tracing with Real-time Display ===" << endl;
-      cout << "Controls:" << endl;
-      cout << "  Left Mouse Button:   Rotate camera (orbit)" << endl;
-      cout << "  Right Mouse Button:  Pan camera" << endl;
-      cout << "  Mouse Wheel:         Zoom in/out" << endl;
-      cout << "  SPACEBAR:            Toggle automatic accumulation" << endl;
-      cout << "  O:                   Toggle auto-orbit camera" << endl;
-      cout << "  H:                   Hide/show GUI controls" << endl;
-      cout << "  Up/Down Arrows:      Adjust samples per batch (1-256)" << endl;
-      cout << "  Left/Right Arrows:   Adjust light intensity (0.1-3.0)" << endl;
-      cout << "  ESC:                 Exit" << endl << endl;
+      cout << "\n=== Interactive Ray Tracing with Real-time Display ===" << "\n";
+      cout << "Controls:" "\n";
+      cout << "  Left Mouse Button:   Rotate camera (orbit)" "\n";
+      cout << "  Right Mouse Button:  Pan camera" "\n";
+      cout << "  Mouse Wheel:         Zoom in/out" "\n";
+      cout << "  SPACEBAR:            Toggle automatic accumulation" "\n";
+      cout << "  O:                   Toggle auto-orbit camera" "\n";
+      cout << "  H:                   Hide/show GUI controls" "\n";
+      cout << "  Up/Down Arrows:      Adjust samples per batch (1-256)" "\n";
+      cout << "  Left/Right Arrows:   Adjust light intensity (0.1-3.0)" "\n";
+      cout << "  ESC:                 Exit" "\n" "\n";
       cout << "Sample accumulation: " << samples_per_batch << " samples per batch, up to " << max_samples
-           << " total samples" << endl;
-      cout << "Auto-accumulation: " << (auto_accumulate ? "ON" : "OFF") << endl;
+           << " total samples" "\n";
+      cout << "Auto-accumulation: " << (auto_accumulate ? "ON" : "OFF")<<  "\n";
    }
 
    // Event handling
-   bool pollEvent(SDL_Event &event) { return SDL_PollEvent(&event); }
+   static bool pollEvent(SDL_Event &event) { return SDL_PollEvent(&event); }
 
    // Getters
    SDL_Window *getWindow() { return window; }
@@ -370,7 +359,7 @@ class SDLGuiHandler
    SDL_Rect logo_rect;
    void *font;
 
-   void cleanupSDL()
+   static void cleanupSDL()
    {
 #ifdef SDL2_TTF_FOUND
       TTF_Quit();
@@ -380,16 +369,18 @@ class SDLGuiHandler
 
    void loadLogo()
    {
+      const auto relative_width = 0.3F; // Logo width relative to
+      //  image width
       int logo_img_width, logo_img_height, logo_img_channels;
       unsigned char *logo_data = stbi_load("../resources/ISC Logo inline white v3 - 1500px.png", &logo_img_width,
                                            &logo_img_height, &logo_img_channels, 4);
 
-      if (logo_data)
+      if (logo_data != nullptr)
       {
-         int target_logo_width = image_width / 5;
+         int target_logo_width = static_cast<int>(image_width * relative_width);
          int target_logo_height = (logo_img_height * target_logo_width) / logo_img_width;
 
-         unsigned char *resized_logo = new unsigned char[target_logo_width * target_logo_height * 4];
+         auto *resized_logo = new unsigned char[target_logo_width * target_logo_height * 4];
          stbir_resize_uint8_srgb(logo_data, logo_img_width, logo_img_height, 0, resized_logo, target_logo_width,
                                  target_logo_height, 0, STBIR_RGBA);
 
@@ -397,7 +388,7 @@ class SDLGuiHandler
              SDL_CreateRGBSurfaceFrom(resized_logo, target_logo_width, target_logo_height, 32, target_logo_width * 4,
                                       0x000000FF, 0x0000FF00, 0x00FF0000, 0xFF000000);
 
-         if (logo_surface)
+         if (logo_surface != nullptr)
          {
             logo_texture = SDL_CreateTextureFromSurface(renderer, logo_surface);
             SDL_SetTextureBlendMode(logo_texture, SDL_BLENDMODE_BLEND);
@@ -419,18 +410,80 @@ class SDLGuiHandler
    {
 #ifdef SDL2_TTF_FOUND
       font = TTF_OpenFont("/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf", 16);
-      if (!font)
+      if (font == nullptr)
       {
          font = TTF_OpenFont("/usr/share/fonts/TTF/DejaVuSansMono-Bold.ttf", 16);
       }
-      if (!font)
+      if (font == nullptr)
       {
-         cerr << "Warning: Could not load font: " << TTF_GetError() << endl;
+         cerr << "Warning: Could not load font: " << TTF_GetError()<<  "\n";
       }
 #endif
    }
 
 #ifdef SDL2_TTF_FOUND
+   // Helper function to render text to screen
+   void renderTextToScreen(TTF_Font *ttf_font, const char *text, SDL_Color color, int x, int y)
+   {
+      SDL_Surface *text_surface = TTF_RenderText_Blended(ttf_font, text, color);
+      if (text_surface != nullptr)
+      {
+         SDL_Texture *text_texture = SDL_CreateTextureFromSurface(renderer, text_surface);
+         if (text_texture != nullptr)
+         {
+            SDL_Rect text_rect = {x, y, text_surface->w, text_surface->h};
+            SDL_RenderCopy(renderer, text_texture, nullptr, &text_rect);
+            SDL_DestroyTexture(text_texture);
+         }
+         SDL_FreeSurface(text_surface);
+      }
+   }
+
+   // Helper function to draw semi-transparent panel background
+   void drawPanelBackground(int x, int y, int w, int h)
+   {
+      SDL_Rect bg_rect = {x - 5, y - 5, w + 10, h + 10};
+      SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+      SDL_SetRenderDrawColor(renderer, 0, 0, 0, 200);
+      SDL_RenderFillRect(renderer, &bg_rect);
+   }
+
+   // Helper function to draw a generic slider with customizable appearance
+   void drawGenericSlider(TTF_Font *ttf_font, int padding, int y, int control_width, const char *label_format,
+                          float value, float min_val, float max_val, SDL_Color fill_color,
+                          SliderBounds &slider_bounds, int label_width)
+   {
+      char label[64];
+      snprintf(label, sizeof(label), label_format, value);
+
+      SDL_Color white = {255, 255, 255, 255};
+      renderTextToScreen(ttf_font, label, white, padding, y);
+
+      int slider_x = padding + label_width;
+      int slider_w = control_width - label_width;
+      SDL_Rect slider_bg = {slider_x, y + 8, slider_w, 8};
+      SDL_SetRenderDrawColor(renderer, 60, 60, 60, 255);
+      SDL_RenderFillRect(renderer, &slider_bg);
+
+      slider_bounds.x = slider_x;
+      slider_bounds.y = y + 8;
+      slider_bounds.width = slider_w;
+      slider_bounds.height = 8;
+      slider_bounds.min_val = min_val;
+      slider_bounds.max_val = max_val;
+
+      float ratio = (value - min_val) / (max_val - min_val);
+      int fill_w = static_cast<int>(slider_w * ratio);
+      SDL_Rect slider_fill = {slider_x, y + 8, fill_w, 8};
+      SDL_SetRenderDrawColor(renderer, fill_color.r, fill_color.g, fill_color.b, fill_color.a);
+      SDL_RenderFillRect(renderer, &slider_fill);
+
+      int handle_x = slider_x + fill_w - 3;
+      SDL_Rect handle = {handle_x, y + 4, 6, 16};
+      SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+      SDL_RenderFillRect(renderer, &handle);
+   }
+
    void drawToggleButton(TTF_Font *ttf_font, int x, int y, bool enabled, SDL_Color white, SDL_Rect &button_rect,
                          const char *label, int max_width)
    {
@@ -452,18 +505,7 @@ class SDLGuiHandler
       }
       SDL_RenderFillRect(renderer, &checkbox_fill);
 
-      SDL_Surface *text_surface = TTF_RenderText_Blended(ttf_font, label, white);
-      if (text_surface)
-      {
-         SDL_Texture *text_texture = SDL_CreateTextureFromSurface(renderer, text_surface);
-         if (text_texture)
-         {
-            SDL_Rect text_rect = {x + box_size + 8, y + 5, text_surface->w, text_surface->h};
-            SDL_RenderCopy(renderer, text_texture, nullptr, &text_rect);
-            SDL_DestroyTexture(text_texture);
-         }
-         SDL_FreeSurface(text_surface);
-      }
+      renderTextToScreen(ttf_font, label, white, x + box_size + 8, y + 5);
 
       button_rect.x = x;
       button_rect.y = box_y;
@@ -471,311 +513,55 @@ class SDLGuiHandler
       button_rect.h = box_size;
    }
 
-   void drawOrbitButton(TTF_Font *ttf_font, int x, int y, bool enabled, SDL_Color white, SDL_Rect &button_rect,
-                        const char *label, int max_width)
-   {
-      drawToggleButton(ttf_font, x, y, enabled, white, button_rect, label, max_width);
-   }
+
 
    void drawSamplesSlider(TTF_Font *ttf_font, int padding, int y, int control_width, int samples_per_batch,
-                          SDL_Color white, SliderBounds &samples_slider, int label_width)
+                          SliderBounds &samples_slider, int label_width)
    {
-      char label[32];
-      snprintf(label, sizeof(label), "Samples: %d", samples_per_batch);
-      SDL_Surface *text_surface = TTF_RenderText_Blended(ttf_font, label, white);
-      if (text_surface)
-      {
-         SDL_Texture *text_texture = SDL_CreateTextureFromSurface(renderer, text_surface);
-         if (text_texture)
-         {
-            SDL_Rect text_rect = {padding, y + 5, text_surface->w, text_surface->h};
-            SDL_RenderCopy(renderer, text_texture, nullptr, &text_rect);
-            SDL_DestroyTexture(text_texture);
-         }
-         SDL_FreeSurface(text_surface);
-      }
-
-      int slider_x = padding + label_width;
-      int slider_w = control_width - label_width;
-      SDL_Rect slider_bg = {slider_x, y + 8, slider_w, 8};
-      SDL_SetRenderDrawColor(renderer, 60, 60, 60, 255);
-      SDL_RenderFillRect(renderer, &slider_bg);
-
-      samples_slider.x = slider_x;
-      samples_slider.y = y + 8;
-      samples_slider.width = slider_w;
-      samples_slider.height = 8;
-      samples_slider.min_val = 1.0f;
-      samples_slider.max_val = 256.0f;
-
-      float samples_ratio = (float(samples_per_batch) - 1.0f) / (256.0f - 1.0f);
-      int fill_w = static_cast<int>(slider_w * samples_ratio);
-      SDL_Rect slider_fill = {slider_x, y + 8, fill_w, 8};
-      SDL_SetRenderDrawColor(renderer, 100, 150, 255, 255);
-      SDL_RenderFillRect(renderer, &slider_fill);
-
-      int handle_x = slider_x + fill_w - 3;
-      SDL_Rect handle = {handle_x, y + 4, 6, 16};
-      SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-      SDL_RenderFillRect(renderer, &handle);
+      SDL_Color color = {100, 150, 255, 255};
+      drawGenericSlider(ttf_font, padding, y, control_width, "Samples: %d", static_cast<float>(samples_per_batch), 1.0f, 256.0f, color, samples_slider, label_width);
    }
 
    void drawLightSlider(TTF_Font *ttf_font, int padding, int y, int control_width, float light_intensity,
-                        SDL_Color white, SliderBounds &intensity_slider, int label_width)
+                        SliderBounds &intensity_slider, int label_width)
    {
-      char label[32];
-      snprintf(label, sizeof(label), "Light: %.1f", light_intensity);
-      SDL_Surface *text_surface = TTF_RenderText_Blended(ttf_font, label, white);
-      if (text_surface)
-      {
-         SDL_Texture *text_texture = SDL_CreateTextureFromSurface(renderer, text_surface);
-         if (text_texture)
-         {
-            SDL_Rect text_rect = {padding, y + 5, text_surface->w, text_surface->h};
-            SDL_RenderCopy(renderer, text_texture, nullptr, &text_rect);
-            SDL_DestroyTexture(text_texture);
-         }
-         SDL_FreeSurface(text_surface);
-      }
-
-      int slider_x = padding + label_width;
-      int slider_w = control_width - label_width;
-      SDL_Rect slider_bg = {slider_x, y + 8, slider_w, 8};
-      SDL_SetRenderDrawColor(renderer, 60, 60, 60, 255);
-      SDL_RenderFillRect(renderer, &slider_bg);
-
-      intensity_slider.x = slider_x;
-      intensity_slider.y = y + 8;
-      intensity_slider.width = slider_w;
-      intensity_slider.height = 8;
-      intensity_slider.min_val = 0.1f;
-      intensity_slider.max_val = 3.0f;
-
-      float intensity_ratio = (light_intensity - 0.1f) / (3.0f - 0.1f);
-      int fill_w = static_cast<int>(slider_w * intensity_ratio);
-      SDL_Rect slider_fill = {slider_x, y + 8, fill_w, 8};
-      SDL_SetRenderDrawColor(renderer, 255, 200, 100, 255);
-      SDL_RenderFillRect(renderer, &slider_fill);
-
-      int handle_x = slider_x + fill_w - 3;
-      SDL_Rect handle = {handle_x, y + 4, 6, 16};
-      SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-      SDL_RenderFillRect(renderer, &handle);
+      SDL_Color color = {255, 200, 100, 255};
+      drawGenericSlider(ttf_font, padding, y, control_width, "Light: %.1f", light_intensity, 0.1f, 3.0f, color, intensity_slider, label_width);
    }
 
    void drawBackgroundSlider(TTF_Font *ttf_font, int padding, int y, int control_width, float background_intensity,
-                             SDL_Color white, SliderBounds &background_slider, int label_width)
+                             SliderBounds &background_slider, int label_width)
    {
-      char label[32];
-      snprintf(label, sizeof(label), "Background: %.2f", background_intensity);
-      SDL_Surface *text_surface = TTF_RenderText_Blended(ttf_font, label, white);
-      if (text_surface)
-      {
-         SDL_Texture *text_texture = SDL_CreateTextureFromSurface(renderer, text_surface);
-         if (text_texture)
-         {
-            SDL_Rect text_rect = {padding, y + 5, text_surface->w, text_surface->h};
-            SDL_RenderCopy(renderer, text_texture, nullptr, &text_rect);
-            SDL_DestroyTexture(text_texture);
-         }
-         SDL_FreeSurface(text_surface);
-      }
-
-      int slider_x = padding + label_width;
-      int slider_w = control_width - label_width;
-      SDL_Rect slider_bg = {slider_x, y + 8, slider_w, 8};
-      SDL_SetRenderDrawColor(renderer, 60, 60, 60, 255);
-      SDL_RenderFillRect(renderer, &slider_bg);
-
-      background_slider.x = slider_x;
-      background_slider.y = y + 8;
-      background_slider.width = slider_w;
-      background_slider.height = 8;
-      background_slider.min_val = 0.0f;
-      background_slider.max_val = 3.0f;
-
-      float bg_ratio = (background_intensity - 0.0f) / (3.0f - 0.0f);
-      int fill_w = static_cast<int>(slider_w * bg_ratio);
-      SDL_Rect slider_fill = {slider_x, y + 8, fill_w, 8};
-      SDL_SetRenderDrawColor(renderer, 150, 100, 255, 255);
-      SDL_RenderFillRect(renderer, &slider_fill);
-
-      int handle_x = slider_x + fill_w - 3;
-      SDL_Rect handle = {handle_x, y + 4, 6, 16};
-      SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-      SDL_RenderFillRect(renderer, &handle);
+      SDL_Color color = {150, 100, 255, 255};
+      drawGenericSlider(ttf_font, padding, y, control_width, "Background: %.2f", background_intensity, 0.0f, 3.0f, color, background_slider, label_width);
    }
 
    void drawFuzzinessSlider(TTF_Font *ttf_font, int padding, int y, int control_width, float metal_fuzziness,
-                            SDL_Color white, SliderBounds &fuzziness_slider, int label_width)
+                            SliderBounds &fuzziness_slider, int label_width)
    {
-      char label[32];
-      snprintf(label, sizeof(label), "Metal fuzz: %.2f", metal_fuzziness);
-      SDL_Surface *text_surface = TTF_RenderText_Blended(ttf_font, label, white);
-      if (text_surface)
-      {
-         SDL_Texture *text_texture = SDL_CreateTextureFromSurface(renderer, text_surface);
-         if (text_texture)
-         {
-            SDL_Rect text_rect = {padding, y + 5, text_surface->w, text_surface->h};
-            SDL_RenderCopy(renderer, text_texture, nullptr, &text_rect);
-            SDL_DestroyTexture(text_texture);
-         }
-         SDL_FreeSurface(text_surface);
-      }
-
-      int slider_x = padding + label_width;
-      int slider_w = control_width - label_width;
-      SDL_Rect slider_bg = {slider_x, y + 8, slider_w, 8};
-      SDL_SetRenderDrawColor(renderer, 60, 60, 60, 255);
-      SDL_RenderFillRect(renderer, &slider_bg);
-
-      fuzziness_slider.x = slider_x;
-      fuzziness_slider.y = y + 8;
-      fuzziness_slider.width = slider_w;
-      fuzziness_slider.height = 8;
-      fuzziness_slider.min_val = 0.0f;
-      fuzziness_slider.max_val = 5.0f;
-
-      float fuzz_ratio = (metal_fuzziness - 0.0f) / (5.0f - 0.0f);
-      int fill_w = static_cast<int>(slider_w * fuzz_ratio);
-      SDL_Rect slider_fill = {slider_x, y + 8, fill_w, 8};
-      SDL_SetRenderDrawColor(renderer, 200, 200, 100, 255);
-      SDL_RenderFillRect(renderer, &slider_fill);
-
-      int handle_x = slider_x + fill_w - 3;
-      SDL_Rect handle = {handle_x, y + 4, 6, 16};
-      SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-      SDL_RenderFillRect(renderer, &handle);
+      SDL_Color color = {200, 200, 100, 255};
+      drawGenericSlider(ttf_font, padding, y, control_width, "Metal fuzz: %.2f", metal_fuzziness, 0.0f, 5.0f, color, fuzziness_slider, label_width);
    }
 
    void drawGlassIORSlider(TTF_Font *ttf_font, int padding, int y, int control_width, float glass_ior,
-                           SDL_Color white, SliderBounds &glass_ior_slider, int label_width)
+                           SliderBounds &glass_ior_slider, int label_width)
    {
-      char label[32];
-      snprintf(label, sizeof(label), "Glass IOR: %.2f", glass_ior);
-      SDL_Surface *text_surface = TTF_RenderText_Blended(ttf_font, label, white);
-      if (text_surface)
-      {
-         SDL_Texture *text_texture = SDL_CreateTextureFromSurface(renderer, text_surface);
-         if (text_texture)
-         {
-            SDL_Rect text_rect = {padding, y + 5, text_surface->w, text_surface->h};
-            SDL_RenderCopy(renderer, text_texture, nullptr, &text_rect);
-            SDL_DestroyTexture(text_texture);
-         }
-         SDL_FreeSurface(text_surface);
-      }
-
-      int slider_x = padding + label_width;
-      int slider_w = control_width - label_width;
-      SDL_Rect slider_bg = {slider_x, y + 8, slider_w, 8};
-      SDL_SetRenderDrawColor(renderer, 60, 60, 60, 255);
-      SDL_RenderFillRect(renderer, &slider_bg);
-
-      glass_ior_slider.x = slider_x;
-      glass_ior_slider.y = y + 8;
-      glass_ior_slider.width = slider_w;
-      glass_ior_slider.height = 8;
-      glass_ior_slider.min_val = 1.0f;
-      glass_ior_slider.max_val = 2.5f;
-
-      float ior_ratio = (glass_ior - 1.0f) / (2.5f - 1.0f);
-      int fill_w = static_cast<int>(slider_w * ior_ratio);
-      SDL_Rect slider_fill = {slider_x, y + 8, fill_w, 8};
-      SDL_SetRenderDrawColor(renderer, 100, 200, 255, 255);
-      SDL_RenderFillRect(renderer, &slider_fill);
-
-      int handle_x = slider_x + fill_w - 3;
-      SDL_Rect handle = {handle_x, y + 4, 6, 16};
-      SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-      SDL_RenderFillRect(renderer, &handle);
+      SDL_Color color = {100, 200, 255, 255};
+      drawGenericSlider(ttf_font, padding, y, control_width, "Glass IOR: %.2f", glass_ior, 1.0f, 2.5f, color, glass_ior_slider, label_width);
    }
 
    void drawDOFApertureSlider(TTF_Font *ttf_font, int padding, int y, int control_width, float dof_aperture,
-                              SDL_Color white, SliderBounds &aperture_slider, int label_width)
+                              SliderBounds &aperture_slider, int label_width)
    {
-      char label[32];
-      snprintf(label, sizeof(label), "DOF Aperture: %.2f", dof_aperture);
-      SDL_Surface *text_surface = TTF_RenderText_Blended(ttf_font, label, white);
-      if (text_surface)
-      {
-         SDL_Texture *text_texture = SDL_CreateTextureFromSurface(renderer, text_surface);
-         if (text_texture)
-         {
-            SDL_Rect text_rect = {padding, y + 5, text_surface->w, text_surface->h};
-            SDL_RenderCopy(renderer, text_texture, nullptr, &text_rect);
-            SDL_DestroyTexture(text_texture);
-         }
-         SDL_FreeSurface(text_surface);
-      }
-
-      int slider_x = padding + label_width;
-      int slider_w = control_width - label_width;
-      SDL_Rect slider_bg = {slider_x, y + 8, slider_w, 8};
-      SDL_SetRenderDrawColor(renderer, 60, 60, 60, 255);
-      SDL_RenderFillRect(renderer, &slider_bg);
-
-      aperture_slider.x = slider_x;
-      aperture_slider.y = y + 8;
-      aperture_slider.width = slider_w;
-      aperture_slider.height = 8;
-      aperture_slider.min_val = 0.0f;
-      aperture_slider.max_val = 1.0f;
-
-      float ratio = (dof_aperture - 0.0f) / (1.0f - 0.0f);
-      int fill_w = static_cast<int>(slider_w * ratio);
-      SDL_Rect slider_fill = {slider_x, y + 8, fill_w, 8};
-      SDL_SetRenderDrawColor(renderer, 100, 200, 255, 255);
-      SDL_RenderFillRect(renderer, &slider_fill);
-
-      int handle_x = slider_x + fill_w - 3;
-      SDL_Rect handle = {handle_x, y + 4, 6, 16};
-      SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-      SDL_RenderFillRect(renderer, &handle);
+      SDL_Color color = {100, 200, 255, 255};
+      drawGenericSlider(ttf_font, padding, y, control_width, "DOF Aperture: %.2f", dof_aperture, 0.0f, 1.0f, color, aperture_slider, label_width);
    }
 
    void drawDOFFocusSlider(TTF_Font *ttf_font, int padding, int y, int control_width, float dof_focus_distance,
-                           SDL_Color white, SliderBounds &focus_slider, int label_width)
+                           SliderBounds &focus_slider, int label_width)
    {
-      char label[32];
-      snprintf(label, sizeof(label), "DOF Focus: %.1f", dof_focus_distance);
-      SDL_Surface *text_surface = TTF_RenderText_Blended(ttf_font, label, white);
-      if (text_surface)
-      {
-         SDL_Texture *text_texture = SDL_CreateTextureFromSurface(renderer, text_surface);
-         if (text_texture)
-         {
-            SDL_Rect text_rect = {padding, y + 5, text_surface->w, text_surface->h};
-            SDL_RenderCopy(renderer, text_texture, nullptr, &text_rect);
-            SDL_DestroyTexture(text_texture);
-         }
-         SDL_FreeSurface(text_surface);
-      }
-
-      int slider_x = padding + label_width;
-      int slider_w = control_width - label_width;
-      SDL_Rect slider_bg = {slider_x, y + 8, slider_w, 8};
-      SDL_SetRenderDrawColor(renderer, 60, 60, 60, 255);
-      SDL_RenderFillRect(renderer, &slider_bg);
-
-      focus_slider.x = slider_x;
-      focus_slider.y = y + 8;
-      focus_slider.width = slider_w;
-      focus_slider.height = 8;
-      focus_slider.min_val = 1.0f;
-      focus_slider.max_val = 50.0f;
-
-      float ratio = (dof_focus_distance - 1.0f) / (50.0f - 1.0f);
-      int fill_w = static_cast<int>(slider_w * ratio);
-      SDL_Rect slider_fill = {slider_x, y + 8, fill_w, 8};
-      SDL_SetRenderDrawColor(renderer, 255, 150, 100, 255);
-      SDL_RenderFillRect(renderer, &slider_fill);
-
-      int handle_x = slider_x + fill_w - 3;
-      SDL_Rect handle = {handle_x, y + 4, 6, 16};
-      SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-      SDL_RenderFillRect(renderer, &handle);
+      SDL_Color color = {255, 150, 100, 255};
+      drawGenericSlider(ttf_font, padding, y, control_width, "DOF Focus: %.1f", dof_focus_distance, 1.0f, 50.0f, color, focus_slider, label_width);
    }
 #endif
 };

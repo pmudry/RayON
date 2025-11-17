@@ -128,9 +128,9 @@ int main()
       assert(fabs(w.length() - 1.0f) < 1e-6);
 
       build_orthonormal_basis(w, u, v);
-    //   cout << dot(u, v) << endl;
-    //   cout << dot(u, w) << endl;
-    //   cout << dot(v, w) << endl;
+    //   cout << dot(u, v) << "\n";
+    //   cout << dot(u, w) << "\n";
+    //   cout << dot(v, w) << "\n";
 
       assert(dot(u, v) < 1e-6);
       assert(dot(u, w) < 1e-6);

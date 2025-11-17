@@ -7,8 +7,6 @@ cmake_minimum_required(VERSION 3.8)
 # Option to choose compiler (set before project())
 option(USE_CLANG "Use Clang compiler instead of GCC" ON)
 
-project(RAYON_RAYTRACER LANGUAGES CXX CUDA)
-
 if(USE_CLANG)
     set(CMAKE_C_COMPILER "clang")
     set(CMAKE_CXX_COMPILER "clang++")
@@ -19,9 +17,14 @@ else()
     message(STATUS "Using gcc / g++ compiler")
 endif()
 
+project(RAYON_RAYTRACER LANGUAGES CXX CUDA)
+
 
 # Ensure compile_commands.json is generated in the source directory
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# Option to enable/disable clang-tidy static analysis
+option(ENABLE_CLANG_TIDY "Enable clang-tidy static analysis during build" OFF)
 
 # Set default build type to Release if not specified
 if(NOT CMAKE_BUILD_TYPE)
@@ -34,10 +37,18 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# CUDA settings
-include(CheckLanguage)
-
-check_language(CUDA)
+# Enable clang-tidy if available and requested
+if(ENABLE_CLANG_TIDY)
+    find_program(CLANG_TIDY_EXE clang-tidy)
+    if(CLANG_TIDY_EXE)
+        set(CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_EXE};-header-filter=^((?!src/external).)*$ --config")
+        message(STATUS "clang-tidy found and enabled (ENABLE_CLANG_TIDY=ON)")
+    else()
+        message(WARNING "clang-tidy enabled via ENABLE_CLANG_TIDY but clang-tidy executable not found")
+    endif()
+else()
+    message(STATUS "clang-tidy disabled (set ENABLE_CLANG_TIDY=ON to enable)")
+endif()
 
 if(CMAKE_CUDA_COMPILER)
     enable_language(CUDA)
@@ -71,15 +82,20 @@ set(SOURCE_RAYON
     src/rayon/gpu_renderers/shaders/shader_golf.cu
 )
 
-# Ninja-specific optimizations
-if(CMAKE_GENERATOR STREQUAL "Ninja")
-    message(STATUS "Using Ninja generator - enabling optimizations")
-    # Enable colored output for Ninja builds (CXX only, not CUDA)
+# Enable colored compiler output for Make builds
+if(CMAKE_GENERATOR STREQUAL "Unix Makefiles")
+    message(STATUS "Using Make generator - enabling colored output")
+    # Force Make to always show colors via environment variable
+    set(CMAKE_COLOR_MAKEFILE ON)
+    # Add color flags for compilers (safe options that work with both GCC and Clang)
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
         add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-fdiagnostics-color=always>")
     elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-fcolor-diagnostics>")
     endif()
+elseif(CMAKE_GENERATOR STREQUAL "Ninja")
+    message(STATUS "Using Ninja generator - colors enabled by default")
+    # Ninja automatically supports colored output
 endif()
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -98,34 +114,39 @@ endif()
 # Executables
 add_executable(rayon ${EXTERNAL} ${SOURCE_RAYON})
 
+# Recursively find all subdirectories under src/
+# This automates the include directory listing for both CMake and .clangd
+# No need to manually add new subdirectories here - they will be included automatically
+file(GLOB_RECURSE ALL_ENTRIES LIST_DIRECTORIES true "${CMAKE_SOURCE_DIR}/src/*")
+set(INCLUDE_DIRS "${CMAKE_SOURCE_DIR}/src")
+foreach(entry ${ALL_ENTRIES})
+    if(IS_DIRECTORY ${entry})
+        list(APPEND INCLUDE_DIRS ${entry})
+    endif()
+endforeach()
+
 # Add include directories using modern CMake target_include_directories
 # This is the proper way - affects only this target and propagates to clangd via compile_commands.json
-target_include_directories(rayon PRIVATE
-    ${CMAKE_SOURCE_DIR}/src
-    ${CMAKE_SOURCE_DIR}/src/external
-
-    ${CMAKE_SOURCE_DIR}/src/rayon
-    ${CMAKE_SOURCE_DIR}/src/rayon/camera
-    ${CMAKE_SOURCE_DIR}/src/rayon/camera/sdl
-    ${CMAKE_SOURCE_DIR}/src/rayon/scenes
-    ${CMAKE_SOURCE_DIR}/src/rayon/data_structures
-    
-    # CPU renderers
-    ${CMAKE_SOURCE_DIR}/src/rayon/cpu_renderers
-    ${CMAKE_SOURCE_DIR}/src/rayon/cpu_renderers/data_structures
-    ${CMAKE_SOURCE_DIR}/src/rayon/cpu_renderers/utils
-    ${CMAKE_SOURCE_DIR}/src/rayon/cpu_renderers/cpu_shapes
-    
-    # GPU renderers
-    ${CMAKE_SOURCE_DIR}/src/rayon/gpu_renderers
-    ${CMAKE_SOURCE_DIR}/src/rayon/gpu_renderers/shaders
-    ${CMAKE_SOURCE_DIR}/src/rayon/gpu_renderers/materials
-    ${CMAKE_SOURCE_DIR}/src/rayon/gpu_renderers/materials/legacy
-)
+target_include_directories(rayon PRIVATE ${INCLUDE_DIRS})
 
 target_compile_definitions(rayon PRIVATE
     RT_BUILD_TYPE_STRING="$<IF:$<BOOL:${CMAKE_BUILD_TYPE}>,${CMAKE_BUILD_TYPE},$<CONFIG>>"
 )
+
+# Generate .clangd with -I flags
+# This updates the .clangd file's Add section with the current include directories
+# The rest of .clangd remains untouched
+file(READ ${CMAKE_SOURCE_DIR}/.clangd CLANGD_CONTENT)
+string(FIND "${CLANGD_CONTENT}" "Add:" ADD_POS)
+string(FIND "${CLANGD_CONTENT}" "Diagnostics:" DIAG_POS)
+string(SUBSTRING "${CLANGD_CONTENT}" 0 ${ADD_POS} BEFORE_ADD)
+string(SUBSTRING "${CLANGD_CONTENT}" ${DIAG_POS} -1 AFTER_ADD)
+set(NEW_ADD "Add:\n    - --no-cuda-version-check\n    # The include section is automatically generated my cmake at build, do NOT modify.\n")
+foreach(dir ${INCLUDE_DIRS})
+    set(NEW_ADD "${NEW_ADD}    - -I${dir}\n")
+endforeach()
+set(NEW_CLANGD "${BEFORE_ADD}${NEW_ADD}${AFTER_ADD}")
+file(WRITE ${CMAKE_SOURCE_DIR}/.clangd "${NEW_CLANGD}")
 
 # Find and link SDL2 for real-time display (optional)
 find_package(SDL2 QUIET)

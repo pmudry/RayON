@@ -36,9 +36,9 @@ class SceneFactory
             // Build BVH if enabled in scene
             if (scene_desc.use_bvh)
             {
-               cout << "Building BVH acceleration structure..." << endl;
+               cout << "Building BVH acceleration structure..." "\n";
                scene_desc.buildBVH();
-               cout << "BVH built with " << scene_desc.top_level_bvh.nodes.size() << " nodes" << endl;
+               cout << "BVH built with " << scene_desc.top_level_bvh.nodes.size() << " nodes" "\n";
             }
             return scene_desc; // Successfully loaded
          }
@@ -79,7 +79,7 @@ class SceneFactory
     */
    static SceneDescription createDefaultScene()
    {
-      cout << "Creating default scene..." << endl;
+      cout << "Creating default scene..." "\n";
       using namespace Scene;
       SceneDescription scene_desc;
 
@@ -157,7 +157,7 @@ class SceneFactory
       scene_desc.use_bvh = true;
       scene_desc.buildBVH();
       cout << "Built BVH with " << scene_desc.top_level_bvh.nodes.size() << " nodes for "
-           << scene_desc.geometries.size() << " geometries" << endl;
+           << scene_desc.geometries.size() << " geometries" "\n";
 
       return scene_desc;
    }

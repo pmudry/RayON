@@ -1,0 +1,26 @@
+---
+# .clang-tidy configuration file
+# Removed 
+# readability-*,
+# bugprone-*,
+# -modernize-use-trailing-return-type,
+#   -readability-identifier-length,
+#   -readability-magic-numbers,
+#   -readability-function-cognitive-complexity
+  # clang-diagnostic-*,
+  # clang-analyzer-*,
+  # modernize-*,
+#
+Checks: "-*,
+  # clang-analyzer-*,
+  # clang-diagnostic-*,
+  # modernize-*, 
+  # cppcoreguidelines-*,
+  # misc-*,
+  # performance-*,
+  # portability-*,
+  # readability-*,
+  "
+WarningsAsErrors: ''
+HeaderFilterRegex: '^((?!src/external).)*$'
+FormatStyle: none

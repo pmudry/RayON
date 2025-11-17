@@ -36,3 +36,17 @@ If you don't specify a build type, **Release** is used by default for maximum pe
 
 - **Release**: `-O3` optimization, no debug symbols, fastest execution
 - **Debug**: `-g` debug symbols, `-G` CUDA device debug, easier debugging, slower execution
+
+## Automated Include Directory Management
+
+The CMakeLists.txt automatically discovers all subdirectories under `src/` and adds them to the include paths for compilation. This eliminates the need to manually list include directories when adding new subfolders.
+
+Additionally, CMake updates the `.clangd` file's `Add:` section with the corresponding `-I` flags for clangd language server support. The rest of `.clangd` remains unchanged.
+
+When adding or removing subdirectories under `src/`, simply re-run `cmake .. --fresh` to update the includes automatically.
+
+## Static Analysis with clang-tidy
+
+If `clang-tidy` is installed on the system, CMake will automatically enable it during the build process to perform static analysis on C++ code. This helps detect potential bugs, style issues, and performance problems.
+
+The `.clang-tidy` file configures the checks to run. To disable clang-tidy for a specific build, set the environment variable `CMAKE_CXX_CLANG_TIDY` to an empty string or remove the clang-tidy package.

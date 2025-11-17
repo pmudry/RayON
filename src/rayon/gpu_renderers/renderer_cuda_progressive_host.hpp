@@ -392,31 +392,32 @@ class RendererCUDAProgressive : public IRenderer
     * @brief Calculate progressive max depth based on accumulated samples
     * Starts at depth 1, gradually increases to max 256 for final quality
     */
-   int calculateProgressiveMaxDepth(int current_samples, int max_samples, bool is_moving, int max_depth) const
+   int calculateProgressiveMaxDepth(int current_samples, bool is_moving, int max_depth) const
    {
       // During camera motion, use reduced depth for faster preview
       if (is_moving)
          return 3; // Fast preview during motion
 
       // Progressive depth schedule for smooth quality ramp-up
-      if (current_samples <= 4)
+      if (current_samples <= 4) {
          return 4; // First few samples: depth 1 (fastest preview)
-      else if (current_samples <= 16)
+      } else if (current_samples <= 16) {
          return 5; // Quick preview: depth 2
-      else if (current_samples <= 32)
+      } else if (current_samples <= 32) {
          return 6; // Early quality: depth 3
-      else if (current_samples <= 64)
+      } else if (current_samples <= 64) {
          return 7; // Building detail: depth 4
-      else if (current_samples <= 128)
+      } else if (current_samples <= 128) {
          return 8; // Good quality: depth 6
-      else if (current_samples <= 256)
+      } else if (current_samples <= 256) {
          return 16; // High quality: depth 8
-      else if (current_samples <= 512)
+      } else if (current_samples <= 512) {
          return 16; // Very high quality: depth 12
-      else if (current_samples <= 1024)
+      } else if (current_samples <= 1024) {
          return 24; // Excellent quality: depth 16
-      else
+      } else {
          return std::min(512, max_depth); // Final quality: depth up to 256
+      }
    }
 
    /**
@@ -437,7 +438,7 @@ class RendererCUDAProgressive : public IRenderer
          actual_samples_to_add = max_samples - (current_samples - samples_per_batch);
 
       const int progressive_depth =
-          adaptive_depth ? calculateProgressiveMaxDepth(current_samples, max_samples, is_moving, frame.max_depth)
+          adaptive_depth ? calculateProgressiveMaxDepth(current_samples, is_moving, frame.max_depth)
                          : frame.max_depth;
 
       // Call CUDA to render and accumulate samples with progressive depth

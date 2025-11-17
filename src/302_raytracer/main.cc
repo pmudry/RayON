@@ -28,7 +28,7 @@ using namespace utils;
 #define RT_BUILD_TYPE_STRING "Unknown"
 #endif
 
-static constexpr const char *current_build_configuration() { return RT_BUILD_TYPE_STRING; }
+static constexpr auto current_build_configuration() -> const char * { return RT_BUILD_TYPE_STRING; }
 
 struct ProgramArgs
 {
@@ -49,8 +49,7 @@ void dumpHelp()
    cout << "  -m <rendering method>  Set the rendering method (0: CPU sequential, 1: CPU parallel, 2: CUDA GPU, 3: "
            "CUDA GPU with SDL interactive display)\n";
    cout << "  -s <samples>           Set the number of samples per pixel (default: " << SAMPLES_PER_PIXEL << ")\n";
-   cout << "  -r <height>            Set vertical resolution (allowed: 2160, 1080, 720, 360, 180, default: "
-        << IMAGE_HEIGHT << ")\n";
+   cout << "  -r <height>            Set vertical resolution (allowed: 2160, 1080, 720, 360, 180, default: " << IMAGE_HEIGHT << ")\n";
    cout << "  --scene <file>         Load scene from YAML file (default: built-in scene)\n";
    cout << "  --start-samples <n>    Set initial samples when moving camera in interactive mode (default: 32)\n";
    cout << "  --target-fps <fps>     Set target frame rate for interactive rendering (default: 60)\n";
@@ -212,24 +211,17 @@ int main(int argc, char *argv[])
    string compiled_config = current_build_configuration();
 
    cout << "\n";
-   cout << "===================================="
-           "\n";
-   cout << " RayON raytracer v" << version << " - " << compiled_config << "\n";
-   cout << " Dr P.-A. Mudry, 2025"
-           "\n";
-   cout << "===================================="
-           "\n";
-   cout << "Using features : yaml_scene_loader, unified_scene_descriptions, cuda_optimization_1, BVH"
-           "\n";
-   cout << "fast_rnd, thread_block_optimal, inlining, atomic_reduction, russian_roulette"
-           "\n";
-   cout << "lambertian_cosine_weighted_hemisphere_sampling, lambertian_owen_hash_distribution"
-           "\n";
-   cout << "inter_adaptive_depth, inter_target_fps"
-           "\n"
-           "\n";
+   cout << "==============================================" << "\n";
+   cout << " 302 Ray tracer project v" << ver_major << " - " << compiled_config << "\n";
+   cout << " P.-A. Mudry, ISC 2026" << "\n";
+   cout << "==============================================" << "\n";
+   cout << "Using features : yaml_scene_loader, unified_scene_descriptions, cuda_optimization_1, BVH" << "\n";
+   cout << "fast_rnd, thread_block_optimal, inlining, atomic_reduction, russian_roulette" << "\n";
+   cout << "lambertian_cosine_weighted_hemisphere_sampling, lambertian_owen_hash_distribution" << "\n";
+   cout << "inter_adaptive_depth, inter_target_fps" << "\n"
+        << "\n";
    cout << "Rendering at resolution: " << image_width << " x " << image_height << " pixels - ";
-   cout << "Samples per pixel: " << args.samples << "\n\n";
+   cout << "Samples per pixel: " << args.samples << "\n" < < < < "\n";
 
    RndGen::set_seed(1984);
 
@@ -246,7 +238,7 @@ int main(int argc, char *argv[])
       scene_desc = Scene::SceneFactory::fromYAML(args.scene_file);
    }
 
-   vector<unsigned char> localImage(image_width * image_height * CHANNELS);
+   vector<unsigned char> localImage(static_cast<long>(image_width * image_height) * CHANNELS);
 
    Camera camera(Vec3(0, 0, 0), image_width, image_height, CHANNELS, args.samples);
 
@@ -317,8 +309,10 @@ int main(int argc, char *argv[])
    long long rays_per_second_int = 0;
 
    if (render_seconds > 0.0)
+   {
       rays_per_second_int =
           static_cast<long long>(std::llround(static_cast<double>(camera.n_rays.load()) / render_seconds));
+   }
 
    cout << "Rays/sec: " << rays_per_second_int << "\n";
 
