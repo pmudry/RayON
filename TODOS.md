@@ -36,10 +36,13 @@
 ## Optimisations
 - [ ] Fast maths
 
-## Projet de semestre
-- [ ] ImGUI à ajouter
-- [ ] Profiling and low-level optimizations
+## Semester project
+- [ ] `ImGUI` GUI integration for controls
 - [ ] Impact of different rendering optimizations reporting
 - [ ] Implement benchmarks for static renderer on typical scenes (multiple renders + average)
 - [ ] Tests unitaires qui détectent les régressions dans le renderer GPU et CPU en comparant avec des scènes de référence, notamment lors d'optimisations
+- [ ] Profiling and low-level optimizations + document changes
+- [ ] Implement NVIDIA OptiX image denoising
 - [ ] Pipeline CI/CD pour runner les tests unitaires ci-dessus (si possible, besoin CUDA sur Github)
+
+- [ ] Save as OpenEXR format
