@@ -40,11 +40,12 @@
 - [ ] `ImGUI` GUI integration for controls -> reimplement existing controls + add more
 - [ ] Implement benchmarks for static renderer on typical scenes (multiple renders + average)
 - [ ] Implement benchmarks for interactive rendering
+- [ ] Impact of different rendering optimizations reporting -> find a way and report (for instance, color complexity per pixel)
 - [ ] `sdl` texture blitting integration + performance assessment
-- [ ] Impact of different rendering optimizations reporting -> find a way and report
-- [ ] Implement NVIDIA OptiX image denoising
-- [ ] Profiling and low-level optimizations + document changes
-- [ ] screen rescaling ?
+- [ ] Integration of 
 - [ ] Tests unitaires qui détectent les régressions dans le renderer GPU et CPU en comparant avec des scènes de référence, notamment lors d'optimisations
 - [ ] Pipeline CI/CD pour runner les tests unitaires ci-dessus (si possible, besoin CUDA sur Github)
+- [ ] Profiling and low-level optimizations + document changes using `nsight-systems` and `nsight-compute`
+- [ ] implement dynamic screen rescaling 
+- [ ] Implement NVIDIA OptiX image denoising
 - [ ] Save image as OpenEXR format
