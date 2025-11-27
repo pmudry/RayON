@@ -186,10 +186,12 @@ int main(int argc, char *argv[])
    cout << " RayON raytracer v" << version << " - " << compiled_config << "\n";
    cout << " Dr P.-A. Mudry, 2025" << "\n";
    cout << "====================================" << "\n";
+#ifdef DIAGS
    cout << "Using features : yaml_scene_loader, unified_scene_descriptions, cuda_optimization_1, BVH" << "\n";
    cout << "fast_rnd, thread_block_optimal, inlining, atomic_reduction, russian_roulette" << "\n";
    cout << "lambertian_cosine_weighted_hemisphere_sampling, lambertian_owen_hash_distribution" << "\n";
    cout << "inter_adaptive_depth, inter_target_fps" << "\n\n";
+#endif
    cout << "Rendering at resolution: " << image_width << " x " << image_height << " pixels - ";
    cout << "Samples per pixel: " << args.samples << "\n\n";
 
@@ -313,6 +315,6 @@ int main(int argc, char *argv[])
       image_size_bytes = 0;
 
    utils::FileUtils::writeRenderStats(camera, output_path, image_size_bytes, render_duration);
-   
+
    return 0;
 }

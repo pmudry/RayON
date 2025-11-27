@@ -166,7 +166,7 @@ class FileUtils
       stats_json << "  \"image_size_bytes\": " << image_size_bytes << ",\n";
       stats_json << "  \"rays_per_second\": " << rays_per_second_int << ",\n";
       stats_json << "  \"render_time_ms\": " << render_ms << ",\n";
-      stats_json << "  \"render_time_pretty\": \"" << formatDuration(render_duration) << "\n";
+      stats_json << "  \"render_time_pretty\": \"" << formatDuration(render_duration) << "\"\n";
       stats_json << "}\n";
    }
 }; // class FileUtils
