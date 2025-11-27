@@ -25,9 +25,6 @@ class RendererCUDA : public IRenderer
       auto start_time = std::chrono::high_resolution_clock::now();
       const CameraFrame frame = request.camera.buildFrame();
 
-      std::printf("CUDA renderer starting: %dx%d, %d samples, max_depth=%d\n", frame.image_width, frame.image_height,
-                  frame.samples_per_pixel, frame.max_depth);
-
       CudaScene::Scene *gpu_scene = Scene::CudaSceneBuilder::buildGPUScene(request.scene);
 
       std::vector<float> accum_buffer(frame.image_width * frame.image_height * 3, 0.0f);
@@ -35,15 +32,12 @@ class RendererCUDA : public IRenderer
       void *d_accum_buffer = nullptr;
 
       unsigned long long cuda_ray_count = ::renderPixelsCUDAAccumulative(
-          nullptr, accum_buffer.data(), gpu_scene, frame.image_width, frame.image_height,
-          frame.camera_center.x(), frame.camera_center.y(), frame.camera_center.z(),
-          frame.pixel00_loc.x(), frame.pixel00_loc.y(), frame.pixel00_loc.z(),
-          frame.pixel_delta_u.x(), frame.pixel_delta_u.y(), frame.pixel_delta_u.z(),
-          frame.pixel_delta_v.x(), frame.pixel_delta_v.y(), frame.pixel_delta_v.z(),
-          frame.samples_per_pixel, frame.samples_per_pixel, frame.max_depth,
-          &d_rand_states, &d_accum_buffer,
-          frame.u.x(), frame.u.y(), frame.u.z(),
-          frame.v.x(), frame.v.y(), frame.v.z());
+          nullptr, accum_buffer.data(), gpu_scene, frame.image_width, frame.image_height, frame.camera_center.x(),
+          frame.camera_center.y(), frame.camera_center.z(), frame.pixel00_loc.x(), frame.pixel00_loc.y(),
+          frame.pixel00_loc.z(), frame.pixel_delta_u.x(), frame.pixel_delta_u.y(), frame.pixel_delta_u.z(),
+          frame.pixel_delta_v.x(), frame.pixel_delta_v.y(), frame.pixel_delta_v.z(), frame.samples_per_pixel,
+          frame.samples_per_pixel, frame.max_depth, &d_rand_states, &d_accum_buffer, frame.u.x(), frame.u.y(),
+          frame.u.z(), frame.v.x(), frame.v.y(), frame.v.z());
 
       render::convertAccumBufferToImage(request.target, accum_buffer, frame.samples_per_pixel, context.gamma);
 
@@ -58,6 +52,6 @@ class RendererCUDA : public IRenderer
 
       auto end_time = std::chrono::high_resolution_clock::now();
       auto duration = end_time - start_time;
-      std::cout << "CUDA rendering completed in " << render::timeStr(duration) << std::endl;
+      std::cout << "\nCUDA rendering completed in " << render::timeStr(duration) << "\n";
    }
 };

@@ -65,8 +65,7 @@ __device__ bool hit_golf_ball_sphere(f3 center, float radius, const ray_simple &
    const float dimple_depth_param = 0.35f;
    const float geo_strength = 0.35f;
 
-   f3 base_outward =
-       normalize(f3(surface_point.x - center.x, surface_point.y - center.y, surface_point.z - center.z));
+   f3 base_outward = normalize(f3(surface_point.x - center.x, surface_point.y - center.y, surface_point.z - center.z));
 
    float d_norm = fminf(1.0f, fmaxf(0.0f, -base_displacement / dimple_depth_param));
    float outward_push = radius * geo_strength * (1.0f - d_norm);

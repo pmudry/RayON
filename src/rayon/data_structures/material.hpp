@@ -22,9 +22,9 @@ class Constant : public Material
    Constant(const Color &a) : color(a) {}
 
    virtual bool scatter(const Ray &r_in, const Hit_record &rec, Color &attenuation, Ray &scattered) const override
-   {            
+   {
       attenuation = color;
-      scattered = Ray(rec.p, Vec3(0,0,0)); // No scattering, the ray is absorbed
+      scattered = Ray(rec.p, Vec3(0, 0, 0)); // No scattering, the ray is absorbed
       return true;
    }
 
@@ -38,7 +38,7 @@ class ShowNormals : public Material
    ShowNormals(const Color &a) : albedo(a) {}
 
    virtual bool scatter(const Ray &r_in, const Hit_record &rec, Color &attenuation, Ray &scattered) const override
-   {            
+   {
       attenuation = 0.5 * (rec.normal + Vec3_ONES);
       scattered = Ray(rec.p, Vec3_ZEROES); // No scattering
       return true;
@@ -62,7 +62,7 @@ class Lambertian : public Material
          scatter_direction = rec.normal;
 
       scattered = Ray(rec.p, scatter_direction);
-      
+
       attenuation = albedo;
       return true;
    }
@@ -70,4 +70,3 @@ class Lambertian : public Material
  public:
    Color albedo; // The amount of reflected light, 0 for no reflection, 1 for full reflection
 };
-

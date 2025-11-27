@@ -15,25 +15,28 @@ CompileFlags:
     - -rdynamic
     - -lineinfo
     - -maxrregcount*
+    - -arch=*
+    - --gpu-architecture=*
+    - -gencode=*
+    - --use_fast_math
   Add:
     - --no-cuda-version-check
     # The include section is automatically generated my cmake at build, do NOT modify.
-    - -I/home/pmudry/git/302_raytracer/src
-    - -I/home/pmudry/git/302_raytracer/src/external
-    - -I/home/pmudry/git/302_raytracer/src/rayon
-    - -I/home/pmudry/git/302_raytracer/src/rayon/camera
-    - -I/home/pmudry/git/302_raytracer/src/rayon/camera/sdl
-    - -I/home/pmudry/git/302_raytracer/src/rayon/cpu_renderers
-    - -I/home/pmudry/git/302_raytracer/src/rayon/cpu_renderers/cpu_shapes
-    - -I/home/pmudry/git/302_raytracer/src/rayon/cpu_renderers/utils
-    - -I/home/pmudry/git/302_raytracer/src/rayon/data_structures
-    - -I/home/pmudry/git/302_raytracer/src/rayon/gpu_renderers
-    - -I/home/pmudry/git/302_raytracer/src/rayon/gpu_renderers/materials
-    - -I/home/pmudry/git/302_raytracer/src/rayon/gpu_renderers/materials/advanced
-    - -I/home/pmudry/git/302_raytracer/src/rayon/gpu_renderers/materials/legacy
-    - -I/home/pmudry/git/302_raytracer/src/rayon/gpu_renderers/shaders
-    - -I/home/pmudry/git/302_raytracer/src/rayon/render
-    - -I/home/pmudry/git/302_raytracer/src/rayon/scenes
+    - -I/home/pyrrhus/git/302_raytracer/src
+    - -I/home/pyrrhus/git/302_raytracer/src/external
+    - -I/home/pyrrhus/git/302_raytracer/src/rayon
+    - -I/home/pyrrhus/git/302_raytracer/src/rayon/camera
+    - -I/home/pyrrhus/git/302_raytracer/src/rayon/camera/sdl
+    - -I/home/pyrrhus/git/302_raytracer/src/rayon/cpu_renderers
+    - -I/home/pyrrhus/git/302_raytracer/src/rayon/cpu_renderers/cpu_shapes
+    - -I/home/pyrrhus/git/302_raytracer/src/rayon/cpu_renderers/utils
+    - -I/home/pyrrhus/git/302_raytracer/src/rayon/data_structures
+    - -I/home/pyrrhus/git/302_raytracer/src/rayon/gpu_renderers
+    - -I/home/pyrrhus/git/302_raytracer/src/rayon/gpu_renderers/materials
+    - -I/home/pyrrhus/git/302_raytracer/src/rayon/gpu_renderers/materials/legacy
+    - -I/home/pyrrhus/git/302_raytracer/src/rayon/gpu_renderers/shaders
+    - -I/home/pyrrhus/git/302_raytracer/src/rayon/render
+    - -I/home/pyrrhus/git/302_raytracer/src/rayon/scenes
 Diagnostics:
   UnusedIncludes: Strict
   Suppress:

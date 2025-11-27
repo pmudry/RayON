@@ -578,7 +578,7 @@ __device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scen
          // Sky/background
          f3 unit_direction = normalize(current_ray.dir);
          float t = 0.5f * (unit_direction.y + 1.0f);
-         f3 sky_color = (1.0f - t) * f3(1.0f, 1.0f, 1.0f) + t * f3(0.5f, 0.7f, 1.0f);         
+         f3 sky_color = (1.0f - t) * f3(1.0f, 1.0f, 1.0f) + t * f3(0.5f, 0.7f, 1.0f);
          accumulated_color = accumulated_color + accumulated_attenuation * sky_color * g_background_intensity;
          return accumulated_color;
       }

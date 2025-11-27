@@ -6,7 +6,7 @@ namespace constants
 {
     const std::string ver_major = "1";
     const std::string ver_minor = "2";
-    const std::string ver_patch = "1";
+    const std::string ver_patch = "3";
     const std::string version = ver_major + "." + ver_minor + "." + ver_patch;
 
     // Image specifics settings
