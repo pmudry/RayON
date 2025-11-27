@@ -357,6 +357,7 @@ class RendererCUDAProgressive : public IRenderer
             if (target.pixels)
                *target.pixels = display_image;
          }
+
       }
 
       auto total_end = std::chrono::high_resolution_clock::now();

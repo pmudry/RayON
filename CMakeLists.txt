@@ -67,6 +67,13 @@ endif()
 set(EXTERNAL
     src/external/stb_image_write.h
     src/external/stb_image.h
+    src/external/imgui/imgui.cpp
+    src/external/imgui/imgui_demo.cpp
+    src/external/imgui/imgui_draw.cpp
+    src/external/imgui/imgui_tables.cpp
+    src/external/imgui/imgui_widgets.cpp
+    src/external/imgui/imgui_impl_sdl2.cpp
+    src/external/imgui/imgui_impl_sdlrenderer2.cpp
 )
 
 set(SOURCE_RAYON

@@ -19,6 +19,11 @@
 #ifdef SDL2_TTF_FOUND
 #include <SDL_ttf.h>
 #endif
+
+#include "imgui.h"
+#include "imgui_impl_sdl2.h"
+#include "imgui_impl_sdlrenderer2.h"
+
 #define STB_IMAGE_STATIC
 #define STB_IMAGE_IMPLEMENTATION
 #include "external/stb_image.h"
@@ -105,6 +110,13 @@ class SDLGuiHandler
       loadLogo();
       loadFont();
 
+      IMGUI_CHECKVERSION();
+      ImGui::CreateContext();
+      ImGuiIO& io = ImGui::GetIO(); (void)io;
+      io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     
+      ImGui::StyleColorsDark();
+      ImGui_ImplSDL2_InitForSDLRenderer(window, renderer);
+      ImGui_ImplSDLRenderer2_Init(renderer);
       return true;
    }
 
@@ -147,6 +159,17 @@ class SDLGuiHandler
       SDL_UpdateTexture(texture, nullptr, image.data(), image_width * image_channels);
       SDL_RenderClear(renderer);
       SDL_RenderCopy(renderer, texture, nullptr, nullptr);
+
+      ImGui_ImplSDLRenderer2_NewFrame();
+      ImGui_ImplSDL2_NewFrame();
+      ImGui::NewFrame();
+
+      ImGui::Begin("Hello world!");
+      ImGui::Text("Bonjour monde!");
+      ImGui::End();
+
+      ImGui::Render();
+      ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), renderer);
    }
 
    void drawLogo()
