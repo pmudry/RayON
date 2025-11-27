@@ -31,13 +31,31 @@ class RendererCUDA : public IRenderer
       void *d_rand_states = nullptr;
       void *d_accum_buffer = nullptr;
 
-      unsigned long long cuda_ray_count = ::renderPixelsCUDAAccumulative(
-          nullptr, accum_buffer.data(), gpu_scene, frame.image_width, frame.image_height, frame.camera_center.x(),
-          frame.camera_center.y(), frame.camera_center.z(), frame.pixel00_loc.x(), frame.pixel00_loc.y(),
-          frame.pixel00_loc.z(), frame.pixel_delta_u.x(), frame.pixel_delta_u.y(), frame.pixel_delta_u.z(),
-          frame.pixel_delta_v.x(), frame.pixel_delta_v.y(), frame.pixel_delta_v.z(), frame.samples_per_pixel,
-          frame.samples_per_pixel, frame.max_depth, &d_rand_states, &d_accum_buffer, frame.u.x(), frame.u.y(),
-          frame.u.z(), frame.v.x(), frame.v.y(), frame.v.z());
+      // Render progressively with accumulative samples to show progress
+      const int samples_per_update = frame.samples_per_pixel / 25; // Update progress every 1% of samples
+      int samples_completed = 0;
+      unsigned long long total_rays = 0;
+      
+      while (samples_completed < frame.samples_per_pixel)
+      {
+         int samples_to_add = std::min(samples_per_update, frame.samples_per_pixel - samples_completed);
+         samples_completed += samples_to_add;
+         
+         unsigned long long cuda_ray_count = ::renderPixelsCUDAAccumulative(
+             nullptr, accum_buffer.data(), gpu_scene, frame.image_width, frame.image_height, frame.camera_center.x(),
+             frame.camera_center.y(), frame.camera_center.z(), frame.pixel00_loc.x(), frame.pixel00_loc.y(),
+             frame.pixel00_loc.z(), frame.pixel_delta_u.x(), frame.pixel_delta_u.y(), frame.pixel_delta_u.z(),
+             frame.pixel_delta_v.x(), frame.pixel_delta_v.y(), frame.pixel_delta_v.z(), samples_to_add,
+             samples_completed, frame.max_depth, &d_rand_states, &d_accum_buffer, frame.u.x(), frame.u.y(),
+             frame.u.z(), frame.v.x(), frame.v.y(), frame.v.z());
+         
+         total_rays += cuda_ray_count;
+         
+         // Show progress based on samples completed
+         float progress = (float)samples_completed / frame.samples_per_pixel;
+         int progress_steps = (int)(progress * frame.image_height);
+         render::showProgress(progress_steps, frame.image_height);
+      }
 
       render::convertAccumBufferToImage(request.target, accum_buffer, frame.samples_per_pixel, context.gamma);
 
@@ -48,7 +66,7 @@ class RendererCUDA : public IRenderer
 
       Scene::CudaSceneBuilder::freeGPUScene(gpu_scene);
 
-      context.ray_counter.fetch_add(cuda_ray_count, std::memory_order_relaxed);
+      context.ray_counter.fetch_add(total_rays, std::memory_order_relaxed);
 
       auto end_time = std::chrono::high_resolution_clock::now();
       auto duration = end_time - start_time;
