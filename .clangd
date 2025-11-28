@@ -44,4 +44,4 @@ Diagnostics:
     - "unknown-cuda-version"
     - "drv_unknown_cuda_arch"
 Index:
-  Background: Build
+  Background: Buildy

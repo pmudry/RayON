@@ -87,8 +87,6 @@ class RendererCUDAProgressive : public IRenderer
          return;
       int max_samples = camera.samples_per_pixel;
 
-      gui.printControls(samples_per_batch, max_samples, auto_accumulate);
-
       // Initialize camera controls
       CameraControlHandler camera_control;
       camera_control.initializeCameraControls(look_from, look_at);
@@ -106,9 +104,11 @@ class RendererCUDAProgressive : public IRenderer
       bool dof_enabled = false;
       float dof_aperture = 0.1f;
       float dof_focus_distance = 10.0f;
+      float fov = static_cast<float>(camera.vfov);
       bool needs_rerender = false;
       bool force_immediate_render = false; // Flag to force rendering immediately after state change
       float samples_per_batch_float = static_cast<float>(samples_per_batch); // Float version for slider
+      float current_fps = 0.0f; // Track FPS for UI
 
       // Motion detection for adaptive quality
       bool is_camera_moving = false;
@@ -149,11 +149,8 @@ class RendererCUDAProgressive : public IRenderer
       SliderBounds background_slider_bounds = {0, 0, 0, 0, 0.0f, 3.0f, &background_intensity};
       SliderBounds fuzziness_slider_bounds = {0, 0, 0, 0, 0.0f, 5.0f, &metal_fuzziness};
       SliderBounds glass_ior_slider_bounds = {0, 0, 0, 0, 1.0f, 2.5f, &glass_refraction_index};
-      SliderBounds dof_aperture_slider_bounds = {0, 0, 0, 0, 0.0f, 1.0f, &dof_aperture};
-      SliderBounds dof_focus_slider_bounds = {0, 0, 0, 0, 1.0f, 50.0f, &dof_focus_distance};
       SDL_Rect toggle_button_rect = {0, 0, 0, 0};
       SDL_Rect orbit_button_rect = {0, 0, 0, 0};
-      SDL_Rect dof_button_rect = {0, 0, 0, 0};
       bool dragging_slider = false;
       SliderBounds *active_slider = nullptr;
 
@@ -184,7 +181,22 @@ class RendererCUDAProgressive : public IRenderer
             {
                running = false;
             }
-            else if (event.type == SDL_KEYDOWN)
+
+            // Prevent camera/scene interaction if ImGui is using inputs
+            ImGuiIO& io = ImGui::GetIO();
+            if (io.WantCaptureMouse)
+            {
+               if (event.type == SDL_MOUSEBUTTONDOWN || event.type == SDL_MOUSEBUTTONUP ||
+                   event.type == SDL_MOUSEMOTION || event.type == SDL_MOUSEWHEEL)
+                  continue;
+            }
+            if (io.WantCaptureKeyboard)
+            {
+               if (event.type == SDL_KEYDOWN || event.type == SDL_KEYUP)
+                  continue;
+            }
+
+            if (event.type == SDL_KEYDOWN)
             {
                // Handle 'h' key to toggle GUI controls visibility
                if (event.key.keysym.sym == SDLK_h)
@@ -208,9 +220,9 @@ class RendererCUDAProgressive : public IRenderer
                if (camera_control.handleMouseButtonDown(
                        event, dragging_slider, active_slider, samples_slider_bounds, intensity_slider_bounds,
                        background_slider_bounds, fuzziness_slider_bounds, glass_ior_slider_bounds,
-                       dof_aperture_slider_bounds, dof_focus_slider_bounds, toggle_button_rect, orbit_button_rect,
-                       dof_button_rect, accumulation_enabled, dof_enabled, samples_per_batch_float, light_intensity,
-                       background_intensity, metal_fuzziness, glass_refraction_index, dof_aperture, dof_focus_distance,
+                       toggle_button_rect, orbit_button_rect,
+                       accumulation_enabled, samples_per_batch_float, light_intensity,
+                       background_intensity, metal_fuzziness, glass_refraction_index,
                        needs_rerender, camera_changed, gui.getShowControls()))
                {
                   syncSamplesFromSlider();
@@ -229,8 +241,8 @@ class RendererCUDAProgressive : public IRenderer
                if (camera_control.handleMouseMotion(
                        event, dragging_slider, active_slider, samples_slider_bounds, intensity_slider_bounds,
                        background_slider_bounds, fuzziness_slider_bounds, glass_ior_slider_bounds,
-                       dof_aperture_slider_bounds, dof_focus_slider_bounds, samples_per_batch_float, light_intensity,
-                       background_intensity, metal_fuzziness, glass_refraction_index, dof_aperture, dof_focus_distance,
+                       samples_per_batch_float, light_intensity,
+                       background_intensity, metal_fuzziness, glass_refraction_index,
                        needs_rerender, camera_changed, look_from, look_at, vup, basis_w, gui.getShowControls()))
                {
                   syncSamplesFromSlider();
@@ -290,14 +302,8 @@ class RendererCUDAProgressive : public IRenderer
          if (needs_rerender && current_samples > 0)
          {
             render::convertAccumBufferToImage(display_view, accum_buffer, current_samples, gamma);
-
-            displayFrame(
-                gui, display_image, current_samples, adaptive_samples_per_batch, light_intensity, background_intensity,
-                metal_fuzziness, glass_refraction_index, accumulation_enabled, camera_control.isAutoOrbitEnabled(),
-                dof_enabled, dof_aperture, dof_focus_distance, samples_slider_bounds, intensity_slider_bounds,
-                background_slider_bounds, fuzziness_slider_bounds, glass_ior_slider_bounds, dof_aperture_slider_bounds,
-                dof_focus_slider_bounds, toggle_button_rect, orbit_button_rect, dof_button_rect, image_channels);
-
+            
+            // Note: displayFrame is now called unconditionally below
             if (target.pixels)
                *target.pixels = display_image;
             needs_rerender = false;
@@ -335,29 +341,47 @@ class RendererCUDAProgressive : public IRenderer
             // Measure frame time and adapt sample rate for next frame
             auto frame_end = std::chrono::high_resolution_clock::now();
             std::chrono::duration<float, std::milli> frame_time = frame_end - frame_start;
+            current_fps = 1000.0f / frame_time.count();
 
             // Adaptive adjustment only during motion
             if (is_camera_moving)
             {
-               // const float time_ratio = target_frame_time_ms / frame_time.count();
-               // const float target_samples = adaptive_samples_per_batch * time_ratio;
-               // adaptive_samples_per_batch =
-               //     std::max(5, static_cast<int>(adaptive_samples_per_batch * (1.0f - adaptive_speed) +
-               //                                  target_samples * adaptive_speed));
                adaptive_samples_per_batch = 5; // Fixed low sample count during motion for simplicity
             }
-
-            displayFrame(
-                gui, display_image, current_samples, adaptive_samples_per_batch, light_intensity, background_intensity,
-                metal_fuzziness, glass_refraction_index, accumulation_enabled, camera_control.isAutoOrbitEnabled(),
-                dof_enabled, dof_aperture, dof_focus_distance, samples_slider_bounds, intensity_slider_bounds,
-                background_slider_bounds, fuzziness_slider_bounds, glass_ior_slider_bounds, dof_aperture_slider_bounds,
-                dof_focus_slider_bounds, toggle_button_rect, orbit_button_rect, dof_button_rect, image_channels);
 
             if (target.pixels)
                *target.pixels = display_image;
          }
+         else
+         {
+            // Cap CPU usage when not rendering
+             SDL_Delay(16); 
+         }
 
+         // Always display the frame and UI, regardless of whether we rendered a new batch
+         bool old_dof = dof_enabled;
+         float old_aperture = dof_aperture;
+         float old_focus = dof_focus_distance;
+         float old_fov = fov;
+
+         displayFrame(
+             gui, display_image, current_samples, adaptive_samples_per_batch, light_intensity, background_intensity,
+             metal_fuzziness, glass_refraction_index, accumulation_enabled, camera_control.isAutoOrbitEnabled(),
+             &dof_enabled, &dof_aperture, &dof_focus_distance, &fov, samples_slider_bounds, intensity_slider_bounds,
+             background_slider_bounds, fuzziness_slider_bounds, glass_ior_slider_bounds, 
+             toggle_button_rect, orbit_button_rect, image_channels, current_fps);
+
+         // Check for changes from UI
+         if (dof_enabled != old_dof || dof_aperture != old_aperture || dof_focus_distance != old_focus || fov != old_fov)
+         {
+            camera_changed = true;
+            applySceneSettings();
+            if (fov != old_fov)
+            {
+               camera.vfov = fov;
+               refreshCameraFrame();
+            }
+         }
       }
 
       auto total_end = std::chrono::high_resolution_clock::now();
@@ -463,23 +487,21 @@ class RendererCUDAProgressive : public IRenderer
     */
    void displayFrame(SDLGuiHandler &gui, const vector<unsigned char> &display_image, int current_samples,
                      int samples_per_batch, float light_intensity, float background_intensity, float metal_fuzziness,
-                     float glass_refraction_index, bool accumulation_enabled, bool auto_orbit_enabled, bool dof_enabled,
-                     float dof_aperture, float dof_focus_distance, SliderBounds &samples_slider_bounds,
+                     float glass_refraction_index, bool accumulation_enabled, bool auto_orbit_enabled, bool* dof_enabled,
+                     float* dof_aperture, float* dof_focus_distance, float* fov, SliderBounds &samples_slider_bounds,
                      SliderBounds &intensity_slider_bounds, SliderBounds &background_slider_bounds,
                      SliderBounds &fuzziness_slider_bounds, SliderBounds &glass_ior_slider_bounds,
-                     SliderBounds &dof_aperture_slider_bounds, SliderBounds &dof_focus_slider_bounds,
-                     SDL_Rect &toggle_button_rect, SDL_Rect &orbit_button_rect, SDL_Rect &dof_button_rect,
-                     int image_channels)
+                     SDL_Rect &toggle_button_rect, SDL_Rect &orbit_button_rect,
+                     int image_channels, float fps)
    {
-      gui.updateDisplay(display_image, image_channels);
+      gui.updateDisplay(display_image, image_channels, fps, current_samples,
+                        dof_enabled, dof_aperture, dof_focus_distance, fov);
       gui.drawLogo();
       gui.drawSampleCountText(current_samples);
       gui.drawUIControls(samples_per_batch, light_intensity, background_intensity, metal_fuzziness,
                          glass_refraction_index, accumulation_enabled, auto_orbit_enabled, samples_slider_bounds,
                          intensity_slider_bounds, background_slider_bounds, fuzziness_slider_bounds,
                          glass_ior_slider_bounds, toggle_button_rect, orbit_button_rect);
-      gui.drawEffectsPanel(dof_enabled, dof_aperture, dof_focus_distance, dof_aperture_slider_bounds,
-                           dof_focus_slider_bounds, dof_button_rect);
       gui.present();
    }
 };

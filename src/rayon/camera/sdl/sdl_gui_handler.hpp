@@ -112,8 +112,9 @@ class SDLGuiHandler
 
       IMGUI_CHECKVERSION();
       ImGui::CreateContext();
-      ImGuiIO& io = ImGui::GetIO(); (void)io;
-      io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     
+      ImGuiIO &io = ImGui::GetIO();
+      (void)io;
+      io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
       ImGui::StyleColorsDark();
       ImGui_ImplSDL2_InitForSDLRenderer(window, renderer);
       ImGui_ImplSDLRenderer2_Init(renderer);
@@ -154,7 +155,8 @@ class SDLGuiHandler
       cleanupSDL();
    }
 
-   void updateDisplay(const vector<unsigned char> &image, int image_channels)
+   void updateDisplay(const vector<unsigned char> &image, int image_channels, float fps, int spp,
+                      bool* dof_enabled, float* aperture, float* focus_dist, float* fov)
    {
       SDL_UpdateTexture(texture, nullptr, image.data(), image_width * image_channels);
       SDL_RenderClear(renderer);
@@ -164,8 +166,61 @@ class SDLGuiHandler
       ImGui_ImplSDL2_NewFrame();
       ImGui::NewFrame();
 
-      ImGui::Begin("Hello world!");
-      ImGui::Text("Bonjour monde!");
+      ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
+      if (ImGui::Begin("RayOn - interactive UI ", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+      {
+         if (ImGui::CollapsingHeader("Performance Monitoring", ImGuiTreeNodeFlags_DefaultOpen))
+         {
+            ImGui::Text("SPP: %d", spp);
+            ImGui::Text("FPS: %.1f", fps);
+            fps_history.push_back(fps);
+            if (fps_history.size() > 500)                                                                                                                       
+            {
+               fps_history.erase(fps_history.begin());
+               
+            }
+            if (!fps_history.empty())                                                                                                                           
+            {
+               float max_fps = 0.0f;
+               for (float f : fps_history)                                                                                                                        max_fps = std::max(max_fps, f);
+               ImGui::PlotLines("Live FPS", fps_history.data(), static_cast<int>(fps_history.size()), 0, nullptr,
+                                  0.0f,                                          max_fps * 1.1f, ImVec2(200, 80));
+            }
+         }
+
+         if (ImGui::CollapsingHeader("Camera Settings", ImGuiTreeNodeFlags_DefaultOpen))
+         {
+            if (dof_enabled && aperture && focus_dist && fov)
+            {
+               ImGui::Checkbox("Enable Depth of Field", dof_enabled);
+               ImGui::SeparatorText("Lens Controls");
+
+               if (!(*dof_enabled)) ImGui::BeginDisabled();
+               ImGui::SliderFloat("Aperture", aperture, 0.0f, 1.0f, "%.2f");
+               ImGui::SliderFloat("Focus Dist", focus_dist, 0.1f, 100.0f, "%.1f");
+
+               if (!(*dof_enabled)) ImGui::EndDisabled();
+               ImGui::SliderFloat("FOV", fov, 10.0f, 120.0f, "%.1f deg");
+
+            }
+         }
+
+         if (ImGui::CollapsingHeader("Controls & Help"))
+         {
+            ImGui::Text("Mouse:");
+            ImGui::BulletText("LMB: Rotate");
+            ImGui::BulletText("RMB: Pan");
+            ImGui::BulletText("Wheel: Zoom");
+
+            ImGui::Separator();
+            ImGui::Text("Keys:");
+            ImGui::BulletText("SPACE: Toggle Accumulation");
+            ImGui::BulletText("O: Auto-Orbit");
+            ImGui::BulletText("H: Toggle UI");
+            ImGui::BulletText("Arrows: Samples/Light");
+            ImGui::BulletText("ESC: Exit");
+         }
+      }
       ImGui::End();
 
       ImGui::Render();
@@ -261,7 +316,7 @@ class SDLGuiHandler
       drawToggleButton(small_font, padding, start_y, accumulation_enabled, white, toggle_button_rect, "Auto-Accum",
                        button_width);
       drawToggleButton(small_font, padding + button_width + spacing, start_y, auto_orbit_enabled, white,
-                      orbit_button_rect, "Auto-Orbit", button_width);
+                       orbit_button_rect, "Auto-Orbit", button_width);
 
       drawSamplesSlider(small_font, padding, start_y + button_row_height + spacing, control_width, samples_per_batch,
                         samples_slider_bounds, label_width);
@@ -281,82 +336,16 @@ class SDLGuiHandler
 #endif
    }
 
-   void drawEffectsPanel(bool dof_enabled, float dof_aperture, float dof_focus_distance,
-                         SliderBounds &dof_aperture_slider_bounds, SliderBounds &dof_focus_slider_bounds,
-                         SDL_Rect &dof_button_rect)
-   {
-      // Don't draw effects panel if controls are hidden
-      if (!show_controls)
-         return;
-
-#ifdef SDL2_TTF_FOUND
-      TTF_Font *ttf_font = static_cast<TTF_Font *>(font);
-      if (!ttf_font)
-         return;
-
-      TTF_Font *small_font = TTF_OpenFont("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 12);
-      if (!small_font)
-      {
-         small_font = TTF_OpenFont("/usr/share/fonts/TTF/DejaVuSans.ttf", 12);
-      }
-      if (!small_font)
-      {
-         small_font = ttf_font;
-      }
-
-      int padding = 15;
-      int control_width = 220;
-      int label_width = 130;
-      int slider_height = 25;
-      int spacing = 8;
-      int button_row_height = slider_height;
-
-      // Position at top-right corner
-      int start_x = image_width - control_width - padding;
-      int start_y = padding + 40; // Below the sample count
-
-      SDL_Color white = {255, 255, 255, 255};
-
-      // Background for effects panel
-      drawPanelBackground(start_x, start_y, control_width, button_row_height + 2 * slider_height + 3 * spacing);
-
-      // DOF toggle button (full width)
-      drawToggleButton(small_font, start_x, start_y, dof_enabled, white, dof_button_rect, "Depth of Field",
-                       control_width);
-
-      // DOF sliders
-      drawDOFApertureSlider(small_font, start_x, start_y + button_row_height + spacing, control_width, dof_aperture,
-                            dof_aperture_slider_bounds, label_width);
-      drawDOFFocusSlider(small_font, start_x, start_y + button_row_height + slider_height + 2 * spacing, control_width,
-                         dof_focus_distance, dof_focus_slider_bounds, label_width);
-
-      if (small_font != ttf_font)
-      {
-         TTF_CloseFont(small_font);
-      }
-#endif
-   }
-
-   static void printControls(int samples_per_batch, int max_samples, bool auto_accumulate)
-   {
-      cout << "\n=== Interactive Ray Tracing with Real-time Display ===" << "\n";
-      cout << "Controls:" "\n";
-      cout << "  Left Mouse Button:   Rotate camera (orbit)" "\n";
-      cout << "  Right Mouse Button:  Pan camera" "\n";
-      cout << "  Mouse Wheel:         Zoom in/out" "\n";
-      cout << "  SPACEBAR:            Toggle automatic accumulation" "\n";
-      cout << "  O:                   Toggle auto-orbit camera" "\n";
-      cout << "  H:                   Hide/show GUI controls" "\n";
-      cout << "  Up/Down Arrows:      Adjust samples per batch (1-256)" "\n";
-      cout << "  Left/Right Arrows:   Adjust light intensity (0.1-3.0)" "\n";
-      cout << "  ESC:                 Exit" "\n" "\n";
-      cout << "Sample accumulation: " << samples_per_batch << " samples per batch, up to " << max_samples
-           << " total samples" "\n";
-      cout << "Auto-accumulation: " << (auto_accumulate ? "ON" : "OFF")<<  "\n";
-   }
-
    // Event handling
-   static bool pollEvent(SDL_Event &event) { return SDL_PollEvent(&event); }
+   static bool pollEvent(SDL_Event &event)
+   {
+      bool has_event = SDL_PollEvent(&event);
+      if (has_event)
+      {
+         ImGui_ImplSDL2_ProcessEvent(&event);
+      }
+      return has_event;
+   }
 
    // Getters
    SDL_Window *getWindow() { return window; }
@@ -381,6 +370,7 @@ class SDLGuiHandler
    SDL_Texture *logo_texture;
    SDL_Rect logo_rect;
    void *font;
+   std::vector<float> fps_history;
 
    static void cleanupSDL()
    {
@@ -439,7 +429,7 @@ class SDLGuiHandler
       }
       if (font == nullptr)
       {
-         cerr << "Warning: Could not load font: " << TTF_GetError()<<  "\n";
+         cerr << "Warning: Could not load font: " << TTF_GetError() << "\n";
       }
 #endif
    }
@@ -473,8 +463,8 @@ class SDLGuiHandler
 
    // Helper function to draw a generic slider with customizable appearance
    void drawGenericSlider(TTF_Font *ttf_font, int padding, int y, int control_width, const char *label_format,
-                          float value, float min_val, float max_val, SDL_Color fill_color,
-                          SliderBounds &slider_bounds, int label_width)
+                          float value, float min_val, float max_val, SDL_Color fill_color, SliderBounds &slider_bounds,
+                          int label_width)
    {
       char label[64];
       snprintf(label, sizeof(label), label_format, value);
@@ -536,56 +526,47 @@ class SDLGuiHandler
       button_rect.h = box_size;
    }
 
-
-
    void drawSamplesSlider(TTF_Font *ttf_font, int padding, int y, int control_width, int samples_per_batch,
                           SliderBounds &samples_slider, int label_width)
    {
       SDL_Color color = {100, 150, 255, 255};
-      drawGenericSlider(ttf_font, padding, y, control_width, "Samples: %d", static_cast<float>(samples_per_batch), 1.0f, 256.0f, color, samples_slider, label_width);
+      drawGenericSlider(ttf_font, padding, y, control_width, "Samples: %d", static_cast<float>(samples_per_batch), 1.0f,
+                        256.0f, color, samples_slider, label_width);
    }
 
    void drawLightSlider(TTF_Font *ttf_font, int padding, int y, int control_width, float light_intensity,
                         SliderBounds &intensity_slider, int label_width)
    {
       SDL_Color color = {255, 200, 100, 255};
-      drawGenericSlider(ttf_font, padding, y, control_width, "Light: %.1f", light_intensity, 0.1f, 3.0f, color, intensity_slider, label_width);
+      drawGenericSlider(ttf_font, padding, y, control_width, "Light: %.1f", light_intensity, 0.1f, 3.0f, color,
+                        intensity_slider, label_width);
    }
 
    void drawBackgroundSlider(TTF_Font *ttf_font, int padding, int y, int control_width, float background_intensity,
                              SliderBounds &background_slider, int label_width)
    {
       SDL_Color color = {150, 100, 255, 255};
-      drawGenericSlider(ttf_font, padding, y, control_width, "Background: %.2f", background_intensity, 0.0f, 3.0f, color, background_slider, label_width);
+      drawGenericSlider(ttf_font, padding, y, control_width, "Background: %.2f", background_intensity, 0.0f, 3.0f,
+                        color, background_slider, label_width);
    }
 
    void drawFuzzinessSlider(TTF_Font *ttf_font, int padding, int y, int control_width, float metal_fuzziness,
                             SliderBounds &fuzziness_slider, int label_width)
    {
       SDL_Color color = {200, 200, 100, 255};
-      drawGenericSlider(ttf_font, padding, y, control_width, "Metal fuzz: %.2f", metal_fuzziness, 0.0f, 5.0f, color, fuzziness_slider, label_width);
+      drawGenericSlider(ttf_font, padding, y, control_width, "Metal fuzz: %.2f", metal_fuzziness, 0.0f, 5.0f, color,
+                        fuzziness_slider, label_width);
    }
 
    void drawGlassIORSlider(TTF_Font *ttf_font, int padding, int y, int control_width, float glass_ior,
                            SliderBounds &glass_ior_slider, int label_width)
    {
       SDL_Color color = {100, 200, 255, 255};
-      drawGenericSlider(ttf_font, padding, y, control_width, "Glass IOR: %.2f", glass_ior, 1.0f, 2.5f, color, glass_ior_slider, label_width);
+      drawGenericSlider(ttf_font, padding, y, control_width, "Glass IOR: %.2f", glass_ior, 1.0f, 2.5f, color,
+                        glass_ior_slider, label_width);
    }
 
-   void drawDOFApertureSlider(TTF_Font *ttf_font, int padding, int y, int control_width, float dof_aperture,
-                              SliderBounds &aperture_slider, int label_width)
-   {
-      SDL_Color color = {100, 200, 255, 255};
-      drawGenericSlider(ttf_font, padding, y, control_width, "DOF Aperture: %.2f", dof_aperture, 0.0f, 1.0f, color, aperture_slider, label_width);
-   }
 
-   void drawDOFFocusSlider(TTF_Font *ttf_font, int padding, int y, int control_width, float dof_focus_distance,
-                           SliderBounds &focus_slider, int label_width)
-   {
-      SDL_Color color = {255, 150, 100, 255};
-      drawGenericSlider(ttf_font, padding, y, control_width, "DOF Focus: %.1f", dof_focus_distance, 1.0f, 50.0f, color, focus_slider, label_width);
-   }
 #endif
 };
 
