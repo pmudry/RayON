@@ -19,6 +19,8 @@ endif()
 
 project(RAYON_RAYTRACER LANGUAGES CXX CUDA)
 
+# Option to enable diagnostic output
+option(ENABLE_DIAGS "Enable diagnostic output in CUDA and CPU renderers" OFF)
 
 # Ensure compile_commands.json is generated in the source directory
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -55,7 +57,7 @@ if(CMAKE_CUDA_COMPILER)
     set(CMAKE_CUDA_STANDARD 17)
     set(CMAKE_CUDA_STANDARD_REQUIRED ON)
     set(CMAKE_CUDA_SEPARABLE_COMPILATION ON)
-    set(CMAKE_CUDA_ARCHITECTURES 90) # Set CUDA architectures (adjust based on your GPU - this covers common GPUs)
+    set(CMAKE_CUDA_ARCHITECTURES "native") # Set CUDA architecture to the machine where it's built
     set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -t 0") # Enable parallel CUDA compilation for faster builds
     set(CUDA_FOUND TRUE)
 else()
@@ -139,6 +141,14 @@ target_include_directories(rayon PRIVATE ${INCLUDE_DIRS})
 target_compile_definitions(rayon PRIVATE
     RT_BUILD_TYPE_STRING="$<IF:$<BOOL:${CMAKE_BUILD_TYPE}>,${CMAKE_BUILD_TYPE},$<CONFIG>>"
 )
+
+# Add DIAGS definition if enabled
+if(ENABLE_DIAGS)
+    target_compile_definitions(rayon PRIVATE DIAGS)
+    message(STATUS "Diagnostics enabled (ENABLE_DIAGS=ON)")
+else()
+    message(STATUS "Diagnostics disabled (set ENABLE_DIAGS=ON to enable)")
+endif()
 
 # Generate .clangd with -I flags
 # This updates the .clangd file's Add section with the current include directories

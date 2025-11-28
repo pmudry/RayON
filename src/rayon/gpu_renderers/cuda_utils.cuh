@@ -99,10 +99,10 @@ static __device__ inline f3 randPosInSphere(curandState *state, f3 center, float
 static __device__ inline void build_orthonormal_basis(const f3 &n, f3 &u, f3 &v)
 {
    // from "Building an Orthonormal Basis, Pixar" / Shirley
-   if (fabs(n.x) > fabs(n.z))   
-      u = normalize(f3(-n.y, n.x, 0.0f));   
-   else   
-      u = normalize(f3(0.0f, -n.z, n.y));   
+   if (fabs(n.x) > fabs(n.z))
+      u = normalize(f3(-n.y, n.x, 0.0f));
+   else
+      u = normalize(f3(0.0f, -n.z, n.y));
    v = cross(n, u);
 }
 

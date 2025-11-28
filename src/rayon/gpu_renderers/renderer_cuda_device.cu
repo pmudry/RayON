@@ -7,6 +7,7 @@
 
 #include "shaders/render_acc_kernel.cuh"
 
+#include <cstdio>
 #include <cuda_runtime.h>
 #include <curand_kernel.h>
 #include <device_launch_parameters.h>
@@ -126,6 +127,20 @@ extern "C" unsigned long long renderPixelsCUDAAccumulative(
     int total_samples_so_far, int max_depth, void **d_rand_states_ptr, void **d_accum_buffer_ptr, double cam_u_x,
     double cam_u_y, double cam_u_z, double cam_v_x, double cam_v_y, double cam_v_z)
 {
+#ifdef DIAGS
+   static bool first_call = true;
+   if (first_call)
+   {
+      int device;
+      cudaGetDevice(&device);
+      cudaDeviceProp prop;
+      cudaGetDeviceProperties(&prop, device);
+      printf("- GPU: %s (SM %d.%d, %d multiprocessors)\n", prop.name, prop.major, prop.minor, prop.multiProcessorCount);
+      printf("- Max threads per block: %d\n", prop.maxThreadsPerBlock);
+      first_call = false;
+   }
+#endif
+
    if (!scene)
       return 0ULL;
 
@@ -142,7 +157,7 @@ extern "C" unsigned long long renderPixelsCUDAAccumulative(
    cudaMalloc(&d_ray_count, sizeof(unsigned long long));
 
    bool need_rand_init = false;
-   
+
    if (*d_rand_states_ptr == nullptr)
    {
       cudaMalloc(&d_rand_states, num_pixels * sizeof(curandState));
@@ -171,10 +186,39 @@ extern "C" unsigned long long renderPixelsCUDAAccumulative(
    dim3 threads = getOptimalBlockSize(width, height);
    dim3 blocks((width + threads.x - 1) / threads.x, (height + threads.y - 1) / threads.y);
 
+   // Verify block size on first call
+   static bool block_size_verified = false;
+   if (!block_size_verified)
+   {
+      cudaDeviceProp prop;
+      cudaGetDeviceProperties(&prop, 0);
+      int total_threads = threads.x * threads.y;
+      if (total_threads > prop.maxThreadsPerBlock)
+      {
+         printf("❌ ERROR: Block size %dx%d (%d threads) exceeds device limit %d\n", threads.x, threads.y,
+                total_threads, prop.maxThreadsPerBlock);
+      }
+      block_size_verified = true;
+   }
+
    if (need_rand_init)
    {
       init_random_states<<<blocks, threads>>>(d_rand_states, num_pixels, 1234ULL, width);
-      cudaDeviceSynchronize();
+      cudaError_t err = cudaDeviceSynchronize();
+      if (err != cudaSuccess)
+      {
+         printf("❌ RNG init failed: %s\n", cudaGetErrorString(err));
+      }
+      else
+      {
+#ifdef DIAGS
+         // Verify RNG state was initialized
+         unsigned int test_state;
+         cudaMemcpy(&test_state, d_rand_states, sizeof(unsigned int), cudaMemcpyDeviceToHost);
+
+         printf("- RNG initialized: first state value = %u\n", test_state);
+#endif
+      }
    }
 
    renderAccKernel<<<blocks, threads>>>(
@@ -183,10 +227,23 @@ extern "C" unsigned long long renderPixelsCUDAAccumulative(
        (float)delta_u_y, (float)delta_u_z, (float)delta_v_x, (float)delta_v_y, (float)delta_v_z, d_ray_count,
        d_rand_states, (float)cam_u_x, (float)cam_u_y, (float)cam_u_z, (float)cam_v_x, (float)cam_v_y, (float)cam_v_z);
 
-   cudaDeviceSynchronize();
+   cudaError_t kernel_err = cudaGetLastError();
+   if (kernel_err != cudaSuccess)
+   {
+      printf("❌ Kernel launch error: %s\n", cudaGetErrorString(kernel_err));
+   }
+
+   cudaError_t sync_err = cudaDeviceSynchronize();
+   if (sync_err != cudaSuccess)
+   {
+      printf("❌ Kernel execution error: %s\n", cudaGetErrorString(sync_err));
+   }
+
+   // Print ray count diagnostic
+   unsigned long long host_ray_count = 0ULL;
+   cudaMemcpy(&host_ray_count, d_ray_count, sizeof(unsigned long long), cudaMemcpyDeviceToHost);
 
    cudaMemcpy(accum_buffer, d_accum, accum_size, cudaMemcpyDeviceToHost);
-   unsigned long long host_ray_count = 0ULL;
    cudaMemcpy(&host_ray_count, d_ray_count, sizeof(unsigned long long), cudaMemcpyDeviceToHost);
 
    cudaFree(d_image);

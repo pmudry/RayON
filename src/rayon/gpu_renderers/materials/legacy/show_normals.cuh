@@ -52,9 +52,10 @@ struct ShowNormals : public MaterialBase<ShowNormals>
     * @brief Get emitted color (displays the surface normal as color)
     * @return Normal vector mapped to RGB color space [0,1]³
     */
-   __device__ __forceinline__ f3 emission() const { 
+   __device__ __forceinline__ f3 emission() const
+   {
       // Map normal from [-1,1] to [0,1] for color display
-      return 0.5f * (params.normal + f3(1.0f, 1.0f, 1.0f)); 
+      return 0.5f * (params.normal + f3(1.0f, 1.0f, 1.0f));
    }
 };
 

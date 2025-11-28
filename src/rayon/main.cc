@@ -176,9 +176,27 @@ int main(int argc, char *argv[])
    if (args.samples < 0)
       return 1;
 
+   // Calculate width maintaining aspect ratio (16:9)
+   int image_height = args.height;
+   int image_width = (image_height * 16) / 9;
+   string compiled_config = current_build_configuration();
+
+   cout << "\n";
+   cout << "====================================" << "\n";
+   cout << " RayON raytracer v" << version << " - " << compiled_config << "\n";
+   cout << " Dr P.-A. Mudry, 2025" << "\n";
+   cout << "====================================" << "\n";
+#ifdef DIAGS
+   cout << "Using features : yaml_scene_loader, unified_scene_descriptions, cuda_optimization_1, BVH" << "\n";
+   cout << "fast_rnd, thread_block_optimal, inlining, atomic_reduction, russian_roulette" << "\n";
+   cout << "lambertian_cosine_weighted_hemisphere_sampling, lambertian_owen_hash_distribution" << "\n";
+   cout << "inter_adaptive_depth, inter_target_fps" << "\n\n";
+#endif
+   cout << "Rendering at resolution: " << image_width << " x " << image_height << " pixels - ";
+   cout << "Samples per pixel: " << args.samples << "\n\n";
+
    if (args.rendering_method != -1)
    {
-      cout << "Using rendering method from command line: " << args.rendering_method << "\n";
       renderType = args.rendering_method;
    }
    else
@@ -205,31 +223,13 @@ int main(int argc, char *argv[])
          renderType = stoi(input);
    }
 
-   // Calculate width maintaining aspect ratio (16:9)
-   int image_height = args.height;
-   int image_width = (image_height * 16) / 9;
-
-   string compiled_config = current_build_configuration();
-
-   cout << "\n";
-   cout << "====================================" << "\n";
-   cout << " RayON raytracer v" << version << " - " << compiled_config << "\n";
-   cout << " Dr P.-A. Mudry, 2025" << "\n";
-   cout << "====================================" << "\n";
-   cout << "Using features : yaml_scene_loader, unified_scene_descriptions, cuda_optimization_1, BVH" << "\n";
-   cout << "fast_rnd, thread_block_optimal, inlining, atomic_reduction, russian_roulette" << "\n";
-   cout << "lambertian_cosine_weighted_hemisphere_sampling, lambertian_owen_hash_distribution" << "\n";
-   cout << "inter_adaptive_depth, inter_target_fps" << "\n\n";
-   cout << "Rendering at resolution: " << image_width << " x " << image_height << " pixels - ";
-   cout << "Samples per pixel: " << args.samples << "\n\n";
-
    RndGen::set_seed(1984);
 
    Scene::SceneDescription scene_desc;
 
    if (args.scene_file == nullptr)
    {
-      cout << "No scene file provided. Using default scene." << "\n";
+      cout << "No scene file provided, using default scene." << "\n";
       // scene_desc = Scene::SceneFactory::singleObjectScene();
       scene_desc = Scene::SceneFactory::createDefaultScene();
    }
@@ -288,8 +288,21 @@ int main(int argc, char *argv[])
    }
    }
 
+   cout << "\n";
+
    auto render_end = chrono::high_resolution_clock::now();
    auto render_duration = render_end - render_start;
+
+   cout.imbue(locale("en_US.UTF-8"));
+   cout << "Rays traced: " << fixed << camera.n_rays << "\n";
+   double render_seconds = std::chrono::duration_cast<std::chrono::duration<double>>(render_duration).count();
+   long long rays_per_second_int = 0;
+
+   if (render_seconds > 0.0)
+      rays_per_second_int =
+          static_cast<long long>(std::llround(static_cast<double>(camera.n_rays.load()) / render_seconds));
+
+   cout << "Rays/sec: " << rays_per_second_int << "\n";
 
    const string output_path = utils::FileUtils::buildTimestampedOutputPath();
 
@@ -302,17 +315,6 @@ int main(int argc, char *argv[])
       image_size_bytes = 0;
 
    utils::FileUtils::writeRenderStats(camera, output_path, image_size_bytes, render_duration);
-
-   cout.imbue(locale("en_US.UTF-8"));
-   cout << "Rays traced: " << fixed << camera.n_rays << "\n";
-   double render_seconds = std::chrono::duration_cast<std::chrono::duration<double>>(render_duration).count();
-   long long rays_per_second_int = 0;
-
-   if (render_seconds > 0.0)
-      rays_per_second_int =
-          static_cast<long long>(std::llround(static_cast<double>(camera.n_rays.load()) / render_seconds));
-
-   cout << "Rays/sec: " << rays_per_second_int << "\n";
 
    return 0;
 }
