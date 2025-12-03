@@ -127,7 +127,8 @@ class SDLGuiHandler
    void updateDisplay(const vector<unsigned char> &image, int image_channels, float fps, int spp,
                       bool* dof_enabled, float* aperture, float* focus_dist, float* fov,
                       float* light_intensity, float* metal_fuzziness, float* glass_ior,
-                      float* samples_per_batch, bool* auto_accumulate, bool* auto_orbit)
+                      float* samples_per_batch, bool* auto_accumulate, bool* auto_orbit,
+                      const std::vector<std::string>& scene_files, int* current_scene_idx, bool* load_scene_request)
    {
       SDL_UpdateTexture(texture, nullptr, image.data(), image_width * image_channels);
       SDL_RenderClear(renderer);
@@ -140,6 +141,46 @@ class SDLGuiHandler
       ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
       if (ImGui::Begin("RayOn - interactive UI ", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
       {
+         if (ImGui::CollapsingHeader("Scene Selection", ImGuiTreeNodeFlags_DefaultOpen))
+         {
+             if (current_scene_idx && !scene_files.empty())
+             {
+                 // Extract filename for display
+                 std::string current_name = "Select Scene";
+                 if (*current_scene_idx >= 0 && *current_scene_idx < static_cast<int>(scene_files.size()))
+                 {
+                     size_t last_slash = scene_files[*current_scene_idx].find_last_of("/\\");
+                     current_name = (last_slash == std::string::npos) ? scene_files[*current_scene_idx] : scene_files[*current_scene_idx].substr(last_slash + 1);
+                 }
+
+                 if (ImGui::BeginCombo("Scene", current_name.c_str()))
+                 {
+                     for (int i = 0; i < static_cast<int>(scene_files.size()); i++)
+                     {
+                         const bool is_selected = (*current_scene_idx == i);
+                         
+                         size_t last_slash = scene_files[i].find_last_of("/\\");
+                         std::string name = (last_slash == std::string::npos) ? scene_files[i] : scene_files[i].substr(last_slash + 1);
+
+                         if (ImGui::Selectable(name.c_str(), is_selected))
+                         {
+                             *current_scene_idx = i;
+                             if (load_scene_request) *load_scene_request = true;
+                         }
+
+                         // Set the initial focus when opening the combo (scrolling + keyboard navigation focus)
+                         if (is_selected)
+                             ImGui::SetItemDefaultFocus();
+                     }
+                     ImGui::EndCombo();
+                 }
+             }
+             else
+             {
+                 ImGui::TextDisabled("No scenes found");
+             }
+         }
+
          if (ImGui::CollapsingHeader("Performance Monitoring", ImGuiTreeNodeFlags_DefaultOpen))
          {
             ImGui::Text("SPP: %d", spp);

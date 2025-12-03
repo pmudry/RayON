@@ -15,12 +15,14 @@
 #include "scene_builder.hpp"
 #include "sdl_gui_controls.hpp"
 #include "sdl_gui_handler.hpp"
+#include "scenes/scene_factory.hpp"
 
 #include <SDL.h>
 #include <algorithm>
 #include <chrono>
 #include <iostream>
 #include <vector>
+#include <filesystem>
 
 class RendererCUDAProgressive : public IRenderer
 {
@@ -91,6 +93,31 @@ class RendererCUDAProgressive : public IRenderer
       CameraControlHandler camera_control;
       camera_control.initializeCameraControls(look_from, look_at);
 
+      // Scan for scenes
+      std::vector<std::string> scene_files;
+      try {
+          std::vector<std::string> search_paths = {"../resources", "resources", "."};
+          for (const auto& search_path : search_paths) {
+              if (std::filesystem::exists(search_path)) {
+                  for (const auto & entry : std::filesystem::directory_iterator(search_path)) {
+                      std::string path = entry.path().string();
+                      std::string ext = path.substr(path.find_last_of(".") + 1);
+                      std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+                      if(ext == "yaml" || ext == "yml" || ext == "obj") {
+                          // Avoid duplicates if we scan . and resources and they are same
+                          if(std::find(scene_files.begin(), scene_files.end(), path) == scene_files.end()) {
+                              scene_files.push_back(path);
+                          }
+                      }
+                  }
+              }
+          }
+          std::sort(scene_files.begin(), scene_files.end());
+      } catch (const std::exception& e) {
+          cerr << "Error scanning scenes: " << e.what() << endl;
+      }
+      int current_file_index = -1;
+
       // Ray-tracing state
       bool running = true;
       bool camera_changed = true;
@@ -153,8 +180,11 @@ class RendererCUDAProgressive : public IRenderer
       void *d_rand_states = nullptr;
       void *d_accum_buffer = nullptr; // Persistent device accumulation buffer
 
+      // Create a local copy of the scene to allow switching
+      Scene::SceneDescription active_scene = request.scene;
+
       // Build scene once
-      CudaScene::Scene *gpu_scene = Scene::CudaSceneBuilder::buildGPUScene(scene);
+      CudaScene::Scene *gpu_scene = Scene::CudaSceneBuilder::buildGPUScene(active_scene);
 
       // Timing for auto-orbit
       auto last_frame_time = std::chrono::high_resolution_clock::now();
@@ -192,6 +222,48 @@ class RendererCUDAProgressive : public IRenderer
                if (event.key.keysym.sym == SDLK_h)
                {
                   gui.toggleControls();
+               }
+               else if ((event.key.keysym.sym == SDLK_n || event.key.keysym.sym == SDLK_p) && !scene_files.empty())
+               {
+                  // Handle Scene Switching
+                  if (current_file_index == -1) current_file_index = 0;
+                  else {
+                      if (event.key.keysym.sym == SDLK_n) 
+                          current_file_index = (current_file_index + 1) % scene_files.size();
+                      else 
+                          current_file_index = (current_file_index - 1 + scene_files.size()) % scene_files.size();
+                  }
+
+                  std::cout << "Switching to scene: " << scene_files[current_file_index] << std::endl;
+                  
+                  // 1. Free old GPU scene
+                  Scene::CudaSceneBuilder::freeGPUScene(gpu_scene);
+                  
+                  // 2. Load new scene
+                  active_scene = Scene::SceneFactory::load(scene_files[current_file_index]);
+                  
+                  // 3. Update camera from new scene
+                  camera.look_from = active_scene.camera_position;
+                  camera.look_at = active_scene.camera_look_at;
+                  camera.vup = active_scene.camera_up;
+                  camera.vfov = active_scene.camera_fov;
+                  refreshCameraFrame();
+                  camera_control.initializeCameraControls(look_from, look_at);
+
+                  // 4. Rebuild GPU scene
+                  gpu_scene = Scene::CudaSceneBuilder::buildGPUScene(active_scene);
+                  
+                  // 5. Reset accumulation
+                  current_samples = 0;
+                  std::fill(accum_buffer.begin(), accum_buffer.end(), 0.0f);
+                  if (d_accum_buffer != nullptr) {
+                      freeDeviceAccumBuffer(d_accum_buffer);
+                      d_accum_buffer = nullptr;
+                  }
+                  
+                  force_immediate_render = true;
+                  camera_changed = true;
+                  applySceneSettings(); // Re-apply generic settings
                }
                else if (event.key.keysym.sym == SDLK_r)
                {
@@ -367,11 +439,48 @@ class RendererCUDAProgressive : public IRenderer
          float old_fuzz = metal_fuzziness;
          float old_ior = glass_refraction_index;
 
+         bool load_scene_request = false;
+
          displayFrame(
              gui, display_image, current_samples, &samples_per_batch_float, &light_intensity, background_intensity,
              &metal_fuzziness, &glass_refraction_index, &accumulation_enabled, camera_control, &dof_enabled,
              &dof_aperture, &dof_focus_distance, &fov, 
-             image_channels, current_fps);
+             image_channels, current_fps,
+             scene_files, &current_file_index, &load_scene_request);
+
+         if (load_scene_request && !scene_files.empty() && current_file_index >= 0 && current_file_index < static_cast<int>(scene_files.size()))
+         {
+             std::cout << "Switching to scene: " << scene_files[current_file_index] << std::endl;
+             
+             // 1. Free old GPU scene
+             Scene::CudaSceneBuilder::freeGPUScene(gpu_scene);
+             
+             // 2. Load new scene
+             active_scene = Scene::SceneFactory::load(scene_files[current_file_index]);
+             
+             // 3. Update camera from new scene
+             camera.look_from = active_scene.camera_position;
+             camera.look_at = active_scene.camera_look_at;
+             camera.vup = active_scene.camera_up;
+             camera.vfov = active_scene.camera_fov;
+             refreshCameraFrame();
+             camera_control.initializeCameraControls(look_from, look_at);
+
+             // 4. Rebuild GPU scene
+             gpu_scene = Scene::CudaSceneBuilder::buildGPUScene(active_scene);
+             
+             // 5. Reset accumulation
+             current_samples = 0;
+             std::fill(accum_buffer.begin(), accum_buffer.end(), 0.0f);
+             if (d_accum_buffer != nullptr) {
+                 freeDeviceAccumBuffer(d_accum_buffer);
+                 d_accum_buffer = nullptr;
+             }
+             
+             force_immediate_render = true;
+             camera_changed = true;
+             applySceneSettings(); // Re-apply generic settings
+         }
 
          // Check for changes from UI
          if (dof_enabled != old_dof || dof_aperture != old_aperture || dof_focus_distance != old_focus || fov != old_fov ||
@@ -492,14 +601,16 @@ class RendererCUDAProgressive : public IRenderer
                      float* samples_per_batch, float* light_intensity, float background_intensity, float* metal_fuzziness,
                      float* glass_refraction_index, bool* accumulation_enabled, CameraControlHandler& camera_control, bool* dof_enabled,
                      float* dof_aperture, float* dof_focus_distance, float* fov,
-                     int image_channels, float fps)
+                     int image_channels, float fps,
+                     const std::vector<std::string>& scene_files, int* current_scene_idx, bool* load_scene_request)
    {
       bool is_orbiting = camera_control.isAutoOrbitEnabled();
 
       gui.updateDisplay(display_image, image_channels, fps, current_samples,
                         dof_enabled, dof_aperture, dof_focus_distance, fov,
                         light_intensity, metal_fuzziness, glass_refraction_index,
-                        samples_per_batch, accumulation_enabled, &is_orbiting);
+                        samples_per_batch, accumulation_enabled, &is_orbiting,
+                        scene_files, current_scene_idx, load_scene_request);
       
       if (is_orbiting != camera_control.isAutoOrbitEnabled())
       {

@@ -4,9 +4,10 @@
 #include "cpu_renderers/renderer_cpu_single_thread.hpp"
 #include "gpu_renderers/renderer_cuda_host.hpp"
 #include "scene_description.hpp"
-#include "scene_factory.hpp"
-#include "utils.hpp"
 
+#define TINYOBJLOADER_IMPLEMENTATION // Define this to get the implementation of tiny_obj_loader.h
+#include "scene_factory.hpp" 
+#include "utils.hpp"
 #ifdef SDL2_FOUND
 #include "gpu_renderers/renderer_cuda_progressive_host.hpp"
 #endif
@@ -235,7 +236,7 @@ int main(int argc, char *argv[])
    }
    else
    {
-      scene_desc = Scene::SceneFactory::fromYAML(args.scene_file);
+      scene_desc = Scene::SceneFactory::load(args.scene_file);
    }
 
    vector<unsigned char> localImage(image_width * image_height * CHANNELS);

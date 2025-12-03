@@ -2,9 +2,13 @@
 
 #include "scene_description.hpp"
 #include "yaml_scene_loader.hpp"
+#include "external/tiny_obj_loader.h" // Include tiny_obj_loader
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <algorithm>
+#include <cctype>
+#include <limits> // For numeric_limits
 
 using namespace std;
 
@@ -18,13 +22,233 @@ class SceneFactory
 {
  public:
    /**
+    * @brief Load scene from any supported file format (.yaml, .obj)
+    *
+    * @param filename Path to the scene file
+    * @return SceneDescription Loaded scene
+    */
+   static SceneDescription load(const std::string &filename)
+   {
+      std::string ext = filename.substr(filename.find_last_of(".") + 1);
+      
+      // Convert to lowercase for case-insensitive comparison
+      std::transform(ext.begin(), ext.end(), ext.begin(),
+                     [](unsigned char c){ return std::tolower(c); });
+
+      if (ext == "yaml" || ext == "yml")
+      {
+         return fromYAML(filename);
+      }
+      else if (ext == "obj")
+      {
+         return fromOBJ(filename);
+      }
+      else
+      {
+         std::cerr << "Unknown file format: " << ext << ". Loading default scene." << std::endl;
+         return createDefaultScene();
+      }
+   }
+
+   /**
+    * @brief Load scene from OBJ file
+    *
+    * @param filename Path to OBJ file
+    * @return SceneDescription Loaded scene
+    */
+   static SceneDescription fromOBJ(const std::string &filename)
+   {
+      std::cout << "Loading OBJ scene from: " << filename << std::endl;
+
+      tinyobj::attrib_t attrib;
+      std::vector<tinyobj::shape_t> shapes;
+      std::vector<tinyobj::material_t> materials;
+      std::string warn, err;
+
+      std::string mtl_dir;
+      size_t pos = filename.find_last_of("/\\\\");
+      if (pos != std::string::npos) {
+          mtl_dir = filename.substr(0, pos) + "/";
+      }
+
+      tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, filename.c_str(), mtl_dir.c_str());
+
+      if (!warn.empty()) {
+          std::cerr << "TinyObjLoader Warning: " << warn << std::endl;
+      }
+      if (!err.empty()) {
+          std::cerr << "TinyObjLoader Error: " << err << std::endl;
+          return createDefaultScene(); // Fallback to default on error
+      }
+      if (shapes.empty()) {
+          std::cerr << "No shapes found in OBJ file. Loading default scene." << std::endl;
+          return createDefaultScene();
+      }
+
+      SceneDescription scene_desc;
+
+      // 1. Convert materials
+      std::map<int, int> material_id_map; // tinyobj_mat_idx -> scene_mat_idx
+      if (materials.empty()) {
+          // Add a default material if none specified in OBJ/MTL
+          int default_mat_id = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(0.7, 0.7, 0.7)));
+          material_id_map[-1] = default_mat_id; // Map default OBJ material to this
+      } else {
+          for (size_t i = 0; i < materials.size(); ++i) {
+              const auto& tinyobj_mat = materials[i];
+              MaterialDesc scene_mat;
+
+              // Basic Phong to PBR mapping (simplistic)
+              // Diffuse -> Albedo (Lambertian)
+              scene_mat.albedo = Vec3(tinyobj_mat.diffuse[0], tinyobj_mat.diffuse[1], tinyobj_mat.diffuse[2]);
+              scene_mat.type = MaterialType::LAMBERTIAN; // Default to Lambertian
+
+              // Specular/Shininess -> Metal/Roughness
+              if (tinyobj_mat.specular[0] > 0 || tinyobj_mat.shininess > 0) {
+                  scene_mat.type = MaterialType::METAL;
+                  scene_mat.metallic = 1.0f;
+                  // Roughness from shininess (Ns)
+                  // Ns is typically 0-1000, roughness 0-1
+                  scene_mat.roughness = 1.0f - std::min(1.0f, tinyobj_mat.shininess / 1000.0f);
+              }
+              
+              // Transmittance/IOR -> Glass
+              if (tinyobj_mat.transmittance[0] > 0 || tinyobj_mat.ior > 1.0f) {
+                  scene_mat.type = MaterialType::GLASS;
+                  scene_mat.refractive_index = tinyobj_mat.ior > 1.0f ? tinyobj_mat.ior : 1.5f;
+              }
+
+              // Emission
+              scene_mat.emission = Vec3(tinyobj_mat.emission[0], tinyobj_mat.emission[1], tinyobj_mat.emission[2]);
+              if (scene_mat.emission.x() > 0 || scene_mat.emission.y() > 0 || scene_mat.emission.z() > 0) {
+                  scene_mat.type = MaterialType::LIGHT; // Override to light if emissive
+              }
+
+              int scene_mat_id = scene_desc.addMaterial(scene_mat);
+              material_id_map[static_cast<int>(i)] = scene_mat_id;
+          }
+      }
+
+      // 2. Convert shapes (meshes)
+      // Calculate overall bounding box for camera positioning
+      Vec3 overall_min_bounds(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
+      Vec3 overall_max_bounds(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest());
+      bool first_vertex = true;
+
+      for (const auto& shape_tinyobj : shapes) {
+          int mat_id = material_id_map.count(shape_tinyobj.mesh.material_ids[0]) ? material_id_map[shape_tinyobj.mesh.material_ids[0]] : material_id_map[-1];
+
+          for (size_t f = 0; f < shape_tinyobj.mesh.num_face_vertices.size(); ++f) {
+              int fv = shape_tinyobj.mesh.num_face_vertices[f];
+              if (fv != 3) continue; // Skip non-triangles
+
+              GeometryDesc geom;
+              geom.type = GeometryType::TRIANGLE;
+              geom.material_id = mat_id;
+              // Initialize bounds to inverted infinity for correct min/max
+              geom.bounds_min = Vec3(1e30, 1e30, 1e30);
+              geom.bounds_max = Vec3(-1e30, -1e30, -1e30);
+
+              for (int i = 0; i < 3; ++i) {
+                  tinyobj::index_t idx = shape_tinyobj.mesh.indices[f * 3 + i];
+                  
+                  Vec3 v_pos(
+                      attrib.vertices[3 * idx.vertex_index + 0],
+                      attrib.vertices[3 * idx.vertex_index + 1],
+                      attrib.vertices[3 * idx.vertex_index + 2]
+                  );
+
+                  // Update overall bounding box
+                  if (first_vertex) {
+                      overall_min_bounds = v_pos;
+                      overall_max_bounds = v_pos;
+                      first_vertex = false;
+                  } else {
+                      overall_min_bounds.e[0] = std::min(overall_min_bounds.e[0], v_pos.e[0]);
+                      overall_min_bounds.e[1] = std::min(overall_min_bounds.e[1], v_pos.e[1]);
+                      overall_min_bounds.e[2] = std::min(overall_min_bounds.e[2], v_pos.e[2]);
+                      
+                      overall_max_bounds.e[0] = std::max(overall_max_bounds.e[0], v_pos.e[0]);
+                      overall_max_bounds.e[1] = std::max(overall_max_bounds.e[1], v_pos.e[1]);
+                      overall_max_bounds.e[2] = std::max(overall_max_bounds.e[2], v_pos.e[2]);
+                  }
+
+                  // Update triangle bounds
+                  geom.bounds_min.e[0] = std::min(geom.bounds_min.e[0], v_pos.e[0]);
+                  geom.bounds_min.e[1] = std::min(geom.bounds_min.e[1], v_pos.e[1]);
+                  geom.bounds_min.e[2] = std::min(geom.bounds_min.e[2], v_pos.e[2]);
+                  
+                  geom.bounds_max.e[0] = std::max(geom.bounds_max.e[0], v_pos.e[0]);
+                  geom.bounds_max.e[1] = std::max(geom.bounds_max.e[1], v_pos.e[1]);
+                  geom.bounds_max.e[2] = std::max(geom.bounds_max.e[2], v_pos.e[2]);
+
+                  if (i == 0) geom.data.triangle.v0 = v_pos;
+                  else if (i == 1) geom.data.triangle.v1 = v_pos;
+                  else if (i == 2) geom.data.triangle.v2 = v_pos;
+
+                  if (idx.normal_index >= 0) {
+                      geom.data.triangle.has_normals = true;
+                      Vec3 v_norm(
+                          attrib.normals[3 * idx.normal_index + 0],
+                          attrib.normals[3 * idx.normal_index + 1],
+                          attrib.normals[3 * idx.normal_index + 2]
+                      );
+                      if (i == 0) geom.data.triangle.n0 = v_norm;
+                      else if (i == 1) geom.data.triangle.n1 = v_norm;
+                      else if (i == 2) geom.data.triangle.n2 = v_norm;
+                  }
+              }
+              scene_desc.addGeometry(geom);
+          }
+      }
+      
+      // 3. Auto-camera setup
+      if (first_vertex) { // No vertices loaded, use default camera
+          scene_desc.camera_position = Vec3(0, 0, 3);
+          scene_desc.camera_look_at = Vec3(0, 0, 0);
+      } else {
+          Vec3 center = (overall_min_bounds + overall_max_bounds) / 2.0;
+          Vec3 extents = overall_max_bounds - overall_min_bounds;
+          float radius = extents.length() / 2.0f;
+
+          // Position camera to look at the center of the model, distance based on radius
+          scene_desc.camera_look_at = center;
+          scene_desc.camera_position = center + Vec3(0, radius * 0.5f, radius * 2.0f); // Adjust Y for better view
+          scene_desc.camera_fov = 45.0f; // Default FOV for models
+      }
+
+      // 4. Default light (if no lights in scene - TBD: check for lights in MTL)
+      // Add a large area light above the scene
+      if (!first_vertex) {
+          Vec3 center = (overall_min_bounds + overall_max_bounds) / 2.0;
+          float size = (overall_max_bounds - overall_min_bounds).length();
+          
+          int light_mat = scene_desc.addMaterial(MaterialDesc::light(Vec3(15, 15, 15))); // Bright white light
+          
+          // Place light above and slightly in front
+          Vec3 light_pos = center + Vec3(0, size * 1.5f, size * 0.5f);
+          
+          // Create a rectangle light
+          scene_desc.addRectangle(light_pos, Vec3(size, 0, 0), Vec3(0, 0, size), light_mat);
+      } else {
+          int light_mat = scene_desc.addMaterial(MaterialDesc::light(Vec3(10, 10, 10)));
+          scene_desc.addRectangle(Vec3(-1.0, 3.0, -2.0), Vec3(2.5, 0, 0), Vec3(0, 0, 1.5), light_mat);
+      }
+
+      scene_desc.use_bvh = true;
+      scene_desc.buildBVH();
+      
+      return scene_desc;
+   }
+
+   /**
     * @brief Load scene from file with fallback to default
     *
     * @param filename Path to YAML scene file
     * @return SceneDescription Loaded scene, or default scene if loading fails
     */
    static SceneDescription fromYAML(const std::string &filename)
-   {      
+   {
       std::cout << "Loading scene from: " << filename << std::endl;
 
       try
@@ -36,7 +260,7 @@ class SceneFactory
             // Build BVH if enabled in scene
             if (scene_desc.use_bvh)
             {
-               cout << "Building BVH acceleration structure..." "\n";
+               cout << "Building BVH acceleration structure...\n";
                scene_desc.buildBVH();
                cout << "BVH built with " << scene_desc.top_level_bvh.nodes.size() << " nodes" "\n";
             }
@@ -79,7 +303,7 @@ class SceneFactory
     */
    static SceneDescription createDefaultScene()
    {
-      cout << "Creating default scene..." "\n";
+      cout << "Creating default scene...\n";
       using namespace Scene;
       SceneDescription scene_desc;
 
