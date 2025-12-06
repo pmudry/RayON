@@ -93,6 +93,11 @@ class SDLGuiHandler
       (void)io;
       io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
       ImGui::StyleColorsDark();
+      
+      // Customize style for transparency
+      ImGuiStyle& style = ImGui::GetStyle();
+      style.Colors[ImGuiCol_WindowBg].w = 0.35f;
+      
       ImGui_ImplSDL2_InitForSDLRenderer(window, renderer);
       ImGui_ImplSDLRenderer2_Init(renderer);
       return true;
@@ -126,7 +131,7 @@ class SDLGuiHandler
 
    void updateDisplay(const vector<unsigned char> &image, int image_channels, float sps, float ms_per_sample, int spp,
                       bool* dof_enabled, float* aperture, float* focus_dist, float* fov,
-                      float* light_intensity, float* metal_fuzziness, float* glass_ior,
+                      float* light_intensity, float* background_intensity, float* metal_fuzziness, float* glass_ior,
                       float* samples_per_batch, bool* auto_accumulate, bool* auto_orbit)
    {
       SDL_UpdateTexture(texture, nullptr, image.data(), image_width * image_channels);
@@ -139,8 +144,8 @@ class SDLGuiHandler
 
       if (show_controls)
       {
-         ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
-         if (ImGui::Begin("RayOn - interactive UI ", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+         ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
+         if (ImGui::Begin("RayOn - interactive UI ", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove))
          {  
             if (reset_headers)
                ImGui::SetNextItemOpen(!collapse_headers);
@@ -215,9 +220,10 @@ class SDLGuiHandler
 
             if (ImGui::CollapsingHeader("Environment & Materials", ImGuiTreeNodeFlags_DefaultOpen))
             {
-               if (light_intensity && metal_fuzziness && glass_ior)
+               if (light_intensity && background_intensity && metal_fuzziness && glass_ior)
                {
                   ImGui::SliderFloat("Light Intensity", light_intensity, 0.1f, 3.0f, "%.1f");
+                  ImGui::SliderFloat("Background Intensity", background_intensity, 0.0f, 5.0f, "%.2f");
                   ImGui::SliderFloat("Material Fuzz", metal_fuzziness, 0.0f, 5.0f, "%.2f");
                   ImGui::SliderFloat("Glass IOR", glass_ior, 1.0f, 2.5f, "%.2f");
                }
@@ -236,7 +242,6 @@ class SDLGuiHandler
                ImGui::BulletText("O: Auto-Orbit");
                ImGui::BulletText("H: Toggle UI");
                ImGui::BulletText("C: Collapse/Expand All");
-               ImGui::BulletText("Arrows: Samples/Light");
                ImGui::BulletText("ESC: Exit");
             }
 

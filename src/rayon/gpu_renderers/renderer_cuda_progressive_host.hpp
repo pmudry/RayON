@@ -374,18 +374,19 @@ class RendererCUDAProgressive : public IRenderer
          float old_focus = dof_focus_distance;
          float old_fov = fov;
          float old_light = light_intensity;
+         float old_background = background_intensity;
          float old_fuzz = metal_fuzziness;
          float old_ior = glass_refraction_index;
 
          displayFrame(
-             gui, display_image, current_samples, &samples_per_batch_float, &light_intensity, background_intensity,
+             gui, display_image, current_samples, &samples_per_batch_float, &light_intensity, &background_intensity,
              &metal_fuzziness, &glass_refraction_index, &accumulation_enabled, camera_control, &dof_enabled,
              &dof_aperture, &dof_focus_distance, &fov, 
              image_channels, current_sps, current_ms_per_sample);
 
          // Check for changes from UI
          if (dof_enabled != old_dof || dof_aperture != old_aperture || dof_focus_distance != old_focus || fov != old_fov ||
-             light_intensity != old_light || metal_fuzziness != old_fuzz || glass_refraction_index != old_ior)
+             light_intensity != old_light || background_intensity != old_background || metal_fuzziness != old_fuzz || glass_refraction_index != old_ior)
          {
             camera_changed = true;
             applySceneSettings();
@@ -499,7 +500,7 @@ class RendererCUDAProgressive : public IRenderer
     * @brief Update the display with current frame and UI
     */
    void displayFrame(SDLGuiHandler &gui, const vector<unsigned char> &display_image, int current_samples,
-                     float* samples_per_batch, float* light_intensity, float background_intensity, float* metal_fuzziness,
+                     float* samples_per_batch, float* light_intensity, float* background_intensity, float* metal_fuzziness,
                      float* glass_refraction_index, bool* accumulation_enabled, CameraControlHandler& camera_control, bool* dof_enabled,
                      float* dof_aperture, float* dof_focus_distance, float* fov,
                      int image_channels, float sps, float ms_per_sample)
@@ -508,7 +509,8 @@ class RendererCUDAProgressive : public IRenderer
 
       gui.updateDisplay(display_image, image_channels, sps, ms_per_sample, current_samples,
                         dof_enabled, dof_aperture, dof_focus_distance, fov,
-                        light_intensity, metal_fuzziness, glass_refraction_index,
+                        light_intensity, background_intensity, metal_fuzziness,
+                        glass_refraction_index,
                         samples_per_batch, accumulation_enabled, &is_orbiting);
       
       if (is_orbiting != camera_control.isAutoOrbitEnabled())
