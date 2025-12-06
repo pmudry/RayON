@@ -39,7 +39,7 @@ class SDLGuiHandler
 {
  public:
    SDLGuiHandler(int image_width, int image_height)
-       : image_width(image_width), image_height(image_height), show_controls(true), window(nullptr), renderer(nullptr),
+       : image_width(image_width), image_height(image_height), show_controls(true), collapse_headers(false), reset_headers(false), window(nullptr), renderer(nullptr),
          texture(nullptr), logo_texture(nullptr)
    {
    }
@@ -137,99 +137,115 @@ class SDLGuiHandler
       ImGui_ImplSDL2_NewFrame();
       ImGui::NewFrame();
 
-      ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
-      if (ImGui::Begin("RayOn - interactive UI ", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+      if (show_controls)
       {
-         if (ImGui::CollapsingHeader("Performance Monitoring", ImGuiTreeNodeFlags_DefaultOpen))
-         {
-            ImGui::Text("SPP: %d", spp);
-            ImGui::Text("Throughput: %.0f SPS", sps);
-            ImGui::Text("Time/Sample: %.3f ms", ms_per_sample);
-
-            sps_history.push_back(sps);
-            ms_history.push_back(ms_per_sample);
-
-            if (sps_history.size() > 500)
+         ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
+         if (ImGui::Begin("RayOn - interactive UI ", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+         {  
+            if (reset_headers)
+               ImGui::SetNextItemOpen(!collapse_headers);
+            if (ImGui::CollapsingHeader("Performance Monitoring", ImGuiTreeNodeFlags_DefaultOpen))
             {
-               sps_history.erase(sps_history.begin());
-               ms_history.erase(ms_history.begin());
+               ImGui::Text("SPP: %d", spp);
+               ImGui::Text("Throughput: %.0f SPS", sps);
+               ImGui::Text("Time/Sample: %.3f ms", ms_per_sample);
+
+               sps_history.push_back(sps);
+               ms_history.push_back(ms_per_sample);
+
+               if (sps_history.size() > 500)
+               {
+                  sps_history.erase(sps_history.begin());
+                  ms_history.erase(ms_history.begin());
+               }
+
+               if (!sps_history.empty())
+               {
+                  float max_sps = 0.0f;
+                  for (float f : sps_history) max_sps = std::max(max_sps, f);
+                  
+                  ImGui::PushStyleColor(ImGuiCol_PlotLines, ImVec4(0.0f, 1.0f, 0.0f, 1.0f));
+                  ImGui::PlotLines("Live SPS", sps_history.data(), static_cast<int>(sps_history.size()), 0, nullptr,
+                                    0.0f, max_sps * 1.1f, ImVec2(ImGui::CalcItemWidth(), 50));
+                  ImGui::PopStyleColor();
+
+                  float max_ms = 0.0f;
+                  for (float f : ms_history) max_ms = std::max(max_ms, f);
+
+                  ImGui::PushStyleColor(ImGuiCol_PlotLines, ImVec4(1.0f, 0.7f, 0.0f, 1.0f));
+                  ImGui::PlotLines("Time/Sample", ms_history.data(), static_cast<int>(ms_history.size()), 0, nullptr,
+                                    0.0f, max_ms * 1.1f, ImVec2(ImGui::CalcItemWidth(), 50));
+                  ImGui::PopStyleColor();
+               }
+               if (samples_per_batch && auto_accumulate)
+               {
+                  ImGui::Separator();
+                  ImGui::SliderFloat("Samples/Batch", samples_per_batch, 1.0f, 256.0f, "%.0f");
+                  ImGui::Checkbox("Auto-Accumulate (Space)", auto_accumulate);
+               }
             }
 
-            if (!sps_history.empty())
+            if (reset_headers)
+               ImGui::SetNextItemOpen(!collapse_headers);
+
+            if (ImGui::CollapsingHeader("Camera Settings", ImGuiTreeNodeFlags_DefaultOpen))
             {
-               float max_sps = 0.0f;
-               for (float f : sps_history) max_sps = std::max(max_sps, f);
-               
-               ImGui::PushStyleColor(ImGuiCol_PlotLines, ImVec4(0.0f, 1.0f, 0.0f, 1.0f));
-               ImGui::PlotLines("Live SPS", sps_history.data(), static_cast<int>(sps_history.size()), 0, nullptr,
-                                  0.0f, max_sps * 1.1f, ImVec2(ImGui::CalcItemWidth(), 50));
-               ImGui::PopStyleColor();
+               if (auto_orbit)
+               {
+                  ImGui::Checkbox("Auto-Orbit (O)", auto_orbit);
+               }
 
-               float max_ms = 0.0f;
-               for (float f : ms_history) max_ms = std::max(max_ms, f);
+               if (dof_enabled && aperture && focus_dist && fov)
+               {
+                  ImGui::Checkbox("Enable Depth of Field", dof_enabled);
+                  ImGui::SeparatorText("Lens Controls");
 
-               ImGui::PushStyleColor(ImGuiCol_PlotLines, ImVec4(1.0f, 0.7f, 0.0f, 1.0f));
-               ImGui::PlotLines("Time/Sample", ms_history.data(), static_cast<int>(ms_history.size()), 0, nullptr,
-                                  0.0f, max_ms * 1.1f, ImVec2(ImGui::CalcItemWidth(), 50));
-               ImGui::PopStyleColor();
+                  if (!(*dof_enabled)) ImGui::BeginDisabled();
+                  ImGui::SliderFloat("Aperture", aperture, 0.0f, 1.0f, "%.2f");
+                  ImGui::SliderFloat("Focus Dist", focus_dist, 0.1f, 100.0f, "%.1f");
+
+                  if (!(*dof_enabled)) ImGui::EndDisabled();
+                  ImGui::SliderFloat("FOV", fov, 10.0f, 120.0f, "%.1f deg");
+
+               }
             }
-            if (samples_per_batch && auto_accumulate)
+
+            if (reset_headers)
+               ImGui::SetNextItemOpen(!collapse_headers);
+
+            if (ImGui::CollapsingHeader("Environment & Materials", ImGuiTreeNodeFlags_DefaultOpen))
             {
+               if (light_intensity && metal_fuzziness && glass_ior)
+               {
+                  ImGui::SliderFloat("Light Intensity", light_intensity, 0.1f, 3.0f, "%.1f");
+                  ImGui::SliderFloat("Material Fuzz", metal_fuzziness, 0.0f, 5.0f, "%.2f");
+                  ImGui::SliderFloat("Glass IOR", glass_ior, 1.0f, 2.5f, "%.2f");
+               }
+            }
+
+            if (ImGui::CollapsingHeader("Controls & Help"))
+            {
+               ImGui::Text("Mouse:");
+               ImGui::BulletText("LMB: Rotate");
+               ImGui::BulletText("RMB: Pan");
+               ImGui::BulletText("Wheel: Zoom");
+
                ImGui::Separator();
-               ImGui::SliderFloat("Samples/Batch", samples_per_batch, 1.0f, 256.0f, "%.0f");
-               ImGui::Checkbox("Auto-Accumulate (Space)", auto_accumulate);
-            }
-         }
-
-         if (ImGui::CollapsingHeader("Camera Settings", ImGuiTreeNodeFlags_DefaultOpen))
-         {
-            if (auto_orbit)
-            {
-               ImGui::Checkbox("Auto-Orbit (O)", auto_orbit);
+               ImGui::Text("Keys:");
+               ImGui::BulletText("SPACE: Toggle Accumulation");
+               ImGui::BulletText("O: Auto-Orbit");
+               ImGui::BulletText("H: Toggle UI");
+               ImGui::BulletText("C: Collapse/Expand All");
+               ImGui::BulletText("Arrows: Samples/Light");
+               ImGui::BulletText("ESC: Exit");
             }
 
-            if (dof_enabled && aperture && focus_dist && fov)
-            {
-               ImGui::Checkbox("Enable Depth of Field", dof_enabled);
-               ImGui::SeparatorText("Lens Controls");
-
-               if (!(*dof_enabled)) ImGui::BeginDisabled();
-               ImGui::SliderFloat("Aperture", aperture, 0.0f, 1.0f, "%.2f");
-               ImGui::SliderFloat("Focus Dist", focus_dist, 0.1f, 100.0f, "%.1f");
-
-               if (!(*dof_enabled)) ImGui::EndDisabled();
-               ImGui::SliderFloat("FOV", fov, 10.0f, 120.0f, "%.1f deg");
-
-            }
+            // Reset the flag after all headers have been processed for this frame
+            if (reset_headers)
+               reset_headers = false;
          }
-
-         if (ImGui::CollapsingHeader("Environment & Materials", ImGuiTreeNodeFlags_DefaultOpen))
-         {
-            if (light_intensity && metal_fuzziness && glass_ior)
-            {
-               ImGui::SliderFloat("Light Intensity", light_intensity, 0.1f, 3.0f, "%.1f");
-               ImGui::SliderFloat("Material Fuzz", metal_fuzziness, 0.0f, 5.0f, "%.2f");
-               ImGui::SliderFloat("Glass IOR", glass_ior, 1.0f, 2.5f, "%.2f");
-            }
-         }
-
-         if (ImGui::CollapsingHeader("Controls & Help"))
-         {
-            ImGui::Text("Mouse:");
-            ImGui::BulletText("LMB: Rotate");
-            ImGui::BulletText("RMB: Pan");
-            ImGui::BulletText("Wheel: Zoom");
-
-            ImGui::Separator();
-            ImGui::Text("Keys:");
-            ImGui::BulletText("SPACE: Toggle Accumulation");
-            ImGui::BulletText("O: Auto-Orbit");
-            ImGui::BulletText("H: Toggle UI");
-            ImGui::BulletText("Arrows: Samples/Light");
-            ImGui::BulletText("ESC: Exit");
-         }
+         ImGui::End();
       }
-      ImGui::End();
 
       ImGui::Render();
       ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), renderer);
@@ -260,10 +276,19 @@ class SDLGuiHandler
    void toggleControls() { show_controls = !show_controls; }
    bool getShowControls() const { return show_controls; }
 
+   // Toggle header collapse state
+   void toggleHeaderCollapse() 
+   { 
+      collapse_headers = !collapse_headers; 
+      reset_headers = true; // Signal to apply the new state in the next frame
+   }
+
  private:
    int image_width;
    int image_height;
    bool show_controls; // Flag to show/hide GUI controls
+   bool collapse_headers; // Flag to collapse/expand all headers
+   bool reset_headers;    // Flag to trigger header state update
 
    SDL_Window *window;
    SDL_Renderer *renderer;
