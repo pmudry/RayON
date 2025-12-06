@@ -124,7 +124,7 @@ class SDLGuiHandler
       cleanupSDL();
    }
 
-   void updateDisplay(const vector<unsigned char> &image, int image_channels, float fps, int spp,
+   void updateDisplay(const vector<unsigned char> &image, int image_channels, float sps, float ms_per_sample, int spp,
                       bool* dof_enabled, float* aperture, float* focus_dist, float* fov,
                       float* light_intensity, float* metal_fuzziness, float* glass_ior,
                       float* samples_per_batch, bool* auto_accumulate, bool* auto_orbit)
@@ -143,27 +143,41 @@ class SDLGuiHandler
          if (ImGui::CollapsingHeader("Performance Monitoring", ImGuiTreeNodeFlags_DefaultOpen))
          {
             ImGui::Text("SPP: %d", spp);
-            ImGui::Text("FPS: %.1f", fps);
-            
+            ImGui::Text("Throughput: %.0f SPS", sps);
+            ImGui::Text("Time/Sample: %.3f ms", ms_per_sample);
+
+            sps_history.push_back(sps);
+            ms_history.push_back(ms_per_sample);
+
+            if (sps_history.size() > 500)
+            {
+               sps_history.erase(sps_history.begin());
+               ms_history.erase(ms_history.begin());
+            }
+
+            if (!sps_history.empty())
+            {
+               float max_sps = 0.0f;
+               for (float f : sps_history) max_sps = std::max(max_sps, f);
+               
+               ImGui::PushStyleColor(ImGuiCol_PlotLines, ImVec4(0.0f, 1.0f, 0.0f, 1.0f));
+               ImGui::PlotLines("Live SPS", sps_history.data(), static_cast<int>(sps_history.size()), 0, nullptr,
+                                  0.0f, max_sps * 1.1f, ImVec2(ImGui::CalcItemWidth(), 50));
+               ImGui::PopStyleColor();
+
+               float max_ms = 0.0f;
+               for (float f : ms_history) max_ms = std::max(max_ms, f);
+
+               ImGui::PushStyleColor(ImGuiCol_PlotLines, ImVec4(1.0f, 0.7f, 0.0f, 1.0f));
+               ImGui::PlotLines("Time/Sample", ms_history.data(), static_cast<int>(ms_history.size()), 0, nullptr,
+                                  0.0f, max_ms * 1.1f, ImVec2(ImGui::CalcItemWidth(), 50));
+               ImGui::PopStyleColor();
+            }
             if (samples_per_batch && auto_accumulate)
             {
                ImGui::Separator();
                ImGui::SliderFloat("Samples/Batch", samples_per_batch, 1.0f, 256.0f, "%.0f");
                ImGui::Checkbox("Auto-Accumulate (Space)", auto_accumulate);
-            }
-
-            fps_history.push_back(fps);
-            if (fps_history.size() > 500)                                                                                                                       
-            {
-               fps_history.erase(fps_history.begin());
-               
-            }
-            if (!fps_history.empty())                                                                                                                           
-            {
-               float max_fps = 0.0f;
-               for (float f : fps_history)                                                                                                                        max_fps = std::max(max_fps, f);
-               ImGui::PlotLines("Live FPS", fps_history.data(), static_cast<int>(fps_history.size()), 0, nullptr,
-                                  0.0f,                                          max_fps * 1.1f, ImVec2(200, 80));
             }
          }
 
@@ -256,7 +270,8 @@ class SDLGuiHandler
    SDL_Texture *texture;
    SDL_Texture *logo_texture;
    SDL_Rect logo_rect;
-   std::vector<float> fps_history;
+   std::vector<float> sps_history;
+   std::vector<float> ms_history;
 
    static void cleanupSDL()
    {
