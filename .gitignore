@@ -41,3 +41,7 @@ Makefile
 *.nvcache
 *.nvlog
 *.ppm
+
+# 3D Model Files
+*.obj
+*.mtl

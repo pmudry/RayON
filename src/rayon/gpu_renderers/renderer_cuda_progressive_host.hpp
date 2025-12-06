@@ -114,7 +114,7 @@ class RendererCUDAProgressive : public IRenderer
           }
           std::sort(scene_files.begin(), scene_files.end());
       } catch (const std::exception& e) {
-          cerr << "Error scanning scenes: " << e.what() << endl;
+          cerr << "Error scanning scenes: " << e.what() << std::endl;
       }
       int current_file_index = -1;
 
@@ -136,7 +136,8 @@ class RendererCUDAProgressive : public IRenderer
       bool needs_rerender = false;
       bool force_immediate_render = false; // Flag to force rendering immediately after state change
       float samples_per_batch_float = static_cast<float>(samples_per_batch); // Float version for slider
-      float current_fps = 0.0f; // Track FPS for UI
+      float current_sps = 0.0f;           // Track Samples Per Second for UI
+      float current_ms_per_sample = 0.0f; // Track Time Per Sample for UI
 
       // Motion detection for adaptive quality
       bool is_camera_moving = false;
@@ -264,6 +265,10 @@ class RendererCUDAProgressive : public IRenderer
                   force_immediate_render = true;
                   camera_changed = true;
                   applySceneSettings(); // Re-apply generic settings
+               }
+               else if (event.key.keysym.sym == SDLK_c)
+               {
+                  gui.toggleHeaderCollapse();
                }
                else if (event.key.keysym.sym == SDLK_r)
                {
@@ -413,7 +418,12 @@ class RendererCUDAProgressive : public IRenderer
             // Measure frame time and adapt sample rate for next frame
             auto frame_end = std::chrono::high_resolution_clock::now();
             std::chrono::duration<float, std::milli> frame_time = frame_end - frame_start;
-            current_fps = 1000.0f / frame_time.count();
+            
+            if (frame_time.count() > 0.0f)
+            {
+               current_sps = (static_cast<float>(adaptive_samples_per_batch) * 1000.0f) / frame_time.count();
+               current_ms_per_sample = frame_time.count() / static_cast<float>(adaptive_samples_per_batch);
+            }
 
             // Adaptive adjustment only during motion
             if (is_camera_moving)
@@ -436,16 +446,17 @@ class RendererCUDAProgressive : public IRenderer
          float old_focus = dof_focus_distance;
          float old_fov = fov;
          float old_light = light_intensity;
+         float old_background = background_intensity;
          float old_fuzz = metal_fuzziness;
          float old_ior = glass_refraction_index;
 
          bool load_scene_request = false;
 
          displayFrame(
-             gui, display_image, current_samples, &samples_per_batch_float, &light_intensity, background_intensity,
+             gui, display_image, current_samples, &samples_per_batch_float, &light_intensity, &background_intensity,
              &metal_fuzziness, &glass_refraction_index, &accumulation_enabled, camera_control, &dof_enabled,
              &dof_aperture, &dof_focus_distance, &fov, 
-             image_channels, current_fps,
+             image_channels, current_sps, current_ms_per_sample,
              scene_files, &current_file_index, &load_scene_request);
 
          if (load_scene_request && !scene_files.empty() && current_file_index >= 0 && current_file_index < static_cast<int>(scene_files.size()))
@@ -484,7 +495,7 @@ class RendererCUDAProgressive : public IRenderer
 
          // Check for changes from UI
          if (dof_enabled != old_dof || dof_aperture != old_aperture || dof_focus_distance != old_focus || fov != old_fov ||
-             light_intensity != old_light || metal_fuzziness != old_fuzz || glass_refraction_index != old_ior)
+             light_intensity != old_light || background_intensity != old_background || metal_fuzziness != old_fuzz || glass_refraction_index != old_ior)
          {
             camera_changed = true;
             applySceneSettings();
@@ -598,17 +609,17 @@ class RendererCUDAProgressive : public IRenderer
     * @brief Update the display with current frame and UI
     */
    void displayFrame(SDLGuiHandler &gui, const vector<unsigned char> &display_image, int current_samples,
-                     float* samples_per_batch, float* light_intensity, float background_intensity, float* metal_fuzziness,
+                     float* samples_per_batch, float* light_intensity, float* background_intensity, float* metal_fuzziness,
                      float* glass_refraction_index, bool* accumulation_enabled, CameraControlHandler& camera_control, bool* dof_enabled,
                      float* dof_aperture, float* dof_focus_distance, float* fov,
-                     int image_channels, float fps,
+                     int image_channels, float sps, float ms_per_sample,
                      const std::vector<std::string>& scene_files, int* current_scene_idx, bool* load_scene_request)
    {
       bool is_orbiting = camera_control.isAutoOrbitEnabled();
 
-      gui.updateDisplay(display_image, image_channels, fps, current_samples,
+      gui.updateDisplay(display_image, image_channels, sps, ms_per_sample, current_samples,
                         dof_enabled, dof_aperture, dof_focus_distance, fov,
-                        light_intensity, metal_fuzziness, glass_refraction_index,
+                        light_intensity, background_intensity, metal_fuzziness, glass_refraction_index,
                         samples_per_batch, accumulation_enabled, &is_orbiting,
                         scene_files, current_scene_idx, load_scene_request);
       

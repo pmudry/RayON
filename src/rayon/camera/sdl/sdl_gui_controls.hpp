@@ -58,30 +58,6 @@ class CameraControlHandler
          toggleAutoOrbit();
          return true;
       }
-      else if (event.key.keysym.sym == SDLK_UP)
-      {
-         // Increase samples per batch (capped at 256)
-         samples_per_batch = std::min(256.0f, samples_per_batch + 1.0f);
-         return true;
-      }
-      else if (event.key.keysym.sym == SDLK_DOWN)
-      {
-         // Decrease samples per batch (minimum 1)
-         samples_per_batch = std::max(1.0f, samples_per_batch - 1.0f);
-         return true;
-      }
-      else if (event.key.keysym.sym == SDLK_RIGHT)
-      {
-         light_intensity = std::min(3.0f, light_intensity + 0.1f);
-         camera_changed = true;
-         return true;
-      }
-      else if (event.key.keysym.sym == SDLK_LEFT)
-      {
-         light_intensity = std::max(0.1f, light_intensity - 0.1f);
-         camera_changed = true;
-         return true;
-      }
       return false;
    }
 

@@ -39,7 +39,7 @@ class SDLGuiHandler
 {
  public:
    SDLGuiHandler(int image_width, int image_height)
-       : image_width(image_width), image_height(image_height), show_controls(true), window(nullptr), renderer(nullptr),
+       : image_width(image_width), image_height(image_height), show_controls(true), collapse_headers(false), reset_headers(false), window(nullptr), renderer(nullptr),
          texture(nullptr), logo_texture(nullptr)
    {
    }
@@ -93,6 +93,11 @@ class SDLGuiHandler
       (void)io;
       io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
       ImGui::StyleColorsDark();
+      
+      // Customize style for transparency
+      ImGuiStyle& style = ImGui::GetStyle();
+      style.Colors[ImGuiCol_WindowBg].w = 0.35f;
+      
       ImGui_ImplSDL2_InitForSDLRenderer(window, renderer);
       ImGui_ImplSDLRenderer2_Init(renderer);
       return true;
@@ -124,9 +129,9 @@ class SDLGuiHandler
       cleanupSDL();
    }
 
-   void updateDisplay(const vector<unsigned char> &image, int image_channels, float fps, int spp,
+   void updateDisplay(const vector<unsigned char> &image, int image_channels, float sps, float ms_per_sample, int spp,
                       bool* dof_enabled, float* aperture, float* focus_dist, float* fov,
-                      float* light_intensity, float* metal_fuzziness, float* glass_ior,
+                      float* light_intensity, float* background_intensity, float* metal_fuzziness, float* glass_ior,
                       float* samples_per_batch, bool* auto_accumulate, bool* auto_orbit,
                       const std::vector<std::string>& scene_files, int* current_scene_idx, bool* load_scene_request)
    {
@@ -138,125 +143,155 @@ class SDLGuiHandler
       ImGui_ImplSDL2_NewFrame();
       ImGui::NewFrame();
 
-      ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
-      if (ImGui::Begin("RayOn - interactive UI ", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+      if (show_controls)
       {
-         if (ImGui::CollapsingHeader("Scene Selection", ImGuiTreeNodeFlags_DefaultOpen))
+         ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
+         if (ImGui::Begin("RayOn - interactive UI ", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove))
          {
-             if (current_scene_idx && !scene_files.empty())
+             if (ImGui::CollapsingHeader("Scene Selection", ImGuiTreeNodeFlags_DefaultOpen))
              {
-                 // Extract filename for display
-                 std::string current_name = "Select Scene";
-                 if (*current_scene_idx >= 0 && *current_scene_idx < static_cast<int>(scene_files.size()))
+                 if (current_scene_idx && !scene_files.empty())
                  {
-                     size_t last_slash = scene_files[*current_scene_idx].find_last_of("/\\");
-                     current_name = (last_slash == std::string::npos) ? scene_files[*current_scene_idx] : scene_files[*current_scene_idx].substr(last_slash + 1);
-                 }
-
-                 if (ImGui::BeginCombo("Scene", current_name.c_str()))
-                 {
-                     for (int i = 0; i < static_cast<int>(scene_files.size()); i++)
+                     // Extract filename for display
+                     std::string current_name = "Select Scene";
+                     if (*current_scene_idx >= 0 && *current_scene_idx < static_cast<int>(scene_files.size()))
                      {
-                         const bool is_selected = (*current_scene_idx == i);
-                         
-                         size_t last_slash = scene_files[i].find_last_of("/\\");
-                         std::string name = (last_slash == std::string::npos) ? scene_files[i] : scene_files[i].substr(last_slash + 1);
-
-                         if (ImGui::Selectable(name.c_str(), is_selected))
-                         {
-                             *current_scene_idx = i;
-                             if (load_scene_request) *load_scene_request = true;
-                         }
-
-                         // Set the initial focus when opening the combo (scrolling + keyboard navigation focus)
-                         if (is_selected)
-                             ImGui::SetItemDefaultFocus();
+                         size_t last_slash = scene_files[*current_scene_idx].find_last_of("/\\");
+                         current_name = (last_slash == std::string::npos) ? scene_files[*current_scene_idx] : scene_files[*current_scene_idx].substr(last_slash + 1);
                      }
-                     ImGui::EndCombo();
+
+                     if (ImGui::BeginCombo("Scene", current_name.c_str()))
+                     {
+                         for (int i = 0; i < static_cast<int>(scene_files.size()); i++)
+                         {
+                             const bool is_selected = (*current_scene_idx == i);
+                             
+                             size_t last_slash = scene_files[i].find_last_of("/\\");
+                             std::string name = (last_slash == std::string::npos) ? scene_files[i] : scene_files[i].substr(last_slash + 1);
+
+                             if (ImGui::Selectable(name.c_str(), is_selected))
+                             {
+                                 *current_scene_idx = i;
+                                 if (load_scene_request) *load_scene_request = true;
+                             }
+
+                             // Set the initial focus when opening the combo (scrolling + keyboard navigation focus)
+                             if (is_selected)
+                                 ImGui::SetItemDefaultFocus();
+                         }
+                         ImGui::EndCombo();
+                     }
+                 }
+                 else
+                 {
+                     ImGui::TextDisabled("No scenes found");
                  }
              }
-             else
-             {
-                 ImGui::TextDisabled("No scenes found");
-             }
-         }
 
-         if (ImGui::CollapsingHeader("Performance Monitoring", ImGuiTreeNodeFlags_DefaultOpen))
-         {
-            ImGui::Text("SPP: %d", spp);
-            ImGui::Text("FPS: %.1f", fps);
-            
-            if (samples_per_batch && auto_accumulate)
+            if (reset_headers)
+               ImGui::SetNextItemOpen(!collapse_headers);
+            if (ImGui::CollapsingHeader("Performance Monitoring", ImGuiTreeNodeFlags_DefaultOpen))
             {
+               ImGui::Text("SPP: %d", spp);
+               ImGui::Text("Throughput: %.0f SPS", sps);
+               ImGui::Text("Time/Sample: %.3f ms", ms_per_sample);
+
+               sps_history.push_back(sps);
+               ms_history.push_back(ms_per_sample);
+
+               if (sps_history.size() > 500)
+               {
+                  sps_history.erase(sps_history.begin());
+                  ms_history.erase(ms_history.begin());
+               }
+
+               if (!sps_history.empty())
+               {
+                  float max_sps = 0.0f;
+                  for (float f : sps_history) max_sps = std::max(max_sps, f);
+                  
+                  ImGui::PushStyleColor(ImGuiCol_PlotLines, ImVec4(0.0f, 1.0f, 0.0f, 1.0f));
+                  ImGui::PlotLines("Live SPS", sps_history.data(), static_cast<int>(sps_history.size()), 0, nullptr,
+                                    0.0f, max_sps * 1.1f, ImVec2(ImGui::CalcItemWidth(), 50));
+                  ImGui::PopStyleColor();
+
+                  float max_ms = 0.0f;
+                  for (float f : ms_history) max_ms = std::max(max_ms, f);
+
+                  ImGui::PushStyleColor(ImGuiCol_PlotLines, ImVec4(1.0f, 0.7f, 0.0f, 1.0f));
+                  ImGui::PlotLines("Time/Sample", ms_history.data(), static_cast<int>(ms_history.size()), 0, nullptr,
+                                    0.0f, max_ms * 1.1f, ImVec2(ImGui::CalcItemWidth(), 50));
+                  ImGui::PopStyleColor();
+               }
+               if (samples_per_batch && auto_accumulate)
+               {
+                  ImGui::Separator();
+                  ImGui::SliderFloat("Samples/Batch", samples_per_batch, 1.0f, 256.0f, "%.0f");
+                  ImGui::Checkbox("Auto-Accumulate (Space)", auto_accumulate);
+               }
+            }
+
+            if (reset_headers)
+               ImGui::SetNextItemOpen(!collapse_headers);
+
+            if (ImGui::CollapsingHeader("Camera Settings", ImGuiTreeNodeFlags_DefaultOpen))
+            {
+               if (auto_orbit)
+               {
+                  ImGui::Checkbox("Auto-Orbit (O)", auto_orbit);
+               }
+
+               if (dof_enabled && aperture && focus_dist && fov)
+               {
+                  ImGui::Checkbox("Enable Depth of Field", dof_enabled);
+                  ImGui::SeparatorText("Lens Controls");
+
+                  if (!(*dof_enabled)) ImGui::BeginDisabled();
+                  ImGui::SliderFloat("Aperture", aperture, 0.0f, 1.0f, "%.2f");
+                  ImGui::SliderFloat("Focus Dist", focus_dist, 0.1f, 100.0f, "%.1f");
+
+                  if (!(*dof_enabled)) ImGui::EndDisabled();
+                  ImGui::SliderFloat("FOV", fov, 10.0f, 120.0f, "%.1f deg");
+
+               }
+            }
+
+            if (reset_headers)
+               ImGui::SetNextItemOpen(!collapse_headers);
+
+            if (ImGui::CollapsingHeader("Environment & Materials", ImGuiTreeNodeFlags_DefaultOpen))
+            {
+               if (light_intensity && background_intensity && metal_fuzziness && glass_ior)
+               {
+                  ImGui::SliderFloat("Light Intensity", light_intensity, 0.1f, 3.0f, "%.1f");
+                  ImGui::SliderFloat("Background Intensity", background_intensity, 0.0f, 5.0f, "%.2f");
+                  ImGui::SliderFloat("Material Fuzz", metal_fuzziness, 0.0f, 5.0f, "%.2f");
+                  ImGui::SliderFloat("Glass IOR", glass_ior, 1.0f, 2.5f, "%.2f");
+               }
+            }
+
+            if (ImGui::CollapsingHeader("Controls & Help"))
+            {
+               ImGui::Text("Mouse:");
+               ImGui::BulletText("LMB: Rotate");
+               ImGui::BulletText("RMB: Pan");
+               ImGui::BulletText("Wheel: Zoom");
+
                ImGui::Separator();
-               ImGui::SliderFloat("Samples/Batch", samples_per_batch, 1.0f, 256.0f, "%.0f");
-               ImGui::Checkbox("Auto-Accumulate (Space)", auto_accumulate);
+               ImGui::Text("Keys:");
+               ImGui::BulletText("SPACE: Toggle Accumulation");
+               ImGui::BulletText("O: Auto-Orbit");
+               ImGui::BulletText("H: Toggle UI");
+               ImGui::BulletText("C: Collapse/Expand All");
+               ImGui::BulletText("ESC: Exit");
             }
 
-            fps_history.push_back(fps);
-            if (fps_history.size() > 500)                                                                                                                       
-            {
-               fps_history.erase(fps_history.begin());
-               
-            }
-            if (!fps_history.empty())                                                                                                                           
-            {
-               float max_fps = 0.0f;
-               for (float f : fps_history)                                                                                                                        max_fps = std::max(max_fps, f);
-               ImGui::PlotLines("Live FPS", fps_history.data(), static_cast<int>(fps_history.size()), 0, nullptr,
-                                  0.0f,                                          max_fps * 1.1f, ImVec2(200, 80));
-            }
+            // Reset the flag after all headers have been processed for this frame
+            if (reset_headers)
+               reset_headers = false;
          }
-
-         if (ImGui::CollapsingHeader("Camera Settings", ImGuiTreeNodeFlags_DefaultOpen))
-         {
-            if (auto_orbit)
-            {
-               ImGui::Checkbox("Auto-Orbit (O)", auto_orbit);
-            }
-
-            if (dof_enabled && aperture && focus_dist && fov)
-            {
-               ImGui::Checkbox("Enable Depth of Field", dof_enabled);
-               ImGui::SeparatorText("Lens Controls");
-
-               if (!(*dof_enabled)) ImGui::BeginDisabled();
-               ImGui::SliderFloat("Aperture", aperture, 0.0f, 1.0f, "%.2f");
-               ImGui::SliderFloat("Focus Dist", focus_dist, 0.1f, 100.0f, "%.1f");
-
-               if (!(*dof_enabled)) ImGui::EndDisabled();
-               ImGui::SliderFloat("FOV", fov, 10.0f, 120.0f, "%.1f deg");
-
-            }
-         }
-
-         if (ImGui::CollapsingHeader("Environment & Materials", ImGuiTreeNodeFlags_DefaultOpen))
-         {
-            if (light_intensity && metal_fuzziness && glass_ior)
-            {
-               ImGui::SliderFloat("Light Intensity", light_intensity, 0.1f, 3.0f, "%.1f");
-               ImGui::SliderFloat("Material Fuzz", metal_fuzziness, 0.0f, 5.0f, "%.2f");
-               ImGui::SliderFloat("Glass IOR", glass_ior, 1.0f, 2.5f, "%.2f");
-            }
-         }
-
-         if (ImGui::CollapsingHeader("Controls & Help"))
-         {
-            ImGui::Text("Mouse:");
-            ImGui::BulletText("LMB: Rotate");
-            ImGui::BulletText("RMB: Pan");
-            ImGui::BulletText("Wheel: Zoom");
-
-            ImGui::Separator();
-            ImGui::Text("Keys:");
-            ImGui::BulletText("SPACE: Toggle Accumulation");
-            ImGui::BulletText("O: Auto-Orbit");
-            ImGui::BulletText("H: Toggle UI");
-            ImGui::BulletText("Arrows: Samples/Light");
-            ImGui::BulletText("ESC: Exit");
-         }
+         ImGui::End();
       }
-      ImGui::End();
 
       ImGui::Render();
       ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), renderer);
@@ -287,17 +322,27 @@ class SDLGuiHandler
    void toggleControls() { show_controls = !show_controls; }
    bool getShowControls() const { return show_controls; }
 
+   // Toggle header collapse state
+   void toggleHeaderCollapse() 
+   { 
+      collapse_headers = !collapse_headers; 
+      reset_headers = true; // Signal to apply the new state in the next frame
+   }
+
  private:
    int image_width;
    int image_height;
    bool show_controls; // Flag to show/hide GUI controls
+   bool collapse_headers; // Flag to collapse/expand all headers
+   bool reset_headers;    // Flag to trigger header state update
 
    SDL_Window *window;
    SDL_Renderer *renderer;
    SDL_Texture *texture;
    SDL_Texture *logo_texture;
    SDL_Rect logo_rect;
-   std::vector<float> fps_history;
+   std::vector<float> sps_history;
+   std::vector<float> ms_history;
 
    static void cleanupSDL()
    {
