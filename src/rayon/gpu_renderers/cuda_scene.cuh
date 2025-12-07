@@ -192,6 +192,38 @@ struct BVHNode
 };
 
 //==============================================================================
+// MESH STRUCTURES
+//==============================================================================
+
+/**
+ * @brief Compact triangle structure for mesh storage
+ */
+struct MeshTriangle
+{
+   f3 v0, v1, v2;
+   f3 n0, n1, n2;
+   bool has_normals;
+};
+
+/**
+ * @brief GPU mesh structure containing its own BVH and triangle data
+ */
+struct Mesh
+{
+   MeshTriangle *triangles;
+   BVHNode *bvh_nodes;
+   
+   int num_triangles;
+   int num_bvh_nodes;
+   int bvh_root_idx;
+
+   __host__ __device__ Mesh() 
+      : triangles(nullptr), bvh_nodes(nullptr), 
+        num_triangles(0), num_bvh_nodes(0), bvh_root_idx(-1) 
+   {}
+};
+
+//==============================================================================
 // COMPLETE GPU SCENE
 //==============================================================================
 
@@ -205,11 +237,13 @@ struct alignas(128) Scene
    Material *materials;
    Geometry *geometries;
    BVHNode *bvh_nodes;
+   Mesh *meshes;
 
    // Counts
    int num_materials;
    int num_geometries;
    int num_bvh_nodes;
+   int num_meshes;
 
    // Scene-level BVH
    int bvh_root_idx;

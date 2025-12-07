@@ -1,0 +1,2535 @@
+geometry:
+- corner: [-2.0, 0.0, -2.0]
+  material: floor_mat
+  type: rectangle
+  u: [4.0, 0.0, 0.0]
+  v: [0.0, 0.0, 4.0]
+- corner: [-0.5, 3.5, -0.5]
+  material: light
+  type: rectangle
+  u: [1.0, 0.0, 0.0]
+  v: [0.0, 0.0, 1.0]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [1.0, 0.0, 0.0]
+  v2: [0.999684, 0.0, 0.02513]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.999684, 0.0, 0.02513]
+  v2: [0.998737, 0.0, 0.050244]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.998737, 0.0, 0.050244]
+  v2: [0.997159, 0.0, 0.075327]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.997159, 0.0, 0.075327]
+  v2: [0.994951, 0.0, 0.100362]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.994951, 0.0, 0.100362]
+  v2: [0.992115, 0.0, 0.125333]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.992115, 0.0, 0.125333]
+  v2: [0.988652, 0.0, 0.150226]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.988652, 0.0, 0.150226]
+  v2: [0.984564, 0.0, 0.175023]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.984564, 0.0, 0.175023]
+  v2: [0.979855, 0.0, 0.19971]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.979855, 0.0, 0.19971]
+  v2: [0.974527, 0.0, 0.224271]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.974527, 0.0, 0.224271]
+  v2: [0.968583, 0.0, 0.24869]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.968583, 0.0, 0.24869]
+  v2: [0.962028, 0.0, 0.272952]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.962028, 0.0, 0.272952]
+  v2: [0.954865, 0.0, 0.297042]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.954865, 0.0, 0.297042]
+  v2: [0.947098, 0.0, 0.320944]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.947098, 0.0, 0.320944]
+  v2: [0.938734, 0.0, 0.344643]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.938734, 0.0, 0.344643]
+  v2: [0.929776, 0.0, 0.368125]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.929776, 0.0, 0.368125]
+  v2: [0.920232, 0.0, 0.391374]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.920232, 0.0, 0.391374]
+  v2: [0.910106, 0.0, 0.414376]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.910106, 0.0, 0.414376]
+  v2: [0.899405, 0.0, 0.437116]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.899405, 0.0, 0.437116]
+  v2: [0.888136, 0.0, 0.45958]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.888136, 0.0, 0.45958]
+  v2: [0.876307, 0.0, 0.481754]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.876307, 0.0, 0.481754]
+  v2: [0.863923, 0.0, 0.503623]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.863923, 0.0, 0.503623]
+  v2: [0.850994, 0.0, 0.525175]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.850994, 0.0, 0.525175]
+  v2: [0.837528, 0.0, 0.546394]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.837528, 0.0, 0.546394]
+  v2: [0.823533, 0.0, 0.567269]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.823533, 0.0, 0.567269]
+  v2: [0.809017, 0.0, 0.587785]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.809017, 0.0, 0.587785]
+  v2: [0.79399, 0.0, 0.60793]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.79399, 0.0, 0.60793]
+  v2: [0.778462, 0.0, 0.627691]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.778462, 0.0, 0.627691]
+  v2: [0.762443, 0.0, 0.647056]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.762443, 0.0, 0.647056]
+  v2: [0.745941, 0.0, 0.666012]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.745941, 0.0, 0.666012]
+  v2: [0.728969, 0.0, 0.684547]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.728969, 0.0, 0.684547]
+  v2: [0.711536, 0.0, 0.70265]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.711536, 0.0, 0.70265]
+  v2: [0.693653, 0.0, 0.720309]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.693653, 0.0, 0.720309]
+  v2: [0.675333, 0.0, 0.737513]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.675333, 0.0, 0.737513]
+  v2: [0.656586, 0.0, 0.754251]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.656586, 0.0, 0.754251]
+  v2: [0.637424, 0.0, 0.770513]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.637424, 0.0, 0.770513]
+  v2: [0.61786, 0.0, 0.786288]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.61786, 0.0, 0.786288]
+  v2: [0.597905, 0.0, 0.801567]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.597905, 0.0, 0.801567]
+  v2: [0.577573, 0.0, 0.816339]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.577573, 0.0, 0.816339]
+  v2: [0.556876, 0.0, 0.830596]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.556876, 0.0, 0.830596]
+  v2: [0.535827, 0.0, 0.844328]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.535827, 0.0, 0.844328]
+  v2: [0.51444, 0.0, 0.857527]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.51444, 0.0, 0.857527]
+  v2: [0.492727, 0.0, 0.870184]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.492727, 0.0, 0.870184]
+  v2: [0.470704, 0.0, 0.882291]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.470704, 0.0, 0.882291]
+  v2: [0.448383, 0.0, 0.893841]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.448383, 0.0, 0.893841]
+  v2: [0.425779, 0.0, 0.904827]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.425779, 0.0, 0.904827]
+  v2: [0.402906, 0.0, 0.915241]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.402906, 0.0, 0.915241]
+  v2: [0.379779, 0.0, 0.925077]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.379779, 0.0, 0.925077]
+  v2: [0.356412, 0.0, 0.934329]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.356412, 0.0, 0.934329]
+  v2: [0.33282, 0.0, 0.942991]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.33282, 0.0, 0.942991]
+  v2: [0.309017, 0.0, 0.951057]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.309017, 0.0, 0.951057]
+  v2: [0.285019, 0.0, 0.958522]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.285019, 0.0, 0.958522]
+  v2: [0.260842, 0.0, 0.965382]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.260842, 0.0, 0.965382]
+  v2: [0.236499, 0.0, 0.971632]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.236499, 0.0, 0.971632]
+  v2: [0.212007, 0.0, 0.977268]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.212007, 0.0, 0.977268]
+  v2: [0.187381, 0.0, 0.982287]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.187381, 0.0, 0.982287]
+  v2: [0.162637, 0.0, 0.986686]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.162637, 0.0, 0.986686]
+  v2: [0.13779, 0.0, 0.990461]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.13779, 0.0, 0.990461]
+  v2: [0.112856, 0.0, 0.993611]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.112856, 0.0, 0.993611]
+  v2: [0.087851, 0.0, 0.996134]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.087851, 0.0, 0.996134]
+  v2: [0.062791, 0.0, 0.998027]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.062791, 0.0, 0.998027]
+  v2: [0.03769, 0.0, 0.999289]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.03769, 0.0, 0.999289]
+  v2: [0.012566, 0.0, 0.999921]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.012566, 0.0, 0.999921]
+  v2: [-0.012566, 0.0, 0.999921]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.012566, 0.0, 0.999921]
+  v2: [-0.03769, 0.0, 0.999289]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.03769, 0.0, 0.999289]
+  v2: [-0.062791, 0.0, 0.998027]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.062791, 0.0, 0.998027]
+  v2: [-0.087851, 0.0, 0.996134]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.087851, 0.0, 0.996134]
+  v2: [-0.112856, 0.0, 0.993611]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.112856, 0.0, 0.993611]
+  v2: [-0.13779, 0.0, 0.990461]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.13779, 0.0, 0.990461]
+  v2: [-0.162637, 0.0, 0.986686]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.162637, 0.0, 0.986686]
+  v2: [-0.187381, 0.0, 0.982287]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.187381, 0.0, 0.982287]
+  v2: [-0.212007, 0.0, 0.977268]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.212007, 0.0, 0.977268]
+  v2: [-0.236499, 0.0, 0.971632]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.236499, 0.0, 0.971632]
+  v2: [-0.260842, 0.0, 0.965382]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.260842, 0.0, 0.965382]
+  v2: [-0.285019, 0.0, 0.958522]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.285019, 0.0, 0.958522]
+  v2: [-0.309017, 0.0, 0.951057]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.309017, 0.0, 0.951057]
+  v2: [-0.33282, 0.0, 0.942991]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.33282, 0.0, 0.942991]
+  v2: [-0.356412, 0.0, 0.934329]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.356412, 0.0, 0.934329]
+  v2: [-0.379779, 0.0, 0.925077]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.379779, 0.0, 0.925077]
+  v2: [-0.402906, 0.0, 0.915241]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.402906, 0.0, 0.915241]
+  v2: [-0.425779, 0.0, 0.904827]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.425779, 0.0, 0.904827]
+  v2: [-0.448383, 0.0, 0.893841]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.448383, 0.0, 0.893841]
+  v2: [-0.470704, 0.0, 0.882291]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.470704, 0.0, 0.882291]
+  v2: [-0.492727, 0.0, 0.870184]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.492727, 0.0, 0.870184]
+  v2: [-0.51444, 0.0, 0.857527]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.51444, 0.0, 0.857527]
+  v2: [-0.535827, 0.0, 0.844328]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.535827, 0.0, 0.844328]
+  v2: [-0.556876, 0.0, 0.830596]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.556876, 0.0, 0.830596]
+  v2: [-0.577573, 0.0, 0.816339]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.577573, 0.0, 0.816339]
+  v2: [-0.597905, 0.0, 0.801567]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.597905, 0.0, 0.801567]
+  v2: [-0.61786, 0.0, 0.786288]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.61786, 0.0, 0.786288]
+  v2: [-0.637424, 0.0, 0.770513]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.637424, 0.0, 0.770513]
+  v2: [-0.656586, 0.0, 0.754251]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.656586, 0.0, 0.754251]
+  v2: [-0.675333, 0.0, 0.737513]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.675333, 0.0, 0.737513]
+  v2: [-0.693653, 0.0, 0.720309]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.693653, 0.0, 0.720309]
+  v2: [-0.711536, 0.0, 0.70265]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.711536, 0.0, 0.70265]
+  v2: [-0.728969, 0.0, 0.684547]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.728969, 0.0, 0.684547]
+  v2: [-0.745941, 0.0, 0.666012]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.745941, 0.0, 0.666012]
+  v2: [-0.762443, 0.0, 0.647056]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.762443, 0.0, 0.647056]
+  v2: [-0.778462, 0.0, 0.627691]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.778462, 0.0, 0.627691]
+  v2: [-0.79399, 0.0, 0.60793]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.79399, 0.0, 0.60793]
+  v2: [-0.809017, 0.0, 0.587785]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.809017, 0.0, 0.587785]
+  v2: [-0.823533, 0.0, 0.567269]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.823533, 0.0, 0.567269]
+  v2: [-0.837528, 0.0, 0.546394]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.837528, 0.0, 0.546394]
+  v2: [-0.850994, 0.0, 0.525175]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.850994, 0.0, 0.525175]
+  v2: [-0.863923, 0.0, 0.503623]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.863923, 0.0, 0.503623]
+  v2: [-0.876307, 0.0, 0.481754]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.876307, 0.0, 0.481754]
+  v2: [-0.888136, 0.0, 0.45958]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.888136, 0.0, 0.45958]
+  v2: [-0.899405, 0.0, 0.437116]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.899405, 0.0, 0.437116]
+  v2: [-0.910106, 0.0, 0.414376]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.910106, 0.0, 0.414376]
+  v2: [-0.920232, 0.0, 0.391374]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.920232, 0.0, 0.391374]
+  v2: [-0.929776, 0.0, 0.368125]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.929776, 0.0, 0.368125]
+  v2: [-0.938734, 0.0, 0.344643]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.938734, 0.0, 0.344643]
+  v2: [-0.947098, 0.0, 0.320944]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.947098, 0.0, 0.320944]
+  v2: [-0.954865, 0.0, 0.297042]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.954865, 0.0, 0.297042]
+  v2: [-0.962028, 0.0, 0.272952]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.962028, 0.0, 0.272952]
+  v2: [-0.968583, 0.0, 0.24869]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.968583, 0.0, 0.24869]
+  v2: [-0.974527, 0.0, 0.224271]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.974527, 0.0, 0.224271]
+  v2: [-0.979855, 0.0, 0.19971]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.979855, 0.0, 0.19971]
+  v2: [-0.984564, 0.0, 0.175023]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.984564, 0.0, 0.175023]
+  v2: [-0.988652, 0.0, 0.150226]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.988652, 0.0, 0.150226]
+  v2: [-0.992115, 0.0, 0.125333]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.992115, 0.0, 0.125333]
+  v2: [-0.994951, 0.0, 0.100362]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.994951, 0.0, 0.100362]
+  v2: [-0.997159, 0.0, 0.075327]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.997159, 0.0, 0.075327]
+  v2: [-0.998737, 0.0, 0.050244]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.998737, 0.0, 0.050244]
+  v2: [-0.999684, 0.0, 0.02513]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.999684, 0.0, 0.02513]
+  v2: [-1.0, 0.0, 0.0]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-1.0, 0.0, 0.0]
+  v2: [-0.999684, 0.0, -0.02513]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.999684, 0.0, -0.02513]
+  v2: [-0.998737, 0.0, -0.050244]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.998737, 0.0, -0.050244]
+  v2: [-0.997159, 0.0, -0.075327]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.997159, 0.0, -0.075327]
+  v2: [-0.994951, 0.0, -0.100362]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.994951, 0.0, -0.100362]
+  v2: [-0.992115, 0.0, -0.125333]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.992115, 0.0, -0.125333]
+  v2: [-0.988652, 0.0, -0.150226]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.988652, 0.0, -0.150226]
+  v2: [-0.984564, 0.0, -0.175023]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.984564, 0.0, -0.175023]
+  v2: [-0.979855, 0.0, -0.19971]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.979855, 0.0, -0.19971]
+  v2: [-0.974527, 0.0, -0.224271]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.974527, 0.0, -0.224271]
+  v2: [-0.968583, 0.0, -0.24869]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.968583, 0.0, -0.24869]
+  v2: [-0.962028, 0.0, -0.272952]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.962028, 0.0, -0.272952]
+  v2: [-0.954865, 0.0, -0.297042]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.954865, 0.0, -0.297042]
+  v2: [-0.947098, 0.0, -0.320944]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.947098, 0.0, -0.320944]
+  v2: [-0.938734, 0.0, -0.344643]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.938734, 0.0, -0.344643]
+  v2: [-0.929776, 0.0, -0.368125]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.929776, 0.0, -0.368125]
+  v2: [-0.920232, 0.0, -0.391374]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.920232, 0.0, -0.391374]
+  v2: [-0.910106, 0.0, -0.414376]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.910106, 0.0, -0.414376]
+  v2: [-0.899405, 0.0, -0.437116]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.899405, 0.0, -0.437116]
+  v2: [-0.888136, 0.0, -0.45958]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.888136, 0.0, -0.45958]
+  v2: [-0.876307, 0.0, -0.481754]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.876307, 0.0, -0.481754]
+  v2: [-0.863923, 0.0, -0.503623]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.863923, 0.0, -0.503623]
+  v2: [-0.850994, 0.0, -0.525175]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.850994, 0.0, -0.525175]
+  v2: [-0.837528, 0.0, -0.546394]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.837528, 0.0, -0.546394]
+  v2: [-0.823533, 0.0, -0.567269]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.823533, 0.0, -0.567269]
+  v2: [-0.809017, 0.0, -0.587785]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.809017, 0.0, -0.587785]
+  v2: [-0.79399, 0.0, -0.60793]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.79399, 0.0, -0.60793]
+  v2: [-0.778462, 0.0, -0.627691]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.778462, 0.0, -0.627691]
+  v2: [-0.762443, 0.0, -0.647056]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.762443, 0.0, -0.647056]
+  v2: [-0.745941, 0.0, -0.666012]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.745941, 0.0, -0.666012]
+  v2: [-0.728969, 0.0, -0.684547]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.728969, 0.0, -0.684547]
+  v2: [-0.711536, 0.0, -0.70265]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.711536, 0.0, -0.70265]
+  v2: [-0.693653, 0.0, -0.720309]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.693653, 0.0, -0.720309]
+  v2: [-0.675333, 0.0, -0.737513]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.675333, 0.0, -0.737513]
+  v2: [-0.656586, 0.0, -0.754251]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.656586, 0.0, -0.754251]
+  v2: [-0.637424, 0.0, -0.770513]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.637424, 0.0, -0.770513]
+  v2: [-0.61786, 0.0, -0.786288]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.61786, 0.0, -0.786288]
+  v2: [-0.597905, 0.0, -0.801567]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.597905, 0.0, -0.801567]
+  v2: [-0.577573, 0.0, -0.816339]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.577573, 0.0, -0.816339]
+  v2: [-0.556876, 0.0, -0.830596]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.556876, 0.0, -0.830596]
+  v2: [-0.535827, 0.0, -0.844328]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.535827, 0.0, -0.844328]
+  v2: [-0.51444, 0.0, -0.857527]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.51444, 0.0, -0.857527]
+  v2: [-0.492727, 0.0, -0.870184]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.492727, 0.0, -0.870184]
+  v2: [-0.470704, 0.0, -0.882291]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.470704, 0.0, -0.882291]
+  v2: [-0.448383, 0.0, -0.893841]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.448383, 0.0, -0.893841]
+  v2: [-0.425779, 0.0, -0.904827]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.425779, 0.0, -0.904827]
+  v2: [-0.402906, 0.0, -0.915241]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.402906, 0.0, -0.915241]
+  v2: [-0.379779, 0.0, -0.925077]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.379779, 0.0, -0.925077]
+  v2: [-0.356412, 0.0, -0.934329]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.356412, 0.0, -0.934329]
+  v2: [-0.33282, 0.0, -0.942991]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.33282, 0.0, -0.942991]
+  v2: [-0.309017, 0.0, -0.951057]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.309017, 0.0, -0.951057]
+  v2: [-0.285019, 0.0, -0.958522]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.285019, 0.0, -0.958522]
+  v2: [-0.260842, 0.0, -0.965382]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.260842, 0.0, -0.965382]
+  v2: [-0.236499, 0.0, -0.971632]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.236499, 0.0, -0.971632]
+  v2: [-0.212007, 0.0, -0.977268]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.212007, 0.0, -0.977268]
+  v2: [-0.187381, 0.0, -0.982287]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.187381, 0.0, -0.982287]
+  v2: [-0.162637, 0.0, -0.986686]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.162637, 0.0, -0.986686]
+  v2: [-0.13779, 0.0, -0.990461]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.13779, 0.0, -0.990461]
+  v2: [-0.112856, 0.0, -0.993611]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.112856, 0.0, -0.993611]
+  v2: [-0.087851, 0.0, -0.996134]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.087851, 0.0, -0.996134]
+  v2: [-0.062791, 0.0, -0.998027]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.062791, 0.0, -0.998027]
+  v2: [-0.03769, 0.0, -0.999289]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.03769, 0.0, -0.999289]
+  v2: [-0.012566, 0.0, -0.999921]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [-0.012566, 0.0, -0.999921]
+  v2: [0.012566, 0.0, -0.999921]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.012566, 0.0, -0.999921]
+  v2: [0.03769, 0.0, -0.999289]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.03769, 0.0, -0.999289]
+  v2: [0.062791, 0.0, -0.998027]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.062791, 0.0, -0.998027]
+  v2: [0.087851, 0.0, -0.996134]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.087851, 0.0, -0.996134]
+  v2: [0.112856, 0.0, -0.993611]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.112856, 0.0, -0.993611]
+  v2: [0.13779, 0.0, -0.990461]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.13779, 0.0, -0.990461]
+  v2: [0.162637, 0.0, -0.986686]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.162637, 0.0, -0.986686]
+  v2: [0.187381, 0.0, -0.982287]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.187381, 0.0, -0.982287]
+  v2: [0.212007, 0.0, -0.977268]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.212007, 0.0, -0.977268]
+  v2: [0.236499, 0.0, -0.971632]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.236499, 0.0, -0.971632]
+  v2: [0.260842, 0.0, -0.965382]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.260842, 0.0, -0.965382]
+  v2: [0.285019, 0.0, -0.958522]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.285019, 0.0, -0.958522]
+  v2: [0.309017, 0.0, -0.951057]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.309017, 0.0, -0.951057]
+  v2: [0.33282, 0.0, -0.942991]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.33282, 0.0, -0.942991]
+  v2: [0.356412, 0.0, -0.934329]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.356412, 0.0, -0.934329]
+  v2: [0.379779, 0.0, -0.925077]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.379779, 0.0, -0.925077]
+  v2: [0.402906, 0.0, -0.915241]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.402906, 0.0, -0.915241]
+  v2: [0.425779, 0.0, -0.904827]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.425779, 0.0, -0.904827]
+  v2: [0.448383, 0.0, -0.893841]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.448383, 0.0, -0.893841]
+  v2: [0.470704, 0.0, -0.882291]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.470704, 0.0, -0.882291]
+  v2: [0.492727, 0.0, -0.870184]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.492727, 0.0, -0.870184]
+  v2: [0.51444, 0.0, -0.857527]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.51444, 0.0, -0.857527]
+  v2: [0.535827, 0.0, -0.844328]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.535827, 0.0, -0.844328]
+  v2: [0.556876, 0.0, -0.830596]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.556876, 0.0, -0.830596]
+  v2: [0.577573, 0.0, -0.816339]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.577573, 0.0, -0.816339]
+  v2: [0.597905, 0.0, -0.801567]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.597905, 0.0, -0.801567]
+  v2: [0.61786, 0.0, -0.786288]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.61786, 0.0, -0.786288]
+  v2: [0.637424, 0.0, -0.770513]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.637424, 0.0, -0.770513]
+  v2: [0.656586, 0.0, -0.754251]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.656586, 0.0, -0.754251]
+  v2: [0.675333, 0.0, -0.737513]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.675333, 0.0, -0.737513]
+  v2: [0.693653, 0.0, -0.720309]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.693653, 0.0, -0.720309]
+  v2: [0.711536, 0.0, -0.70265]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.711536, 0.0, -0.70265]
+  v2: [0.728969, 0.0, -0.684547]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.728969, 0.0, -0.684547]
+  v2: [0.745941, 0.0, -0.666012]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.745941, 0.0, -0.666012]
+  v2: [0.762443, 0.0, -0.647056]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.762443, 0.0, -0.647056]
+  v2: [0.778462, 0.0, -0.627691]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.778462, 0.0, -0.627691]
+  v2: [0.79399, 0.0, -0.60793]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.79399, 0.0, -0.60793]
+  v2: [0.809017, 0.0, -0.587785]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.809017, 0.0, -0.587785]
+  v2: [0.823533, 0.0, -0.567269]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.823533, 0.0, -0.567269]
+  v2: [0.837528, 0.0, -0.546394]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.837528, 0.0, -0.546394]
+  v2: [0.850994, 0.0, -0.525175]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.850994, 0.0, -0.525175]
+  v2: [0.863923, 0.0, -0.503623]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.863923, 0.0, -0.503623]
+  v2: [0.876307, 0.0, -0.481754]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.876307, 0.0, -0.481754]
+  v2: [0.888136, 0.0, -0.45958]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.888136, 0.0, -0.45958]
+  v2: [0.899405, 0.0, -0.437116]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.899405, 0.0, -0.437116]
+  v2: [0.910106, 0.0, -0.414376]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.910106, 0.0, -0.414376]
+  v2: [0.920232, 0.0, -0.391374]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.920232, 0.0, -0.391374]
+  v2: [0.929776, 0.0, -0.368125]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.929776, 0.0, -0.368125]
+  v2: [0.938734, 0.0, -0.344643]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.938734, 0.0, -0.344643]
+  v2: [0.947098, 0.0, -0.320944]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.947098, 0.0, -0.320944]
+  v2: [0.954865, 0.0, -0.297042]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.954865, 0.0, -0.297042]
+  v2: [0.962028, 0.0, -0.272952]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.962028, 0.0, -0.272952]
+  v2: [0.968583, 0.0, -0.24869]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.968583, 0.0, -0.24869]
+  v2: [0.974527, 0.0, -0.224271]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.974527, 0.0, -0.224271]
+  v2: [0.979855, 0.0, -0.19971]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.979855, 0.0, -0.19971]
+  v2: [0.984564, 0.0, -0.175023]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.984564, 0.0, -0.175023]
+  v2: [0.988652, 0.0, -0.150226]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.988652, 0.0, -0.150226]
+  v2: [0.992115, 0.0, -0.125333]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.992115, 0.0, -0.125333]
+  v2: [0.994951, 0.0, -0.100362]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.994951, 0.0, -0.100362]
+  v2: [0.997159, 0.0, -0.075327]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.997159, 0.0, -0.075327]
+  v2: [0.998737, 0.0, -0.050244]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.998737, 0.0, -0.050244]
+  v2: [0.999684, 0.0, -0.02513]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 2.0, 0.0]
+  v1: [0.999684, 0.0, -0.02513]
+  v2: [1.0, 0.0, 0.0]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.999684, 0.0, 0.02513]
+  v2: [1.0, 0.0, 0.0]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.998737, 0.0, 0.050244]
+  v2: [0.999684, 0.0, 0.02513]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.997159, 0.0, 0.075327]
+  v2: [0.998737, 0.0, 0.050244]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.994951, 0.0, 0.100362]
+  v2: [0.997159, 0.0, 0.075327]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.992115, 0.0, 0.125333]
+  v2: [0.994951, 0.0, 0.100362]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.988652, 0.0, 0.150226]
+  v2: [0.992115, 0.0, 0.125333]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.984564, 0.0, 0.175023]
+  v2: [0.988652, 0.0, 0.150226]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.979855, 0.0, 0.19971]
+  v2: [0.984564, 0.0, 0.175023]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.974527, 0.0, 0.224271]
+  v2: [0.979855, 0.0, 0.19971]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.968583, 0.0, 0.24869]
+  v2: [0.974527, 0.0, 0.224271]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.962028, 0.0, 0.272952]
+  v2: [0.968583, 0.0, 0.24869]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.954865, 0.0, 0.297042]
+  v2: [0.962028, 0.0, 0.272952]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.947098, 0.0, 0.320944]
+  v2: [0.954865, 0.0, 0.297042]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.938734, 0.0, 0.344643]
+  v2: [0.947098, 0.0, 0.320944]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.929776, 0.0, 0.368125]
+  v2: [0.938734, 0.0, 0.344643]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.920232, 0.0, 0.391374]
+  v2: [0.929776, 0.0, 0.368125]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.910106, 0.0, 0.414376]
+  v2: [0.920232, 0.0, 0.391374]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.899405, 0.0, 0.437116]
+  v2: [0.910106, 0.0, 0.414376]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.888136, 0.0, 0.45958]
+  v2: [0.899405, 0.0, 0.437116]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.876307, 0.0, 0.481754]
+  v2: [0.888136, 0.0, 0.45958]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.863923, 0.0, 0.503623]
+  v2: [0.876307, 0.0, 0.481754]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.850994, 0.0, 0.525175]
+  v2: [0.863923, 0.0, 0.503623]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.837528, 0.0, 0.546394]
+  v2: [0.850994, 0.0, 0.525175]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.823533, 0.0, 0.567269]
+  v2: [0.837528, 0.0, 0.546394]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.809017, 0.0, 0.587785]
+  v2: [0.823533, 0.0, 0.567269]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.79399, 0.0, 0.60793]
+  v2: [0.809017, 0.0, 0.587785]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.778462, 0.0, 0.627691]
+  v2: [0.79399, 0.0, 0.60793]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.762443, 0.0, 0.647056]
+  v2: [0.778462, 0.0, 0.627691]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.745941, 0.0, 0.666012]
+  v2: [0.762443, 0.0, 0.647056]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.728969, 0.0, 0.684547]
+  v2: [0.745941, 0.0, 0.666012]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.711536, 0.0, 0.70265]
+  v2: [0.728969, 0.0, 0.684547]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.693653, 0.0, 0.720309]
+  v2: [0.711536, 0.0, 0.70265]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.675333, 0.0, 0.737513]
+  v2: [0.693653, 0.0, 0.720309]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.656586, 0.0, 0.754251]
+  v2: [0.675333, 0.0, 0.737513]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.637424, 0.0, 0.770513]
+  v2: [0.656586, 0.0, 0.754251]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.61786, 0.0, 0.786288]
+  v2: [0.637424, 0.0, 0.770513]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.597905, 0.0, 0.801567]
+  v2: [0.61786, 0.0, 0.786288]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.577573, 0.0, 0.816339]
+  v2: [0.597905, 0.0, 0.801567]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.556876, 0.0, 0.830596]
+  v2: [0.577573, 0.0, 0.816339]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.535827, 0.0, 0.844328]
+  v2: [0.556876, 0.0, 0.830596]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.51444, 0.0, 0.857527]
+  v2: [0.535827, 0.0, 0.844328]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.492727, 0.0, 0.870184]
+  v2: [0.51444, 0.0, 0.857527]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.470704, 0.0, 0.882291]
+  v2: [0.492727, 0.0, 0.870184]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.448383, 0.0, 0.893841]
+  v2: [0.470704, 0.0, 0.882291]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.425779, 0.0, 0.904827]
+  v2: [0.448383, 0.0, 0.893841]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.402906, 0.0, 0.915241]
+  v2: [0.425779, 0.0, 0.904827]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.379779, 0.0, 0.925077]
+  v2: [0.402906, 0.0, 0.915241]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.356412, 0.0, 0.934329]
+  v2: [0.379779, 0.0, 0.925077]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.33282, 0.0, 0.942991]
+  v2: [0.356412, 0.0, 0.934329]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.309017, 0.0, 0.951057]
+  v2: [0.33282, 0.0, 0.942991]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.285019, 0.0, 0.958522]
+  v2: [0.309017, 0.0, 0.951057]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.260842, 0.0, 0.965382]
+  v2: [0.285019, 0.0, 0.958522]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.236499, 0.0, 0.971632]
+  v2: [0.260842, 0.0, 0.965382]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.212007, 0.0, 0.977268]
+  v2: [0.236499, 0.0, 0.971632]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.187381, 0.0, 0.982287]
+  v2: [0.212007, 0.0, 0.977268]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.162637, 0.0, 0.986686]
+  v2: [0.187381, 0.0, 0.982287]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.13779, 0.0, 0.990461]
+  v2: [0.162637, 0.0, 0.986686]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.112856, 0.0, 0.993611]
+  v2: [0.13779, 0.0, 0.990461]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.087851, 0.0, 0.996134]
+  v2: [0.112856, 0.0, 0.993611]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.062791, 0.0, 0.998027]
+  v2: [0.087851, 0.0, 0.996134]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.03769, 0.0, 0.999289]
+  v2: [0.062791, 0.0, 0.998027]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.012566, 0.0, 0.999921]
+  v2: [0.03769, 0.0, 0.999289]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.012566, 0.0, 0.999921]
+  v2: [0.012566, 0.0, 0.999921]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.03769, 0.0, 0.999289]
+  v2: [-0.012566, 0.0, 0.999921]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.062791, 0.0, 0.998027]
+  v2: [-0.03769, 0.0, 0.999289]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.087851, 0.0, 0.996134]
+  v2: [-0.062791, 0.0, 0.998027]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.112856, 0.0, 0.993611]
+  v2: [-0.087851, 0.0, 0.996134]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.13779, 0.0, 0.990461]
+  v2: [-0.112856, 0.0, 0.993611]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.162637, 0.0, 0.986686]
+  v2: [-0.13779, 0.0, 0.990461]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.187381, 0.0, 0.982287]
+  v2: [-0.162637, 0.0, 0.986686]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.212007, 0.0, 0.977268]
+  v2: [-0.187381, 0.0, 0.982287]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.236499, 0.0, 0.971632]
+  v2: [-0.212007, 0.0, 0.977268]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.260842, 0.0, 0.965382]
+  v2: [-0.236499, 0.0, 0.971632]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.285019, 0.0, 0.958522]
+  v2: [-0.260842, 0.0, 0.965382]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.309017, 0.0, 0.951057]
+  v2: [-0.285019, 0.0, 0.958522]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.33282, 0.0, 0.942991]
+  v2: [-0.309017, 0.0, 0.951057]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.356412, 0.0, 0.934329]
+  v2: [-0.33282, 0.0, 0.942991]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.379779, 0.0, 0.925077]
+  v2: [-0.356412, 0.0, 0.934329]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.402906, 0.0, 0.915241]
+  v2: [-0.379779, 0.0, 0.925077]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.425779, 0.0, 0.904827]
+  v2: [-0.402906, 0.0, 0.915241]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.448383, 0.0, 0.893841]
+  v2: [-0.425779, 0.0, 0.904827]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.470704, 0.0, 0.882291]
+  v2: [-0.448383, 0.0, 0.893841]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.492727, 0.0, 0.870184]
+  v2: [-0.470704, 0.0, 0.882291]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.51444, 0.0, 0.857527]
+  v2: [-0.492727, 0.0, 0.870184]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.535827, 0.0, 0.844328]
+  v2: [-0.51444, 0.0, 0.857527]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.556876, 0.0, 0.830596]
+  v2: [-0.535827, 0.0, 0.844328]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.577573, 0.0, 0.816339]
+  v2: [-0.556876, 0.0, 0.830596]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.597905, 0.0, 0.801567]
+  v2: [-0.577573, 0.0, 0.816339]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.61786, 0.0, 0.786288]
+  v2: [-0.597905, 0.0, 0.801567]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.637424, 0.0, 0.770513]
+  v2: [-0.61786, 0.0, 0.786288]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.656586, 0.0, 0.754251]
+  v2: [-0.637424, 0.0, 0.770513]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.675333, 0.0, 0.737513]
+  v2: [-0.656586, 0.0, 0.754251]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.693653, 0.0, 0.720309]
+  v2: [-0.675333, 0.0, 0.737513]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.711536, 0.0, 0.70265]
+  v2: [-0.693653, 0.0, 0.720309]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.728969, 0.0, 0.684547]
+  v2: [-0.711536, 0.0, 0.70265]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.745941, 0.0, 0.666012]
+  v2: [-0.728969, 0.0, 0.684547]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.762443, 0.0, 0.647056]
+  v2: [-0.745941, 0.0, 0.666012]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.778462, 0.0, 0.627691]
+  v2: [-0.762443, 0.0, 0.647056]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.79399, 0.0, 0.60793]
+  v2: [-0.778462, 0.0, 0.627691]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.809017, 0.0, 0.587785]
+  v2: [-0.79399, 0.0, 0.60793]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.823533, 0.0, 0.567269]
+  v2: [-0.809017, 0.0, 0.587785]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.837528, 0.0, 0.546394]
+  v2: [-0.823533, 0.0, 0.567269]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.850994, 0.0, 0.525175]
+  v2: [-0.837528, 0.0, 0.546394]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.863923, 0.0, 0.503623]
+  v2: [-0.850994, 0.0, 0.525175]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.876307, 0.0, 0.481754]
+  v2: [-0.863923, 0.0, 0.503623]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.888136, 0.0, 0.45958]
+  v2: [-0.876307, 0.0, 0.481754]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.899405, 0.0, 0.437116]
+  v2: [-0.888136, 0.0, 0.45958]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.910106, 0.0, 0.414376]
+  v2: [-0.899405, 0.0, 0.437116]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.920232, 0.0, 0.391374]
+  v2: [-0.910106, 0.0, 0.414376]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.929776, 0.0, 0.368125]
+  v2: [-0.920232, 0.0, 0.391374]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.938734, 0.0, 0.344643]
+  v2: [-0.929776, 0.0, 0.368125]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.947098, 0.0, 0.320944]
+  v2: [-0.938734, 0.0, 0.344643]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.954865, 0.0, 0.297042]
+  v2: [-0.947098, 0.0, 0.320944]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.962028, 0.0, 0.272952]
+  v2: [-0.954865, 0.0, 0.297042]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.968583, 0.0, 0.24869]
+  v2: [-0.962028, 0.0, 0.272952]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.974527, 0.0, 0.224271]
+  v2: [-0.968583, 0.0, 0.24869]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.979855, 0.0, 0.19971]
+  v2: [-0.974527, 0.0, 0.224271]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.984564, 0.0, 0.175023]
+  v2: [-0.979855, 0.0, 0.19971]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.988652, 0.0, 0.150226]
+  v2: [-0.984564, 0.0, 0.175023]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.992115, 0.0, 0.125333]
+  v2: [-0.988652, 0.0, 0.150226]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.994951, 0.0, 0.100362]
+  v2: [-0.992115, 0.0, 0.125333]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.997159, 0.0, 0.075327]
+  v2: [-0.994951, 0.0, 0.100362]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.998737, 0.0, 0.050244]
+  v2: [-0.997159, 0.0, 0.075327]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.999684, 0.0, 0.02513]
+  v2: [-0.998737, 0.0, 0.050244]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-1.0, 0.0, 0.0]
+  v2: [-0.999684, 0.0, 0.02513]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.999684, 0.0, -0.02513]
+  v2: [-1.0, 0.0, 0.0]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.998737, 0.0, -0.050244]
+  v2: [-0.999684, 0.0, -0.02513]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.997159, 0.0, -0.075327]
+  v2: [-0.998737, 0.0, -0.050244]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.994951, 0.0, -0.100362]
+  v2: [-0.997159, 0.0, -0.075327]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.992115, 0.0, -0.125333]
+  v2: [-0.994951, 0.0, -0.100362]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.988652, 0.0, -0.150226]
+  v2: [-0.992115, 0.0, -0.125333]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.984564, 0.0, -0.175023]
+  v2: [-0.988652, 0.0, -0.150226]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.979855, 0.0, -0.19971]
+  v2: [-0.984564, 0.0, -0.175023]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.974527, 0.0, -0.224271]
+  v2: [-0.979855, 0.0, -0.19971]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.968583, 0.0, -0.24869]
+  v2: [-0.974527, 0.0, -0.224271]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.962028, 0.0, -0.272952]
+  v2: [-0.968583, 0.0, -0.24869]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.954865, 0.0, -0.297042]
+  v2: [-0.962028, 0.0, -0.272952]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.947098, 0.0, -0.320944]
+  v2: [-0.954865, 0.0, -0.297042]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.938734, 0.0, -0.344643]
+  v2: [-0.947098, 0.0, -0.320944]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.929776, 0.0, -0.368125]
+  v2: [-0.938734, 0.0, -0.344643]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.920232, 0.0, -0.391374]
+  v2: [-0.929776, 0.0, -0.368125]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.910106, 0.0, -0.414376]
+  v2: [-0.920232, 0.0, -0.391374]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.899405, 0.0, -0.437116]
+  v2: [-0.910106, 0.0, -0.414376]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.888136, 0.0, -0.45958]
+  v2: [-0.899405, 0.0, -0.437116]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.876307, 0.0, -0.481754]
+  v2: [-0.888136, 0.0, -0.45958]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.863923, 0.0, -0.503623]
+  v2: [-0.876307, 0.0, -0.481754]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.850994, 0.0, -0.525175]
+  v2: [-0.863923, 0.0, -0.503623]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.837528, 0.0, -0.546394]
+  v2: [-0.850994, 0.0, -0.525175]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.823533, 0.0, -0.567269]
+  v2: [-0.837528, 0.0, -0.546394]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.809017, 0.0, -0.587785]
+  v2: [-0.823533, 0.0, -0.567269]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.79399, 0.0, -0.60793]
+  v2: [-0.809017, 0.0, -0.587785]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.778462, 0.0, -0.627691]
+  v2: [-0.79399, 0.0, -0.60793]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.762443, 0.0, -0.647056]
+  v2: [-0.778462, 0.0, -0.627691]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.745941, 0.0, -0.666012]
+  v2: [-0.762443, 0.0, -0.647056]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.728969, 0.0, -0.684547]
+  v2: [-0.745941, 0.0, -0.666012]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.711536, 0.0, -0.70265]
+  v2: [-0.728969, 0.0, -0.684547]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.693653, 0.0, -0.720309]
+  v2: [-0.711536, 0.0, -0.70265]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.675333, 0.0, -0.737513]
+  v2: [-0.693653, 0.0, -0.720309]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.656586, 0.0, -0.754251]
+  v2: [-0.675333, 0.0, -0.737513]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.637424, 0.0, -0.770513]
+  v2: [-0.656586, 0.0, -0.754251]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.61786, 0.0, -0.786288]
+  v2: [-0.637424, 0.0, -0.770513]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.597905, 0.0, -0.801567]
+  v2: [-0.61786, 0.0, -0.786288]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.577573, 0.0, -0.816339]
+  v2: [-0.597905, 0.0, -0.801567]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.556876, 0.0, -0.830596]
+  v2: [-0.577573, 0.0, -0.816339]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.535827, 0.0, -0.844328]
+  v2: [-0.556876, 0.0, -0.830596]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.51444, 0.0, -0.857527]
+  v2: [-0.535827, 0.0, -0.844328]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.492727, 0.0, -0.870184]
+  v2: [-0.51444, 0.0, -0.857527]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.470704, 0.0, -0.882291]
+  v2: [-0.492727, 0.0, -0.870184]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.448383, 0.0, -0.893841]
+  v2: [-0.470704, 0.0, -0.882291]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.425779, 0.0, -0.904827]
+  v2: [-0.448383, 0.0, -0.893841]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.402906, 0.0, -0.915241]
+  v2: [-0.425779, 0.0, -0.904827]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.379779, 0.0, -0.925077]
+  v2: [-0.402906, 0.0, -0.915241]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.356412, 0.0, -0.934329]
+  v2: [-0.379779, 0.0, -0.925077]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.33282, 0.0, -0.942991]
+  v2: [-0.356412, 0.0, -0.934329]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.309017, 0.0, -0.951057]
+  v2: [-0.33282, 0.0, -0.942991]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.285019, 0.0, -0.958522]
+  v2: [-0.309017, 0.0, -0.951057]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.260842, 0.0, -0.965382]
+  v2: [-0.285019, 0.0, -0.958522]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.236499, 0.0, -0.971632]
+  v2: [-0.260842, 0.0, -0.965382]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.212007, 0.0, -0.977268]
+  v2: [-0.236499, 0.0, -0.971632]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.187381, 0.0, -0.982287]
+  v2: [-0.212007, 0.0, -0.977268]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.162637, 0.0, -0.986686]
+  v2: [-0.187381, 0.0, -0.982287]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.13779, 0.0, -0.990461]
+  v2: [-0.162637, 0.0, -0.986686]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.112856, 0.0, -0.993611]
+  v2: [-0.13779, 0.0, -0.990461]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.087851, 0.0, -0.996134]
+  v2: [-0.112856, 0.0, -0.993611]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.062791, 0.0, -0.998027]
+  v2: [-0.087851, 0.0, -0.996134]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.03769, 0.0, -0.999289]
+  v2: [-0.062791, 0.0, -0.998027]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [-0.012566, 0.0, -0.999921]
+  v2: [-0.03769, 0.0, -0.999289]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.012566, 0.0, -0.999921]
+  v2: [-0.012566, 0.0, -0.999921]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.03769, 0.0, -0.999289]
+  v2: [0.012566, 0.0, -0.999921]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.062791, 0.0, -0.998027]
+  v2: [0.03769, 0.0, -0.999289]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.087851, 0.0, -0.996134]
+  v2: [0.062791, 0.0, -0.998027]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.112856, 0.0, -0.993611]
+  v2: [0.087851, 0.0, -0.996134]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.13779, 0.0, -0.990461]
+  v2: [0.112856, 0.0, -0.993611]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.162637, 0.0, -0.986686]
+  v2: [0.13779, 0.0, -0.990461]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.187381, 0.0, -0.982287]
+  v2: [0.162637, 0.0, -0.986686]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.212007, 0.0, -0.977268]
+  v2: [0.187381, 0.0, -0.982287]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.236499, 0.0, -0.971632]
+  v2: [0.212007, 0.0, -0.977268]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.260842, 0.0, -0.965382]
+  v2: [0.236499, 0.0, -0.971632]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.285019, 0.0, -0.958522]
+  v2: [0.260842, 0.0, -0.965382]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.309017, 0.0, -0.951057]
+  v2: [0.285019, 0.0, -0.958522]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.33282, 0.0, -0.942991]
+  v2: [0.309017, 0.0, -0.951057]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.356412, 0.0, -0.934329]
+  v2: [0.33282, 0.0, -0.942991]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.379779, 0.0, -0.925077]
+  v2: [0.356412, 0.0, -0.934329]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.402906, 0.0, -0.915241]
+  v2: [0.379779, 0.0, -0.925077]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.425779, 0.0, -0.904827]
+  v2: [0.402906, 0.0, -0.915241]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.448383, 0.0, -0.893841]
+  v2: [0.425779, 0.0, -0.904827]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.470704, 0.0, -0.882291]
+  v2: [0.448383, 0.0, -0.893841]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.492727, 0.0, -0.870184]
+  v2: [0.470704, 0.0, -0.882291]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.51444, 0.0, -0.857527]
+  v2: [0.492727, 0.0, -0.870184]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.535827, 0.0, -0.844328]
+  v2: [0.51444, 0.0, -0.857527]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.556876, 0.0, -0.830596]
+  v2: [0.535827, 0.0, -0.844328]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.577573, 0.0, -0.816339]
+  v2: [0.556876, 0.0, -0.830596]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.597905, 0.0, -0.801567]
+  v2: [0.577573, 0.0, -0.816339]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.61786, 0.0, -0.786288]
+  v2: [0.597905, 0.0, -0.801567]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.637424, 0.0, -0.770513]
+  v2: [0.61786, 0.0, -0.786288]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.656586, 0.0, -0.754251]
+  v2: [0.637424, 0.0, -0.770513]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.675333, 0.0, -0.737513]
+  v2: [0.656586, 0.0, -0.754251]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.693653, 0.0, -0.720309]
+  v2: [0.675333, 0.0, -0.737513]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.711536, 0.0, -0.70265]
+  v2: [0.693653, 0.0, -0.720309]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.728969, 0.0, -0.684547]
+  v2: [0.711536, 0.0, -0.70265]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.745941, 0.0, -0.666012]
+  v2: [0.728969, 0.0, -0.684547]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.762443, 0.0, -0.647056]
+  v2: [0.745941, 0.0, -0.666012]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.778462, 0.0, -0.627691]
+  v2: [0.762443, 0.0, -0.647056]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.79399, 0.0, -0.60793]
+  v2: [0.778462, 0.0, -0.627691]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.809017, 0.0, -0.587785]
+  v2: [0.79399, 0.0, -0.60793]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.823533, 0.0, -0.567269]
+  v2: [0.809017, 0.0, -0.587785]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.837528, 0.0, -0.546394]
+  v2: [0.823533, 0.0, -0.567269]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.850994, 0.0, -0.525175]
+  v2: [0.837528, 0.0, -0.546394]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.863923, 0.0, -0.503623]
+  v2: [0.850994, 0.0, -0.525175]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.876307, 0.0, -0.481754]
+  v2: [0.863923, 0.0, -0.503623]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.888136, 0.0, -0.45958]
+  v2: [0.876307, 0.0, -0.481754]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.899405, 0.0, -0.437116]
+  v2: [0.888136, 0.0, -0.45958]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.910106, 0.0, -0.414376]
+  v2: [0.899405, 0.0, -0.437116]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.920232, 0.0, -0.391374]
+  v2: [0.910106, 0.0, -0.414376]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.929776, 0.0, -0.368125]
+  v2: [0.920232, 0.0, -0.391374]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.938734, 0.0, -0.344643]
+  v2: [0.929776, 0.0, -0.368125]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.947098, 0.0, -0.320944]
+  v2: [0.938734, 0.0, -0.344643]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.954865, 0.0, -0.297042]
+  v2: [0.947098, 0.0, -0.320944]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.962028, 0.0, -0.272952]
+  v2: [0.954865, 0.0, -0.297042]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.968583, 0.0, -0.24869]
+  v2: [0.962028, 0.0, -0.272952]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.974527, 0.0, -0.224271]
+  v2: [0.968583, 0.0, -0.24869]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.979855, 0.0, -0.19971]
+  v2: [0.974527, 0.0, -0.224271]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.984564, 0.0, -0.175023]
+  v2: [0.979855, 0.0, -0.19971]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.988652, 0.0, -0.150226]
+  v2: [0.984564, 0.0, -0.175023]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.992115, 0.0, -0.125333]
+  v2: [0.988652, 0.0, -0.150226]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.994951, 0.0, -0.100362]
+  v2: [0.992115, 0.0, -0.125333]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.997159, 0.0, -0.075327]
+  v2: [0.994951, 0.0, -0.100362]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.998737, 0.0, -0.050244]
+  v2: [0.997159, 0.0, -0.075327]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [0.999684, 0.0, -0.02513]
+  v2: [0.998737, 0.0, -0.050244]
+- material: benchmark_mat
+  type: triangle
+  v0: [0.0, 0.0, 0.0]
+  v1: [1.0, 0.0, 0.0]
+  v2: [0.999684, 0.0, -0.02513]
+materials:
+- albedo: [0.8, 0.2, 0.2]
+  name: benchmark_mat
+  pattern:
+    color: [0.2, 0.2, 0.8]
+    dot_count: 10.0
+    type: checkerboard
+  type: lambertian
+- albedo: [0.5, 0.5, 0.5]
+  name: floor_mat
+  type: lambertian
+- albedo: [1.0, 1.0, 1.0]
+  emission: [15.0, 15.0, 15.0]
+  name: light
+  type: light
+scene:
+  background_color: [0.1, 0.1, 0.1]
+  camera:
+    fov: 40.0
+    look_at: [0.0, 1.0, 0.0]
+    position: [0.0, 1.5, 4.0]
+    up: [0.0, 1.0, 0.0]
+  name: Benchmark Individual Triangles
+  use_bvh: true

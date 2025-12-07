@@ -29,6 +29,11 @@ materials:
     emission: [15.0, 15.0, 15.0]
     albedo: [1.0, 1.0, 1.0]
 
+  - name: "glass"
+    type: "glass"
+    refractive_index: 1.5
+    albedo: [1.0, 1.0, 1.0]
+
 geometry:
   # Floor
   - type: "rectangle"
@@ -68,7 +73,7 @@ geometry:
   # Area light
   - type: "rectangle"
     material: "light"
-    corner: [-0.3, 1.98, -0.3]
+    corner: [-0.3, 2.00, -0.3]
     u: [0.6, 0.0, 0.0]
     v: [0.0, 0.0, 0.6]
   
@@ -77,7 +82,7 @@ geometry:
   # or we can override with 'material: "glass"' etc.
   - type: "obj"
     filename: "erato.obj"
-    # material: "white" # Uncomment to override MTL
-    position: [-0.3, 0.0, 0.3] # Approximate centering based on vertex inspection
+    material: "glass" 
+    position: [0.0, 0.055, 0.0] 
     scale: [0.05, 0.05, 0.05]   # Scaling down from ~18 units to ~0.9
-    rotation: [0, 0, 0]
+    rotation: [0, 50, 0]

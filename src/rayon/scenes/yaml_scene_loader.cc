@@ -195,6 +195,9 @@ static void loadObjGeometry(const string &filename, SceneDescription &scene, con
       }
    }
 
+   // Group triangles by material ID
+   std::map<int, TriangleMesh> mesh_groups;
+
    // Process shapes
    for (const auto &shape : shapes)
    {
@@ -203,49 +206,55 @@ static void loadObjGeometry(const string &filename, SceneDescription &scene, con
          if (shape.mesh.num_face_vertices[f] != 3)
             continue; // Triangles only
 
-         GeometryDesc geom;
-         geom.type = GeometryType::TRIANGLE;
-
-         // Material
+         // Determine material ID
+         int final_mat_id = 0;
          if (override_mat_id != -1)
          {
-            geom.material_id = override_mat_id;
+            final_mat_id = override_mat_id;
          }
          else
          {
             int obj_mat_id = shape.mesh.material_ids[f];
             if (material_map.count(obj_mat_id))
             {
-               geom.material_id = material_map[obj_mat_id];
+               final_mat_id = material_map[obj_mat_id];
             }
             else
             {
-               geom.material_id = 0; // Fallback
+               final_mat_id = 0; // Fallback
             }
          }
 
-         // Vertices
-         Vec3 vertices[3];
-         Vec3 normals[3];
+         // Initialize mesh group if needed
+         if (mesh_groups.find(final_mat_id) == mesh_groups.end()) {
+             mesh_groups[final_mat_id].bounds_min = Vec3(1e30, 1e30, 1e30);
+             mesh_groups[final_mat_id].bounds_max = Vec3(-1e30, -1e30, -1e30);
+         }
+
+         Triangle tri;
          bool has_normals = false;
 
          for (int v = 0; v < 3; v++)
          {
             tinyobj::index_t idx = shape.mesh.indices[3 * f + v];
 
-            // Position
+            // Position (Raw local space)
             Vec3 p(attrib.vertices[3 * idx.vertex_index + 0], attrib.vertices[3 * idx.vertex_index + 1],
                    attrib.vertices[3 * idx.vertex_index + 2]);
 
-            // Apply Transform
-            // Scale
-            p = Vec3(p.x() * scale.x(), p.y() * scale.y(), p.z() * scale.z());
-            // Rotate
-            p = rotatePoint(p, rot);
-            // Translate
-            p = p + pos;
+            if (v == 0) tri.v0 = p;
+            else if (v == 1) tri.v1 = p;
+            else tri.v2 = p;
 
-            vertices[v] = p;
+            // Update local bounds
+            mesh_groups[final_mat_id].bounds_min = Vec3(
+                std::min(mesh_groups[final_mat_id].bounds_min.x(), p.x()),
+                std::min(mesh_groups[final_mat_id].bounds_min.y(), p.y()),
+                std::min(mesh_groups[final_mat_id].bounds_min.z(), p.z()));
+            mesh_groups[final_mat_id].bounds_max = Vec3(
+                std::max(mesh_groups[final_mat_id].bounds_max.x(), p.x()),
+                std::max(mesh_groups[final_mat_id].bounds_max.y(), p.y()),
+                std::max(mesh_groups[final_mat_id].bounds_max.z(), p.z()));
 
             // Normal
             if (idx.normal_index >= 0)
@@ -253,33 +262,77 @@ static void loadObjGeometry(const string &filename, SceneDescription &scene, con
                has_normals = true;
                Vec3 n(attrib.normals[3 * idx.normal_index + 0], attrib.normals[3 * idx.normal_index + 1],
                       attrib.normals[3 * idx.normal_index + 2]);
-               // Rotate normal (no scale/translate)
-               n = rotatePoint(n, rot);
-               normals[v] = unit_vector(n);
+               if (v == 0) tri.n0 = unit_vector(n);
+               else if (v == 1) tri.n1 = unit_vector(n);
+               else tri.n2 = unit_vector(n);
             }
          }
 
-         geom.data.triangle.v0 = vertices[0];
-         geom.data.triangle.v1 = vertices[1];
-         geom.data.triangle.v2 = vertices[2];
-         geom.data.triangle.has_normals = has_normals;
-         if (has_normals)
-         {
-            geom.data.triangle.n0 = normals[0];
-            geom.data.triangle.n1 = normals[1];
-            geom.data.triangle.n2 = normals[2];
-         }
-
-         // Bounds
-         geom.bounds_min = Vec3(std::min({vertices[0].x(), vertices[1].x(), vertices[2].x()}),
-                                std::min({vertices[0].y(), vertices[1].y(), vertices[2].y()}),
-                                std::min({vertices[0].z(), vertices[1].z(), vertices[2].z()}));
-         geom.bounds_max = Vec3(std::max({vertices[0].x(), vertices[1].x(), vertices[2].x()}),
-                                std::max({vertices[0].y(), vertices[1].y(), vertices[2].y()}),
-                                std::max({vertices[0].z(), vertices[1].z(), vertices[2].z()}));
-
-         scene.addGeometry(geom);
+         tri.has_normals = has_normals;
+         mesh_groups[final_mat_id].triangles.push_back(tri);
       }
+   }
+
+   // Convert groups to Scene meshes and instances
+   for (const auto &pair : mesh_groups)
+   {
+       int mat_id = pair.first;
+       const TriangleMesh &mesh = pair.second;
+
+       if (mesh.triangles.empty()) continue;
+
+       // Add mesh to scene
+       int mesh_id = scene.addMesh(mesh);
+
+       // Create instance geometry
+       GeometryDesc geom;
+       geom.type = GeometryType::TRIANGLE_MESH;
+       geom.material_id = mat_id;
+       geom.data.mesh_instance.mesh_id = mesh_id;
+       geom.data.mesh_instance.translation = pos;
+       
+       // Convert degrees to radians for GPU
+       geom.data.mesh_instance.rotation = Vec3(rot.x() * M_PI / 180.0, rot.y() * M_PI / 180.0, rot.z() * M_PI / 180.0);
+       geom.data.mesh_instance.scale = scale;
+       geom.data.mesh_instance.use_bvh = true;
+
+       // Calculate World Bounds for BVH
+       // Transform all 8 corners of the local bounding box
+       Vec3 min_b = mesh.bounds_min;
+       Vec3 max_b = mesh.bounds_max;
+       Vec3 corners[8] = {
+           Vec3(min_b.x(), min_b.y(), min_b.z()),
+           Vec3(max_b.x(), min_b.y(), min_b.z()),
+           Vec3(min_b.x(), max_b.y(), min_b.z()),
+           Vec3(max_b.x(), max_b.y(), min_b.z()),
+           Vec3(min_b.x(), min_b.y(), max_b.z()),
+           Vec3(max_b.x(), min_b.y(), max_b.z()),
+           Vec3(min_b.x(), max_b.y(), max_b.z()),
+           Vec3(max_b.x(), max_b.y(), max_b.z())
+       };
+
+       geom.bounds_min = Vec3(1e30, 1e30, 1e30);
+       geom.bounds_max = Vec3(-1e30, -1e30, -1e30);
+
+       for (int i = 0; i < 8; i++) {
+           // Apply scale
+           Vec3 p = Vec3(corners[i].x() * scale.x(), corners[i].y() * scale.y(), corners[i].z() * scale.z());
+           // Apply rotation
+           p = rotatePoint(p, rot); // rotatePoint uses degrees, which matches our input 'rot'
+           // Apply translation
+           p = p + pos;
+
+           geom.bounds_min = Vec3(
+               std::min(geom.bounds_min.x(), p.x()),
+               std::min(geom.bounds_min.y(), p.y()),
+               std::min(geom.bounds_min.z(), p.z()));
+           geom.bounds_max = Vec3(
+               std::max(geom.bounds_max.x(), p.x()),
+               std::max(geom.bounds_max.y(), p.y()),
+               std::max(geom.bounds_max.z(), p.z()));
+       }
+
+       scene.addGeometry(geom);
    }
 }
 
@@ -635,6 +688,13 @@ static bool loadGeometry(const SimpleYAMLParser &parser, SceneDescription &scene
          Vec3 u = parser.getVec3(prefix + ".u");
          Vec3 v = parser.getVec3(prefix + ".v");
          scene.addRectangle(corner, u, v, mat_id);
+      }
+      else if (geom_type == "triangle")
+      {
+         Vec3 v0 = parser.getVec3(prefix + ".v0");
+         Vec3 v1 = parser.getVec3(prefix + ".v1");
+         Vec3 v2 = parser.getVec3(prefix + ".v2");
+         scene.addTriangle(v0, v1, v2, mat_id);
       }
 
       cout << "  Loaded " << geom_type << " with material " << mat_name << "\n";

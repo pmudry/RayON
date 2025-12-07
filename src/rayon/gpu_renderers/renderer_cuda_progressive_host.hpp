@@ -96,6 +96,15 @@ class RendererCUDAProgressive : public IRenderer
           -1
       });
       
+      // 2b. Triangle Demo
+      categories.push_back({
+          "Triangle Demo",
+          {"../resources/experiments/triangle-demo", "resources/experiments/triangle-demo"},
+          {"obj", "yaml"},
+          {},
+          -1
+      });
+      
       // 1. Scenes
       categories.push_back({
           "Scenes",
