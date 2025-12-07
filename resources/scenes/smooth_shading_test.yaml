@@ -1,0 +1,30 @@
+# Scene config
+camera_position: [0, 2, 5]
+camera_look_at: [0, 0, 0]
+camera_fov: 40.0
+
+materials:
+  - name: floor_mat
+    type: lambertian
+    albedo: [0.5, 0.5, 0.5]
+    checkerboard: true
+
+objects:
+  # Floor
+  - type: rectangle
+    corner: [-10, -1, -10]
+    u: [20, 0, 0]
+    v: [0, 0, 20]
+    material: floor_mat
+
+  # Smooth Sphere (Left)
+  - type: obj
+    file: smooth_sphere.obj
+    position: [-1.2, 0, 0]
+    scale: 1.0
+    
+  # Flat Sphere (Right)
+  - type: obj
+    file: flat_sphere.obj
+    position: [1.2, 0, 0]
+    scale: 1.0

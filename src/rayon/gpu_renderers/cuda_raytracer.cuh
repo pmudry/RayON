@@ -248,6 +248,66 @@ __device__ inline bool hit_rectangle(const f3 &corner, const f3 &u, const f3 &v,
    return true;
 }
 
+__device__ inline bool hit_triangle(const f3 &v0, const f3 &v1, const f3 &v2, const f3 &n0, const f3 &n1, const f3 &n2,
+                                    bool has_normals, const ray_simple &r, float t_min, float t_max,
+                                    hit_record_simple &rec)
+{
+   // Möller–Trumbore intersection algorithm (or barrycentric method ;)
+   f3 e1 = v1 - v0;
+   f3 e2 = v2 - v0;
+
+   
+   f3 p = cross(r.dir, e2);
+
+   
+   float det = dot(e1, p);
+
+   // If det is near zero, ray is parallel to triangle - property of the determinant
+   if (fabsf(det) < 1e-8f)
+      return false;
+
+   float inv_det = 1.0f / det;
+
+   f3 t_vec = r.orig - v0;
+
+   float u = dot(t_vec, p) * inv_det;
+   if (u < 0.0f || u > 1.0f)
+      return false;
+
+ 
+   f3 q = cross(t_vec, e1);
+
+
+   float v = dot(r.dir, q) * inv_det;
+   if (v < 0.0f || u + v > 1.0f)
+      return false;
+
+   float t = dot(e2, q) * inv_det;
+
+   if (t < t_min || t > t_max)
+      return false;
+
+   rec.t = t;
+   rec.p = r.at(t);
+
+   f3 outward_normal;
+   if (has_normals)
+   {
+      // Barycentric interpolation of normals
+      float w = 1.0f - u - v;
+      outward_normal = normalize(w * n0 + u * n1 + v * n2);
+   }
+   else
+   {
+      // Flat normal: normalize(E1 x E2)
+      outward_normal = normalize(cross(e1, e2));
+   }
+
+   rec.front_face = dot(r.dir, outward_normal) < 0;
+   rec.normal = rec.front_face ? outward_normal : -outward_normal;
+   return true;
+}
+
 //==============================================================================
 // SCENE & MATERIAL APPLICATION
 //==============================================================================
@@ -263,6 +323,10 @@ __device__ __forceinline__ bool intersect_geometry(const CudaScene::Geometry &ge
    case GeometryType::RECTANGLE:
       return hit_rectangle(geom.data.rectangle.corner, geom.data.rectangle.u, geom.data.rectangle.v, r, t_min, t_max,
                            rec);
+   case GeometryType::TRIANGLE:
+      return hit_triangle(geom.data.triangle.v0, geom.data.triangle.v1, geom.data.triangle.v2, geom.data.triangle.n0,
+                          geom.data.triangle.n1, geom.data.triangle.n2, geom.data.triangle.has_normals, r, t_min, t_max,
+                          rec);
    case GeometryType::DISPLACED_SPHERE:
       return hit_golf_ball_sphere(geom.data.displaced_sphere.center, geom.data.displaced_sphere.radius, r, t_min, t_max,
                                   rec);

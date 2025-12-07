@@ -17,6 +17,7 @@
 #include "cpu_shapes/rectangle.hpp"
 #include "cpu_shapes/sdf_shape.hpp"
 #include "cpu_shapes/sphere.hpp"
+#include "cpu_shapes/triangle.hpp"
 #include <memory>
 
 using std::make_shared;
@@ -122,10 +123,22 @@ class CPUSceneBuilder
       case GeometryType::SDF_PRIMITIVE:
          return createSDFShape(desc, mat);
 
+      case GeometryType::TRIANGLE:
+      {
+         const auto &tri = desc.data.triangle;
+         if (tri.has_normals)
+         {
+            return make_shared<TriangleShape>(tri.v0, tri.v1, tri.v2, tri.n0, tri.n1, tri.n2, mat);
+         }
+         else
+         {
+            return make_shared<TriangleShape>(tri.v0, tri.v1, tri.v2, mat);
+         }
+      }
+
       // Other geometry types not yet supported in CPU renderer
       case GeometryType::CUBE:
       case GeometryType::DISPLACED_SPHERE:
-      case GeometryType::TRIANGLE:
       case GeometryType::TRIANGLE_MESH:
       default:
          // Return null for unsupported types

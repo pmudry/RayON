@@ -123,6 +123,10 @@ class SceneFactory
               if (scene_mat.emission.x() > 0 || scene_mat.emission.y() > 0 || scene_mat.emission.z() > 0) {
                   scene_mat.type = MaterialType::LIGHT; // Override to light if emissive
               }
+              
+              // DEBUG: Print material info
+              std::cout << "DEBUG: Material [" << tinyobj_mat.name << "] Em: " << scene_mat.emission 
+                        << " Type: " << (int)scene_mat.type << " (7=LIGHT)" << std::endl;
 
               int scene_mat_id = scene_desc.addMaterial(scene_mat);
               material_id_map[static_cast<int>(i)] = scene_mat_id;
@@ -134,6 +138,15 @@ class SceneFactory
       Vec3 overall_min_bounds(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
       Vec3 overall_max_bounds(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest());
       bool first_vertex = true;
+      bool has_emissive_material = false;
+
+      // Check for emissive materials first
+      for (const auto& mat : scene_desc.materials) {
+          if (mat.type == MaterialType::LIGHT) {
+              has_emissive_material = true;
+              break;
+          }
+      }
 
       for (const auto& shape_tinyobj : shapes) {
           int mat_id = material_id_map.count(shape_tinyobj.mesh.material_ids[0]) ? material_id_map[shape_tinyobj.mesh.material_ids[0]] : material_id_map[-1];
@@ -210,16 +223,32 @@ class SceneFactory
           Vec3 center = (overall_min_bounds + overall_max_bounds) / 2.0;
           Vec3 extents = overall_max_bounds - overall_min_bounds;
           float radius = extents.length() / 2.0f;
+          
+          // Check if it looks like a Cornell Box (approx 2x2x2 centered at 0)
+          // Cornell box usually -1 to 1 in dimensions
+          bool is_cornell_box = (extents.x() > 1.8 && extents.x() < 2.2) &&
+                                (extents.y() > 1.8 && extents.y() < 2.2) &&
+                                (extents.z() > 1.8 && extents.z() < 2.2) &&
+                                (std::abs(center.x()) < 0.2) &&
+                                (std::abs(center.y()) < 0.2) &&
+                                (std::abs(center.z()) < 0.2);
 
-          // Position camera to look at the center of the model, distance based on radius
-          scene_desc.camera_look_at = center;
-          scene_desc.camera_position = center + Vec3(0, radius * 0.5f, radius * 2.0f); // Adjust Y for better view
-          scene_desc.camera_fov = 45.0f; // Default FOV for models
+          if (is_cornell_box) {
+              // Standard Cornell Box View
+              scene_desc.camera_position = Vec3(0.0, 0.0, 3.8); // Adjusted for Z-forward/back
+              scene_desc.camera_look_at = Vec3(0.0, 0.0, 0.0);
+              scene_desc.camera_fov = 35.0f;
+          } else {
+              // Position camera to look at the center of the model, distance based on radius
+              // Use an isometric-style view (offset in X, Y, Z) to show 3D structure
+              scene_desc.camera_look_at = center;
+              scene_desc.camera_position = center + Vec3(radius * 1.5f, radius * 1.0f, radius * 2.0f);
+              scene_desc.camera_fov = 45.0f; // Default FOV for models
+          }
       }
 
-      // 4. Default light (if no lights in scene - TBD: check for lights in MTL)
-      // Add a large area light above the scene
-      if (!first_vertex) {
+      // 4. Default light (if no lights in scene)
+      if (!first_vertex && !has_emissive_material) {
           Vec3 center = (overall_min_bounds + overall_max_bounds) / 2.0;
           float size = (overall_max_bounds - overall_min_bounds).length();
           
@@ -230,7 +259,8 @@ class SceneFactory
           
           // Create a rectangle light
           scene_desc.addRectangle(light_pos, Vec3(size, 0, 0), Vec3(0, 0, size), light_mat);
-      } else {
+      } else if (first_vertex) {
+          // No vertices case
           int light_mat = scene_desc.addMaterial(MaterialDesc::light(Vec3(10, 10, 10)));
           scene_desc.addRectangle(Vec3(-1.0, 3.0, -2.0), Vec3(2.5, 0, 0), Vec3(0, 0, 1.5), light_mat);
       }

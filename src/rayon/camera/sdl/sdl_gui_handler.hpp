@@ -14,10 +14,10 @@
 #include "constants.hpp"
 #ifdef SDL2_FOUND
 
-#include <SDL.h>
 #include "imgui.h"
 #include "imgui_impl_sdl2.h"
 #include "imgui_impl_sdlrenderer2.h"
+#include <SDL.h>
 
 #define STB_IMAGE_STATIC
 #define STB_IMAGE_IMPLEMENTATION
@@ -35,12 +35,22 @@ using std::endl;
 using std::string;
 using std::vector;
 
+// Structure to define a category of scenes/experiments
+struct SceneCategory
+{
+   std::string name;
+   std::vector<std::string> search_paths;
+   std::vector<std::string> allowed_extensions; // "yaml", "obj", etc.
+   std::vector<std::string> files;
+   int current_index = -1;
+};
+
 class SDLGuiHandler
 {
  public:
    SDLGuiHandler(int image_width, int image_height)
-       : image_width(image_width), image_height(image_height), show_controls(true), collapse_headers(false), reset_headers(false), window(nullptr), renderer(nullptr),
-         texture(nullptr), logo_texture(nullptr)
+       : image_width(image_width), image_height(image_height), show_controls(true), collapse_headers(false),
+         reset_headers(false), window(nullptr), renderer(nullptr), texture(nullptr), logo_texture(nullptr)
    {
    }
 
@@ -93,11 +103,11 @@ class SDLGuiHandler
       (void)io;
       io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
       ImGui::StyleColorsDark();
-      
+
       // Customize style for transparency
-      ImGuiStyle& style = ImGui::GetStyle();
+      ImGuiStyle &style = ImGui::GetStyle();
       style.Colors[ImGuiCol_WindowBg].w = 0.35f;
-      
+
       ImGui_ImplSDL2_InitForSDLRenderer(window, renderer);
       ImGui_ImplSDLRenderer2_Init(renderer);
       return true;
@@ -130,10 +140,12 @@ class SDLGuiHandler
    }
 
    void updateDisplay(const vector<unsigned char> &image, int image_channels, float sps, float ms_per_sample, int spp,
-                      bool* dof_enabled, float* aperture, float* focus_dist, float* fov,
-                      float* light_intensity, float* background_intensity, float* metal_fuzziness, float* glass_ior,
-                      float* samples_per_batch, bool* auto_accumulate, bool* auto_orbit,
-                      const std::vector<std::string>& scene_files, int* current_scene_idx, bool* load_scene_request)
+                      bool *dof_enabled, float *aperture, float *focus_dist, float *fov, float *light_intensity,
+                      float *background_intensity, float *metal_fuzziness, float *glass_ior, float *samples_per_batch,
+                      bool *auto_accumulate, bool *auto_orbit, std::vector<SceneCategory> &categories,
+                      int *active_category_idx, bool force_tab_update, bool *load_scene_request,
+                      bool debug_mode, const Vec3& cam_pos, const Vec3& cam_look_at, const Vec3& cam_up,
+                      bool has_light, const Vec3& light_pos)
    {
       SDL_UpdateTexture(texture, nullptr, image.data(), image_width * image_channels);
       SDL_RenderClear(renderer);
@@ -143,50 +155,113 @@ class SDLGuiHandler
       ImGui_ImplSDL2_NewFrame();
       ImGui::NewFrame();
 
+      if (debug_mode)
+      {
+         ImGui::SetNextWindowPos(ImVec2(image_width - 10.0f, 10.0f), ImGuiCond_Always, ImVec2(1.0f, 0.0f));
+         ImGui::SetNextWindowBgAlpha(0.90f); // Make it slightly transparent
+         
+         ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.9f, 0.9f, 0.9f, 0.9f));
+         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.0f, 0.0f, 1.0f));
+         ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.8f, 0.0f, 0.0f, 1.0f));
+         
+         if (ImGui::Begin("Debug Info", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoInputs))
+         {
+             ImGui::Text("camera:");
+             ImGui::Text("    position: [%.1f, %.1f, %.1f]", cam_pos.x(), cam_pos.y(), cam_pos.z());
+             ImGui::Text("    look_at: [%.1f, %.1f, %.1f]", cam_look_at.x(), cam_look_at.y(), cam_look_at.z());
+             ImGui::Text("    up: [%.1f, %.1f, %.1f]", cam_up.x(), cam_up.y(), cam_up.z());
+             if (fov) ImGui::Text("    fov: %.1f", *fov);
+             
+             if (has_light) {
+                 ImGui::Separator();
+                 ImGui::Text("light source:");
+                 ImGui::Text("    position: [%.1f, %.1f, %.1f]", light_pos.x(), light_pos.y(), light_pos.z());
+             }
+         }
+         ImGui::End();
+         
+         ImGui::PopStyleColor(3);
+      }
+
       if (show_controls)
       {
          ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
-         if (ImGui::Begin("RayOn - interactive UI ", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove))
+         if (ImGui::Begin("RayOn - interactive UI ", nullptr,
+                          ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove))
          {
-             if (ImGui::CollapsingHeader("Scene Selection", ImGuiTreeNodeFlags_DefaultOpen))
-             {
-                 if (current_scene_idx && !scene_files.empty())
-                 {
-                     // Extract filename for display
-                     std::string current_name = "Select Scene";
-                     if (*current_scene_idx >= 0 && *current_scene_idx < static_cast<int>(scene_files.size()))
+            if (reset_headers)
+               ImGui::SetNextItemOpen(!collapse_headers);
+            if (ImGui::CollapsingHeader("Scene Selection", ImGuiTreeNodeFlags_DefaultOpen))
+            {
+               if (ImGui::BeginTabBar("SceneTabs"))
+               {
+                  for (int i = 0; i < static_cast<int>(categories.size()); ++i)
+                  {
+                     SceneCategory &cat = categories[i];
+
+                     // Determine flags for programmatic tab switching
+                     ImGuiTabItemFlags tab_flags =
+                         (force_tab_update && (*active_category_idx == i)) ? ImGuiTabItemFlags_SetSelected : 0;
+
+                           if (ImGui::BeginTabItem(cat.name.c_str(), nullptr, tab_flags))
                      {
-                         size_t last_slash = scene_files[*current_scene_idx].find_last_of("/\\");
-                         current_name = (last_slash == std::string::npos) ? scene_files[*current_scene_idx] : scene_files[*current_scene_idx].substr(last_slash + 1);
+                        // Only update active index if user manually clicked (not forced)
+                        // OR if it was forced, we just confirm it matches
+                        if (!force_tab_update)
+                           *active_category_idx = i;
+
+                        if (!cat.files.empty())
+                        {
+                           std::string current_name = "Select " + cat.name;
+                           if (cat.current_index >= 0 && cat.current_index < static_cast<int>(cat.files.size()))
+                           {
+                              const std::string &filepath = cat.files[cat.current_index];
+                              size_t last_slash = filepath.find_last_of("/\\");
+                              current_name =
+                                  (last_slash == std::string::npos) ? filepath : filepath.substr(last_slash + 1);
+                           }
+
+                           ImGui::SetNextItemWidth(ImGui::CalcItemWidth()); // Align with sliders
+                           if (ImGui::BeginCombo(("##combo_" + std::to_string(i)).c_str(), current_name.c_str()))
+                           {
+                              for (int j = 0; j < static_cast<int>(cat.files.size()); ++j)
+                              {
+                                 const bool is_selected = (cat.current_index == j);
+                                 const std::string &filepath = cat.files[j];
+                                 size_t last_slash = filepath.find_last_of("/\\");
+                                 std::string name =
+                                     (last_slash == std::string::npos) ? filepath : filepath.substr(last_slash + 1);
+
+                                 if (ImGui::Selectable(name.c_str(), is_selected))
+                                 {
+                                    cat.current_index = j;
+                                    if (load_scene_request)
+                                       *load_scene_request = true;
+                                 }
+                                 if (is_selected)
+                                    ImGui::SetItemDefaultFocus();
+                              }
+                              ImGui::EndCombo();
+                           }
+                           
+                           if (cat.current_index == -1)
+                           {
+                               ImGui::SameLine();
+                               ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.0f, 1.0f));
+                               ImGui::TextUnformatted("<- Choose a scene to load");
+                               ImGui::PopStyleColor();
+                           }
+                        }
+                        else
+                        {
+                           ImGui::TextDisabled("No files found");
+                        }
+                        ImGui::EndTabItem();
                      }
-
-                     if (ImGui::BeginCombo("Scene", current_name.c_str()))
-                     {
-                         for (int i = 0; i < static_cast<int>(scene_files.size()); i++)
-                         {
-                             const bool is_selected = (*current_scene_idx == i);
-                             
-                             size_t last_slash = scene_files[i].find_last_of("/\\");
-                             std::string name = (last_slash == std::string::npos) ? scene_files[i] : scene_files[i].substr(last_slash + 1);
-
-                             if (ImGui::Selectable(name.c_str(), is_selected))
-                             {
-                                 *current_scene_idx = i;
-                                 if (load_scene_request) *load_scene_request = true;
-                             }
-
-                             // Set the initial focus when opening the combo (scrolling + keyboard navigation focus)
-                             if (is_selected)
-                                 ImGui::SetItemDefaultFocus();
-                         }
-                         ImGui::EndCombo();
-                     }
-                 }
-                 else
-                 {
-                     ImGui::TextDisabled("No scenes found");
-                 }
-             }
+                  }
+                  ImGui::EndTabBar();
+               }
+            }
 
             if (reset_headers)
                ImGui::SetNextItemOpen(!collapse_headers);
@@ -208,19 +283,21 @@ class SDLGuiHandler
                if (!sps_history.empty())
                {
                   float max_sps = 0.0f;
-                  for (float f : sps_history) max_sps = std::max(max_sps, f);
-                  
+                  for (float f : sps_history)
+                     max_sps = std::max(max_sps, f);
+
                   ImGui::PushStyleColor(ImGuiCol_PlotLines, ImVec4(0.0f, 1.0f, 0.0f, 1.0f));
                   ImGui::PlotLines("Live SPS", sps_history.data(), static_cast<int>(sps_history.size()), 0, nullptr,
-                                    0.0f, max_sps * 1.1f, ImVec2(ImGui::CalcItemWidth(), 50));
+                                   0.0f, max_sps * 1.1f, ImVec2(ImGui::CalcItemWidth(), 50));
                   ImGui::PopStyleColor();
 
                   float max_ms = 0.0f;
-                  for (float f : ms_history) max_ms = std::max(max_ms, f);
+                  for (float f : ms_history)
+                     max_ms = std::max(max_ms, f);
 
                   ImGui::PushStyleColor(ImGuiCol_PlotLines, ImVec4(1.0f, 0.7f, 0.0f, 1.0f));
                   ImGui::PlotLines("Time/Sample", ms_history.data(), static_cast<int>(ms_history.size()), 0, nullptr,
-                                    0.0f, max_ms * 1.1f, ImVec2(ImGui::CalcItemWidth(), 50));
+                                   0.0f, max_ms * 1.1f, ImVec2(ImGui::CalcItemWidth(), 50));
                   ImGui::PopStyleColor();
                }
                if (samples_per_batch && auto_accumulate)
@@ -246,13 +323,14 @@ class SDLGuiHandler
                   ImGui::Checkbox("Enable Depth of Field", dof_enabled);
                   ImGui::SeparatorText("Lens Controls");
 
-                  if (!(*dof_enabled)) ImGui::BeginDisabled();
+                  if (!(*dof_enabled))
+                     ImGui::BeginDisabled();
                   ImGui::SliderFloat("Aperture", aperture, 0.0f, 1.0f, "%.2f");
                   ImGui::SliderFloat("Focus Dist", focus_dist, 0.1f, 100.0f, "%.1f");
 
-                  if (!(*dof_enabled)) ImGui::EndDisabled();
+                  if (!(*dof_enabled))
+                     ImGui::EndDisabled();
                   ImGui::SliderFloat("FOV", fov, 10.0f, 120.0f, "%.1f deg");
-
                }
             }
 
@@ -281,6 +359,9 @@ class SDLGuiHandler
                ImGui::Text("Keys:");
                ImGui::BulletText("SPACE: Toggle Accumulation");
                ImGui::BulletText("O: Auto-Orbit");
+               ImGui::BulletText("M: Toggle Folders");
+               ImGui::BulletText("N: Switch to next scene");
+               ImGui::BulletText("P: Switch to previous scene");
                ImGui::BulletText("H: Toggle UI");
                ImGui::BulletText("C: Collapse/Expand All");
                ImGui::BulletText("ESC: Exit");
@@ -323,16 +404,16 @@ class SDLGuiHandler
    bool getShowControls() const { return show_controls; }
 
    // Toggle header collapse state
-   void toggleHeaderCollapse() 
-   { 
-      collapse_headers = !collapse_headers; 
+   void toggleHeaderCollapse()
+   {
+      collapse_headers = !collapse_headers;
       reset_headers = true; // Signal to apply the new state in the next frame
    }
 
  private:
    int image_width;
    int image_height;
-   bool show_controls; // Flag to show/hide GUI controls
+   bool show_controls;    // Flag to show/hide GUI controls
    bool collapse_headers; // Flag to collapse/expand all headers
    bool reset_headers;    // Flag to trigger header state update
 
@@ -344,17 +425,14 @@ class SDLGuiHandler
    std::vector<float> sps_history;
    std::vector<float> ms_history;
 
-   static void cleanupSDL()
-   {
-      SDL_Quit();
-   }
+   static void cleanupSDL() { SDL_Quit(); }
 
    void loadLogo()
    {
       const auto relative_width = 0.3F; // Logo width relative to
       //  image width
       int logo_img_width, logo_img_height, logo_img_channels;
-      unsigned char *logo_data = stbi_load("../resources/ISC Logo inline white v3 - 1500px.png", &logo_img_width,
+      unsigned char *logo_data = stbi_load("../resources/assets/ISC Logo inline white v3 - 1500px.png", &logo_img_width,
                                            &logo_img_height, &logo_img_channels, 4);
 
       if (logo_data != nullptr)
@@ -387,6 +465,5 @@ class SDLGuiHandler
          stbi_image_free(logo_data);
       }
    }
-
 };
 #endif // SDL2_FOUND

@@ -34,12 +34,13 @@ static constexpr const char *current_build_configuration() { return RT_BUILD_TYP
 struct ProgramArgs
 {
    int rendering_method = -1; // -1 means not specified, will ask user
-   int samples = SAMPLES_PER_PIXEL;
+   int samples = -1;          // -1 means not specified, will use defaults based on mode
    int height = IMAGE_HEIGHT;
    int start_samples = 32;           // Number of samples to render initially when moving camera
    bool auto_accumulate = true;      // Enable auto-accumulation by default
    int target_fps = 60;              // Target FPS for interactive rendering (default: 60)
    bool adaptive_depth = false;      // Enable adaptive depth (default: off)
+   bool debug_mode = false;          // Enable debug mode overlay
    const char *scene_file = nullptr; // Optional scene file to load
 };
 
@@ -59,6 +60,7 @@ void dumpHelp()
    cout << "                         Lower values = better quality preview but less smooth motion\n";
    cout << "  --adaptive-depth       Enable adaptive depth in interactive mode (progressively increases max depth)\n";
    cout << "  --no-auto-accumulate   Disable automatic sample accumulation in interactive mode\n";
+   cout << "  --debug                Enable debug overlay in interactive mode\n";
 }
 
 ProgramArgs parseInput(int argc, char *argv[])
@@ -121,6 +123,10 @@ ProgramArgs parseInput(int argc, char *argv[])
       {
          args.adaptive_depth = true;
       }
+      else if (strcmp(argv[i], "--debug") == 0)
+      {
+         args.debug_mode = true;
+      }
       else if (strcmp(argv[i], "--scene") == 0 && i + 1 < argc)
       {
          args.scene_file = argv[++i];
@@ -174,7 +180,7 @@ int main(int argc, char *argv[])
 
    int renderType = 2; // Default to CUDA
 
-   if (args.samples < 0)
+   if (args.samples < 0 && args.samples != -1)
       return 1;
 
    // Calculate width maintaining aspect ratio (16:9)
@@ -193,8 +199,6 @@ int main(int argc, char *argv[])
    cout << "lambertian_cosine_weighted_hemisphere_sampling, lambertian_owen_hash_distribution" << "\n";
    cout << "inter_adaptive_depth, inter_target_fps" << "\n\n";
 #endif
-   cout << "Rendering at resolution: " << image_width << " x " << image_height << " pixels - ";
-   cout << "Samples per pixel: " << args.samples << "\n\n";
 
    if (args.rendering_method != -1)
    {
@@ -224,6 +228,19 @@ int main(int argc, char *argv[])
          renderType = stoi(input);
    }
 
+   // Determine effective samples
+   int effective_samples = args.samples;
+   if (effective_samples == -1)
+   {
+       if (renderType == 3)
+           effective_samples = 2000; // Default for interactive mode
+       else
+           effective_samples = SAMPLES_PER_PIXEL; // Default for others (64)
+   }
+
+   cout << "Rendering at resolution: " << image_width << " x " << image_height << " pixels - ";
+   cout << "Samples per pixel: " << effective_samples << "\n\n";
+
    RndGen::set_seed(1984);
 
    Scene::SceneDescription scene_desc;
@@ -241,7 +258,14 @@ int main(int argc, char *argv[])
 
    vector<unsigned char> localImage(image_width * image_height * CHANNELS);
 
-   Camera camera(Vec3(0, 0, 0), image_width, image_height, CHANNELS, args.samples);
+   Camera camera(Vec3(0, 0, 0), image_width, image_height, CHANNELS, effective_samples);
+   
+   // Apply camera settings from scene description
+   camera.look_from = scene_desc.camera_position;
+   camera.look_at = scene_desc.camera_look_at;
+   camera.vup = scene_desc.camera_up;
+   camera.vfov = scene_desc.camera_fov;
+   camera.updateFrame();
 
    RenderCoordinator coordinator(camera, scene_desc);
 
@@ -268,13 +292,14 @@ int main(int argc, char *argv[])
    case 3:
    {
       cout << "Using CUDA GPU with interactive SDL display..." << "\n";
-      camera.samples_per_pixel = 2000;
+      // camera.samples_per_pixel = 2000;
       RendererCUDAProgressive renderer;
       RendererCUDAProgressive::Settings settings;
       settings.samples_per_batch = args.start_samples;
       settings.auto_accumulate = args.auto_accumulate;
       settings.target_fps = args.target_fps;
       settings.adaptive_depth = args.adaptive_depth;
+      settings.debug_mode = args.debug_mode;
       renderer.setSettings(settings);
       coordinator.render(renderer, localImage);
       break;

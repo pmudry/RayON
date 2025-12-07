@@ -33,6 +33,7 @@ class RendererCUDAProgressive : public IRenderer
       bool auto_accumulate = true;
       int target_fps = 60;
       bool adaptive_depth = false;
+      bool debug_mode = false;
    };
 
    RendererCUDAProgressive() = default;
@@ -42,16 +43,6 @@ class RendererCUDAProgressive : public IRenderer
 
    /**
     * @brief Interactive SDL rendering with continuous sample accumulation
-    *
-    * This method implements the core ray-tracing loop with progressive sampling.
-    * GUI and camera controls are handled by separate dedicated classes.
-    *
-    * @param image The final image buffer to store the render
-    * @param max_samples Maximum total samples to accumulate (default: 4096)
-    * @param samples_per_batch Number of samples to add per batch (default: 8)
-    * @param auto_accumulate Enable automatic sample accumulation (default: true)
-    * @param target_fps Target frame rate for interactive rendering (default: 60)
-    * @param adaptive_depth Enable adaptive depth (progressively increases max depth) (default: false)
     */
    void render(const RenderRequest &request, RenderContext &context) override
    {
@@ -59,6 +50,7 @@ class RendererCUDAProgressive : public IRenderer
       bool auto_accumulate = settings_.auto_accumulate;
       int target_fps = settings_.target_fps;
       bool adaptive_depth = settings_.adaptive_depth;
+      bool debug_mode = settings_.debug_mode;
 
       auto &camera = request.camera;
       auto &scene = request.scene;
@@ -93,33 +85,95 @@ class RendererCUDAProgressive : public IRenderer
       CameraControlHandler camera_control;
       camera_control.initializeCameraControls(look_from, look_at);
 
-      // Scan for scenes
-      std::vector<std::string> scene_files;
+      // --- SCENE CATEGORY SETUP ---
+      std::vector<SceneCategory> categories;
+      // 2. Phong Shading Demo
+      categories.push_back({
+          "Phong Shading Demo",
+          {"../resources/experiments/phong-shading-demo", "resources/experiments/phong-shading-demo"},
+          {"obj", "yaml"},
+          {},
+          -1
+      });
+      
+      // 1. Scenes
+      categories.push_back({
+          "Scenes",
+          {"../resources/scenes", "resources/scenes", "."},
+          {"yaml", "yml"},
+          {},
+          -1
+      });
+
+      // 1b. Demo
+      categories.push_back({
+          "Demo",
+          {"../resources/experiments/demo", "resources/experiments/demo"},
+          {"yaml", "yml"},
+          {},
+          -1
+      });
+
+      
+
+      // 3. Simple Obj
+      categories.push_back({
+          "Simple Obj",
+          {"../resources/experiments/simple-obj", "resources/experiments/simple-obj"},
+          {"obj"},
+          {},
+          -1
+      });
+
+      // 4. Experiments (General)
+      categories.push_back({
+          "Experiments",
+          {"../resources/experiments", "resources/experiments"},
+          {"obj"},
+          {},
+          -1
+      });
+
+      // SCANNING
       try {
-          std::vector<std::string> search_paths = {"../resources", "resources", "."};
-          for (const auto& search_path : search_paths) {
-              if (std::filesystem::exists(search_path)) {
-                  for (const auto & entry : std::filesystem::directory_iterator(search_path)) {
-                      std::string path = entry.path().string();
-                      std::string ext = path.substr(path.find_last_of(".") + 1);
-                      std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-                      if(ext == "yaml" || ext == "yml" || ext == "obj") {
-                          // Avoid duplicates if we scan . and resources and they are same
-                          if(std::find(scene_files.begin(), scene_files.end(), path) == scene_files.end()) {
-                              scene_files.push_back(path);
+          for (auto& cat : categories) {
+              for (const auto& search_path : cat.search_paths) {
+                  if (std::filesystem::exists(search_path)) {
+                      for (const auto & entry : std::filesystem::directory_iterator(search_path)) {
+                          if (entry.is_regular_file()) {
+                             std::string path = entry.path().string();
+                             std::string ext = path.substr(path.find_last_of(".") + 1);
+                             std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+                             
+                             // Check if extension matches any allowed
+                             bool match = false;
+                             for (const auto& allowed : cat.allowed_extensions) {
+                                 if (ext == allowed) { match = true; break; }
+                             }
+
+                             if (match) {
+                                 if (std::find(cat.files.begin(), cat.files.end(), path) == cat.files.end()) {
+                                     cat.files.push_back(path);
+                                 }
+                             }
                           }
                       }
                   }
               }
+              std::sort(cat.files.begin(), cat.files.end());
+              // Auto-select first if available
+              if (!cat.files.empty()) cat.current_index = -1; // Don't select by default to avoid auto-loading
           }
-          std::sort(scene_files.begin(), scene_files.end());
       } catch (const std::exception& e) {
           cerr << "Error scanning scenes: " << e.what() << std::endl;
       }
-      int current_file_index = -1;
+
+      int active_category_idx = 0; // Default to "Scenes"
+      bool force_tab_update = false;
 
       // Ray-tracing state
       bool running = true;
+      bool scene_loaded = false; // Start with no scene loaded
       bool camera_changed = true;
       bool accumulation_enabled = auto_accumulate;
       int current_samples = 0;
@@ -189,12 +243,53 @@ class RendererCUDAProgressive : public IRenderer
 
       // Timing for auto-orbit
       auto last_frame_time = std::chrono::high_resolution_clock::now();
-
       auto total_start = std::chrono::high_resolution_clock::now();
+      bool load_scene_request = false;
+
+      // Helper for loading scenes
+      auto loadSelectedScene = [&]() {
+         if (active_category_idx < 0 || active_category_idx >= static_cast<int>(categories.size())) return; 
+         
+         SceneCategory& cat = categories[active_category_idx];
+         if (cat.current_index < 0 || cat.current_index >= static_cast<int>(cat.files.size())) return;
+
+         std::string file_to_load = cat.files[cat.current_index];
+
+         if (!file_to_load.empty()) {
+             std::cout << "Switching to: " << file_to_load << std::endl;
+             
+             Scene::CudaSceneBuilder::freeGPUScene(gpu_scene);
+             active_scene = Scene::SceneFactory::load(file_to_load);
+             
+             camera.look_from = active_scene.camera_position;
+             camera.look_at = active_scene.camera_look_at;
+             camera.vup = active_scene.camera_up;
+             camera.vfov = active_scene.camera_fov;
+             refreshCameraFrame();
+             camera_control.initializeCameraControls(look_from, look_at);
+
+             gpu_scene = Scene::CudaSceneBuilder::buildGPUScene(active_scene);
+             
+             current_samples = 0;
+             std::fill(accum_buffer.begin(), accum_buffer.end(), 0.0f);
+             if (d_accum_buffer != nullptr) {
+                 freeDeviceAccumBuffer(d_accum_buffer);
+                 d_accum_buffer = nullptr;
+             }
+             
+             force_immediate_render = true;
+             camera_changed = true;
+             applySceneSettings();
+             load_scene_request = false; // Reset flag
+             scene_loaded = true; // Mark scene as loaded
+         }
+      };
 
       // Main rendering loop
       while (running)
       {
+         force_tab_update = false; // Reset per frame
+
          // Handle events
          while (gui.pollEvent(event))
          {
@@ -216,61 +311,47 @@ class RendererCUDAProgressive : public IRenderer
                if (event.type == SDL_KEYDOWN || event.type == SDL_KEYUP)
                   continue;
             }
-
+            
+            // Only handle scene-related inputs if loaded or if it's a load command
             if (event.type == SDL_KEYDOWN)
             {
-               // Handle 'h' key to toggle GUI controls visibility
                if (event.key.keysym.sym == SDLK_h)
                {
                   gui.toggleControls();
                }
-               else if ((event.key.keysym.sym == SDLK_n || event.key.keysym.sym == SDLK_p) && !scene_files.empty())
+               else if (event.key.keysym.sym == SDLK_m)
                {
-                  // Handle Scene Switching
-                  if (current_file_index == -1) current_file_index = 0;
-                  else {
-                      if (event.key.keysym.sym == SDLK_n) 
-                          current_file_index = (current_file_index + 1) % scene_files.size();
-                      else 
-                          current_file_index = (current_file_index - 1 + scene_files.size()) % scene_files.size();
-                  }
-
-                  std::cout << "Switching to scene: " << scene_files[current_file_index] << std::endl;
+                  // Cycle Category Mode
+                  active_category_idx = (active_category_idx + 1) % categories.size();
+                  force_tab_update = true;
                   
-                  // 1. Free old GPU scene
-                  Scene::CudaSceneBuilder::freeGPUScene(gpu_scene);
-                  
-                  // 2. Load new scene
-                  active_scene = Scene::SceneFactory::load(scene_files[current_file_index]);
-                  
-                  // 3. Update camera from new scene
-                  camera.look_from = active_scene.camera_position;
-                  camera.look_at = active_scene.camera_look_at;
-                  camera.vup = active_scene.camera_up;
-                  camera.vfov = active_scene.camera_fov;
-                  refreshCameraFrame();
-                  camera_control.initializeCameraControls(look_from, look_at);
-
-                  // 4. Rebuild GPU scene
-                  gpu_scene = Scene::CudaSceneBuilder::buildGPUScene(active_scene);
-                  
-                  // 5. Reset accumulation
-                  current_samples = 0;
-                  std::fill(accum_buffer.begin(), accum_buffer.end(), 0.0f);
-                  if (d_accum_buffer != nullptr) {
-                      freeDeviceAccumBuffer(d_accum_buffer);
-                      d_accum_buffer = nullptr;
+                  // Auto-select first if none selected
+                  if (categories[active_category_idx].current_index == -1 && !categories[active_category_idx].files.empty()) {
+                      categories[active_category_idx].current_index = 0;
                   }
                   
-                  force_immediate_render = true;
-                  camera_changed = true;
-                  applySceneSettings(); // Re-apply generic settings
+                  load_scene_request = true;
                }
-               else if (event.key.keysym.sym == SDLK_c)
+               else if ((event.key.keysym.sym == SDLK_n || event.key.keysym.sym == SDLK_p))
+               {
+                  // Cycle Files in Active Category
+                  SceneCategory& cat = categories[active_category_idx];
+                  if (!cat.files.empty()) {
+                      bool is_next = (event.key.keysym.sym == SDLK_n);
+                      
+                      if (cat.current_index == -1) cat.current_index = 0;
+                      else {
+                          if (is_next) cat.current_index = (cat.current_index + 1) % cat.files.size();
+                          else cat.current_index = (cat.current_index - 1 + cat.files.size()) % cat.files.size();
+                      }
+                      load_scene_request = true;
+                  }
+               }
+               else if (scene_loaded && event.key.keysym.sym == SDLK_c)
                {
                   gui.toggleHeaderCollapse();
                }
-               else if (event.key.keysym.sym == SDLK_r)
+               else if (scene_loaded && event.key.keysym.sym == SDLK_r)
                {
                   // Reset to default state
                   light_intensity = 1.0f;
@@ -290,7 +371,7 @@ class RendererCUDAProgressive : public IRenderer
                   camera_changed = true;
                   applySceneSettings();
                }
-               else if (camera_control.handleKeyDown(event, accumulation_enabled, samples_per_batch_float,
+               else if (scene_loaded && camera_control.handleKeyDown(event, accumulation_enabled, samples_per_batch_float,
                                                      light_intensity, background_intensity, needs_rerender,
                                                      camera_changed))
                {
@@ -300,7 +381,7 @@ class RendererCUDAProgressive : public IRenderer
                   propagateAccumulationToggle();
                }
             }
-            else if (event.type == SDL_MOUSEBUTTONDOWN)
+            else if (scene_loaded && event.type == SDL_MOUSEBUTTONDOWN)
             {
                syncSamplesFromSlider();
 
@@ -313,11 +394,11 @@ class RendererCUDAProgressive : public IRenderer
                   propagateAccumulationToggle();
                }
             }
-            else if (event.type == SDL_MOUSEBUTTONUP)
+            else if (scene_loaded && event.type == SDL_MOUSEBUTTONUP)
             {
                camera_control.handleMouseButtonUp(event);
             }
-            else if (event.type == SDL_MOUSEMOTION)
+            else if (scene_loaded && event.type == SDL_MOUSEMOTION)
             {
                if (camera_control.handleMouseMotion(
                        event, look_from, look_at, vup, basis_w))
@@ -329,7 +410,7 @@ class RendererCUDAProgressive : public IRenderer
                   camera_changed = true;
                }
             }
-            else if (event.type == SDL_MOUSEWHEEL)
+            else if (scene_loaded && event.type == SDL_MOUSEWHEEL)
             {
                if (camera_control.handleMouseWheel(event, look_from, look_at))
                {
@@ -338,12 +419,12 @@ class RendererCUDAProgressive : public IRenderer
             }
          }
 
-         // Update auto-orbit if enabled (before handling camera_changed)
+         // Update auto-orbit
          auto current_frame_time = std::chrono::high_resolution_clock::now();
          std::chrono::duration<float> delta = current_frame_time - last_frame_time;
          last_frame_time = current_frame_time;
 
-         if (camera_control.updateAutoOrbit(look_from, look_at, delta.count()))
+         if (scene_loaded && camera_control.updateAutoOrbit(look_from, look_at, delta.count()))
          {
             camera_changed = true;
          }
@@ -353,19 +434,16 @@ class RendererCUDAProgressive : public IRenderer
          std::chrono::duration<float> time_since_last_change = now - last_camera_change_time;
          is_camera_moving = (time_since_last_change.count() < motion_cooldown_seconds);
 
-         // Handle camera changes - restart rendering
-         if (camera_changed)
+         // Handle camera changes
+         if (scene_loaded && camera_changed)
          {
             camera_changed = false;
             current_samples = 0;
-            force_immediate_render = true; // Force rendering after camera/settings change
+            force_immediate_render = true; 
             std::fill(accum_buffer.begin(), accum_buffer.end(), 0.0f);
-
-            // Mark camera as moving
             last_camera_change_time = now;
             is_camera_moving = true;
 
-            // Reset only the accumulation buffer; keep RNG states alive to preserve jitter sequences
             if (d_accum_buffer != nullptr)
             {
                freeDeviceAccumBuffer(d_accum_buffer);
@@ -375,47 +453,31 @@ class RendererCUDAProgressive : public IRenderer
             refreshCameraFrame();
          }
 
-         // Only happens once at start or after toggling accumulation
-         if (needs_rerender && current_samples > 0)
+         if (scene_loaded && needs_rerender && current_samples > 0)
          {
             render::convertAccumBufferToImage(display_view, accum_buffer, current_samples, gamma);
-            
-            // Note: displayFrame is now called unconditionally below
-            if (target.pixels)
-               *target.pixels = display_image;
+            if (target.pixels) *target.pixels = display_image;
             needs_rerender = false;
          }
 
-         // Render logic: accumulate if enabled, or render once if auto-accumulation is off
-         bool should_render = (current_samples < max_samples && !camera_changed && running) || force_immediate_render;
-         bool needs_initial_render =
-             current_samples == 0 && !accumulation_enabled; // Render at least once when auto-accumulation is off
+         // Render logic
+         bool should_render = scene_loaded && ((current_samples < max_samples && !camera_changed && running) || force_immediate_render);
+         bool needs_initial_render = current_samples == 0 && !accumulation_enabled;
 
          if (should_render && (accumulation_enabled || needs_initial_render || force_immediate_render))
          {
-            force_immediate_render = false; // Reset flag after rendering
-
+            force_immediate_render = false;
             syncSamplesFromSlider();
             user_samples_per_batch = samples_per_batch;
 
-            // Adaptive sample rate: use fewer samples during motion for smooth 60 FPS
-            if (is_camera_moving)
-            {
-               adaptive_samples_per_batch = std::max(5, adaptive_samples_per_batch);
-            }
-            else
-            {
-               // When camera stops, gradually ramp up to user's preferred sample count
-               adaptive_samples_per_batch = user_samples_per_batch;
-            }
+            if (is_camera_moving) adaptive_samples_per_batch = std::max(5, adaptive_samples_per_batch);
+            else adaptive_samples_per_batch = user_samples_per_batch;
 
-            // Start timing this frame
             auto frame_start = std::chrono::high_resolution_clock::now();
 
             renderBatch(frame, accum_buffer, display_view, current_samples, max_samples, adaptive_samples_per_batch,
                         gamma, d_rand_states, d_accum_buffer, gpu_scene, is_camera_moving, adaptive_depth, context);
 
-            // Measure frame time and adapt sample rate for next frame
             auto frame_end = std::chrono::high_resolution_clock::now();
             std::chrono::duration<float, std::milli> frame_time = frame_end - frame_start;
             
@@ -425,22 +487,20 @@ class RendererCUDAProgressive : public IRenderer
                current_ms_per_sample = frame_time.count() / static_cast<float>(adaptive_samples_per_batch);
             }
 
-            // Adaptive adjustment only during motion
-            if (is_camera_moving)
-            {
-               adaptive_samples_per_batch = 5; // Fixed low sample count during motion for simplicity
-            }
-
-            if (target.pixels)
-               *target.pixels = display_image;
+            if (is_camera_moving) adaptive_samples_per_batch = 5;
+            if (target.pixels) *target.pixels = display_image;
          }
          else
          {
-            // Cap CPU usage when not rendering
+             if (!scene_loaded)
+             {
+                 // Clear screen if no scene loaded
+                 std::fill(display_image.begin(), display_image.end(), 0);
+             }
              SDL_Delay(16); 
          }
 
-         // Always display the frame and UI, regardless of whether we rendered a new batch
+         // Check for UI changes
          bool old_dof = dof_enabled;
          float old_aperture = dof_aperture;
          float old_focus = dof_focus_distance;
@@ -450,50 +510,42 @@ class RendererCUDAProgressive : public IRenderer
          float old_fuzz = metal_fuzziness;
          float old_ior = glass_refraction_index;
 
-         bool load_scene_request = false;
+         // Find first light source for debug info
+         Vec3 light_pos(0,0,0);
+         bool has_light = false;
+         if (settings_.debug_mode) {
+             for(const auto& geom : active_scene.geometries) {
+                 if (geom.material_id >= 0 && geom.material_id < active_scene.materials.size()) {
+                     const auto& mat = active_scene.materials[geom.material_id];
+                     if (mat.type == Scene::MaterialType::LIGHT || mat.emission.length_squared() > 0) {
+                         if (geom.type == Scene::GeometryType::RECTANGLE) {
+                             light_pos = geom.data.rectangle.corner + geom.data.rectangle.u * 0.5f + geom.data.rectangle.v * 0.5f;
+                         } else if (geom.type == Scene::GeometryType::SPHERE) {
+                             light_pos = geom.data.sphere.center;
+                         } else if (geom.type == Scene::GeometryType::DISPLACED_SPHERE) {
+                             light_pos = geom.data.displaced_sphere.center;
+                         }
+                         has_light = true;
+                         break; // Just show the first one
+                     }
+                 }
+             }
+         }
 
          displayFrame(
              gui, display_image, current_samples, &samples_per_batch_float, &light_intensity, &background_intensity,
              &metal_fuzziness, &glass_refraction_index, &accumulation_enabled, camera_control, &dof_enabled,
              &dof_aperture, &dof_focus_distance, &fov, 
              image_channels, current_sps, current_ms_per_sample,
-             scene_files, &current_file_index, &load_scene_request);
+             categories, &active_category_idx,
+             force_tab_update, &load_scene_request,
+             debug_mode, look_from, look_at, vup, has_light, light_pos);
 
-         if (load_scene_request && !scene_files.empty() && current_file_index >= 0 && current_file_index < static_cast<int>(scene_files.size()))
+         if (load_scene_request)
          {
-             std::cout << "Switching to scene: " << scene_files[current_file_index] << std::endl;
-             
-             // 1. Free old GPU scene
-             Scene::CudaSceneBuilder::freeGPUScene(gpu_scene);
-             
-             // 2. Load new scene
-             active_scene = Scene::SceneFactory::load(scene_files[current_file_index]);
-             
-             // 3. Update camera from new scene
-             camera.look_from = active_scene.camera_position;
-             camera.look_at = active_scene.camera_look_at;
-             camera.vup = active_scene.camera_up;
-             camera.vfov = active_scene.camera_fov;
-             refreshCameraFrame();
-             camera_control.initializeCameraControls(look_from, look_at);
-
-             // 4. Rebuild GPU scene
-             gpu_scene = Scene::CudaSceneBuilder::buildGPUScene(active_scene);
-             
-             // 5. Reset accumulation
-             current_samples = 0;
-             std::fill(accum_buffer.begin(), accum_buffer.end(), 0.0f);
-             if (d_accum_buffer != nullptr) {
-                 freeDeviceAccumBuffer(d_accum_buffer);
-                 d_accum_buffer = nullptr;
-             }
-             
-             force_immediate_render = true;
-             camera_changed = true;
-             applySceneSettings(); // Re-apply generic settings
+             loadSelectedScene();
          }
 
-         // Check for changes from UI
          if (dof_enabled != old_dof || dof_aperture != old_aperture || dof_focus_distance != old_focus || fov != old_fov ||
              light_intensity != old_light || background_intensity != old_background || metal_fuzziness != old_fuzz || glass_refraction_index != old_ior)
          {
@@ -510,19 +562,9 @@ class RendererCUDAProgressive : public IRenderer
       auto total_end = std::chrono::high_resolution_clock::now();
       std::cout << "\nTotal session time: " << render::timeStr(total_end - total_start) << std::endl;
 
-      // Cleanup device resources
-      if (d_rand_states != nullptr)
-      {
-         freeDeviceRandomStates(d_rand_states);
-      }
-      if (d_accum_buffer != nullptr)
-      {
-         freeDeviceAccumBuffer(d_accum_buffer);
-      }
-
-      // Cleanup scene
+      if (d_rand_states != nullptr) freeDeviceRandomStates(d_rand_states);
+      if (d_accum_buffer != nullptr) freeDeviceAccumBuffer(d_accum_buffer);
       Scene::CudaSceneBuilder::freeGPUScene(gpu_scene);
-
       gui.cleanup();
    }
 
@@ -613,7 +655,11 @@ class RendererCUDAProgressive : public IRenderer
                      float* glass_refraction_index, bool* accumulation_enabled, CameraControlHandler& camera_control, bool* dof_enabled,
                      float* dof_aperture, float* dof_focus_distance, float* fov,
                      int image_channels, float sps, float ms_per_sample,
-                     const std::vector<std::string>& scene_files, int* current_scene_idx, bool* load_scene_request)
+                     std::vector<SceneCategory>& categories, int* active_category_idx,
+                     bool force_tab_update,
+                     bool* load_scene_request,
+                     bool debug_mode, const Vec3& cam_pos, const Vec3& cam_look_at, const Vec3& cam_up,
+                     bool has_light, const Vec3& light_pos)
    {
       bool is_orbiting = camera_control.isAutoOrbitEnabled();
 
@@ -621,7 +667,8 @@ class RendererCUDAProgressive : public IRenderer
                         dof_enabled, dof_aperture, dof_focus_distance, fov,
                         light_intensity, background_intensity, metal_fuzziness, glass_refraction_index,
                         samples_per_batch, accumulation_enabled, &is_orbiting,
-                        scene_files, current_scene_idx, load_scene_request);
+                        categories, active_category_idx, force_tab_update, load_scene_request,
+                        debug_mode, cam_pos, cam_look_at, cam_up, has_light, light_pos);
       
       if (is_orbiting != camera_control.isAutoOrbitEnabled())
       {

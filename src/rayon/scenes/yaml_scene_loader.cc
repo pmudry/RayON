@@ -4,13 +4,19 @@
  */
 
 #include "yaml_scene_loader.hpp"
+#include "../../external/tiny_obj_loader.h"
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <fstream>
 #include <iostream>
 #include <map>
 #include <sstream>
 #include <vector>
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 using namespace std;
 
@@ -109,6 +115,174 @@ static ProceduralPattern parsePatternType(const string &type_str)
    return ProceduralPattern::NONE;
 }
 
+static Vec3 rotatePoint(Vec3 p, Vec3 rot_deg)
+{
+   double rad_x = rot_deg.x() * M_PI / 180.0;
+   double rad_y = rot_deg.y() * M_PI / 180.0;
+   double rad_z = rot_deg.z() * M_PI / 180.0;
+
+   // Rotate X
+   double y1 = p.y() * cos(rad_x) - p.z() * sin(rad_x);
+   double z1 = p.y() * sin(rad_x) + p.z() * cos(rad_x);
+   p = Vec3(p.x(), y1, z1);
+
+   // Rotate Y
+   double x2 = p.x() * cos(rad_y) + p.z() * sin(rad_y);
+   double z2 = -p.x() * sin(rad_y) + p.z() * cos(rad_y);
+   p = Vec3(x2, p.y(), z2);
+
+   // Rotate Z
+   double x3 = p.x() * cos(rad_z) - p.y() * sin(rad_z);
+   double y3 = p.x() * sin(rad_z) + p.y() * cos(rad_z);
+   p = Vec3(x3, y3, p.z());
+
+   return p;
+}
+
+static void loadObjGeometry(const string &filename, SceneDescription &scene, const Vec3 &pos, const Vec3 &rot,
+                            const Vec3 &scale, int override_mat_id)
+{
+   tinyobj::attrib_t attrib;
+   std::vector<tinyobj::shape_t> shapes;
+   std::vector<tinyobj::material_t> materials;
+   std::string warn, err;
+
+   // Handle potential relative paths
+   string full_path = filename; 
+
+   // Extract directory for MTL search
+   std::string mtl_dir;
+   size_t last_slash = filename.find_last_of("/\\");
+   if (last_slash != std::string::npos)
+   {
+      mtl_dir = filename.substr(0, last_slash) + "/";
+   }
+
+   bool ret = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, full_path.c_str(), mtl_dir.c_str());
+
+   if (!warn.empty())
+      std::cout << "OBJ Warning: " << warn << std::endl;
+   if (!err.empty())
+      std::cerr << "OBJ Error: " << err << std::endl;
+   if (!ret)
+      return;
+
+   // Material mapping (only if not overridden)
+   std::map<int, int> material_map;
+   if (override_mat_id == -1)
+   {
+      // Load materials from OBJ to Scene
+      for (size_t i = 0; i < materials.size(); ++i)
+      {
+         const auto &tmat = materials[i];
+         MaterialDesc mat;
+         mat.type = MaterialType::LAMBERTIAN;
+         mat.albedo = Vec3(tmat.diffuse[0], tmat.diffuse[1], tmat.diffuse[2]);
+
+         if (tmat.specular[0] > 0 || tmat.shininess > 0)
+         {
+            mat.type = MaterialType::METAL;
+            mat.metallic = 1.0;
+            mat.roughness = 1.0f - std::min(1.0f, tmat.shininess / 1000.0f);
+         }
+         if (tmat.ior > 1.0)
+         {
+            mat.type = MaterialType::GLASS;
+            mat.refractive_index = tmat.ior;
+         }
+         int id = scene.addMaterial(mat);
+         material_map[(int)i] = id;
+      }
+   }
+
+   // Process shapes
+   for (const auto &shape : shapes)
+   {
+      for (size_t f = 0; f < shape.mesh.num_face_vertices.size(); f++)
+      {
+         if (shape.mesh.num_face_vertices[f] != 3)
+            continue; // Triangles only
+
+         GeometryDesc geom;
+         geom.type = GeometryType::TRIANGLE;
+
+         // Material
+         if (override_mat_id != -1)
+         {
+            geom.material_id = override_mat_id;
+         }
+         else
+         {
+            int obj_mat_id = shape.mesh.material_ids[f];
+            if (material_map.count(obj_mat_id))
+            {
+               geom.material_id = material_map[obj_mat_id];
+            }
+            else
+            {
+               geom.material_id = 0; // Fallback
+            }
+         }
+
+         // Vertices
+         Vec3 vertices[3];
+         Vec3 normals[3];
+         bool has_normals = false;
+
+         for (int v = 0; v < 3; v++)
+         {
+            tinyobj::index_t idx = shape.mesh.indices[3 * f + v];
+
+            // Position
+            Vec3 p(attrib.vertices[3 * idx.vertex_index + 0], attrib.vertices[3 * idx.vertex_index + 1],
+                   attrib.vertices[3 * idx.vertex_index + 2]);
+
+            // Apply Transform
+            // Scale
+            p = Vec3(p.x() * scale.x(), p.y() * scale.y(), p.z() * scale.z());
+            // Rotate
+            p = rotatePoint(p, rot);
+            // Translate
+            p = p + pos;
+
+            vertices[v] = p;
+
+            // Normal
+            if (idx.normal_index >= 0)
+            {
+               has_normals = true;
+               Vec3 n(attrib.normals[3 * idx.normal_index + 0], attrib.normals[3 * idx.normal_index + 1],
+                      attrib.normals[3 * idx.normal_index + 2]);
+               // Rotate normal (no scale/translate)
+               n = rotatePoint(n, rot);
+               normals[v] = unit_vector(n);
+            }
+         }
+
+         geom.data.triangle.v0 = vertices[0];
+         geom.data.triangle.v1 = vertices[1];
+         geom.data.triangle.v2 = vertices[2];
+         geom.data.triangle.has_normals = has_normals;
+         if (has_normals)
+         {
+            geom.data.triangle.n0 = normals[0];
+            geom.data.triangle.n1 = normals[1];
+            geom.data.triangle.n2 = normals[2];
+         }
+
+         // Bounds
+         geom.bounds_min = Vec3(std::min({vertices[0].x(), vertices[1].x(), vertices[2].x()}),
+                                std::min({vertices[0].y(), vertices[1].y(), vertices[2].y()}),
+                                std::min({vertices[0].z(), vertices[1].z(), vertices[2].z()}));
+         geom.bounds_max = Vec3(std::max({vertices[0].x(), vertices[1].x(), vertices[2].x()}),
+                                std::max({vertices[0].y(), vertices[1].y(), vertices[2].y()}),
+                                std::max({vertices[0].z(), vertices[1].z(), vertices[2].z()}));
+
+         scene.addGeometry(geom);
+      }
+   }
+}
+
 /**
  * @brief Simple YAML parser for scene files
  */
@@ -164,6 +338,14 @@ class SimpleYAMLParser
             geometry_index = 0;
             continue;
          }
+         else if (trimmed == "scene:")
+         {
+             in_materials = false;
+             in_geometry = false;
+             section_stack.clear();
+             section_stack.push_back("scene");
+             continue;
+         }
 
          // Handle list items
          if (trimmed.length() >= 2 && trimmed[0] == '-' && trimmed[1] == ' ')
@@ -190,12 +372,47 @@ class SimpleYAMLParser
             string key = trimWhitespace(trimmed.substr(0, colon_pos));
             string value = trimWhitespace(trimmed.substr(colon_pos + 1));
 
+            // Handle nested properties inside 'scene' block (e.g., scene.camera.position)
+            if (!section_stack.empty() && section_stack[0] == "scene") {
+                // Basic indentation-based hierarchy handling for 'scene' block
+                // If we are in 'scene', check if the key is a new sub-section like "camera"
+                if (value.empty()) {
+                    // This is a subsection header (e.g., "camera:")
+                    // For simplicity in this parser, we'll just append it to the stack or handle it via dot notation in keys
+                    // A robust parser would track indentation levels.
+                    // Here we assume keys are like "camera" or properties under it.
+                    // Given the simple structure, we can cheat a bit:
+                    // If indentation increases, it's a nested property.
+                    // But we already trimmed 'line'.
+                    // Let's stick to flat keys for simplicity or rely on the current simple logic.
+                    // The current logic builds keys like "scene.camera" but doesn't handle deeper nesting well without indentation tracking.
+                    
+                    // IMPROVED LOGIC:
+                    // If we are in the 'scene' block, we'll just manually construct keys like "scene.camera.position"
+                    // based on the key name if it's unique, or we need a better parser.
+                    // However, the parser above simply concatenates `section_stack`.
+                    
+                    // Hack for this specific format:
+                    // If key is "camera", push to stack. If indentation decreases, pop.
+                    // BUT, indentation tracking is tricky here.
+                    // Let's assume the parser logic "Build full key path" below needs help.
+                    
+                    // Let's try to handle "camera:" line specifically if value is empty
+                    if (key == "camera") {
+                        if(section_stack.back() != "scene.camera") // Avoid duplicate push
+                             section_stack.push_back("camera"); 
+                        continue;
+                    }
+                }
+            }
+
             // Build full key path
-            string full_key = key;
+            string full_key = "";
             for (const auto &section : section_stack)
             {
-               full_key = section + "." + full_key;
+               full_key += section + ".";
             }
+            full_key += key;
 
             if (!value.empty())
             {
@@ -314,7 +531,7 @@ static bool loadMaterials(const SimpleYAMLParser &parser, SceneDescription &scen
 }
 
 static bool loadGeometry(const SimpleYAMLParser &parser, SceneDescription &scene,
-                         const map<string, int> &material_name_to_id)
+                         const map<string, int> &material_name_to_id, const string& scene_filepath)
 {
    // Try to load geometry by index
    for (int i = 0; i < 1000; ++i)
@@ -327,6 +544,66 @@ static bool loadGeometry(const SimpleYAMLParser &parser, SceneDescription &scene
       }
 
       string geom_type = removeQuotes(parser.getString(prefix + ".type"));
+
+      // Special case for OBJ: material is optional
+      if (geom_type == "obj")
+      {
+         string filename = removeQuotes(parser.getString(prefix + ".filename"));
+         
+         // Resolve path relative to scene file if not found
+         ifstream check_file(filename);
+         if (!check_file.good()) {
+             // File not found at raw path, try relative to scene file
+             size_t last_slash = scene_filepath.find_last_of("/\\");
+             if (last_slash != string::npos) {
+                 string dir = scene_filepath.substr(0, last_slash + 1);
+                 string relative_path = dir + filename;
+                 ifstream check_relative(relative_path);
+                 if (check_relative.good()) {
+                     filename = relative_path;
+                 }
+             }
+         }
+         check_file.close();
+
+         Vec3 pos = parser.getVec3(prefix + ".position", Vec3(0, 0, 0));
+         Vec3 rot = parser.getVec3(prefix + ".rotation", Vec3(0, 0, 0));
+
+         Vec3 scale(1, 1, 1);
+         string scale_val = parser.getString(prefix + ".scale");
+         if (!scale_val.empty())
+         {
+            if (scale_val.find('[') != string::npos)
+            {
+               scale = parseVec3Array(scale_val);
+            }
+            else
+            {
+               double s = stod(scale_val);
+               scale = Vec3(s, s, s);
+            }
+         }
+
+         int mat_id = -1;
+         string mat_name = removeQuotes(parser.getString(prefix + ".material"));
+         if (!mat_name.empty())
+         {
+            auto it = material_name_to_id.find(mat_name);
+            if (it != material_name_to_id.end())
+            {
+               mat_id = it->second;
+            }
+            else
+            {
+               cerr << "WARNING: Unknown material for OBJ: " << mat_name << ". Using OBJ materials.\n";
+            }
+         }
+
+         loadObjGeometry(filename, scene, pos, rot, scale, mat_id);
+         cout << "  Loaded OBJ: " << filename << "\n";
+         continue;
+      }
+
       string mat_name = removeQuotes(parser.getString(prefix + ".material"));
 
       // Look up material ID
@@ -379,6 +656,27 @@ bool loadSceneFromYAML(const char *filename, SceneDescription &scene)
       return false;
    }
 
+   // Load Camera Settings
+   if (parser.hasKey("scene.camera.position"))
+   {
+       scene.camera_position = parser.getVec3("scene.camera.position");
+       cout << "  Loaded camera position: " << scene.camera_position << endl;
+   }
+   if (parser.hasKey("scene.camera.look_at"))
+   {
+       scene.camera_look_at = parser.getVec3("scene.camera.look_at");
+       cout << "  Loaded camera look_at: " << scene.camera_look_at << endl;
+   }
+   if (parser.hasKey("scene.camera.up"))
+   {
+       scene.camera_up = parser.getVec3("scene.camera.up");
+   }
+   if (parser.hasKey("scene.camera.fov"))
+   {
+       scene.camera_fov = parser.getFloat("scene.camera.fov");
+       cout << "  Loaded camera fov: " << scene.camera_fov << endl;
+   }
+
    // Clear existing scene
    scene.materials.clear();
    scene.geometries.clear();
@@ -394,7 +692,8 @@ bool loadSceneFromYAML(const char *filename, SceneDescription &scene)
    }
 
    // Then load geometry (which references materials)
-   if (!loadGeometry(parser, scene, material_name_to_id))
+   // Pass filename to resolve relative paths
+   if (!loadGeometry(parser, scene, material_name_to_id, string(filename)))
    {
       cerr << "ERROR: Failed to load geometry"
               "\n";

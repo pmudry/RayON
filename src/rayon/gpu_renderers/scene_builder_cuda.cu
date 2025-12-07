@@ -103,6 +103,31 @@ static CudaScene::Geometry convertGeometry(const GeometryDesc &desc)
       geom.data.displaced_sphere.pattern_type = desc.data.displaced_sphere.pattern_type;
       break;
 
+   case GeometryType::TRIANGLE:
+      geom.data.triangle.v0 = f3(static_cast<float>(desc.data.triangle.v0.x()),
+                                 static_cast<float>(desc.data.triangle.v0.y()),
+                                 static_cast<float>(desc.data.triangle.v0.z()));
+      geom.data.triangle.v1 = f3(static_cast<float>(desc.data.triangle.v1.x()),
+                                 static_cast<float>(desc.data.triangle.v1.y()),
+                                 static_cast<float>(desc.data.triangle.v1.z()));
+      geom.data.triangle.v2 = f3(static_cast<float>(desc.data.triangle.v2.x()),
+                                 static_cast<float>(desc.data.triangle.v2.y()),
+                                 static_cast<float>(desc.data.triangle.v2.z()));
+      
+      if (desc.data.triangle.has_normals) {
+          geom.data.triangle.n0 = f3(static_cast<float>(desc.data.triangle.n0.x()),
+                                     static_cast<float>(desc.data.triangle.n0.y()),
+                                     static_cast<float>(desc.data.triangle.n0.z()));
+          geom.data.triangle.n1 = f3(static_cast<float>(desc.data.triangle.n1.x()),
+                                     static_cast<float>(desc.data.triangle.n1.y()),
+                                     static_cast<float>(desc.data.triangle.n1.z()));
+          geom.data.triangle.n2 = f3(static_cast<float>(desc.data.triangle.n2.x()),
+                                     static_cast<float>(desc.data.triangle.n2.y()),
+                                     static_cast<float>(desc.data.triangle.n2.z()));
+      }
+      geom.data.triangle.has_normals = desc.data.triangle.has_normals;
+      break;
+
    // Other geometry types to be implemented
    default:
       break;
