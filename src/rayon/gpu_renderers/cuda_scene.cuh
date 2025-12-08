@@ -135,7 +135,7 @@ struct Geometry
       {
          f3 v0, v1, v2;
          f3 n0, n1, n2;
-         bool has_normals;
+         bool smooth_shadings;
       } triangle;
 
       struct
@@ -202,7 +202,7 @@ struct MeshTriangle
 {
    f3 v0, v1, v2;
    f3 n0, n1, n2;
-   bool has_normals;
+   bool smooth_shadings;
 };
 
 /**

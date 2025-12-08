@@ -200,7 +200,7 @@ class SceneFactory
                   else if (i == 2) geom.data.triangle.v2 = v_pos;
 
                   if (idx.normal_index >= 0) {
-                      geom.data.triangle.has_normals = true;
+                      geom.data.triangle.smooth_shadings = true;
                       Vec3 v_norm(
                           attrib.normals[3 * idx.normal_index + 0],
                           attrib.normals[3 * idx.normal_index + 1],

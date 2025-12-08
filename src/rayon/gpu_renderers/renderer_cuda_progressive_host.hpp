@@ -87,7 +87,7 @@ class RendererCUDAProgressive : public IRenderer
 
       // --- SCENE CATEGORY SETUP ---
       std::vector<SceneCategory> categories;
-      // 2. Phong Shading Demo
+
       categories.push_back({
           "Phong Shading Demo",
           {"../resources/experiments/phong-shading-demo", "resources/experiments/phong-shading-demo"},
@@ -96,16 +96,14 @@ class RendererCUDAProgressive : public IRenderer
           -1
       });
       
-      // 2b. Triangle Demo
       categories.push_back({
           "Triangle Demo",
           {"../resources/experiments/triangle-demo", "resources/experiments/triangle-demo"},
-          {"obj", "yaml"},
+          {"yaml"},
           {},
           -1
       });
-      
-      // 1. Scenes
+
       categories.push_back({
           "Scenes",
           {"../resources/scenes", "resources/scenes", "."},
@@ -114,30 +112,17 @@ class RendererCUDAProgressive : public IRenderer
           -1
       });
 
-      // 1b. Demo
       categories.push_back({
-          "Demo",
-          {"../resources/experiments/demo", "resources/experiments/demo"},
+          "Benchmark",
+          {"../resources/experiments/benchmark", "resources/experiments/benchmark"},
           {"yaml", "yml"},
           {},
           -1
       });
 
-      
-
-      // 3. Simple Obj
       categories.push_back({
           "Simple Obj",
           {"../resources/experiments/simple-obj", "resources/experiments/simple-obj"},
-          {"obj"},
-          {},
-          -1
-      });
-
-      // 4. Experiments (General)
-      categories.push_back({
-          "Experiments",
-          {"../resources/experiments", "resources/experiments"},
           {"obj"},
           {},
           -1

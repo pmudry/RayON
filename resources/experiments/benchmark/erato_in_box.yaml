@@ -1,0 +1,88 @@
+scene:
+  name: "Erato in Cornell Box"
+  description: "Erato statue (Muse of lyric poetry) inside a Cornell box"
+  
+  camera:
+    position: [0.0, 1.0, 3.8]
+    look_at: [0.0, 1.0, 0.0]
+    up: [0.0, 1.0, 0.0]
+    fov: 35.0
+  
+  background_color: [0.0, 0.0, 0.0]
+  use_bvh: true
+
+materials:
+  - name: "white"
+    type: "lambertian"
+    albedo: [0.73, 0.73, 0.73]
+  
+  - name: "red"
+    type: "lambertian"
+    albedo: [0.65, 0.05, 0.05]
+  
+  - name: "green"
+    type: "lambertian"
+    albedo: [0.12, 0.45, 0.15]
+  
+  - name: "light"
+    type: "light"
+    emission: [15.0, 15.0, 15.0]
+    albedo: [1.0, 1.0, 1.0]
+
+  - name: "glass"
+    type: "glass"
+    refractive_index: 1.5
+    albedo: [1.0, 1.0, 1.0]
+
+geometry:
+  # Floor
+  - type: "rectangle"
+    material: "white"
+    corner: [-1.0, 0.0, -1.0]
+    u: [2.0, 0.0, 0.0]
+    v: [0.0, 0.0, 2.0]
+  
+  # Ceiling
+  - type: "rectangle"
+    material: "white"
+    corner: [-1.0, 2.0, -1.0]
+    u: [2.0, 0.0, 0.0]
+    v: [0.0, 0.0, 2.0]
+  
+  # Back wall
+  - type: "rectangle"
+    material: "white"
+    corner: [-1.0, 0.0, -1.0]
+    u: [2.0, 0.0, 0.0]
+    v: [0.0, 2.0, 0.0]
+  
+  # Left wall (red)
+  - type: "rectangle"
+    material: "red"
+    corner: [-1.0, 0.0, -1.0]
+    u: [0.0, 2.0, 0.0]
+    v: [0.0, 0.0, 2.0]
+  
+  # Right wall (green)
+  - type: "rectangle"
+    material: "green"
+    corner: [1.0, 0.0, -1.0]
+    u: [0.0, 0.0, 2.0]
+    v: [0.0, 2.0, 0.0]
+  
+  # Area light
+  - type: "rectangle"
+    material: "light"
+    corner: [-0.3, 2.00, -0.3]
+    u: [0.6, 0.0, 0.0]
+    v: [0.0, 0.0, 0.6]
+  
+  # Erato Statue
+  # Using local material definitions from MTL (will be white per erato.mtl)
+  # or we can override with 'material: "glass"' etc.
+  - type: "obj"
+    filename: "erato.obj"
+    material: "glass" 
+    position: [0.0, 0.055, 0.0] 
+    scale: [0.05, 0.05, 0.05]   # Scaling down from ~18 units to ~0.9
+    rotation: [0, 50, 0]

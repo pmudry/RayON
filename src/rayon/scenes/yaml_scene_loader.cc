@@ -232,7 +232,7 @@ static void loadObjGeometry(const string &filename, SceneDescription &scene, con
          }
 
          Triangle tri;
-         bool has_normals = false;
+         bool smooth_shadings = false;
 
          for (int v = 0; v < 3; v++)
          {
@@ -259,7 +259,7 @@ static void loadObjGeometry(const string &filename, SceneDescription &scene, con
             // Normal
             if (idx.normal_index >= 0)
             {
-               has_normals = true;
+               smooth_shadings = true;
                Vec3 n(attrib.normals[3 * idx.normal_index + 0], attrib.normals[3 * idx.normal_index + 1],
                       attrib.normals[3 * idx.normal_index + 2]);
                if (v == 0) tri.n0 = unit_vector(n);
@@ -268,7 +268,7 @@ static void loadObjGeometry(const string &filename, SceneDescription &scene, con
             }
          }
 
-         tri.has_normals = has_normals;
+         tri.smooth_shadings = smooth_shadings;
          mesh_groups[final_mat_id].triangles.push_back(tri);
       }
    }

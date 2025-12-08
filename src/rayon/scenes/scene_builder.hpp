@@ -126,7 +126,7 @@ class CPUSceneBuilder
       case GeometryType::TRIANGLE:
       {
          const auto &tri = desc.data.triangle;
-         if (tri.has_normals)
+         if (tri.smooth_shadings)
          {
             return make_shared<TriangleShape>(tri.v0, tri.v1, tri.v2, tri.n0, tri.n1, tri.n2, mat);
          }

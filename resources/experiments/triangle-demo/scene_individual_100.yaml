@@ -4,7 +4,7 @@ geometry:
   type: rectangle
   u: [4.0, 0.0, 0.0]
   v: [0.0, 0.0, 4.0]
-- corner: [-0.5, 3.5, -0.5]
+- corner: [2.0, 3.5, -0.5]
   material: light
   type: rectangle
   u: [1.0, 0.0, 0.0]

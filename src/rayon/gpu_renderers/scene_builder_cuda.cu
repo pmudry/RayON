@@ -168,12 +168,12 @@ static CudaScene::Mesh processMesh(const TriangleMesh &mesh_desc)
       t.v1 = f3(tri.v1.x(), tri.v1.y(), tri.v1.z());
       t.v2 = f3(tri.v2.x(), tri.v2.y(), tri.v2.z());
       
-      if (tri.has_normals) {
+      if (tri.smooth_shadings) {
           t.n0 = f3(tri.n0.x(), tri.n0.y(), tri.n0.z());
           t.n1 = f3(tri.n1.x(), tri.n1.y(), tri.n1.z());
           t.n2 = f3(tri.n2.x(), tri.n2.y(), tri.n2.z());
       }
-      t.has_normals = tri.has_normals;
+      t.smooth_shadings = tri.smooth_shadings;
       host_triangles.push_back(t);
    }
 
@@ -305,7 +305,7 @@ static CudaScene::Geometry convertGeometry(const GeometryDesc &desc)
                                  static_cast<float>(desc.data.triangle.v2.y()),
                                  static_cast<float>(desc.data.triangle.v2.z()));
       
-      if (desc.data.triangle.has_normals) {
+      if (desc.data.triangle.smooth_shadings) {
           geom.data.triangle.n0 = f3(static_cast<float>(desc.data.triangle.n0.x()),
                                      static_cast<float>(desc.data.triangle.n0.y()),
                                      static_cast<float>(desc.data.triangle.n0.z()));
@@ -316,7 +316,7 @@ static CudaScene::Geometry convertGeometry(const GeometryDesc &desc)
                                      static_cast<float>(desc.data.triangle.n2.y()),
                                      static_cast<float>(desc.data.triangle.n2.z()));
       }
-      geom.data.triangle.has_normals = desc.data.triangle.has_normals;
+      geom.data.triangle.smooth_shadings = desc.data.triangle.smooth_shadings;
       break;
 
    case GeometryType::TRIANGLE_MESH:

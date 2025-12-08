@@ -9,13 +9,13 @@ class TriangleShape : public Hittable
 {
  public:
    TriangleShape(const Vec3 &_v0, const Vec3 &_v1, const Vec3 &_v2, shared_ptr<Material> _mat)
-       : v0(_v0), v1(_v1), v2(_v2), n0(0,0,0), n1(0,0,0), n2(0,0,0), has_normals(false), mat_ptr(_mat)
+       : v0(_v0), v1(_v1), v2(_v2), n0(0,0,0), n1(0,0,0), n2(0,0,0), smooth_shadings(false), mat_ptr(_mat)
    {
    }
 
    TriangleShape(const Vec3 &_v0, const Vec3 &_v1, const Vec3 &_v2, const Vec3 &_n0, const Vec3 &_n1, const Vec3 &_n2,
             shared_ptr<Material> _mat)
-       : v0(_v0), v1(_v1), v2(_v2), n0(_n0), n1(_n1), n2(_n2), has_normals(true), mat_ptr(_mat)
+       : v0(_v0), v1(_v1), v2(_v2), n0(_n0), n1(_n1), n2(_n2), smooth_shadings(true), mat_ptr(_mat)
    {
    }
 
@@ -59,7 +59,7 @@ class TriangleShape : public Hittable
       rec.p = r.at(t);
 
       Vec3 outward_normal;
-      if (has_normals)
+      if (smooth_shadings)
       {
           double w = 1.0 - u - v;
           outward_normal = unit_vector(w * n0 + u * n1 + v * n2);
@@ -78,6 +78,6 @@ class TriangleShape : public Hittable
  public:
    Vec3 v0, v1, v2;
    Vec3 n0, n1, n2;
-   bool has_normals;
+   bool smooth_shadings;
    shared_ptr<Material> mat_ptr;
 };

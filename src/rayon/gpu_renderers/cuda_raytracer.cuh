@@ -249,17 +249,15 @@ __device__ inline bool hit_rectangle(const f3 &corner, const f3 &u, const f3 &v,
 }
 
 __device__ inline bool hit_triangle(const f3 &v0, const f3 &v1, const f3 &v2, const f3 &n0, const f3 &n1, const f3 &n2,
-                                    bool has_normals, const ray_simple &r, float t_min, float t_max,
+                                    bool smooth_shadings, const ray_simple &r, float t_min, float t_max,
                                     hit_record_simple &rec)
 {
    // Möller–Trumbore intersection algorithm (or barrycentric method ;)
    f3 e1 = v1 - v0;
    f3 e2 = v2 - v0;
 
-   
    f3 p = cross(r.dir, e2);
 
-   
    float det = dot(e1, p);
 
    // If det is near zero, ray is parallel to triangle - property of the determinant
@@ -274,9 +272,7 @@ __device__ inline bool hit_triangle(const f3 &v0, const f3 &v1, const f3 &v2, co
    if (u < 0.0f || u > 1.0f)
       return false;
 
- 
    f3 q = cross(t_vec, e1);
-
 
    float v = dot(r.dir, q) * inv_det;
    if (v < 0.0f || u + v > 1.0f)
@@ -291,7 +287,7 @@ __device__ inline bool hit_triangle(const f3 &v0, const f3 &v1, const f3 &v2, co
    rec.p = r.at(t);
 
    f3 outward_normal;
-   if (has_normals)
+   if (smooth_shadings)
    {
       // Barycentric interpolation of normals
       float w = 1.0f - u - v;
@@ -315,102 +311,160 @@ __device__ inline bool hit_triangle(const f3 &v0, const f3 &v1, const f3 &v2, co
 __device__ inline f3 rotate_vector(f3 v, f3 angles)
 {
    // Rotation order: X, then Y, then Z
-   if (angles.x != 0.0f) { float c = cosf(angles.x), s = sinf(angles.x); f3 t = v; v.y = t.y*c - t.z*s; v.z = t.y*s + t.z*c; }
-   if (angles.y != 0.0f) { float c = cosf(angles.y), s = sinf(angles.y); f3 t = v; v.x = t.x*c + t.z*s; v.z = -t.x*s + t.z*c; }
-   if (angles.z != 0.0f) { float c = cosf(angles.z), s = sinf(angles.z); f3 t = v; v.x = t.x*c - t.y*s; v.y = t.x*s + t.y*c; }
+   if (angles.x != 0.0f)
+   {
+      float c = cosf(angles.x), s = sinf(angles.x);
+      f3 t = v;
+      v.y = t.y * c - t.z * s;
+      v.z = t.y * s + t.z * c;
+   }
+   if (angles.y != 0.0f)
+   {
+      float c = cosf(angles.y), s = sinf(angles.y);
+      f3 t = v;
+      v.x = t.x * c + t.z * s;
+      v.z = -t.x * s + t.z * c;
+   }
+   if (angles.z != 0.0f)
+   {
+      float c = cosf(angles.z), s = sinf(angles.z);
+      f3 t = v;
+      v.x = t.x * c - t.y * s;
+      v.y = t.x * s + t.y * c;
+   }
    return v;
 }
 
 __device__ inline f3 rotate_vector_inverse(f3 v, f3 angles)
 {
    // Inverse order: Z, then Y, then X (negative angles)
-   if (angles.z != 0.0f) { float c = cosf(-angles.z), s = sinf(-angles.z); f3 t = v; v.x = t.x*c - t.y*s; v.y = t.x*s + t.y*c; }
-   if (angles.y != 0.0f) { float c = cosf(-angles.y), s = sinf(-angles.y); f3 t = v; v.x = t.x*c + t.z*s; v.z = -t.x*s + t.z*c; }
-   if (angles.x != 0.0f) { float c = cosf(-angles.x), s = sinf(-angles.x); f3 t = v; v.y = t.y*c - t.z*s; v.z = t.y*s + t.z*c; }
+   if (angles.z != 0.0f)
+   {
+      float c = cosf(-angles.z), s = sinf(-angles.z);
+      f3 t = v;
+      v.x = t.x * c - t.y * s;
+      v.y = t.x * s + t.y * c;
+   }
+   if (angles.y != 0.0f)
+   {
+      float c = cosf(-angles.y), s = sinf(-angles.y);
+      f3 t = v;
+      v.x = t.x * c + t.z * s;
+      v.z = -t.x * s + t.z * c;
+   }
+   if (angles.x != 0.0f)
+   {
+      float c = cosf(-angles.x), s = sinf(-angles.x);
+      f3 t = v;
+      v.y = t.y * c - t.z * s;
+      v.z = t.y * s + t.z * c;
+   }
    return v;
 }
 
-__device__ inline bool hit_mesh_triangle(const CudaScene::MeshTriangle &tri, const ray_simple &r, float t_min, float t_max, hit_record_simple &rec)
+__device__ inline bool hit_mesh_triangle(const CudaScene::MeshTriangle &tri, const ray_simple &r, float t_min,
+                                         float t_max, hit_record_simple &rec)
 {
-   return hit_triangle(tri.v0, tri.v1, tri.v2, tri.n0, tri.n1, tri.n2, tri.has_normals, r, t_min, t_max, rec);
+   return hit_triangle(tri.v0, tri.v1, tri.v2, tri.n0, tri.n1, tri.n2, tri.smooth_shadings, r, t_min, t_max, rec);
 }
 
 __device__ inline bool hit_mesh(const CudaScene::Mesh &mesh, const f3 &translation, const f3 &rotation, const f3 &scale,
                                 const ray_simple &r_world, float t_min, float t_max, hit_record_simple &rec)
 {
+   // Transform ray to local mesh space§
    f3 orig_local = (r_world.orig - translation);
+
+   // Apply inverse rotation and scaling
    f3 orig_rot = rotate_vector_inverse(orig_local, rotation);
    orig_local = f3(orig_rot.x / scale.x, orig_rot.y / scale.y, orig_rot.z / scale.z);
-   
+
+   // 3. Scale: Scale the ray origin and direction by the inverse of the mesh scale
+   //    (Note: If you scale a model by 2x, the ray moves "half as fast" through it locally)
    f3 dir_rot = rotate_vector_inverse(r_world.dir, rotation);
    f3 dir_local = f3(dir_rot.x / scale.x, dir_rot.y / scale.y, dir_rot.z / scale.z);
-   
+
+   // Construct local ray
    ray_simple r_local(orig_local, dir_local);
 
    hit_record_simple temp_rec;
    bool hit_anything = false;
    float closest_so_far = t_max;
-
+   // BVH traversal
    if (mesh.bvh_nodes && mesh.bvh_root_idx >= 0)
    {
-       int stack[32];
-       int stack_ptr = 0;
-       stack[stack_ptr++] = mesh.bvh_root_idx;
-       while (stack_ptr > 0)
-       {
-           int node_idx = stack[--stack_ptr];
-           const CudaScene::BVHNode &node = mesh.bvh_nodes[node_idx];
-           if (!hit_aabb(r_local, node.bounds_min, node.bounds_max, t_min, closest_so_far)) continue;
+      // A fixed-size stack for non-recursive traversal on the GPU
+      int stack[32];
+      int stack_ptr = 0;
+      // start from root node of the tree
+      stack[stack_ptr++] = mesh.bvh_root_idx;
+      while (stack_ptr > 0)
+      {
+         int node_idx = stack[--stack_ptr];
+         const CudaScene::BVHNode &node = mesh.bvh_nodes[node_idx];
+         // slab method for AABB intersection optimization
+         if (!hit_aabb(r_local, node.bounds_min, node.bounds_max, t_min, closest_so_far))
+            continue;
 
-           if (node.is_leaf)
-           {
-               int first = node.data.leaf.first_geom_idx;
-               int count = node.data.leaf.geom_count;
-               for (int i = 0; i < count; ++i)
+         if (node.is_leaf)
+         {
+            int first = node.data.leaf.first_geom_idx;
+            int count = node.data.leaf.geom_count;
+            for (int i = 0; i < count; ++i)
+            {
+               if (hit_mesh_triangle(mesh.triangles[first + i], r_local, t_min, closest_so_far, temp_rec))
                {
-                   if (hit_mesh_triangle(mesh.triangles[first + i], r_local, t_min, closest_so_far, temp_rec))
-                   {
-                       hit_anything = true;
-                       closest_so_far = temp_rec.t;
-                       rec = temp_rec;
-                   }
+                  hit_anything = true;
+                  closest_so_far = temp_rec.t;
+                  rec = temp_rec;
                }
-           }
-           else
-           {
-               int left = node.data.interior.left_child;
-               int right = node.data.interior.right_child;
-               if (stack_ptr < 32) stack[stack_ptr++] = right;
-               if (stack_ptr < 32) stack[stack_ptr++] = left;
-           }
-       }
+            }
+         }
+         else
+         {
+            int left = node.data.interior.left_child;
+            int right = node.data.interior.right_child;
+            //TODO: Push farther child first for better traversal order
+            if (stack_ptr < 32)
+               stack[stack_ptr++] = right;
+            if (stack_ptr < 32)
+               stack[stack_ptr++] = left;
+         }
+      }
    }
    else
+   // Linear scan fallback
    {
-       for (int i = 0; i < mesh.num_triangles; ++i)
-       {
-           if (hit_mesh_triangle(mesh.triangles[i], r_local, t_min, closest_so_far, temp_rec))
-           {
-               hit_anything = true;
-               closest_so_far = temp_rec.t;
-               rec = temp_rec;
-           }
-       }
+      for (int i = 0; i < mesh.num_triangles; ++i)
+      {
+         if (hit_mesh_triangle(mesh.triangles[i], r_local, t_min, closest_so_far, temp_rec))
+         {
+            hit_anything = true;
+            closest_so_far = temp_rec.t;
+            rec = temp_rec;
+         }
+      }
    }
 
    if (hit_anything)
-   {
-       rec.p = r_world.at(rec.t); // Use t directly (valid because we scaled direction)
-       f3 n_local = f3(rec.normal.x / scale.x, rec.normal.y / scale.y, rec.normal.z / scale.z);
-       rec.normal = normalize(rotate_vector(n_local, rotation));
-       if (rec.front_face) rec.normal = dot(r_world.dir, rec.normal) < 0 ? rec.normal : -rec.normal;
-       else rec.normal = dot(r_world.dir, rec.normal) < 0 ? rec.normal : -rec.normal;
+   {  
+      // Transform intersection point and normal back to world space, because 't' is invariant under scaling assuming uniform scaling
+      rec.p = r_world.at(rec.t); // Use t directly (valid because we scaled direction)
+      // Un-scale: Normals scale by 1/scale factor
+      f3 n_local = f3(rec.normal.x / scale.x, rec.normal.y / scale.y, rec.normal.z / scale.z);
+      // Un-rotate: Apply the forward rotation
+      rec.normal = normalize(rotate_vector(n_local, rotation));
+      // Ensure normal points towards the ray (standard front-facing check)
+      if (rec.front_face)
+         rec.normal = dot(r_world.dir, rec.normal) < 0 ? rec.normal : -rec.normal;
+      else
+         rec.normal = dot(r_world.dir, rec.normal) < 0 ? rec.normal : -rec.normal;
    }
    return hit_anything;
 }
 
-__device__ __forceinline__ bool intersect_geometry(const CudaScene::Scene &scene, const CudaScene::Geometry &geom, const ray_simple &r, float t_min,
-                                                   float t_max, hit_record_simple &rec)
+__device__ __forceinline__ bool intersect_geometry(const CudaScene::Scene &scene, const CudaScene::Geometry &geom,
+                                                   const ray_simple &r, float t_min, float t_max,
+                                                   hit_record_simple &rec)
 {
    using namespace CudaScene;
    switch (geom.type)
@@ -422,7 +476,7 @@ __device__ __forceinline__ bool intersect_geometry(const CudaScene::Scene &scene
                            rec);
    case GeometryType::TRIANGLE:
       return hit_triangle(geom.data.triangle.v0, geom.data.triangle.v1, geom.data.triangle.v2, geom.data.triangle.n0,
-                          geom.data.triangle.n1, geom.data.triangle.n2, geom.data.triangle.has_normals, r, t_min, t_max,
+                          geom.data.triangle.n1, geom.data.triangle.n2, geom.data.triangle.smooth_shadings, r, t_min, t_max,
                           rec);
    case GeometryType::DISPLACED_SPHERE:
       return hit_golf_ball_sphere(geom.data.displaced_sphere.center, geom.data.displaced_sphere.radius, r, t_min, t_max,
@@ -430,11 +484,8 @@ __device__ __forceinline__ bool intersect_geometry(const CudaScene::Scene &scene
    case GeometryType::TRIANGLE_MESH:
       if (geom.data.mesh_instance.mesh_id >= 0 && geom.data.mesh_instance.mesh_id < scene.num_meshes)
       {
-          return hit_mesh(scene.meshes[geom.data.mesh_instance.mesh_id], 
-                          geom.data.mesh_instance.translation,
-                          geom.data.mesh_instance.rotation,
-                          geom.data.mesh_instance.scale,
-                          r, t_min, t_max, rec);
+         return hit_mesh(scene.meshes[geom.data.mesh_instance.mesh_id], geom.data.mesh_instance.translation,
+                         geom.data.mesh_instance.rotation, geom.data.mesh_instance.scale, r, t_min, t_max, rec);
       }
       return false;
    default:
