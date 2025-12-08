@@ -248,45 +248,68 @@ __device__ inline bool hit_rectangle(const f3 &corner, const f3 &u, const f3 &v,
    return true;
 }
 
+/**
+ * @brief Ray-Triangle intersection test using the Möller–Trumbore algorithm (or barycentric method).
+ * 
+ * Performs a ray-triangle intersection test using the Möller–Trumbore algorithm. This mathematical algorithm allow to work only with 
+ * cross or dot products which are efficient to compute on the GPU.
+ *
+ * @param v0 First vertex of the triangle.
+ * @param v1 Second vertex of the triangle.
+ * @param v2 Third vertex of the triangle.
+ * @param n0 Normal at first vertex (used if smooth_shadings is true).
+ * @param n1 Normal at second vertex (used if smooth_shadings is true).
+ * @param n2 Normal at third vertex (used if smooth_shadings is true).
+ * @param smooth_shadings If true, interpolate normals (thus enabling smooth shading); else use flat shading.
+ * @param r The ray to test.
+ * @param t_min Minimum valid 't' parameter for the ray.
+ * @param t_max Maximum valid 't' parameter for the ray.
+ * @param rec [out] Hit record structure to populate if an intersection is found.
+ * @return true if the ray intersects the triangle within [t_min, t_max], false otherwise.
+ */
 __device__ inline bool hit_triangle(const f3 &v0, const f3 &v1, const f3 &v2, const f3 &n0, const f3 &n1, const f3 &n2,
                                     bool smooth_shadings, const ray_simple &r, float t_min, float t_max,
                                     hit_record_simple &rec)
 {
-   // Möller–Trumbore intersection algorithm (or barrycentric method ;)
+   // 1. Compute edges of the triangle
    f3 e1 = v1 - v0;
    f3 e2 = v2 - v0;
-
+   // 2. Compute P vector, which is the cross product of ray direction and edge2
    f3 p = cross(r.dir, e2);
-
+   
    float det = dot(e1, p);
-
-   // If det is near zero, ray is parallel to triangle - property of the determinant
+   // If det is near zero, ray is parallel to triangle, so no intersection - property of the determinant
    if (fabsf(det) < 1e-8f)
       return false;
 
+   // 3. Calculate inverse of determinant, to be used in barycentric coordinate calculations
    float inv_det = 1.0f / det;
-
+   // 4. Calculate T vector, which is the vector from vertex0 to ray origin
    f3 t_vec = r.orig - v0;
-
+   // 5. Calculate u parameter and test bounds
    float u = dot(t_vec, p) * inv_det;
+   // if u is outside [0,1], no intersection - by property of barycentric coordinates
    if (u < 0.0f || u > 1.0f)
       return false;
-
+   // 6. Calculate Q vector, which is the cross product of T vector and edge1
    f3 q = cross(t_vec, e1);
-
+   // 7. Calculate v parameter and test bounds
    float v = dot(r.dir, q) * inv_det;
+   // if v is outside [0,1] or u+v > 1, no intersection - by property of barycentric coordinates
    if (v < 0.0f || u + v > 1.0f)
       return false;
-
+   // 8. Calculate t parameter to find intersection point along the ray
    float t = dot(e2, q) * inv_det;
-
+   // Check if t is within valid range
    if (t < t_min || t > t_max)
       return false;
-
+   // Fill hit record with intersection data
    rec.t = t;
    rec.p = r.at(t);
 
+   // Compute normal at intersection point
    f3 outward_normal;
+
    if (smooth_shadings)
    {
       // Barycentric interpolation of normals
@@ -298,7 +321,7 @@ __device__ inline bool hit_triangle(const f3 &v0, const f3 &v1, const f3 &v2, co
       // Flat normal: normalize(E1 x E2)
       outward_normal = normalize(cross(e1, e2));
    }
-
+   
    rec.front_face = dot(r.dir, outward_normal) < 0;
    rec.normal = rec.front_face ? outward_normal : -outward_normal;
    return true;

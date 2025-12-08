@@ -356,6 +356,7 @@ class SimpleYAMLParser
 
       string line;
       vector<string> section_stack;
+      vector<int> indent_stack; // Track indentation levels
       int material_index = 0;
       int geometry_index = 0;
       bool in_materials = false;
@@ -364,14 +365,15 @@ class SimpleYAMLParser
       while (getline(file, line))
       {
          // Remove comments and trim
+         string original_line = line; // Keep for indentation check
          line = removeComment(line);
          string trimmed = trimWhitespace(line);
          if (trimmed.empty())
             continue;
 
-         // Calculate indentation
+         // Calculate indentation from original line
          int indent = 0;
-         while (indent < (int)line.length() && (line[indent] == ' ' || line[indent] == '\t'))
+         while (indent < (int)original_line.length() && (original_line[indent] == ' ' || original_line[indent] == '\t'))
          {
             indent++;
          }
@@ -382,6 +384,8 @@ class SimpleYAMLParser
             in_materials = true;
             in_geometry = false;
             material_index = 0;
+            section_stack.clear();
+            indent_stack.clear();
             continue;
          }
          else if (trimmed == "geometry:")
@@ -389,6 +393,8 @@ class SimpleYAMLParser
             in_materials = false;
             in_geometry = true;
             geometry_index = 0;
+            section_stack.clear();
+            indent_stack.clear();
             continue;
          }
          else if (trimmed == "scene:")
@@ -396,7 +402,9 @@ class SimpleYAMLParser
              in_materials = false;
              in_geometry = false;
              section_stack.clear();
+             indent_stack.clear();
              section_stack.push_back("scene");
+             indent_stack.push_back(-1); // Root level for scene
              continue;
          }
 
@@ -407,13 +415,17 @@ class SimpleYAMLParser
             if (in_materials)
             {
                section_stack.clear();
+               indent_stack.clear();
                section_stack.push_back("material" + to_string(material_index));
+               indent_stack.push_back(indent);
                material_index++;
             }
             else if (in_geometry)
             {
                section_stack.clear();
+               indent_stack.clear();
                section_stack.push_back("geom" + to_string(geometry_index));
+               indent_stack.push_back(indent);
                geometry_index++;
             }
          }
@@ -425,37 +437,19 @@ class SimpleYAMLParser
             string key = trimWhitespace(trimmed.substr(0, colon_pos));
             string value = trimWhitespace(trimmed.substr(colon_pos + 1));
 
-            // Handle nested properties inside 'scene' block (e.g., scene.camera.position)
+            // Handle nested properties inside 'scene' block
             if (!section_stack.empty() && section_stack[0] == "scene") {
-                // Basic indentation-based hierarchy handling for 'scene' block
-                // If we are in 'scene', check if the key is a new sub-section like "camera"
+                // Pop stack based on indentation
+                while (indent_stack.size() > 1 && indent <= indent_stack.back()) {
+                    section_stack.pop_back();
+                    indent_stack.pop_back();
+                }
+
+                // If value is empty, this is a subsection (e.g., "camera:")
                 if (value.empty()) {
-                    // This is a subsection header (e.g., "camera:")
-                    // For simplicity in this parser, we'll just append it to the stack or handle it via dot notation in keys
-                    // A robust parser would track indentation levels.
-                    // Here we assume keys are like "camera" or properties under it.
-                    // Given the simple structure, we can cheat a bit:
-                    // If indentation increases, it's a nested property.
-                    // But we already trimmed 'line'.
-                    // Let's stick to flat keys for simplicity or rely on the current simple logic.
-                    // The current logic builds keys like "scene.camera" but doesn't handle deeper nesting well without indentation tracking.
-                    
-                    // IMPROVED LOGIC:
-                    // If we are in the 'scene' block, we'll just manually construct keys like "scene.camera.position"
-                    // based on the key name if it's unique, or we need a better parser.
-                    // However, the parser above simply concatenates `section_stack`.
-                    
-                    // Hack for this specific format:
-                    // If key is "camera", push to stack. If indentation decreases, pop.
-                    // BUT, indentation tracking is tricky here.
-                    // Let's assume the parser logic "Build full key path" below needs help.
-                    
-                    // Let's try to handle "camera:" line specifically if value is empty
-                    if (key == "camera") {
-                        if(section_stack.back() != "scene.camera") // Avoid duplicate push
-                             section_stack.push_back("camera"); 
-                        continue;
-                    }
+                    section_stack.push_back(key);
+                    indent_stack.push_back(indent);
+                    continue;
                 }
             }
 
@@ -536,6 +530,14 @@ class SimpleYAMLParser
    }
 
    bool hasKey(const string &key) const { return values_.find(key) != values_.end(); }
+
+   void printAllKeys() const {
+       cout << "--- Parsed YAML Keys ---" << endl;
+       for (const auto& pair : values_) {
+           cout << "'" << pair.first << "' : '" << pair.second << "'" << endl;
+       }
+       cout << "------------------------" << endl;
+   }
 };
 
 static bool loadMaterials(const SimpleYAMLParser &parser, SceneDescription &scene,
@@ -716,6 +718,8 @@ bool loadSceneFromYAML(const char *filename, SceneDescription &scene)
       return false;
    }
 
+   parser.printAllKeys();
+
    // Load Camera Settings
    if (parser.hasKey("scene.camera.position"))
    {
@@ -735,6 +739,27 @@ bool loadSceneFromYAML(const char *filename, SceneDescription &scene)
    {
        scene.camera_fov = parser.getFloat("scene.camera.fov");
        cout << "  Loaded camera fov: " << scene.camera_fov << endl;
+   }
+   if (parser.hasKey("scene.background_color"))
+   {
+       scene.background_color = parser.getVec3("scene.background_color");
+       cout << "  Loaded background color: " << scene.background_color << endl;
+   }
+   else if (parser.hasKey("scene.camera.background_color"))
+   {
+       scene.background_color = parser.getVec3("scene.camera.background_color");
+       cout << "  Loaded background color (nested): " << scene.background_color << endl;
+   }
+
+   if (parser.hasKey("scene.ambient_light"))
+   {
+       scene.ambient_light = parser.getFloat("scene.ambient_light");
+       cout << "  Loaded ambient light: " << scene.ambient_light << endl;
+   }
+   else if (parser.hasKey("scene.camera.ambient_light"))
+   {
+       scene.ambient_light = parser.getFloat("scene.camera.ambient_light");
+       cout << "  Loaded ambient light (nested): " << scene.ambient_light << endl;
    }
 
    // Clear existing scene

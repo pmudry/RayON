@@ -145,7 +145,8 @@ class SDLGuiHandler
                       bool *auto_accumulate, bool *auto_orbit, std::vector<SceneCategory> &categories,
                       int *active_category_idx, bool force_tab_update, bool *load_scene_request,
                       bool debug_mode, const Vec3& cam_pos, const Vec3& cam_look_at, const Vec3& cam_up,
-                      bool has_light, const Vec3& light_pos)
+                      bool has_light, const Vec3& light_pos,
+                      int sphere_count, int rect_count, int tri_count)
    {
       SDL_UpdateTexture(texture, nullptr, image.data(), image_width * image_channels);
       SDL_RenderClear(renderer);
@@ -167,16 +168,23 @@ class SDLGuiHandler
          if (ImGui::Begin("Debug Info", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoInputs))
          {
              ImGui::Text("camera:");
-             ImGui::Text("    position: [%.1f, %.1f, %.1f]", cam_pos.x(), cam_pos.y(), cam_pos.z());
-             ImGui::Text("    look_at: [%.1f, %.1f, %.1f]", cam_look_at.x(), cam_look_at.y(), cam_look_at.z());
-             ImGui::Text("    up: [%.1f, %.1f, %.1f]", cam_up.x(), cam_up.y(), cam_up.z());
-             if (fov) ImGui::Text("    fov: %.1f", *fov);
+             ImGui::Text("    position: [%.2f, %.2f, %.2f]", cam_pos.x(), cam_pos.y(), cam_pos.z());
+             ImGui::Text("    look_at: [%.2f, %.2f, %.2f]", cam_look_at.x(), cam_look_at.y(), cam_look_at.z());
+             ImGui::Text("    up: [%.2f, %.2f, %.2f]", cam_up.x(), cam_up.y(), cam_up.z());
+             if (fov) ImGui::Text("    fov: %.2f", *fov);
              
              if (has_light) {
                  ImGui::Separator();
                  ImGui::Text("light source:");
-                 ImGui::Text("    position: [%.1f, %.1f, %.1f]", light_pos.x(), light_pos.y(), light_pos.z());
+                 ImGui::Text("    position: [%.2f, %.2f, %.2f]", light_pos.x(), light_pos.y(), light_pos.z());
              }
+
+             ImGui::Separator();
+             ImGui::Text("scene stats:");
+             if (background_intensity) ImGui::Text("    ambient light: %.2f", *background_intensity);
+             ImGui::Text("    spheres: %d", sphere_count);
+             ImGui::Text("    rectangles: %d", rect_count);
+             ImGui::Text("    triangles: %d", tri_count);
          }
          ImGui::End();
          
@@ -268,8 +276,8 @@ class SDLGuiHandler
             if (ImGui::CollapsingHeader("Performance Monitoring", ImGuiTreeNodeFlags_DefaultOpen))
             {
                ImGui::Text("SPP: %d", spp);
-               ImGui::Text("Throughput: %.0f SPS", sps);
-               ImGui::Text("Time/Sample: %.3f ms", ms_per_sample);
+               ImGui::Text("Throughput: %.2f SPS", sps);
+               ImGui::Text("Time/Sample: %.2f ms", ms_per_sample);
 
                sps_history.push_back(sps);
                ms_history.push_back(ms_per_sample);
@@ -303,7 +311,7 @@ class SDLGuiHandler
                if (samples_per_batch && auto_accumulate)
                {
                   ImGui::Separator();
-                  ImGui::SliderFloat("Samples/Batch", samples_per_batch, 1.0f, 256.0f, "%.0f");
+                  ImGui::SliderFloat("Samples/Batch", samples_per_batch, 1.0f, 256.0f, "%.2f");
                   ImGui::Checkbox("Auto-Accumulate (Space)", auto_accumulate);
                }
             }
@@ -326,11 +334,11 @@ class SDLGuiHandler
                   if (!(*dof_enabled))
                      ImGui::BeginDisabled();
                   ImGui::SliderFloat("Aperture", aperture, 0.0f, 1.0f, "%.2f");
-                  ImGui::SliderFloat("Focus Dist", focus_dist, 0.1f, 100.0f, "%.1f");
+                  ImGui::SliderFloat("Focus Dist", focus_dist, 0.1f, 100.0f, "%.2f");
 
                   if (!(*dof_enabled))
                      ImGui::EndDisabled();
-                  ImGui::SliderFloat("FOV", fov, 10.0f, 120.0f, "%.1f deg");
+                  ImGui::SliderFloat("FOV", fov, 10.0f, 120.0f, "%.2f deg");
                }
             }
 
@@ -341,7 +349,7 @@ class SDLGuiHandler
             {
                if (light_intensity && background_intensity && metal_fuzziness && glass_ior)
                {
-                  ImGui::SliderFloat("Light Intensity", light_intensity, 0.1f, 3.0f, "%.1f");
+                  ImGui::SliderFloat("Light Intensity", light_intensity, 0.1f, 3.0f, "%.2f");
                   ImGui::SliderFloat("Background Intensity", background_intensity, 0.0f, 5.0f, "%.2f");
                   ImGui::SliderFloat("Material Fuzz", metal_fuzziness, 0.0f, 5.0f, "%.2f");
                   ImGui::SliderFloat("Glass IOR", glass_ior, 1.0f, 2.5f, "%.2f");

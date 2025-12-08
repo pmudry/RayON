@@ -231,9 +231,42 @@ class RendererCUDAProgressive : public IRenderer
 
       // Create a local copy of the scene to allow switching
       Scene::SceneDescription active_scene = request.scene;
+      background_intensity = active_scene.ambient_light;
 
       // Build scene once
       CudaScene::Scene *gpu_scene = Scene::CudaSceneBuilder::buildGPUScene(active_scene);
+      
+      int sphere_count = 0;
+      int rect_count = 0;
+      int tri_count = 0;
+      
+      auto updateSceneStats = [&]() {
+          sphere_count = 0;
+          rect_count = 0;
+          tri_count = 0;
+          for (const auto& geom : active_scene.geometries) {
+              switch (geom.type) {
+                  case Scene::GeometryType::SPHERE:
+                  case Scene::GeometryType::DISPLACED_SPHERE:
+                      sphere_count++;
+                      break;
+                  case Scene::GeometryType::RECTANGLE:
+                      rect_count++;
+                      break;
+                  case Scene::GeometryType::TRIANGLE:
+                      tri_count++;
+                      break;
+                  case Scene::GeometryType::TRIANGLE_MESH:
+                      if (geom.data.mesh_instance.mesh_id >= 0 && geom.data.mesh_instance.mesh_id < active_scene.meshes.size()) {
+                          tri_count += active_scene.meshes[geom.data.mesh_instance.mesh_id].triangles.size();
+                      }
+                      break;
+                  default: break;
+              }
+          }
+      };
+      
+      updateSceneStats();
 
       // Timing for auto-orbit
       auto last_frame_time = std::chrono::high_resolution_clock::now();
@@ -261,6 +294,7 @@ class RendererCUDAProgressive : public IRenderer
              camera.vfov = active_scene.camera_fov;
              refreshCameraFrame();
              camera_control.initializeCameraControls(look_from, look_at);
+             updateSceneStats();
 
              gpu_scene = Scene::CudaSceneBuilder::buildGPUScene(active_scene);
              
@@ -271,6 +305,8 @@ class RendererCUDAProgressive : public IRenderer
                  d_accum_buffer = nullptr;
              }
              
+             background_intensity = active_scene.ambient_light; // Update from new scene
+
              force_immediate_render = true;
              camera_changed = true;
              applySceneSettings();
@@ -533,7 +569,8 @@ class RendererCUDAProgressive : public IRenderer
              image_channels, current_sps, current_ms_per_sample,
              categories, &active_category_idx,
              force_tab_update, &load_scene_request,
-             debug_mode, look_from, look_at, vup, has_light, light_pos);
+             debug_mode, look_from, look_at, vup, has_light, light_pos,
+             sphere_count, rect_count, tri_count);
 
          if (load_scene_request)
          {
@@ -653,7 +690,8 @@ class RendererCUDAProgressive : public IRenderer
                      bool force_tab_update,
                      bool* load_scene_request,
                      bool debug_mode, const Vec3& cam_pos, const Vec3& cam_look_at, const Vec3& cam_up,
-                     bool has_light, const Vec3& light_pos)
+                     bool has_light, const Vec3& light_pos,
+                     int sphere_count, int rect_count, int tri_count)
    {
       bool is_orbiting = camera_control.isAutoOrbitEnabled();
 
@@ -662,7 +700,8 @@ class RendererCUDAProgressive : public IRenderer
                         light_intensity, background_intensity, metal_fuzziness, glass_refraction_index,
                         samples_per_batch, accumulation_enabled, &is_orbiting,
                         categories, active_category_idx, force_tab_update, load_scene_request,
-                        debug_mode, cam_pos, cam_look_at, cam_up, has_light, light_pos);
+                        debug_mode, cam_pos, cam_look_at, cam_up, has_light, light_pos,
+                        sphere_count, rect_count, tri_count);
       
       if (is_orbiting != camera_control.isAutoOrbitEnabled())
       {
