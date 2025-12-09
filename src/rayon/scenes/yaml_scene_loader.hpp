@@ -9,6 +9,7 @@
 #pragma once
 
 #include "scene_description.hpp"
+#include "../render/benchmark_config.hpp" // Include for BenchmarkConfig
 
 // Forward declarations to avoid std:: namespace pollution issues
 #include <iosfwd>
@@ -22,6 +23,14 @@ namespace Scene {
  * @return true if successful
  */
 bool loadSceneFromYAML(const char* filename, SceneDescription& scene);
+
+/**
+ * @brief Load benchmark configuration from YAML file
+ * @param filename Path to YAML benchmark config file
+ * @param config BenchmarkConfig to populate
+ * @return true if successful
+ */
+bool loadBenchmarkConfigFromYAML(const char* filename, Rayon::BenchmarkConfig& config);
 
 /**
  * @brief Save scene to YAML file  

@@ -4,8 +4,10 @@
 #include "cpu_renderers/renderer_cpu_single_thread.hpp"
 #include "gpu_renderers/renderer_cuda_host.hpp"
 #include "scene_description.hpp"
+#include "render/benchmark_config.hpp"
+#include "scenes/yaml_scene_loader.hpp" 
 
-#define TINYOBJLOADER_IMPLEMENTATION // Define this to get the implementation of tiny_obj_loader.h
+#define TINYOBJLOADER_IMPLEMENTATION 
 #include "scene_factory.hpp" 
 #include "utils.hpp"
 #ifdef SDL2_FOUND
@@ -42,6 +44,8 @@ struct ProgramArgs
    bool adaptive_depth = false;      // Enable adaptive depth (default: off)
    bool debug_mode = false;          // Enable debug mode overlay
    const char *scene_file = nullptr; // Optional scene file to load
+   bool is_benchmark_mode = false;   // Flag to enable benchmark mode
+   const char *benchmark_config_file = nullptr; // Path to benchmark config YAML
 };
 
 void dumpHelp()
@@ -61,6 +65,7 @@ void dumpHelp()
    cout << "  --adaptive-depth       Enable adaptive depth in interactive mode (progressively increases max depth)\n";
    cout << "  --no-auto-accumulate   Disable automatic sample accumulation in interactive mode\n";
    cout << "  --debug                Enable debug overlay in interactive mode\n";
+   cout << "  --benchmark <file>     Activate benchmark mode and load benchmark configuration from YAML file\n";
 }
 
 ProgramArgs parseInput(int argc, char *argv[])
@@ -151,6 +156,11 @@ ProgramArgs parseInput(int argc, char *argv[])
             return args;
          }
       }
+      else if (strcmp(argv[i], "--benchmark") == 0 && i + 1 < argc)
+      {
+         args.is_benchmark_mode = true;
+         args.benchmark_config_file = argv[++i];
+      }
       else if (argv[i][0] == '-')
       {
          cerr << "Unknown argument: " << argv[i] << "\n";
@@ -178,16 +188,11 @@ int main(int argc, char *argv[])
 
    ProgramArgs args = parseInput(argc, argv);
 
-   int renderType = 2; // Default to CUDA
-
    if (args.samples < 0 && args.samples != -1)
       return 1;
-
-   // Calculate width maintaining aspect ratio (16:9)
-   int image_height = args.height;
-   int image_width = (image_height * 16) / 9;
+   
+   // Print application header always
    string compiled_config = current_build_configuration();
-
    cout << "\n";
    cout << "====================================" << "\n";
    cout << " RayON raytracer v" << version << " - " << compiled_config << "\n";
@@ -200,46 +205,87 @@ int main(int argc, char *argv[])
    cout << "inter_adaptive_depth, inter_target_fps" << "\n\n";
 #endif
 
-   if (args.rendering_method != -1)
-   {
-      renderType = args.rendering_method;
-   }
-   else
-   {
-      // Choose rendering method
-      cout << "Choose rendering method:" << "\n";
-      cout << "\t0. CPU sequential" << "\n";
-      cout << "\t1. CPU parallel" << "\n";
-      cout << "\t2. CUDA GPU (default)" << "\n";
-#ifdef SDL2_FOUND
-      cout << "\t3. CUDA GPU with interactive SDL display" << "\n";
-#endif
-      cout << "Enter choice (0, 1, 2"
-#ifdef SDL2_FOUND
-           << ", 3"
-#endif
-           << "): ";
-      string input;
-      getline(cin, input);
+   int renderType = 2;
+   int image_height;
+   int image_width;
+   int effective_samples;
 
+   Rayon::BenchmarkConfig benchmark_config; // Declare BenchmarkConfig object
+
+   if (args.is_benchmark_mode)
+   {
+      cout << "Benchmark mode activated.\n";
+      if (!args.benchmark_config_file)
+      {
+         cerr << "ERROR: --benchmark requires a configuration file path.\n";
+         return 1;
+      }
+      if (!Scene::loadBenchmarkConfigFromYAML(args.benchmark_config_file, benchmark_config))
+      {
+         cerr << "ERROR: Failed to load benchmark configuration from " << args.benchmark_config_file << "\n";
+         return 1;
+      }
+
+      // Override rendering parameters with benchmark config values
+      image_width = benchmark_config.resolution_width;
+      image_height = benchmark_config.resolution_height;
+      effective_samples = benchmark_config.target_samples;
+      
+      renderType = 2; // Force CUDA GPU non-interactive for benchmarks
+      args.scene_file = benchmark_config.scene_file.c_str(); // Use scene file from benchmark config
+
+      cout << "Benchmark rendering at resolution: " << image_width << " x " << image_height << " pixels - ";
+      cout << "Target samples per pixel: " << effective_samples << "\n";
+      if (benchmark_config.max_time_seconds > 0) {
+          cout << "Max render time: " << benchmark_config.max_time_seconds << " seconds.\n";
+      }
       cout << "\n";
+   } else {
+        // Original logic for width/height and effective_samples if not in benchmark mode
+        // Calculate width maintaining aspect ratio (16:9)
+        image_height = args.height;
+        image_width = (image_height * 16) / 9;
 
-      if (!input.empty())
-         renderType = stoi(input);
+        // Determine effective samples
+        effective_samples = args.samples;
+        if (effective_samples == -1)
+        {
+            if (renderType == 3)
+                effective_samples = 2000; // Default for interactive mode
+            else
+                effective_samples = SAMPLES_PER_PIXEL; // Default for others (64)
+        }
+        cout << "Rendering at resolution: " << image_width << " x " << image_height << " pixels - ";
+        cout << "Samples per pixel: " << effective_samples << "\n\n";
+
+        if (args.rendering_method != -1)
+        {
+            renderType = args.rendering_method;
+        }
+        else
+        {
+            // Choose rendering method
+            cout << "Choose rendering method:" << "\n";
+            cout << "\t0. CPU sequential" << "\n";
+            cout << "\t1. CPU parallel" << "\n";
+            cout << "\t2. CUDA GPU (default)" << "\n";
+#ifdef SDL2_FOUND
+            cout << "\t3. CUDA GPU with interactive SDL display" << "\n";
+#endif
+            cout << "Enter choice (0, 1, 2"
+#ifdef SDL2_FOUND
+                << ", 3"
+#endif
+                << "): ";
+            string input;
+            getline(cin, input);
+
+            cout << "\n";
+
+            if (!input.empty())
+                renderType = stoi(input);
+        }
    }
-
-   // Determine effective samples
-   int effective_samples = args.samples;
-   if (effective_samples == -1)
-   {
-       if (renderType == 3)
-           effective_samples = 2000; // Default for interactive mode
-       else
-           effective_samples = SAMPLES_PER_PIXEL; // Default for others (64)
-   }
-
-   cout << "Rendering at resolution: " << image_width << " x " << image_height << " pixels - ";
-   cout << "Samples per pixel: " << effective_samples << "\n\n";
 
    RndGen::set_seed(1984);
 

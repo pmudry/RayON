@@ -792,6 +792,37 @@ bool loadSceneFromYAML(const char *filename, SceneDescription &scene)
    return scene.validate();
 }
 
+bool loadBenchmarkConfigFromYAML(const char *filename, Rayon::BenchmarkConfig &config)
+{
+   SimpleYAMLParser parser;
+
+   cout << "Loading benchmark configuration from: " << filename << "\n";
+
+   if (!parser.parseFile(filename))
+   {
+      cerr << "ERROR: Failed to parse benchmark YAML file: " << filename << "\n";
+      return false;
+   }
+
+   // parser.printAllKeys(); // For debugging if needed
+
+   // Extract benchmark parameters
+   config.scene_file = removeQuotes(parser.getString("benchmark.scene_file"));
+   config.output_name = removeQuotes(parser.getString("benchmark.output_name", "benchmark_run"));
+   config.target_samples = parser.getInt("benchmark.target_samples", 1024);
+   config.max_time_seconds = parser.getFloat("benchmark.max_time_seconds", 0.0f); // 0.0 means no limit
+   config.resolution_width = parser.getInt("benchmark.resolution_width", 1280);
+   config.resolution_height = parser.getInt("benchmark.resolution_height", 720);
+
+   if (config.scene_file.empty()) {
+       cerr << "ERROR: Benchmark configuration is missing 'benchmark.scene_file' parameter.\n";
+       return false;
+   }
+
+   cout << "Benchmark configuration loaded successfully for scene: " << config.scene_file << "\n";
+   return true;
+}
+
 bool saveSceneToYAML(const char *filename, const SceneDescription &scene)
 {
    ofstream file(filename);
