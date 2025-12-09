@@ -1,8 +1,0 @@
-benchmark:
-  scene_file: "resources/experiments/benchmark/erato_in_box.yaml"
-  output_name: "my_first_real_benchmark"
-  target_samples: 500
-  max_time_seconds: 180.0
-  resolution_width: 1280
-  resolution_height: 720
-

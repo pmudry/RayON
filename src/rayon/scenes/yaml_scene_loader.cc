@@ -140,7 +140,7 @@ static Vec3 rotatePoint(Vec3 p, Vec3 rot_deg)
 }
 
 static void loadObjGeometry(const string &filename, SceneDescription &scene, const Vec3 &pos, const Vec3 &rot,
-                            const Vec3 &scale, int override_mat_id)
+                            const Vec3 &scale, int override_mat_id, const std::map<string, int>& external_materials)
 {
    tinyobj::attrib_t attrib;
    std::vector<tinyobj::shape_t> shapes;
@@ -175,17 +175,26 @@ static void loadObjGeometry(const string &filename, SceneDescription &scene, con
       for (size_t i = 0; i < materials.size(); ++i)
       {
          const auto &tmat = materials[i];
+         
+         // Check if this material is overridden by YAML
+         if (external_materials.count(tmat.name)) {
+             int id = external_materials.at(tmat.name);
+             material_map[(int)i] = id;
+             std::cout << "  Using YAML override for OBJ material: " << tmat.name << std::endl;
+             continue;
+         }
+
          MaterialDesc mat;
          mat.type = MaterialType::LAMBERTIAN;
          mat.albedo = Vec3(tmat.diffuse[0], tmat.diffuse[1], tmat.diffuse[2]);
 
-         if (tmat.specular[0] > 0 || tmat.shininess > 0)
+         if (tmat.specular[0] > 0.5f || tmat.specular[1] > 0.5f || tmat.specular[2] > 0.5f)
          {
             mat.type = MaterialType::METAL;
             mat.metallic = 1.0;
             mat.roughness = 1.0f - std::min(1.0f, tmat.shininess / 1000.0f);
          }
-         if (tmat.ior > 1.0)
+         if (tmat.ior > 1.0 && tmat.dissolve < 1.0f)
          {
             mat.type = MaterialType::GLASS;
             mat.refractive_index = tmat.ior;
@@ -592,7 +601,7 @@ static bool loadMaterials(const SimpleYAMLParser &parser, SceneDescription &scen
               "\n";
    }
 
-   return !scene.materials.empty();
+   return true;
 }
 
 static bool loadGeometry(const SimpleYAMLParser &parser, SceneDescription &scene,
@@ -664,7 +673,7 @@ static bool loadGeometry(const SimpleYAMLParser &parser, SceneDescription &scene
             }
          }
 
-         loadObjGeometry(filename, scene, pos, rot, scale, mat_id);
+         loadObjGeometry(filename, scene, pos, rot, scale, mat_id, material_name_to_id);
          cout << "  Loaded OBJ: " << filename << "\n";
          continue;
       }
