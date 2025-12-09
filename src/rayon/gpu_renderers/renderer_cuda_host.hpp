@@ -105,6 +105,9 @@ class RendererCUDA : public IRenderer
 
       render::convertAccumBufferToImage(request.target, accum_buffer, samples_completed, context.gamma);
 
+      // Capture VRAM usage before freeing the GPU scene
+      getCudaDeviceMetrics(context.device_name, context.vram_usage_bytes);
+
       if (d_rand_states)
          freeDeviceRandomStates(d_rand_states);
       if (d_accum_buffer)

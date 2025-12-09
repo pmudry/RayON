@@ -38,6 +38,7 @@ Makefile
 *.mod
 # benchmark results
 benchmark_results/
+benchmark_configs/
 
 # Other
 *.nvcache

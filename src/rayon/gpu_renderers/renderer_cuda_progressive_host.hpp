@@ -115,7 +115,7 @@ class RendererCUDAProgressive : public IRenderer
       categories.push_back({
           "Benchmark",
           {"../resources/experiments/benchmark", "resources/experiments/benchmark"},
-          {"yaml", "yml"},
+          {"yaml", "yml", "obj"},
           {},
           -1
       });

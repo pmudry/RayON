@@ -46,6 +46,7 @@ struct ProgramArgs
    const char *scene_file = nullptr; // Optional scene file to load
    bool is_benchmark_mode = false;   // Flag to enable benchmark mode
    const char *benchmark_config_file = nullptr; // Path to benchmark config YAML
+   const char *benchmark_output_dir = nullptr; // Optional override for benchmark output directory
 };
 
 void dumpHelp()
@@ -66,6 +67,7 @@ void dumpHelp()
    cout << "  --no-auto-accumulate   Disable automatic sample accumulation in interactive mode\n";
    cout << "  --debug                Enable debug overlay in interactive mode\n";
    cout << "  --benchmark <file>     Activate benchmark mode and load benchmark configuration from YAML file\n";
+   cout << "  --benchmark-out <dir>  Specify output directory for benchmark results (default: benchmark_results)\n";
 }
 
 ProgramArgs parseInput(int argc, char *argv[])
@@ -160,6 +162,10 @@ ProgramArgs parseInput(int argc, char *argv[])
       {
          args.is_benchmark_mode = true;
          args.benchmark_config_file = argv[++i];
+      }
+      else if (strcmp(argv[i], "--benchmark-out") == 0 && i + 1 < argc)
+      {
+         args.benchmark_output_dir = argv[++i];
       }
       else if (argv[i][0] == '-')
       {
@@ -383,7 +389,7 @@ int main(int argc, char *argv[])
 
    if (args.is_benchmark_mode) {
        // Create benchmark_results directory if it doesn't exist
-       string benchmark_dir = "benchmark_results";
+       string benchmark_dir = args.benchmark_output_dir ? args.benchmark_output_dir : "benchmark_results";
        std::filesystem::create_directories(benchmark_dir);
 
        // Build timestamp
