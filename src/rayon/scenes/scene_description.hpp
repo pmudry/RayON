@@ -377,6 +377,15 @@ public:
     // Rendering settings
     Vec3 background_color;
     float ambient_light;
+    float light_intensity;        // Global light intensity multiplier
+    float global_metal_fuzziness; // Global multiplier for metal roughness
+    float global_glass_ior;       // Global default IOR for glass
+    
+    // Depth of Field settings
+    bool dof_enabled;
+    float dof_aperture;
+    float dof_focus_distance;
+
     bool use_bvh;                             // Enable scene BVH
 
     enum class BVHStrategy {
@@ -393,6 +402,12 @@ public:
         , camera_fov(35.0f)
         , background_color(0.5f, 0.7f, 1.0f)
         , ambient_light(0.1f)
+        , light_intensity(1.0f)
+        , global_metal_fuzziness(1.0f) // Interactive renderer default was 1.0, GPU was 0.8. Using 1.0 to match recent user experience.
+        , global_glass_ior(1.5f)
+        , dof_enabled(false)
+        , dof_aperture(0.0f)
+        , dof_focus_distance(10.0f)
         , use_bvh(false)
         , bvh_strategy(BVHStrategy::MEDIAN_SPLIT)
     {}

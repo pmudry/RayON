@@ -7,6 +7,7 @@
 #include <iostream>
 #include <sstream>
 #include "camera.hpp"
+#include "scenes/scene_description.hpp"
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
@@ -115,9 +116,41 @@ class FileUtils
       return s.str();
    }
 
-   static void writeRenderStats(const Camera &camera, const string &image_path, uintmax_t image_size_bytes,
-                                std::chrono::nanoseconds render_duration)
+   static void writeRenderStats(const Camera &camera, const Scene::SceneDescription &scene, const string &image_path, uintmax_t image_size_bytes,
+                                std::chrono::nanoseconds render_duration, const string& device_name, size_t vram_usage_bytes)
    {
+      // Calculate scene statistics
+      long long sphere_count = 0;
+      long long rectangle_count = 0;
+      long long single_triangle_count = 0;
+      long long mesh_instance_count = 0;
+      long long total_mesh_triangles = 0;
+
+      for (const auto& geom : scene.geometries) {
+          switch (geom.type) {
+              case Scene::GeometryType::SPHERE:
+              case Scene::GeometryType::DISPLACED_SPHERE:
+                  sphere_count++;
+                  break;
+              case Scene::GeometryType::RECTANGLE:
+                  rectangle_count++;
+                  break;
+              case Scene::GeometryType::TRIANGLE:
+                  single_triangle_count++;
+                  break;
+              case Scene::GeometryType::TRIANGLE_MESH:
+                  mesh_instance_count++;
+                  if (geom.data.mesh_instance.mesh_id >= 0 && geom.data.mesh_instance.mesh_id < (int)scene.meshes.size()) {
+                      total_mesh_triangles += scene.meshes[geom.data.mesh_instance.mesh_id].triangles.size();
+                  }
+                  break;
+              default:
+                  break;
+          }
+      }
+      
+      long long total_triangles = single_triangle_count + total_mesh_triangles;
+
       filesystem::path stats_path(image_path);
       stats_path.replace_extension(".txt");
 
@@ -131,13 +164,23 @@ class FileUtils
       auto render_ms = std::chrono::duration_cast<std::chrono::milliseconds>(render_duration).count();
       double render_seconds = std::chrono::duration_cast<std::chrono::duration<double>>(render_duration).count();
       double rays_per_second = 0.0;
+      double samples_per_second = 0.0;
+      double rays_per_sample = 0.0;
+
       if (render_seconds > 0.0)
       {
          rays_per_second = static_cast<double>(camera.n_rays.load()) / render_seconds;
+         samples_per_second = static_cast<double>(camera.samples_per_pixel) / render_seconds;
       }
+      
+      if (camera.samples_per_pixel > 0 && camera.image_width > 0) {
+          rays_per_sample = static_cast<double>(camera.n_rays.load()) / (double)(camera.image_width * camera.image_height * camera.samples_per_pixel);
+      }
+
       long long rays_per_second_int = static_cast<long long>(std::llround(rays_per_second));
 
       stats_file << "image: " << filesystem::path(image_path).filename().string() << '\n';
+      stats_file << "device: " << device_name << '\n';
       stats_file << "samples_per_pixel: " << camera.samples_per_pixel << '\n';
       stats_file << "resolution: " << camera.image_width << " x " << camera.image_height << '\n';
       stats_file << "max_depth: " << camera.max_depth << '\n';
@@ -146,6 +189,12 @@ class FileUtils
       stats_file << "rays_per_second: " << rays_per_second_int << '\n';
       stats_file << "render_time_ms: " << render_ms << '\n';
       stats_file << "render_time_pretty: " << formatDuration(render_duration) << '\n';
+      
+      stats_file << "scene_stats:\n";
+      stats_file << "  spheres: " << sphere_count << '\n';
+      stats_file << "  rectangles: " << rectangle_count << '\n';
+      stats_file << "  mesh_instances: " << mesh_instance_count << '\n';
+      stats_file << "  total_triangles: " << total_triangles << '\n';
 
       filesystem::path stats_json_path(image_path);
       stats_json_path.replace_extension(".json");
@@ -158,15 +207,43 @@ class FileUtils
 
       stats_json << "{\n";
       stats_json << "  \"image\": \"" << filesystem::path(image_path).filename().string() << "\",\n";
+      stats_json << "  \"hardware\": {\n";
+      stats_json << "    \"device_name\": \"" << device_name << "\",\n";
+      stats_json << "    \"vram_usage_bytes\": " << vram_usage_bytes << "\n";
+      stats_json << "  },\n";
       stats_json << "  \"samples_per_pixel\": " << camera.samples_per_pixel << ",\n";
       stats_json << "  \"resolution\": { \"width\": " << camera.image_width << ", \"height\": " << camera.image_height
                  << " },\n";
       stats_json << "  \"max_depth\": " << camera.max_depth << ",\n";
       stats_json << "  \"rays_traced\": " << camera.n_rays.load() << ",\n";
       stats_json << "  \"image_size_bytes\": " << image_size_bytes << ",\n";
-      stats_json << "  \"rays_per_second\": " << rays_per_second_int << ",\n";
+      stats_json << "  \"performance\": {\n";
+      stats_json << "    \"rays_per_second\": " << rays_per_second_int << ",\n";
+      stats_json << "    \"samples_per_second\": " << samples_per_second << ",\n";
+      stats_json << "    \"rays_per_sample\": " << rays_per_sample << "\n";
+      stats_json << "  },\n";
       stats_json << "  \"render_time_ms\": " << render_ms << ",\n";
-      stats_json << "  \"render_time_pretty\": \"" << formatDuration(render_duration) << "\"\n";
+      stats_json << "  \"render_time_pretty\": \"" << formatDuration(render_duration) << "\",\n";
+      
+      stats_json << "  \"scene_settings\": {\n";
+      stats_json << "    \"ambient_light\": " << scene.ambient_light << ",\n";
+      stats_json << "    \"light_intensity\": " << scene.light_intensity << ",\n";
+      stats_json << "    \"metal_fuzziness\": " << scene.global_metal_fuzziness << ",\n";
+      stats_json << "    \"glass_ior\": " << scene.global_glass_ior << ",\n";
+      stats_json << "    \"dof\": {\n";
+      stats_json << "      \"enabled\": " << (scene.dof_enabled ? "true" : "false") << ",\n";
+      stats_json << "      \"aperture\": " << scene.dof_aperture << ",\n";
+      stats_json << "      \"focus_distance\": " << scene.dof_focus_distance << "\n";
+      stats_json << "    }\n";
+      stats_json << "  },\n";
+
+      stats_json << "  \"scene_stats\": {\n";
+      stats_json << "    \"spheres\": " << sphere_count << ",\n";
+      stats_json << "    \"rectangles\": " << rectangle_count << ",\n";
+      stats_json << "    \"mesh_instances\": " << mesh_instance_count << ",\n";
+      stats_json << "    \"total_triangles\": " << total_triangles << "\n";
+      stats_json << "  }\n";
+      
       stats_json << "}\n";
    }
 }; // class FileUtils

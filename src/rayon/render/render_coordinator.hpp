@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vector>
+#include <string>
 
 #include "renderer_interface.hpp"
 
@@ -16,7 +17,12 @@ class RenderCoordinator
    /// Builds a render request for the provided renderer and writes into the CPU-side image buffer.
    void render(IRenderer &renderer, std::vector<unsigned char> &image, float gamma = 2.0f);
 
+   const std::string& getDeviceName() const { return last_device_name; }
+   size_t getVramUsage() const { return last_vram_usage; }
+
  private:
    CameraBase &camera_;
    const Scene::SceneDescription &scene_;
+   std::string last_device_name = "Unknown";
+   size_t last_vram_usage = 0;
 };

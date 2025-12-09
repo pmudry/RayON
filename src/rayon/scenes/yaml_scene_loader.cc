@@ -407,6 +407,16 @@ class SimpleYAMLParser
              indent_stack.push_back(-1); // Root level for scene
              continue;
          }
+         else if (trimmed == "benchmark:")
+         {
+             in_materials = false;
+             in_geometry = false;
+             section_stack.clear();
+             indent_stack.clear();
+             section_stack.push_back("benchmark");
+             indent_stack.push_back(-1); // Root level for benchmark
+             continue;
+         }
 
          // Handle list items
          if (trimmed.length() >= 2 && trimmed[0] == '-' && trimmed[1] == ' ')
@@ -437,8 +447,8 @@ class SimpleYAMLParser
             string key = trimWhitespace(trimmed.substr(0, colon_pos));
             string value = trimWhitespace(trimmed.substr(colon_pos + 1));
 
-            // Handle nested properties inside 'scene' block
-            if (!section_stack.empty() && section_stack[0] == "scene") {
+            // Handle nested properties inside 'scene' or 'benchmark' block
+            if (!section_stack.empty() && (section_stack[0] == "scene" || section_stack[0] == "benchmark")) {
                 // Pop stack based on indentation
                 while (indent_stack.size() > 1 && indent <= indent_stack.back()) {
                     section_stack.pop_back();
@@ -760,6 +770,45 @@ bool loadSceneFromYAML(const char *filename, SceneDescription &scene)
    {
        scene.ambient_light = parser.getFloat("scene.camera.ambient_light");
        cout << "  Loaded ambient light (nested): " << scene.ambient_light << endl;
+   }
+
+   // Global Settings
+   if (parser.hasKey("scene.light_intensity")) {
+       scene.light_intensity = parser.getFloat("scene.light_intensity");
+       cout << "  Loaded global light intensity: " << scene.light_intensity << endl;
+   }
+   if (parser.hasKey("scene.metal_fuzziness")) {
+       scene.global_metal_fuzziness = parser.getFloat("scene.metal_fuzziness");
+       cout << "  Loaded global metal fuzziness: " << scene.global_metal_fuzziness << endl;
+   }
+   if (parser.hasKey("scene.glass_ior")) {
+       scene.global_glass_ior = parser.getFloat("scene.glass_ior");
+       cout << "  Loaded global glass IOR: " << scene.global_glass_ior << endl;
+   }
+
+   // Depth of Field
+   if (parser.hasKey("scene.dof.enabled")) {
+       scene.dof_enabled = parser.getBool("scene.dof.enabled");
+       cout << "  Loaded DOF enabled: " << (scene.dof_enabled ? "true" : "false") << endl;
+   } else if (parser.hasKey("scene.camera.dof.enabled")) {
+       scene.dof_enabled = parser.getBool("scene.camera.dof.enabled");
+       cout << "  Loaded DOF enabled (nested): " << (scene.dof_enabled ? "true" : "false") << endl;
+   }
+
+   if (parser.hasKey("scene.dof.aperture")) {
+       scene.dof_aperture = parser.getFloat("scene.dof.aperture");
+       cout << "  Loaded DOF aperture: " << scene.dof_aperture << endl;
+   } else if (parser.hasKey("scene.camera.dof.aperture")) {
+       scene.dof_aperture = parser.getFloat("scene.camera.dof.aperture");
+       cout << "  Loaded DOF aperture (nested): " << scene.dof_aperture << endl;
+   }
+
+   if (parser.hasKey("scene.dof.focus_distance")) {
+       scene.dof_focus_distance = parser.getFloat("scene.dof.focus_distance");
+       cout << "  Loaded DOF focus distance: " << scene.dof_focus_distance << endl;
+   } else if (parser.hasKey("scene.camera.dof.focus_distance")) {
+       scene.dof_focus_distance = parser.getFloat("scene.camera.dof.focus_distance");
+       cout << "  Loaded DOF focus distance (nested): " << scene.dof_focus_distance << endl;
    }
 
    // Clear existing scene

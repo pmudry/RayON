@@ -11,15 +11,22 @@
 #include <cstdio>
 #include <iostream>
 #include <vector>
+#include <optional>
 
 #include "render/render_utils.hpp"
 #include "render/renderer_interface.hpp"
+#include "render/benchmark_config.hpp" // Added include
 #include "renderer_cuda_device.cuh"
 #include "scene_builder.hpp"
+#include "cuda_metrics.hpp"
 
 class RendererCUDA : public IRenderer
 {
  public:
+   void setBenchmarkConfig(const Rayon::BenchmarkConfig& config) override {
+       benchmark_config_ = config;
+   }
+
    void render(const RenderRequest &request, RenderContext &context) override
    {
       auto start_time = std::chrono::high_resolution_clock::now();
@@ -27,19 +34,43 @@ class RendererCUDA : public IRenderer
 
       CudaScene::Scene *gpu_scene = Scene::CudaSceneBuilder::buildGPUScene(request.scene);
 
+      // Apply scene settings
+      ::setBackgroundIntensity(request.scene.ambient_light);
+      ::setLightIntensity(request.scene.light_intensity);
+      ::setMetalFuzziness(request.scene.global_metal_fuzziness);
+      ::setGlassRefractionIndex(request.scene.global_glass_ior);
+      ::setDOFEnabled(request.scene.dof_enabled);
+      ::setDOFAperture(request.scene.dof_aperture);
+      ::setDOFFocusDistance(request.scene.dof_focus_distance);
+
+      // Gather GPU Metrics
+      getCudaDeviceMetrics(context.device_name, context.vram_usage_bytes);
+
       std::vector<float> accum_buffer(frame.image_width * frame.image_height * 3, 0.0f);
       void *d_rand_states = nullptr;
       void *d_accum_buffer = nullptr;
 
+      // Determine rendering goals
+      int total_samples_goal = frame.samples_per_pixel;
+      float time_limit_sec = 0.0f;
+      
+      if (benchmark_config_.has_value()) {
+          total_samples_goal = benchmark_config_->target_samples;
+          time_limit_sec = benchmark_config_->max_time_seconds;
+          std::cout << "Starting benchmark: Target Samples=" << total_samples_goal 
+                    << ", Time Limit=" << time_limit_sec << "s\n";
+      }
+
       // Render progressively with accumulative samples to show progress
-      const int samples_per_update = frame.samples_per_pixel / 5; // Update progress every 20% of samples
+      const int samples_per_update = std::max(1, total_samples_goal / 20); // Update progress roughly every 5%
       int samples_completed = 0;
       unsigned long long total_rays = 0;
       
-      while (samples_completed < frame.samples_per_pixel)
+      while (samples_completed < total_samples_goal)
       {
-         int samples_to_add = std::min(samples_per_update, frame.samples_per_pixel - samples_completed);
-         samples_completed += samples_to_add;
+         int samples_to_add = std::min(samples_per_update, total_samples_goal - samples_completed);
+         
+         // In benchmark mode, ensure we don't overshoot if possible, but strict blocks are fine
          
          unsigned long long cuda_ray_count = ::renderPixelsCUDAAccumulative(
              nullptr, accum_buffer.data(), gpu_scene, frame.image_width, frame.image_height, frame.camera_center.x(),
@@ -50,14 +81,29 @@ class RendererCUDA : public IRenderer
              frame.u.z(), frame.v.x(), frame.v.y(), frame.v.z());
          
          total_rays += cuda_ray_count;
+         samples_completed += samples_to_add; // Update after render
          
          // Show progress based on samples completed
-         float progress = (float)samples_completed / frame.samples_per_pixel;
-         int progress_steps = (int)(progress * frame.image_height);
-         render::showProgress(progress_steps, frame.image_height);
+         if (!benchmark_config_.has_value()) {
+             float progress = (float)samples_completed / total_samples_goal;
+             int progress_steps = (int)(progress * frame.image_height);
+             render::showProgress(progress_steps, frame.image_height);
+         } else {
+             // Simple progress for benchmark
+             auto current_time = std::chrono::high_resolution_clock::now();
+             double elapsed_s = std::chrono::duration<double>(current_time - start_time).count();
+             std::cout << "\rBenchmark Progress: " << samples_completed << "/" << total_samples_goal 
+                       << " samples | Time: " << std::fixed << std::setprecision(1) << elapsed_s << "s" << std::flush;
+             
+             // Time limit check
+             if (time_limit_sec > 0.0f && elapsed_s >= time_limit_sec) {
+                 std::cout << "\nBenchmark time limit reached (" << time_limit_sec << "s). Stopping.\n";
+                 break;
+             }
+         }
       }
 
-      render::convertAccumBufferToImage(request.target, accum_buffer, frame.samples_per_pixel, context.gamma);
+      render::convertAccumBufferToImage(request.target, accum_buffer, samples_completed, context.gamma);
 
       if (d_rand_states)
          freeDeviceRandomStates(d_rand_states);
@@ -72,4 +118,7 @@ class RendererCUDA : public IRenderer
       auto duration = end_time - start_time;
       std::cout << "\nCUDA rendering completed in " << render::timeStr(duration) << "\n";
    }
+
+ private:
+   std::optional<Rayon::BenchmarkConfig> benchmark_config_;
 };

@@ -355,6 +355,9 @@ int main(int argc, char *argv[])
    {
       cout << "Using CUDA GPU rendering..." << "\n";
       RendererCUDA renderer;
+      if (args.is_benchmark_mode) {
+          renderer.setBenchmarkConfig(benchmark_config);
+      }
       coordinator.render(renderer, localImage);
       break;
    }
@@ -376,7 +379,30 @@ int main(int argc, char *argv[])
 
    cout << "Rays/sec: " << rays_per_second_int << "\n";
 
-   const string output_path = utils::FileUtils::buildTimestampedOutputPath();
+   string output_path;
+
+   if (args.is_benchmark_mode) {
+       // Create benchmark_results directory if it doesn't exist
+       string benchmark_dir = "benchmark_results";
+       std::filesystem::create_directories(benchmark_dir);
+
+       // Build timestamp
+       auto now = chrono::system_clock::now();
+       time_t raw_time = chrono::system_clock::to_time_t(now);
+       std::tm local_tm;
+#ifdef _WIN32
+       localtime_s(&local_tm, &raw_time);
+#else
+       localtime_r(&raw_time, &local_tm);
+#endif
+       stringstream ss;
+       ss << benchmark_dir << "/" << put_time(&local_tm, "%Y-%m-%d_%H-%M-%S") << "_" << benchmark_config.output_name << ".png";
+       output_path = ss.str();
+       
+       cout << "Saving benchmark results to: " << output_path << "\n";
+   } else {
+       output_path = utils::FileUtils::buildTimestampedOutputPath();
+   }
 
    utils::FileUtils::dumpImageToFile(localImage, camera.image_width, camera.image_height, "rendered_images/latest.png");
    utils::FileUtils::dumpImageToFile(localImage, camera.image_width, camera.image_height, output_path);
@@ -386,7 +412,8 @@ int main(int argc, char *argv[])
    if (file_size_ec)
       image_size_bytes = 0;
 
-   utils::FileUtils::writeRenderStats(camera, output_path, image_size_bytes, render_duration);
+   utils::FileUtils::writeRenderStats(camera, scene_desc, output_path, image_size_bytes, render_duration, 
+                                      coordinator.getDeviceName(), coordinator.getVramUsage());
 
    return 0;
 }

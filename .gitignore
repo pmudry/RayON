@@ -36,6 +36,8 @@ Makefile
 # Generated files
 *.d
 *.mod
+# benchmark results
+benchmark_results/
 
 # Other
 *.nvcache

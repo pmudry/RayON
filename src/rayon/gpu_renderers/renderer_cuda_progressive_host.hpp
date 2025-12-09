@@ -172,13 +172,16 @@ class RendererCUDAProgressive : public IRenderer
       bool accumulation_enabled = auto_accumulate;
       int current_samples = 0;
       float gamma = 2.0f; // Fixed gamma value
-      float light_intensity = 1.0f;
-      float background_intensity = 1.0f;
-      float metal_fuzziness = 1.0f;
-      float glass_refraction_index = 1.5f; // Default glass index
-      bool dof_enabled = false;
-      float dof_aperture = 0.1f;
-      float dof_focus_distance = 10.0f;
+      
+      // Initialize from scene description
+      float light_intensity = request.scene.light_intensity;
+      float background_intensity = request.scene.ambient_light;
+      float metal_fuzziness = request.scene.global_metal_fuzziness;
+      float glass_refraction_index = request.scene.global_glass_ior;
+      bool dof_enabled = request.scene.dof_enabled;
+      float dof_aperture = request.scene.dof_aperture;
+      float dof_focus_distance = request.scene.dof_focus_distance;
+      
       float fov = static_cast<float>(camera.vfov);
       float initial_fov = fov;
       bool needs_rerender = false;
@@ -305,7 +308,14 @@ class RendererCUDAProgressive : public IRenderer
                  d_accum_buffer = nullptr;
              }
              
-             background_intensity = active_scene.ambient_light; // Update from new scene
+             // Update interactive state from new scene
+             background_intensity = active_scene.ambient_light;
+             light_intensity = active_scene.light_intensity;
+             metal_fuzziness = active_scene.global_metal_fuzziness;
+             glass_refraction_index = active_scene.global_glass_ior;
+             dof_enabled = active_scene.dof_enabled;
+             dof_aperture = active_scene.dof_aperture;
+             dof_focus_distance = active_scene.dof_focus_distance;
 
              force_immediate_render = true;
              camera_changed = true;
@@ -383,14 +393,14 @@ class RendererCUDAProgressive : public IRenderer
                }
                else if (scene_loaded && event.key.keysym.sym == SDLK_r)
                {
-                  // Reset to default state
-                  light_intensity = 1.0f;
-                  background_intensity = 1.0f;
-                  metal_fuzziness = 1.0f;
-                  glass_refraction_index = 1.5f;
-                  dof_enabled = false;
-                  dof_aperture = 0.1f;
-                  dof_focus_distance = 10.0f;
+                  // Reset to scene defaults
+                  light_intensity = active_scene.light_intensity;
+                  background_intensity = active_scene.ambient_light;
+                  metal_fuzziness = active_scene.global_metal_fuzziness;
+                  glass_refraction_index = active_scene.global_glass_ior;
+                  dof_enabled = active_scene.dof_enabled;
+                  dof_aperture = active_scene.dof_aperture;
+                  dof_focus_distance = active_scene.dof_focus_distance;
                   fov = initial_fov;
                   samples_per_batch_float = static_cast<float>(settings_.samples_per_batch);
                   camera_control.setAutoOrbit(false);

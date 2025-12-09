@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <string>
 
 #include "camera/camera_base.hpp"
 #include "render_target.hpp"
@@ -10,6 +11,10 @@ namespace Scene
 class SceneDescription;
 }
 
+namespace Rayon {
+    struct BenchmarkConfig;
+}
+
 /// Shared render state that renderers can update or consult while producing an image.
 struct RenderContext
 {
@@ -17,6 +22,10 @@ struct RenderContext
    std::atomic<long long> &ray_counter;
    /// Gamma value used when writing pixels back to the render target.
    float gamma = 2.0f;
+   
+   /// Output metrics populated by the renderer
+   std::string device_name = "CPU";
+   size_t vram_usage_bytes = 0;
 };
 
 /// Bundles the immutable inputs required by a renderer to produce an image.
@@ -37,4 +46,7 @@ class IRenderer
    virtual ~IRenderer() = default;
    /// Executes a render request and writes into the provided target.
    virtual void render(const RenderRequest &request, RenderContext &context) = 0;
+
+   /// Optional: Set benchmark configuration for renderers that support it
+   virtual void setBenchmarkConfig(const Rayon::BenchmarkConfig& config) {}
 };
