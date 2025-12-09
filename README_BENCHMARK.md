@@ -95,7 +95,7 @@ The `scripts/run_benchmarks.py` script executes the `rayon` executable for each 
 **Batch Run Output:**
 
 The script will:
-    Print a summary table to the console, showing key metrics (Rays/Sec, Render Time, VRAM usage) for each run.
+*   Print a summary table to the console, showing key metrics (Rays/Sec, Render Time, VRAM usage) for each run.
 *   Save a comprehensive CSV file (`summary.csv`) in the `benchmark_results/` directory, containing all the collected metrics.
 
 ## Profiling Benchmarks (Nsight Tools)
@@ -142,7 +142,43 @@ Nsight Compute provides detailed, low-level metrics for individual CUDA kernels.
 ```
 
 **Output:**
-An `.ncu-rep` report file will be generated in `benchmark_results/profiling/` (or `benchmark_results/<your_name>/profiling/` if `--name` is used). The filename will be based on the benchmark configuration. Open this file with the Nsight Compute GUI for detailed kernel analysis.
+An `.ncu-rep` report file will be generated in `benchmark_results/profiling/` (or `benchmark_results/<your_name>/profiling/` if `--name` is used). The filename will be based on the benchmark configuration.
+
+### Analyzing Results
+
+#### 1. Using the Nsight Compute GUI (Recommended)
+The most effective way to analyze results is to open the `.ncu-rep` files in the Nsight Compute GUI (`ncu-ui`).
+*   **Launch:** Run `ncu-ui` (or open "Nsight Compute" from your applications menu).
+*   **Open:** Go to `File > Open File` and select your generated `.ncu-rep` file.
+*   **Inspect:** Use the "Details" page to see "Speed of Light" throughput, warp stall reasons, and memory access analysis. The "Source" tab allows you to correlate performance metrics directly with your CUDA code lines.
+
+#### 2. Using the Command Line (CLI)
+You can print a text summary of the report directly in the terminal using the `--import` flag. This is useful for quick checks on headless servers.
+
+**Command:**
+```bash
+ncu --import benchmark_results/profiling/<file>.ncu-rep
+```
+
+### Troubleshooting: Permission Denied (`ERR_NVGPUCTRPERM`)
+
+If you encounter the error `ERR_NVGPUCTRPERM - The user does not have permission to access NVIDIA GPU Performance Counters`, it means your user account is restricted from profiling.
+
+**Permanent Fix (Recommended):**
+Allow non-root users to access performance counters by creating a modprobe configuration file.
+
+1.  Run the following command:
+    ```bash
+    echo "options nvidia NVreg_RestrictProfilingToAdminUsers=0" | sudo tee -a /etc/modprobe.d/nvidia-profiler.conf
+    ```
+2.  **Reboot your system** for the changes to take effect.
+
+**Temporary Workaround:**
+Run the benchmark script with `sudo` (root privileges). Note that output files will be owned by root.
+
+```bash
+sudo python3 ./scripts/run_benchmarks.py ...
+```
 
 ---
 

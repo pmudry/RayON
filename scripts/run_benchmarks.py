@@ -54,41 +54,75 @@ def run_benchmark(executable, config_file, output_dir=None, profile_nsys=False, 
         config_name = Path(config_file).stem
         report_path = os.path.join(prof_dir, f"{config_name}")
 
+        import shutil
+        
         if profile_nsys:
+            nsys_exe = shutil.which("nsys") or "/usr/local/cuda/bin/nsys"
             print(f"  {Colors.HEADER}[Profiling] Nsight Systems: {report_path}.nsys-rep{Colors.ENDC}")
             # -t cuda,osrt,nvtx: Trace CUDA, OS runtime, and NVTX
-            profiler_cmd = ["nsys", "profile", "-t", "cuda,osrt,nvtx", "-o", report_path, "--force-overwrite", "true"]
+            profiler_cmd = [nsys_exe, "profile", "-t", "cuda,osrt,nvtx", "-o", report_path, "--force-overwrite", "true"]
             cmd = profiler_cmd + cmd
         elif profile_ncu:
+            ncu_exe = shutil.which("ncu") or "/usr/local/cuda/bin/ncu"
             print(f"  {Colors.HEADER}[Profiling] Nsight Compute: {report_path}.ncu-rep{Colors.ENDC}")
             # --set full: All metrics
-            # --count 1: Only profile 1 kernel launch
-            profiler_cmd = ["ncu", "--set", "full", "--count", "1", "-o", report_path, "--force-overwrite"]
+            # --launch-count 1: Only profile 1 kernel launch (fixed for older ncu versions)
+            profiler_cmd = [ncu_exe, "--set", "full", "-c", "1", "-o", report_path, "--force-overwrite"]
             cmd = profiler_cmd + cmd
 
+    print(f"DEBUG: Executing command: {' '.join(cmd)}")
     try:
-        # Run the command and capture output
+        # Run the command
         start_time = time.time()
-        # When profiling, we might want to see output live, but we need to capture it for JSON parsing.
-        # Nsight tools print to stdout/stderr, so we capture both.
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        
+        if profile_nsys or profile_ncu:
+            # When profiling, let output stream to console so user can see progress/errors
+            # check=False allows us to continue even if profiler fails (e.g. permission error)
+            result = subprocess.run(cmd, check=False)
+            if result.returncode != 0:
+                 print(f"  {Colors.WARNING}Warning: Profiler/Benchmark exited with code {result.returncode}. Attempting to collect results anyway.{Colors.ENDC}")
+            stdout_content = "" # We can't parse stdout if we didn't capture it
+        else:
+            # Capture output for normal runs to keep it clean and parse filename
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            stdout_content = result.stdout
+
         end_time = time.time()
         
         print(f"  {Colors.OKGREEN}Success ({end_time - start_time:.2f}s){Colors.ENDC}")
         
-        # Find the output JSON path from stdout
-        # Look for "Saving benchmark results to: <path>"
         output_json = None
-        for line in result.stdout.splitlines():
-            if "Saving benchmark results to:" in line:
-                path_str = line.split("Saving benchmark results to:")[1].strip()
-                # The log might point to PNG, swap extension to JSON
-                path = Path(path_str)
-                json_path = path.with_suffix('.json')
-                if json_path.exists():
-                    output_json = json_path
-                    break
         
+        if stdout_content:
+            # Find the output JSON path from stdout
+            for line in stdout_content.splitlines():
+                if "Saving benchmark results to:" in line:
+                    path_str = line.split("Saving benchmark results to:")[1].strip()
+                    path = Path(path_str)
+                    json_path = path.with_suffix('.json')
+                    if json_path.exists():
+                        output_json = json_path
+                        break
+        
+        # Fallback: if we didn't capture stdout (profiling), look for the newest JSON in the output dir
+        if not output_json and output_dir:
+             search_pattern = os.path.join(output_dir, "*.json")
+             candidates = glob.glob(search_pattern)
+             
+             if candidates:
+                 # Get the one with the latest modification time
+                 newest = max(candidates, key=os.path.getmtime)
+                 mtime = os.path.getmtime(newest)
+                 
+                 # Check if it was created during our run window (approx)
+                 # Allow a small buffer before start_time just in case of clock skew, though unlikely
+                 if mtime >= start_time - 10: 
+                     output_json = newest
+                 else:
+                     print(f"  {Colors.WARNING}Warning: Found JSON {newest} but it seems too old (diff: {mtime - start_time:.1f}s).{Colors.ENDC}")
+             else:
+                 print(f"  {Colors.WARNING}Warning: No JSON files found in {output_dir}.{Colors.ENDC}")
+
         if output_json:
             with open(output_json, 'r') as f:
                 data = json.load(f)
