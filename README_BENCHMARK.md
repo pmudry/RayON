@@ -95,8 +95,56 @@ The `scripts/run_benchmarks.py` script executes the `rayon` executable for each 
 **Batch Run Output:**
 
 The script will:
-*   Print a summary table to the console, showing key metrics (Rays/Sec, Render Time, VRAM usage) for each run.
+    Print a summary table to the console, showing key metrics (Rays/Sec, Render Time, VRAM usage) for each run.
 *   Save a comprehensive CSV file (`summary.csv`) in the `benchmark_results/` directory, containing all the collected metrics.
+
+## Profiling Benchmarks (Nsight Tools)
+
+To gain deeper insights into the performance bottlenecks of your CUDA code, you can leverage NVIDIA's Nsight profiling tools: Nsight Systems (`nsys`) for system-wide tracing, and Nsight Compute (`ncu`) for detailed kernel analysis.
+
+These tools are *complementary* to the standard benchmarks. They produce rich graphical reports that can be viewed with the respective Nsight GUIs (available as part of the CUDA Toolkit).
+
+**Important:** You cannot run Nsight Systems and Nsight Compute simultaneously on the same benchmark execution. They require exclusive access to hardware counters. If both flags are provided, `--profile-nsys` will take precedence.
+
+### Using Nsight Systems (`--profile-nsys`)
+
+Nsight Systems provides a timeline view of your application, showing CPU and GPU activity, CUDA API calls, memory transfers, and kernel execution. Use it to identify high-level bottlenecks, such as CPU-GPU synchronization issues, data transfer overheads, or overall GPU utilization.
+
+**Command Syntax:**
+
+```bash
+./scripts/run_benchmarks.py <config_path> --profile-nsys [OPTIONS]
+```
+
+**Example:**
+
+```bash
+./scripts/run_benchmarks.py benchmark_configs/erato_hd_high.yaml --profile-nsys
+```
+
+**Output:**
+An `.nsys-rep` report file will be generated in `benchmark_results/profiling/` (or `benchmark_results/<your_name>/profiling/` if `--name` is used). The filename will be based on the benchmark configuration. Open this file with the Nsight Systems GUI for visualization.
+
+### Using Nsight Compute (`--profile-ncu`)
+
+Nsight Compute provides detailed, low-level metrics for individual CUDA kernels. It helps you understand why a specific kernel might be performing poorly by showing warp divergence, memory access patterns, cache hit rates, instruction throughput, and more. When `--profile-ncu` is used, the script will profile only the *first* kernel launched.
+
+**Command Syntax:**
+
+```bash
+./scripts/run_benchmarks.py <config_path> --profile-ncu [OPTIONS]
+```
+
+**Example:**
+
+```bash
+./scripts/run_benchmarks.py benchmark_configs/conf_room_2_hd_high.yaml --profile-ncu
+```
+
+**Output:**
+An `.ncu-rep` report file will be generated in `benchmark_results/profiling/` (or `benchmark_results/<your_name>/profiling/` if `--name` is used). The filename will be based on the benchmark configuration. Open this file with the Nsight Compute GUI for detailed kernel analysis.
+
+---
 
 ## Creating Custom Benchmark Configurations
 

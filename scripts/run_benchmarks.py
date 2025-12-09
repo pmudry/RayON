@@ -38,7 +38,7 @@ def find_executable(build_dir="build"):
             
     return None
 
-def run_benchmark(executable, config_file, output_dir=None):
+def run_benchmark(executable, config_file, output_dir=None, profile_nsys=False, profile_ncu=False):
     """Run a single benchmark configuration."""
     print(f"{Colors.OKBLUE}Running benchmark: {config_file}{Colors.ENDC}")
     
@@ -46,9 +46,31 @@ def run_benchmark(executable, config_file, output_dir=None):
     if output_dir:
         cmd.extend(["--benchmark-out", output_dir])
     
+    # Profiling integration
+    if profile_nsys or profile_ncu:
+        prof_dir = os.path.join(output_dir if output_dir else "benchmark_results", "profiling")
+        os.makedirs(prof_dir, exist_ok=True)
+        
+        config_name = Path(config_file).stem
+        report_path = os.path.join(prof_dir, f"{config_name}")
+
+        if profile_nsys:
+            print(f"  {Colors.HEADER}[Profiling] Nsight Systems: {report_path}.nsys-rep{Colors.ENDC}")
+            # -t cuda,osrt,nvtx: Trace CUDA, OS runtime, and NVTX
+            profiler_cmd = ["nsys", "profile", "-t", "cuda,osrt,nvtx", "-o", report_path, "--force-overwrite", "true"]
+            cmd = profiler_cmd + cmd
+        elif profile_ncu:
+            print(f"  {Colors.HEADER}[Profiling] Nsight Compute: {report_path}.ncu-rep{Colors.ENDC}")
+            # --set full: All metrics
+            # --count 1: Only profile 1 kernel launch
+            profiler_cmd = ["ncu", "--set", "full", "--count", "1", "-o", report_path, "--force-overwrite"]
+            cmd = profiler_cmd + cmd
+
     try:
         # Run the command and capture output
         start_time = time.time()
+        # When profiling, we might want to see output live, but we need to capture it for JSON parsing.
+        # Nsight tools print to stdout/stderr, so we capture both.
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         end_time = time.time()
         
@@ -87,6 +109,8 @@ def main():
     parser.add_argument("--exec", help="Path to rayon executable", default=None)
     parser.add_argument("--output", help="Output summary CSV file", default="benchmark_results/summary.csv")
     parser.add_argument("--name", help="Name for this benchmark run (creates subfolder)", default=None)
+    parser.add_argument("--profile-nsys", action="store_true", help="Enable Nsight Systems profiling")
+    parser.add_argument("--profile-ncu", action="store_true", help="Enable Nsight Compute profiling (single kernel)")
     args = parser.parse_args()
 
     # Find executable
@@ -136,7 +160,7 @@ def main():
 
     # Run benchmarks
     for config in config_files:
-        res = run_benchmark(executable, config, run_output_dir)
+        res = run_benchmark(executable, config, run_output_dir, args.profile_nsys, args.profile_ncu)
         if res:
             results.append(res)
     
