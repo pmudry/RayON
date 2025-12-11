@@ -205,10 +205,10 @@ static CudaScene::Mesh processMesh(const TriangleMesh &mesh_desc)
    gpu_mesh.num_bvh_nodes = static_cast<int>(host_nodes.size());
    gpu_mesh.bvh_root_idx = root_idx;
 
-   cudaMallocTracked(&gpu_mesh.triangles, gpu_mesh.num_triangles * sizeof(CudaScene::MeshTriangle));
+   cudaMalloc((void**)&gpu_mesh.triangles, gpu_mesh.num_triangles * sizeof(CudaScene::MeshTriangle));
    cudaMemcpy(gpu_mesh.triangles, reordered_triangles.data(), gpu_mesh.num_triangles * sizeof(CudaScene::MeshTriangle), cudaMemcpyHostToDevice);
 
-   cudaMallocTracked(&gpu_mesh.bvh_nodes, gpu_mesh.num_bvh_nodes * sizeof(CudaScene::BVHNode));
+   cudaMalloc((void**)&gpu_mesh.bvh_nodes, gpu_mesh.num_bvh_nodes * sizeof(CudaScene::BVHNode));
    cudaMemcpy(gpu_mesh.bvh_nodes, host_nodes.data(), gpu_mesh.num_bvh_nodes * sizeof(CudaScene::BVHNode), cudaMemcpyHostToDevice);
 
    return gpu_mesh;
@@ -423,7 +423,7 @@ CudaScene::Scene *CudaSceneBuilder::buildGPUScene(const SceneDescription &desc)
       }
 
       // Allocate and copy BVH to device
-      cudaMallocTracked(&host_scene.bvh_nodes, host_scene.num_bvh_nodes * sizeof(CudaScene::BVHNode));
+      cudaMalloc((void**)&host_scene.bvh_nodes, host_scene.num_bvh_nodes * sizeof(CudaScene::BVHNode));
       cudaMemcpy(host_scene.bvh_nodes, host_bvh_nodes, host_scene.num_bvh_nodes * sizeof(CudaScene::BVHNode),
                  cudaMemcpyHostToDevice);
 
@@ -455,7 +455,7 @@ CudaScene::Scene *CudaSceneBuilder::buildGPUScene(const SceneDescription &desc)
    // Allocate device memory and copy
    if (host_scene.num_materials > 0)
    {
-      cudaMallocTracked(&host_scene.materials, host_scene.num_materials * sizeof(CudaScene::Material));
+      cudaMalloc((void**)&host_scene.materials, host_scene.num_materials * sizeof(CudaScene::Material));
       cudaMemcpy(host_scene.materials, host_materials, host_scene.num_materials * sizeof(CudaScene::Material),
                  cudaMemcpyHostToDevice);
    }
@@ -466,7 +466,7 @@ CudaScene::Scene *CudaSceneBuilder::buildGPUScene(const SceneDescription &desc)
 
    if (host_scene.num_geometries > 0)
    {
-      cudaMallocTracked(&host_scene.geometries, host_scene.num_geometries * sizeof(CudaScene::Geometry));
+      cudaMalloc((void**)&host_scene.geometries, host_scene.num_geometries * sizeof(CudaScene::Geometry));
       cudaMemcpy(host_scene.geometries, host_geometries, host_scene.num_geometries * sizeof(CudaScene::Geometry),
                  cudaMemcpyHostToDevice);
    }
@@ -477,7 +477,7 @@ CudaScene::Scene *CudaSceneBuilder::buildGPUScene(const SceneDescription &desc)
 
    if (host_scene.num_meshes > 0)
    {
-      cudaMallocTracked(&host_scene.meshes, host_scene.num_meshes * sizeof(CudaScene::Mesh));
+      cudaMalloc((void**)&host_scene.meshes, host_scene.num_meshes * sizeof(CudaScene::Mesh));
       cudaMemcpy(host_scene.meshes, host_meshes, host_scene.num_meshes * sizeof(CudaScene::Mesh), cudaMemcpyHostToDevice);
    }
    else
@@ -514,7 +514,7 @@ CudaScene::Scene *CudaSceneBuilder::buildGPUScene(const SceneDescription &desc)
    // This is required for older GPU architectures (Turing/RTX 2080) which
    // cannot access host-allocated structs containing device pointers
    CudaScene::Scene *d_scene;
-   cudaMallocTracked(&d_scene, sizeof(CudaScene::Scene));
+   cudaMalloc((void**)&d_scene, sizeof(CudaScene::Scene));
    cudaMemcpy(d_scene, &host_scene, sizeof(CudaScene::Scene), cudaMemcpyHostToDevice);
 
 #ifdef DIAGS
@@ -539,15 +539,15 @@ void CudaSceneBuilder::freeGPUScene(CudaScene::Scene *d_scene)
    // Free device arrays
    if (host_scene.materials)
    {
-      cudaFreeTracked(host_scene.materials);
+      cudaFree(host_scene.materials);
    }
    if (host_scene.geometries)
    {
-      cudaFreeTracked(host_scene.geometries);
+      cudaFree(host_scene.geometries);
    }
    if (host_scene.bvh_nodes)
    {
-      cudaFreeTracked(host_scene.bvh_nodes);
+      cudaFree(host_scene.bvh_nodes);
    }
    
    // Free meshes
@@ -559,16 +559,16 @@ void CudaSceneBuilder::freeGPUScene(CudaScene::Scene *d_scene)
       
       for (int i = 0; i < host_scene.num_meshes; ++i)
       {
-         if (host_meshes[i].triangles) cudaFreeTracked(host_meshes[i].triangles);
-         if (host_meshes[i].bvh_nodes) cudaFreeTracked(host_meshes[i].bvh_nodes);
+         if (host_meshes[i].triangles) cudaFree(host_meshes[i].triangles);
+         if (host_meshes[i].bvh_nodes) cudaFree(host_meshes[i].bvh_nodes);
       }
       
       delete[] host_meshes;
-      cudaFreeTracked(host_scene.meshes);
+      cudaFree(host_scene.meshes);
    }
 
    // Free the scene struct itself (now on device)
-   cudaFreeTracked(d_scene);
+   cudaFree(d_scene);
 }
 
 } // namespace Scene

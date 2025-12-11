@@ -418,8 +418,7 @@ int main(int argc, char *argv[])
    if (file_size_ec)
       image_size_bytes = 0;
 
-   utils::FileUtils::writeRenderStats(camera, scene_desc, output_path, image_size_bytes, render_duration, 
-                                      coordinator.getDeviceName(), coordinator.getVramUsage());
+   utils::FileUtils::writeRenderStats(camera, scene_desc, output_path, image_size_bytes, render_duration);
 
    return 0;
 }

@@ -18,7 +18,6 @@
 #include "render/benchmark_config.hpp" // Added include
 #include "renderer_cuda_device.cuh"
 #include "scene_builder.hpp"
-#include "cuda_metrics.hpp"
 
 class RendererCUDA : public IRenderer
 {
@@ -42,9 +41,6 @@ class RendererCUDA : public IRenderer
       ::setDOFEnabled(request.scene.dof_enabled);
       ::setDOFAperture(request.scene.dof_aperture);
       ::setDOFFocusDistance(request.scene.dof_focus_distance);
-
-      // Gather GPU Metrics
-      getCudaDeviceMetrics(context.device_name, context.vram_usage_bytes);
 
       std::vector<float> accum_buffer(frame.image_width * frame.image_height * 3, 0.0f);
       void *d_rand_states = nullptr;
@@ -104,9 +100,6 @@ class RendererCUDA : public IRenderer
       }
 
       render::convertAccumBufferToImage(request.target, accum_buffer, samples_completed, context.gamma);
-
-      // Capture VRAM usage before freeing the GPU scene
-      getCudaDeviceMetrics(context.device_name, context.vram_usage_bytes);
 
       if (d_rand_states)
          freeDeviceRandomStates(d_rand_states);

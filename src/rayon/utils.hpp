@@ -117,7 +117,7 @@ class FileUtils
    }
 
    static void writeRenderStats(const Camera &camera, const Scene::SceneDescription &scene, const string &image_path, uintmax_t image_size_bytes,
-                                std::chrono::nanoseconds render_duration, const string& device_name, size_t vram_usage_bytes)
+                                std::chrono::nanoseconds render_duration)
    {
       // Calculate scene statistics
       long long sphere_count = 0;
@@ -180,7 +180,6 @@ class FileUtils
       long long rays_per_second_int = static_cast<long long>(std::llround(rays_per_second));
 
       stats_file << "image: " << filesystem::path(image_path).filename().string() << '\n';
-      stats_file << "device: " << device_name << '\n';
       stats_file << "samples_per_pixel: " << camera.samples_per_pixel << '\n';
       stats_file << "resolution: " << camera.image_width << " x " << camera.image_height << '\n';
       stats_file << "max_depth: " << camera.max_depth << '\n';
@@ -207,10 +206,6 @@ class FileUtils
 
       stats_json << "{\n";
       stats_json << "  \"image\": \"" << filesystem::path(image_path).filename().string() << "\",\n";
-      stats_json << "  \"hardware\": {\n";
-      stats_json << "    \"device_name\": \"" << device_name << "\",\n";
-      stats_json << "    \"vram_usage_bytes\": " << vram_usage_bytes << "\n";
-      stats_json << "  },\n";
       stats_json << "  \"samples_per_pixel\": " << camera.samples_per_pixel << ",\n";
       stats_json << "  \"resolution\": { \"width\": " << camera.image_width << ", \"height\": " << camera.image_height
                  << " },\n";

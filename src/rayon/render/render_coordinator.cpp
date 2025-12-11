@@ -17,7 +17,4 @@ void RenderCoordinator::render(IRenderer &renderer, std::vector<unsigned char> &
    RenderContext context{camera_.n_rays, gamma};
 
    renderer.render(request, context);
-   
-   last_device_name = context.device_name;
-   last_vram_usage = context.vram_usage_bytes;
 }

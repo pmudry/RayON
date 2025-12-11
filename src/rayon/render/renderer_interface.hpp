@@ -22,10 +22,6 @@ struct RenderContext
    std::atomic<long long> &ray_counter;
    /// Gamma value used when writing pixels back to the render target.
    float gamma = 2.0f;
-   
-   /// Output metrics populated by the renderer
-   std::string device_name = "CPU";
-   size_t vram_usage_bytes = 0;
 };
 
 /// Bundles the immutable inputs required by a renderer to produce an image.

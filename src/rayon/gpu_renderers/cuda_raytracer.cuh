@@ -394,7 +394,7 @@ __device__ inline bool hit_mesh_triangle(const CudaScene::MeshTriangle &tri, con
 __device__ inline bool hit_mesh(const CudaScene::Mesh &mesh, const f3 &translation, const f3 &rotation, const f3 &scale,
                                 const ray_simple &r_world, float t_min, float t_max, hit_record_simple &rec)
 {
-   // Transform ray to local mesh space§
+   // Transform ray to local mesh space
    f3 orig_local = (r_world.orig - translation);
 
    // Apply inverse rotation and scaling

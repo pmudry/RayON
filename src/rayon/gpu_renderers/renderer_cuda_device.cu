@@ -83,7 +83,7 @@ extern "C" void freeDeviceRandomStates(void *d_rand_states)
 {
    if (d_rand_states != nullptr)
    {
-      cudaFreeTracked(d_rand_states);
+      cudaFree(d_rand_states);
    }
 }
 
@@ -91,7 +91,7 @@ extern "C" void freeDeviceAccumBuffer(void *d_accum_buffer)
 {
    if (d_accum_buffer != nullptr)
    {
-      cudaFreeTracked(d_accum_buffer);
+      cudaFree(d_accum_buffer);
    }
 }
 /**
@@ -153,14 +153,14 @@ extern "C" unsigned long long renderPixelsCUDAAccumulative(
    size_t accum_size = (size_t)width * height * 3 * sizeof(float);
    int num_pixels = width * height;
 
-   cudaMallocTracked(&d_image, image_size);
-   cudaMallocTracked(&d_ray_count, sizeof(unsigned long long));
+   cudaMalloc((void**)&d_image, image_size);
+   cudaMalloc((void**)&d_ray_count, sizeof(unsigned long long));
 
    bool need_rand_init = false;
 
    if (*d_rand_states_ptr == nullptr)
    {
-      cudaMallocTracked(&d_rand_states, num_pixels * sizeof(curandState));
+      cudaMalloc((void**)&d_rand_states, num_pixels * sizeof(curandState));
       *d_rand_states_ptr = d_rand_states;
       need_rand_init = true;
    }
@@ -171,7 +171,7 @@ extern "C" unsigned long long renderPixelsCUDAAccumulative(
 
    if (*d_accum_buffer_ptr == nullptr)
    {
-      cudaMallocTracked(&d_accum, accum_size);
+      cudaMalloc((void**)&d_accum, accum_size);
       *d_accum_buffer_ptr = d_accum;
       cudaMemcpy(d_accum, accum_buffer, accum_size, cudaMemcpyHostToDevice);
    }
@@ -246,8 +246,8 @@ extern "C" unsigned long long renderPixelsCUDAAccumulative(
    cudaMemcpy(accum_buffer, d_accum, accum_size, cudaMemcpyDeviceToHost);
    cudaMemcpy(&host_ray_count, d_ray_count, sizeof(unsigned long long), cudaMemcpyDeviceToHost);
 
-   cudaFreeTracked(d_image);
-   cudaFreeTracked(d_ray_count);
+   cudaFree(d_image);
+   cudaFree(d_ray_count);
    return host_ray_count;
 }
 

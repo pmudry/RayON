@@ -6,17 +6,6 @@
 #define checkCudaErrors(val) check_cuda((val), #val, __FILE__, __LINE__)
 void check_cuda(cudaError_t result, char const *const func, const char *const file, int const line);
 
-// Memory tracking wrappers (Host only)
-cudaError_t cudaMallocTrackedInternal(void** devPtr, size_t size);
-
-template<typename T>
-cudaError_t cudaMallocTracked(T** devPtr, size_t size) {
-    return cudaMallocTrackedInternal((void**)devPtr, size);
-}
-
-cudaError_t cudaFreeTracked(void* devPtr);
-size_t getTrackedVramUsage();
-
 //==============================================================================
 // RANDOMNESS
 //==============================================================================

@@ -38,7 +38,7 @@ def find_executable(build_dir="build"):
             
     return None
 
-def run_benchmark(executable, config_file, output_dir=None, profile_nsys=False, profile_ncu=False):
+def run_benchmark(executable, config_file, output_dir=None):
     """Run a single benchmark configuration."""
     print(f"{Colors.OKBLUE}Running benchmark: {config_file}{Colors.ENDC}")
     
@@ -46,46 +46,14 @@ def run_benchmark(executable, config_file, output_dir=None, profile_nsys=False, 
     if output_dir:
         cmd.extend(["--benchmark-out", output_dir])
     
-    # Profiling integration
-    if profile_nsys or profile_ncu:
-        prof_dir = os.path.join(output_dir if output_dir else "benchmark_results", "profiling")
-        os.makedirs(prof_dir, exist_ok=True)
-        
-        config_name = Path(config_file).stem
-        report_path = os.path.join(prof_dir, f"{config_name}")
-
-        import shutil
-        
-        if profile_nsys:
-            nsys_exe = shutil.which("nsys") or "/usr/local/cuda/bin/nsys"
-            print(f"  {Colors.HEADER}[Profiling] Nsight Systems: {report_path}.nsys-rep{Colors.ENDC}")
-            # -t cuda,osrt,nvtx: Trace CUDA, OS runtime, and NVTX
-            profiler_cmd = [nsys_exe, "profile", "-t", "cuda,osrt,nvtx", "-o", report_path, "--force-overwrite", "true"]
-            cmd = profiler_cmd + cmd
-        elif profile_ncu:
-            ncu_exe = shutil.which("ncu") or "/usr/local/cuda/bin/ncu"
-            print(f"  {Colors.HEADER}[Profiling] Nsight Compute: {report_path}.ncu-rep{Colors.ENDC}")
-            # --set full: All metrics
-            # --launch-count 1: Only profile 1 kernel launch (fixed for older ncu versions)
-            profiler_cmd = [ncu_exe, "--set", "full", "-c", "1", "-o", report_path, "--force-overwrite"]
-            cmd = profiler_cmd + cmd
-
     print(f"DEBUG: Executing command: {' '.join(cmd)}")
     try:
         # Run the command
         start_time = time.time()
         
-        if profile_nsys or profile_ncu:
-            # When profiling, let output stream to console so user can see progress/errors
-            # check=False allows us to continue even if profiler fails (e.g. permission error)
-            result = subprocess.run(cmd, check=False)
-            if result.returncode != 0:
-                 print(f"  {Colors.WARNING}Warning: Profiler/Benchmark exited with code {result.returncode}. Attempting to collect results anyway.{Colors.ENDC}")
-            stdout_content = "" # We can't parse stdout if we didn't capture it
-        else:
-            # Capture output for normal runs to keep it clean and parse filename
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-            stdout_content = result.stdout
+        # Capture output for normal runs to keep it clean and parse filename
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        stdout_content = result.stdout
 
         end_time = time.time()
         
@@ -104,7 +72,7 @@ def run_benchmark(executable, config_file, output_dir=None, profile_nsys=False, 
                         output_json = json_path
                         break
         
-        # Fallback: if we didn't capture stdout (profiling), look for the newest JSON in the output dir
+        # Fallback: if we failed to parse stdout, look for the newest JSON in the output dir
         if not output_json and output_dir:
              search_pattern = os.path.join(output_dir, "*.json")
              candidates = glob.glob(search_pattern)
@@ -143,8 +111,6 @@ def main():
     parser.add_argument("--exec", help="Path to rayon executable", default=None)
     parser.add_argument("--output", help="Output summary CSV file", default="benchmark_results/summary.csv")
     parser.add_argument("--name", help="Name for this benchmark run (creates subfolder)", default=None)
-    parser.add_argument("--profile-nsys", action="store_true", help="Enable Nsight Systems profiling")
-    parser.add_argument("--profile-ncu", action="store_true", help="Enable Nsight Compute profiling (single kernel)")
     args = parser.parse_args()
 
     # Find executable
@@ -194,7 +160,7 @@ def main():
 
     # Run benchmarks
     for config in config_files:
-        res = run_benchmark(executable, config, run_output_dir, args.profile_nsys, args.profile_ncu)
+        res = run_benchmark(executable, config, run_output_dir)
         if res:
             results.append(res)
     
@@ -209,13 +175,12 @@ def main():
     
     # Define columns
     headers = [
-        "Device", "Resolution", "Samples", 
-        "Rays/Sec", "Time", "VRAM (MB)", "Scene"
+        "Scene", "Resolution", "Samples", 
+        "Rays/Sec", "Time"
     ]
     
     rows = []
     for r in results:
-        device = r.get("hardware", {}).get("device_name", "Unknown")
         res_w = r.get("resolution", {}).get("width", 0)
         res_h = r.get("resolution", {}).get("height", 0)
         resolution = f"{res_w}x{res_h}"
@@ -225,9 +190,6 @@ def main():
         rays_sec_fmt = f"{rays_sec / 1_000_000:.2f} M"
         
         time_pretty = r.get("render_time_pretty", "N/A")
-        
-        vram_bytes = r.get("hardware", {}).get("vram_usage_bytes", 0)
-        vram_mb = f"{vram_bytes / (1024*1024):.1f}"
         
         # Extract scene name from image filename or config
         image_name = r.get("image", "")
@@ -240,7 +202,7 @@ def main():
              if len(parts) > 2:
                  scene_name = parts[2]
         
-        rows.append([device, resolution, str(samples), rays_sec_fmt, time_pretty, vram_mb, scene_name])
+        rows.append([scene_name, resolution, str(samples), rays_sec_fmt, time_pretty])
 
     # Print Table
     # Calculate column widths
