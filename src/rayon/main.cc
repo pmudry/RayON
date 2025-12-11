@@ -47,6 +47,7 @@ struct ProgramArgs
    bool is_benchmark_mode = false;   // Flag to enable benchmark mode
    const char *benchmark_config_file = nullptr; // Path to benchmark config YAML
    const char *benchmark_output_dir = nullptr; // Optional override for benchmark output directory
+   bool valid = true;                // Flag to indicate if arguments were parsed successfully
 };
 
 void dumpHelp()
@@ -82,43 +83,70 @@ ProgramArgs parseInput(int argc, char *argv[])
       {
          cout << "Usage: " << argv[0] << " [options]\n";
          dumpHelp();
-         args.samples = -1; // Indicate error
+         args.valid = false; // Treat help as "stop execution"
          return args;
       }
-      else if (strcmp(argv[i], "-m") == 0 && i + 1 < argc)
+      else if (strcmp(argv[i], "-m") == 0)
       {
-         // Validate rendering method
-         if (strcmp(argv[i + 1], "0") == 0 || strcmp(argv[i + 1], "1") == 0 || strcmp(argv[i + 1], "2") == 0
-#ifdef SDL2_FOUND
-             || strcmp(argv[i + 1], "3") == 0
-#endif
-         )
+         if (i + 1 < argc)
          {
-            args.rendering_method = atoi(argv[++i]);
+            // Validate rendering method
+            if (strcmp(argv[i + 1], "0") == 0 || strcmp(argv[i + 1], "1") == 0 || strcmp(argv[i + 1], "2") == 0
+#ifdef SDL2_FOUND
+                || strcmp(argv[i + 1], "3") == 0
+#endif
+            )
+            {
+               args.rendering_method = atoi(argv[++i]);
+            }
+            else
+            {
+               cerr << "Invalid rendering method specified after -m. Allowed values are 0, 1, 2, or 3.\n";
+               args.valid = false;
+               return args;
+            }
          }
          else
          {
-            cout << "Invalid rendering method specified after -m. Allowed values are 0, 1, 2, or 3.\n";
-            args.samples = -1; // Indicate error
+            cerr << "Missing value for option -m\n";
+            args.valid = false;
             return args;
          }
       }
-      else if (strcmp(argv[i], "-s") == 0 && i + 1 < argc)
+      else if (strcmp(argv[i], "-s") == 0)
       {
-         args.samples = atoi(argv[++i]);
-      }
-      else if (strcmp(argv[i], "-r") == 0 && i + 1 < argc)
-      {
-         int height = atoi(argv[++i]);
-         if (find(allowed_heights.begin(), allowed_heights.end(), height) != allowed_heights.end())
+         if (i + 1 < argc)
          {
-            args.height = height;
+             args.samples = atoi(argv[++i]);
          }
          else
          {
-            cerr << "Invalid resolution height: " << height << "\n";
-            cerr << "Allowed values: 2160, 1080, 720, 360, 180\n";
-            args.samples = -1; // Indicate error
+             cerr << "Missing value for option -s\n";
+             args.valid = false;
+             return args;
+         }
+      }
+      else if (strcmp(argv[i], "-r") == 0)
+      {
+         if (i + 1 < argc)
+         {
+            int height = atoi(argv[++i]);
+            if (find(allowed_heights.begin(), allowed_heights.end(), height) != allowed_heights.end())
+            {
+               args.height = height;
+            }
+            else
+            {
+               cerr << "Invalid resolution height: " << height << "\n";
+               cerr << "Allowed values: 2160, 1080, 720, 360, 180\n";
+               args.valid = false;
+               return args;
+            }
+         }
+         else
+         {
+            cerr << "Missing value for option -r\n";
+            args.valid = false;
             return args;
          }
       }
@@ -134,50 +162,95 @@ ProgramArgs parseInput(int argc, char *argv[])
       {
          args.debug_mode = true;
       }
-      else if (strcmp(argv[i], "--scene") == 0 && i + 1 < argc)
+      else if (strcmp(argv[i], "--scene") == 0)
       {
-         args.scene_file = argv[++i];
-      }
-      else if (strcmp(argv[i], "--start-samples") == 0 && i + 1 < argc)
-      {
-         args.start_samples = atoi(argv[++i]);
-         if (args.start_samples < 1)
+         if (i + 1 < argc)
          {
-            cerr << "Invalid start-samples value: " << args.start_samples << " (must be >= 1)\n";
-            args.samples = -1; // Indicate error
-            return args;
+            args.scene_file = argv[++i];
+         }
+         else
+         {
+             cerr << "Missing filename for option --scene\n";
+             args.valid = false;
+             return args;
          }
       }
-      else if (strcmp(argv[i], "--target-fps") == 0 && i + 1 < argc)
+      else if (strcmp(argv[i], "--start-samples") == 0)
       {
-         args.target_fps = atoi(argv[++i]);
-         if (args.target_fps < 1 || args.target_fps > 1000)
+         if (i + 1 < argc)
          {
-            cerr << "Invalid target-fps value: " << args.target_fps << " (must be 1-1000)\n";
-            args.samples = -1; // Indicate error
-            return args;
+            args.start_samples = atoi(argv[++i]);
+            if (args.start_samples < 1)
+            {
+               cerr << "Invalid start-samples value: " << args.start_samples << " (must be >= 1)\n";
+               args.valid = false;
+               return args;
+            }
+         }
+         else
+         {
+             cerr << "Missing value for option --start-samples\n";
+             args.valid = false;
+             return args;
          }
       }
-      else if (strcmp(argv[i], "--benchmark") == 0 && i + 1 < argc)
+      else if (strcmp(argv[i], "--target-fps") == 0)
       {
-         args.is_benchmark_mode = true;
-         args.benchmark_config_file = argv[++i];
+         if (i + 1 < argc)
+         {
+            args.target_fps = atoi(argv[++i]);
+            if (args.target_fps < 1 || args.target_fps > 1000)
+            {
+               cerr << "Invalid target-fps value: " << args.target_fps << " (must be 1-1000)\n";
+               args.valid = false;
+               return args;
+            }
+         }
+         else
+         {
+             cerr << "Missing value for option --target-fps\n";
+             args.valid = false;
+             return args;
+         }
       }
-      else if (strcmp(argv[i], "--benchmark-out") == 0 && i + 1 < argc)
+      else if (strcmp(argv[i], "--benchmark") == 0)
       {
-         args.benchmark_output_dir = argv[++i];
+         if (i + 1 < argc)
+         {
+            args.is_benchmark_mode = true;
+            args.benchmark_config_file = argv[++i];
+         }
+         else
+         {
+             cerr << "Missing config file for option --benchmark\n";
+             args.valid = false;
+             return args;
+         }
+      }
+      else if (strcmp(argv[i], "--benchmark-out") == 0)
+      {
+         if (i + 1 < argc)
+         {
+            args.benchmark_output_dir = argv[++i];
+         }
+         else
+         {
+             cerr << "Missing directory for option --benchmark-out\n";
+             args.valid = false;
+             return args;
+         }
       }
       else if (argv[i][0] == '-')
       {
          cerr << "Unknown argument: " << argv[i] << "\n";
          dumpHelp();
-         args.samples = -1; // Indicate error
+         args.valid = false;
          return args;
       }
       else
       {
          cerr << "Unexpected argument: " << argv[i] << "\n";
-         args.samples = -1; // Indicate error
+         args.valid = false;
          return args;
       }
    }
@@ -194,7 +267,7 @@ int main(int argc, char *argv[])
 
    ProgramArgs args = parseInput(argc, argv);
 
-   if (args.samples < 0 && args.samples != -1)
+   if (!args.valid)
       return 1;
    
    // Print application header always
@@ -352,6 +425,7 @@ int main(int argc, char *argv[])
       settings.target_fps = args.target_fps;
       settings.adaptive_depth = args.adaptive_depth;
       settings.debug_mode = args.debug_mode;
+      if (args.scene_file) settings.initial_scene_path = args.scene_file;
       renderer.setSettings(settings);
       coordinator.render(renderer, localImage);
       break;

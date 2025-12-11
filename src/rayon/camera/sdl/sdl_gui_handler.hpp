@@ -251,14 +251,6 @@ class SDLGuiHandler
                               }
                               ImGui::EndCombo();
                            }
-                           
-                           if (cat.current_index == -1)
-                           {
-                               ImGui::SameLine();
-                               ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.0f, 1.0f));
-                               ImGui::TextUnformatted("<- Choose a scene to load");
-                               ImGui::PopStyleColor();
-                           }
                         }
                         else
                         {

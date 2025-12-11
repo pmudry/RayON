@@ -34,6 +34,7 @@ class RendererCUDAProgressive : public IRenderer
       int target_fps = 60;
       bool adaptive_depth = false;
       bool debug_mode = false;
+      std::string initial_scene_path;
    };
 
    RendererCUDAProgressive() = default;
@@ -163,11 +164,57 @@ class RendererCUDAProgressive : public IRenderer
       }
 
       int active_category_idx = 0; // Default to "Scenes"
-      bool force_tab_update = false;
+
+      // Auto-select based on initial_scene_path
+      if (!settings_.initial_scene_path.empty()) {
+          try {
+              std::filesystem::path initial_path = std::filesystem::absolute(settings_.initial_scene_path);
+              bool found = false;
+              
+              // 1. Try exact match
+              for (int i = 0; i < static_cast<int>(categories.size()); ++i) {
+                  auto& cat = categories[i];
+                  for (int j = 0; j < static_cast<int>(cat.files.size()); ++j) {
+                      std::filesystem::path cat_file_path = std::filesystem::absolute(cat.files[j]);
+                      // Handle potential errors with equivalent
+                      try {
+                          if (std::filesystem::equivalent(initial_path, cat_file_path)) {
+                              active_category_idx = i;
+                              cat.current_index = j;
+                              found = true;
+                              break;
+                          }
+                      } catch (...) { continue; }
+                  }
+                  if (found) break;
+              }
+              
+              // 2. Fallback: simple filename match
+              if (!found) {
+                  std::string initial_name = initial_path.filename().string();
+                  for (int i = 0; i < static_cast<int>(categories.size()); ++i) {
+                      auto& cat = categories[i];
+                      for (int j = 0; j < static_cast<int>(cat.files.size()); ++j) {
+                           if (std::filesystem::path(cat.files[j]).filename().string() == initial_name) {
+                               active_category_idx = i;
+                               cat.current_index = j;
+                               found = true;
+                               break;
+                           }
+                      }
+                      if (found) break;
+                  }
+              }
+          } catch (...) {
+              // Ignore filesystem errors during matching
+          }
+      }
+
+      bool force_tab_update = !settings_.initial_scene_path.empty();
 
       // Ray-tracing state
       bool running = true;
-      bool scene_loaded = false; // Start with no scene loaded
+      bool scene_loaded = true; // Start with scene loaded from request
       bool camera_changed = true;
       bool accumulation_enabled = auto_accumulate;
       int current_samples = 0;
@@ -328,7 +375,6 @@ class RendererCUDAProgressive : public IRenderer
       // Main rendering loop
       while (running)
       {
-         force_tab_update = false; // Reset per frame
 
          // Handle events
          while (gui.pollEvent(event))
@@ -598,6 +644,8 @@ class RendererCUDAProgressive : public IRenderer
                refreshCameraFrame();
             }
          }
+         
+         force_tab_update = false; // Reset per frame at the END
       }
 
       auto total_end = std::chrono::high_resolution_clock::now();
