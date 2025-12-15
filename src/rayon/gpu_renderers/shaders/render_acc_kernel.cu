@@ -9,28 +9,35 @@ __global__ void renderAccKernel(float *accum_buffer, unsigned char *image, const
                                 float cam_v_y, float cam_v_z)
 {
    // Shared memory for block-level ray counting
+   // This memory is shared among all threads in the block, size is 32x8 = 256 
    __shared__ unsigned long long block_ray_count;
 
+   // Initialize block-level ray count to zero
    if (threadIdx.x == 0 && threadIdx.y == 0)
    {
       block_ray_count = 0;
    }
    __syncthreads();
 
+   // Calculate pixel coordinates
    int x = blockIdx.x * blockDim.x + threadIdx.x;
    int y = blockIdx.y * blockDim.y + threadIdx.y;
 
+   // Bounds check : ensure thread coordinates are within image dimensions
    if (x >= width || y >= height)
       return;
 
    int pixel_idx = y * width + x;
-   int base_idx = pixel_idx * 3;
+   int base_idx = pixel_idx * 3; // a base is here a triplet of RGB values for each pixel
 
+   // Bounds check : ensure pixel index is valid and base index does not exceed buffer size
    if (pixel_idx >= width * height || base_idx + 2 >= width * height * 3)
       return;
 
+   // Get local random state for this pixel
    curandState *local_rand_state = &rand_states[pixel_idx];
 
+   // Camera parameters
    f3 camera_center(cam_center_x, cam_center_y, cam_center_z);
    f3 pixel00_loc(pixel00_x, pixel00_y, pixel00_z);
    f3 pixel_delta_u(delta_u_x, delta_u_y, delta_u_z);
@@ -42,7 +49,8 @@ __global__ void renderAccKernel(float *accum_buffer, unsigned char *image, const
    int local_ray_count = 0;
 
    for (int s = 0; s < samples_to_add; s++)
-   {
+   {  
+      //jitter within the pixel for anti-aliasing
       float offset_u = rand_float(local_rand_state) - 0.5f;
       float offset_v = rand_float(local_rand_state) - 0.5f;
 

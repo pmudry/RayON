@@ -6,10 +6,11 @@ __device__ f3 fibonacci_point(int i, int n)
    const float ga = 2.39996323f;
    float k = (float)i + 0.5f;
    float v = k / (float)n;
-   float phi = acosf(1.0f - 2.0f * v);
+
+   float z = v * 2.0f - 1.0f;
    float theta = ga * k;
-   float s = sinf(phi);
-   return f3(cosf(theta) * s, sinf(theta) * s, cosf(phi));
+   float s = sqrtf(1.0f-z*z);
+   return f3(__cosf(theta) * s, __sinf(theta) * s, z);
 }
 
 __device__ float distanceToNearestDimple(f3 p)
