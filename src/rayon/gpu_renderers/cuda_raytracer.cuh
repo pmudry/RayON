@@ -416,7 +416,7 @@ __device__ inline bool hit_mesh(const CudaScene::Mesh &mesh, const f3 &translati
    if (mesh.bvh_nodes && mesh.bvh_root_idx >= 0)
    {
       // A fixed-size stack for non-recursive traversal on the GPU
-      int stack[32];
+      int stack[64];
       int stack_ptr = 0;
       // start from root node of the tree
       stack[stack_ptr++] = mesh.bvh_root_idx;
@@ -446,11 +446,26 @@ __device__ inline bool hit_mesh(const CudaScene::Mesh &mesh, const f3 &translati
          {
             int left = node.data.interior.left_child;
             int right = node.data.interior.right_child;
-            //TODO: Push farther child first for better traversal order
-            if (stack_ptr < 32)
-               stack[stack_ptr++] = right;
-            if (stack_ptr < 32)
-               stack[stack_ptr++] = left;
+            
+            // Push farther child first
+            f3 left_center = (mesh.bvh_nodes[left].bounds_min + mesh.bvh_nodes[left].bounds_max) * 0.5f;
+            f3 right_center = (mesh.bvh_nodes[right].bounds_min + mesh.bvh_nodes[right].bounds_max) * 0.5f;
+            // distance squared to 
+            float dist_left = (left_center - r_local.orig).length_squared();
+            float dist_right = (right_center - r_local.orig).length_squared();
+
+            if (dist_left < dist_right)
+            {
+               // Right is farther, push it first
+               if (stack_ptr < 64) stack[stack_ptr++] = right;
+               if (stack_ptr < 64) stack[stack_ptr++] = left;
+            }
+            else
+            {
+               // Left is farther, push it first
+               if (stack_ptr < 64) stack[stack_ptr++] = left;
+               if (stack_ptr < 64) stack[stack_ptr++] = right;
+            }
          }
       }
    }
