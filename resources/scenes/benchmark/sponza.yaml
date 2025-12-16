@@ -1,0 +1,27 @@
+scene:
+  camera:
+    position: [-6.94, 1.26, 0.70]
+    look_at: [0.0, 0.06, 0.01]
+    up: [0, 1, 0]
+    fov: 60.0
+  background_color: [0.5, 0.7, 1.0] # Sky-like background
+  ambient_light: 0.5
+  use_bvh: true
+
+materials:
+  - name: "top_light"
+    type: "light"
+    emission: [20, 20, 20]
+
+geometry:
+  - type: "obj"
+    filename: "sponza.obj"
+    position: [0, 0, 0]
+    scale: 0.5 
+  
+  # Artificial light source simulating skylight or ceiling light
+  - type: "rectangle"
+    material: "top_light"
+    corner: [-5, 15, -5]
+    u: [10, 0, 0]
+    v: [0, 0, 2]

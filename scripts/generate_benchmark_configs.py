@@ -1,9 +1,9 @@
 import os
 
 scenes = {
-    "erato": "resources/experiments/benchmark/erato_in_box.yaml",
-    "conf_room_2": "resources/experiments/benchmark/conference_room_2.yaml",
-    "conf_room_1": "resources/experiments/benchmark/conference_room_1.yaml"
+    "erato": "resources/scenes/benchmark/erato_in_box.yaml",
+    "conf_room_2": "resources/scenes/benchmark/conference_room_2.yaml",
+    "conf_room_1": "resources/scenes/benchmark/conference_room_1.yaml"
 }
 
 variations = [

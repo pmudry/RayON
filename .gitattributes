@@ -1,2 +1,2 @@
 set.text=auto
-resources/experiments/benchmark/erato.obj filter=lfs diff=lfs merge=lfs -text
+resources/scenes/benchmark/erato.obj filter=lfs diff=lfs merge=lfs -text

@@ -88,23 +88,6 @@ class RendererCUDAProgressive : public IRenderer
 
       // --- SCENE CATEGORY SETUP ---
       std::vector<SceneCategory> categories;
-
-      categories.push_back({
-          "Phong Shading Demo",
-          {"../resources/experiments/phong-shading-demo", "resources/experiments/phong-shading-demo"},
-          {"obj", "yaml"},
-          {},
-          -1
-      });
-      
-      categories.push_back({
-          "Triangle Demo",
-          {"../resources/experiments/triangle-demo", "resources/experiments/triangle-demo"},
-          {"yaml"},
-          {},
-          -1
-      });
-
       categories.push_back({
           "Scenes",
           {"../resources/scenes", "resources/scenes", "."},
@@ -114,17 +97,27 @@ class RendererCUDAProgressive : public IRenderer
       });
 
       categories.push_back({
-          "Benchmark",
-          {"../resources/experiments/benchmark", "resources/experiments/benchmark"},
-          {"yaml", "yml", "obj"},
+          "Phong Shading Demo",
+          {"../resources/scenes/phong-shading-demo", "resources/scenes/phong-shading-demo"},
+          {"obj", "yaml"},
+          {},
+          -1
+      });
+      
+      categories.push_back({
+          "Triangle Demo",
+          {"../resources/scenes/triangle-demo", "resources/scenes/triangle-demo"},
+          {"yaml"},
           {},
           -1
       });
 
+      
+
       categories.push_back({
-          "Simple Obj",
-          {"../resources/experiments/simple-obj", "resources/experiments/simple-obj"},
-          {"obj"},
+          "Benchmark",
+          {"../resources/scenes/benchmark", "resources/scenes/benchmark"},
+          {"yaml", "yml"},
           {},
           -1
       });
