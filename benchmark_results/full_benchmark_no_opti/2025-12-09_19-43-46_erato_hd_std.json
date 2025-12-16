@@ -1,0 +1,36 @@
+{
+  "image": "2025-12-09_19-43-46_erato_hd_std.png",
+  "hardware": {
+    "device_name": "NVIDIA GB10",
+    "vram_usage_bytes": 165204272
+  },
+  "samples_per_pixel": 2048,
+  "resolution": { "width": 1920, "height": 1080 },
+  "max_depth": 16,
+  "rays_traced": 9604240114,
+  "image_size_bytes": 2221126,
+  "performance": {
+    "rays_per_second": 199430761,
+    "samples_per_second": 42.5264,
+    "rays_per_sample": -199.116
+  },
+  "render_time_ms": 48158,
+  "render_time_pretty": "48s",
+  "scene_settings": {
+    "ambient_light": 0,
+    "light_intensity": 1,
+    "metal_fuzziness": 1,
+    "glass_ior": 1.5,
+    "dof": {
+      "enabled": false,
+      "aperture": 0,
+      "focus_distance": 10
+    }
+  },
+  "scene_stats": {
+    "spheres": 0,
+    "rectangles": 6,
+    "mesh_instances": 1,
+    "total_triangles": 412498
+  }
+}

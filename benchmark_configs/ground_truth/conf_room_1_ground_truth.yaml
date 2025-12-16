@@ -1,0 +1,7 @@
+benchmark:
+  scene_file: "resources/experiments/benchmark/conference_room_1.yaml"
+  output_name: "conf_room_1_ground_truth"
+  target_samples: 65536
+  max_time_seconds: 6000.0
+  resolution_width: 1920
+  resolution_height: 1080

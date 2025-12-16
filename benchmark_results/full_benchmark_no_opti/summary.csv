@@ -1,0 +1,10 @@
+Device,Resolution,Samples,Rays/Sec,Time,VRAM (MB),Scene
+NVIDIA GB10,3840x2160,8192,89.36 M,6m 6s,486.4,conf_room_1_4k_fill
+NVIDIA GB10,1920x1080,4096,87.91 M,3m 5s,130.4,conf_room_1_hd_high
+NVIDIA GB10,1920x1080,2048,87.44 M,1m 9s,130.4,conf_room_1_hd_std
+NVIDIA GB10,3840x2160,8192,90.74 M,6m 13s,486.4,conf_room_2_4k_fill
+NVIDIA GB10,1920x1080,4096,89.43 M,3m 9s,130.4,conf_room_2_hd_high
+NVIDIA GB10,1920x1080,2048,86.26 M,1m 1s,130.4,conf_room_2_hd_std
+NVIDIA GB10,3840x2160,8192,213.42 M,5m 23s,513.5,erato_4k_fill
+NVIDIA GB10,1920x1080,4096,201.68 M,1m 35s,157.6,erato_hd_high
+NVIDIA GB10,1920x1080,2048,199.43 M,48s,157.6,erato_hd_std

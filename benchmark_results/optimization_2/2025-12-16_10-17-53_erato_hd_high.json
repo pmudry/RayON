@@ -1,0 +1,32 @@
+{
+  "image": "2025-12-16_10-17-53_erato_hd_high.png",
+  "samples_per_pixel": 4096,
+  "resolution": { "width": 1920, "height": 1080 },
+  "max_depth": 16,
+  "rays_traced": 19208525919,
+  "image_size_bytes": 2129478,
+  "performance": {
+    "rays_per_second": 202596570,
+    "samples_per_second": 43.2014,
+    "rays_per_sample": -199.116
+  },
+  "render_time_ms": 94811,
+  "render_time_pretty": "1m 34s",
+  "scene_settings": {
+    "ambient_light": 0,
+    "light_intensity": 1,
+    "metal_fuzziness": 1,
+    "glass_ior": 1.5,
+    "dof": {
+      "enabled": false,
+      "aperture": 0,
+      "focus_distance": 10
+    }
+  },
+  "scene_stats": {
+    "spheres": 0,
+    "rectangles": 6,
+    "mesh_instances": 1,
+    "total_triangles": 412498
+  }
+}

@@ -1,0 +1,15 @@
+image: 2025-12-09_19-42-56_conf_room_1_hd_std.png
+device: NVIDIA GB10
+samples_per_pixel: 2048
+resolution: 1920 x 1080
+max_depth: 16
+rays_traced: 6119057893
+image_size_bytes: 5520250
+rays_per_second: 87440861
+render_time_ms: 69979
+render_time_pretty: 1m 9s
+scene_stats:
+  spheres: 0
+  rectangles: 1
+  mesh_instances: 33
+  total_triangles: 124619

@@ -1,0 +1,4 @@
+Scene,Resolution,Samples,Rays/Sec,Time
+erato_4k_fill,3840x2160,8192,212.16 M,5m 25s
+erato_hd_std,1920x1080,2048,200.42 M,47s
+erato_hd_high,1920x1080,4096,202.60 M,1m 34s

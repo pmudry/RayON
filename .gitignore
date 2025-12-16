@@ -36,11 +36,9 @@ Makefile
 # Generated files
 *.d
 *.mod
-# benchmark results
-benchmark_results/
-benchmark_configs/
 
 # Other
 *.nvcache
 *.nvlog
 *.ppm
+NCU/NCU/

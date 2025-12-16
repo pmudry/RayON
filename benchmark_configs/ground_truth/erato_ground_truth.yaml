@@ -1,0 +1,7 @@
+benchmark:
+  scene_file: "resources/experiments/benchmark/erato_in_box.yaml"
+  output_name: "erato_ground_truth"
+  target_samples: 65536
+  max_time_seconds: 6000.0
+  resolution_width: 1920
+  resolution_height: 1080

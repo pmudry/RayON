@@ -1,0 +1,15 @@
+image: 2025-12-09_19-36-19_conf_room_1_4k_fill.png
+device: NVIDIA GB10
+samples_per_pixel: 8192
+resolution: 3840 x 2160
+max_depth: 16
+rays_traced: 32714892927
+image_size_bytes: 21449385
+rays_per_second: 89356189
+render_time_ms: 366117
+render_time_pretty: 6m 6s
+scene_stats:
+  spheres: 0
+  rectangles: 1
+  mesh_instances: 33
+  total_triangles: 124619

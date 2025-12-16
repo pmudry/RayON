@@ -1,0 +1,15 @@
+image: 2025-12-10_03-01-36_erato_ground_truth.png
+device: NVIDIA GB10
+samples_per_pixel: 65536
+resolution: 1920 x 1080
+max_depth: 16
+rays_traced: 307337157427
+image_size_bytes: 1538410
+rays_per_second: 205016438
+render_time_ms: 1499085
+render_time_pretty: 24m 59s
+scene_stats:
+  spheres: 0
+  rectangles: 6
+  mesh_instances: 1
+  total_triangles: 412498

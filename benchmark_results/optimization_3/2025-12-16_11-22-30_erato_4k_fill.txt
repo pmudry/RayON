@@ -1,0 +1,14 @@
+image: 2025-12-16_11-22-30_erato_4k_fill.png
+samples_per_pixel: 8192
+resolution: 3840 x 2160
+max_depth: 16
+rays_traced: 84394127944
+image_size_bytes: 8365525
+rays_per_second: 258482640
+render_time_ms: 326498
+render_time_pretty: 5m 26s
+scene_stats:
+  spheres: 0
+  rectangles: 6
+  mesh_instances: 1
+  total_triangles: 412498

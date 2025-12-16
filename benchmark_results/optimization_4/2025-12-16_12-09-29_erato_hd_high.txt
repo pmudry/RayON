@@ -1,0 +1,14 @@
+image: 2025-12-16_12-09-29_erato_hd_high.png
+samples_per_pixel: 4096
+resolution: 1920 x 1080
+max_depth: 16
+rays_traced: 19208526144
+image_size_bytes: 2129452
+rays_per_second: 247248381
+render_time_ms: 77689
+render_time_pretty: 1m 17s
+scene_stats:
+  spheres: 0
+  rectangles: 6
+  mesh_instances: 1
+  total_triangles: 412498

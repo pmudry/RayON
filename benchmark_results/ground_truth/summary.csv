@@ -1,0 +1,4 @@
+Device,Resolution,Samples,Rays/Sec,Time,VRAM (MB),Scene
+NVIDIA GB10,1920x1080,65536,88.21 M,105m 12s,130.4,conf_room_1_ground_truth
+NVIDIA GB10,1920x1080,65536,89.63 M,100m 57s,130.4,conf_room_2_ground_truth
+NVIDIA GB10,1920x1080,65536,205.02 M,24m 59s,157.6,erato_ground_truth

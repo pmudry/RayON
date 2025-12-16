@@ -1,0 +1,36 @@
+{
+  "image": "2025-12-09_19-50-01_conf_room_1_hd_high.png",
+  "hardware": {
+    "device_name": "NVIDIA GB10",
+    "vram_usage_bytes": 136765384
+  },
+  "samples_per_pixel": 4096,
+  "resolution": { "width": 1920, "height": 1080 },
+  "max_depth": 16,
+  "rays_traced": 16317441440,
+  "image_size_bytes": 5044648,
+  "performance": {
+    "rays_per_second": 87913698,
+    "samples_per_second": 22.0681,
+    "rays_per_sample": -169.147
+  },
+  "render_time_ms": 185607,
+  "render_time_pretty": "3m 5s",
+  "scene_settings": {
+    "ambient_light": 1,
+    "light_intensity": 1,
+    "metal_fuzziness": 1,
+    "glass_ior": 1.5,
+    "dof": {
+      "enabled": false,
+      "aperture": 0,
+      "focus_distance": 10
+    }
+  },
+  "scene_stats": {
+    "spheres": 0,
+    "rectangles": 1,
+    "mesh_instances": 33,
+    "total_triangles": 124619
+  }
+}

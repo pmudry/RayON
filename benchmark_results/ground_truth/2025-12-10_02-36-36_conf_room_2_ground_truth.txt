@@ -1,0 +1,15 @@
+image: 2025-12-10_02-36-36_conf_room_2_ground_truth.png
+device: NVIDIA GB10
+samples_per_pixel: 65536
+resolution: 1920 x 1080
+max_depth: 16
+rays_traced: 542947192018
+image_size_bytes: 3302495
+rays_per_second: 89632324
+render_time_ms: 6057493
+render_time_pretty: 100m 57s
+scene_stats:
+  spheres: 0
+  rectangles: 1
+  mesh_instances: 33
+  total_triangles: 124619
