@@ -128,26 +128,24 @@ __device__ inline f3 sample_aperture_disk(const f3 &cam_u, const f3 &cam_v, cura
 // BVH / AABB INTERSECTION
 //==============================================================================
 
+
+
 /**
- * @brief Ray-AABB intersection test using slab method
+ * @brief Ray-AABB intersection test using the slab method.
  * @param r Ray to test
+ * @param inv_dir Precomputed 1.0 / r.dir
  * @param box_min AABB minimum corner
  * @param box_max AABB maximum corner
  * @param t_min Minimum ray parameter
  * @param t_max Maximum ray parameter
  * @return true if ray intersects AABB in range [t_min, t_max]
  */
-__device__ inline bool hit_aabb(const ray_simple &r, const f3 &box_min, const f3 &box_max, float t_min, float t_max)
+__device__ inline bool hit_aabb(const ray_simple &r, const f3 &inv_dir, const f3 &box_min, const f3 &box_max, float t_min, float t_max)
 {
-   // Compute inverse ray direction once
-   float inv_dir_x = 1.0f / r.dir.x;
-   float inv_dir_y = 1.0f / r.dir.y;
-   float inv_dir_z = 1.0f / r.dir.z;
-
    // X slab
-   float t0_x = (box_min.x - r.orig.x) * inv_dir_x;
-   float t1_x = (box_max.x - r.orig.x) * inv_dir_x;
-   if (inv_dir_x < 0.0f)
+   float t0_x = (box_min.x - r.orig.x) * inv_dir.x;
+   float t1_x = (box_max.x - r.orig.x) * inv_dir.x;
+   if (inv_dir.x < 0.0f)
    {
       float temp = t0_x;
       t0_x = t1_x;
@@ -155,9 +153,9 @@ __device__ inline bool hit_aabb(const ray_simple &r, const f3 &box_min, const f3
    }
 
    // Y slab
-   float t0_y = (box_min.y - r.orig.y) * inv_dir_y;
-   float t1_y = (box_max.y - r.orig.y) * inv_dir_y;
-   if (inv_dir_y < 0.0f)
+   float t0_y = (box_min.y - r.orig.y) * inv_dir.y;
+   float t1_y = (box_max.y - r.orig.y) * inv_dir.y;
+   if (inv_dir.y < 0.0f)
    {
       float temp = t0_y;
       t0_y = t1_y;
@@ -165,9 +163,9 @@ __device__ inline bool hit_aabb(const ray_simple &r, const f3 &box_min, const f3
    }
 
    // Z slab
-   float t0_z = (box_min.z - r.orig.z) * inv_dir_z;
-   float t1_z = (box_max.z - r.orig.z) * inv_dir_z;
-   if (inv_dir_z < 0.0f)
+   float t0_z = (box_min.z - r.orig.z) * inv_dir.z;
+   float t1_z = (box_max.z - r.orig.z) * inv_dir.z;
+   if (inv_dir.z < 0.0f)
    {
       float temp = t0_z;
       t0_z = t1_z;
@@ -408,6 +406,7 @@ __device__ inline bool hit_mesh(const CudaScene::Mesh &mesh, const f3 &translati
 
    // Construct local ray
    ray_simple r_local(orig_local, dir_local);
+   f3 inv_dir_local = f3(1.0f / r_local.dir.x, 1.0f / r_local.dir.y, 1.0f / r_local.dir.z);
 
    hit_record_simple temp_rec;
    bool hit_anything = false;
@@ -425,7 +424,7 @@ __device__ inline bool hit_mesh(const CudaScene::Mesh &mesh, const f3 &translati
          int node_idx = stack[--stack_ptr];
          const CudaScene::BVHNode &node = mesh.bvh_nodes[node_idx];
          // slab method for AABB intersection optimization
-         if (!hit_aabb(r_local, node.bounds_min, node.bounds_max, t_min, closest_so_far))
+         if (!hit_aabb(r_local, inv_dir_local, node.bounds_min, node.bounds_max, t_min, closest_so_far))
             continue;
 
          if (node.is_leaf)
@@ -628,6 +627,7 @@ __device__ inline bool hit_scene(const CudaScene::Scene &scene, const ray_simple
    float closest_so_far = t_max;
    int closest_material_id = -1;
    int closest_geom_idx = -1;
+   f3 inv_dir = f3(1.0f / r.dir.x, 1.0f / r.dir.y, 1.0f / r.dir.z);
 
    // Use BVH if available, otherwise linear scan
    if (scene.use_bvh && scene.bvh_root_idx >= 0)
@@ -643,7 +643,7 @@ __device__ inline bool hit_scene(const CudaScene::Scene &scene, const ray_simple
          const CudaScene::BVHNode &node = scene.bvh_nodes[node_idx];
 
          // Test ray against node's AABB
-         if (!hit_aabb(r, node.bounds_min, node.bounds_max, t_min, closest_so_far))
+         if (!hit_aabb(r, inv_dir, node.bounds_min, node.bounds_max, t_min, closest_so_far))
             continue;
 
          if (node.is_leaf)
