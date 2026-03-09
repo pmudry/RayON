@@ -205,7 +205,7 @@ if(CUDA_FOUND)
         --expt-extended-lambda # Enable extended lambda support
         #-w                           # Suppress all CUDA warnings
         $<$<CONFIG:Release>:-O3> # Maximum optimization for Release
-        #$<$<CONFIG:Release>:--use_fast_math>  # Fast math for Release only
+        $<$<CONFIG:Release>:--use_fast_math>  # Fast math for Release (fast rsqrtf, FMA, relaxed denormals)
         $<$<CONFIG:Debug>:-O0> # No optimization for Debug
         $<$<CONFIG:Debug>:-g> # Generate host debug info
         $<$<CONFIG:Debug>:-lineinfo> # Generate line-number information (safer than -G)

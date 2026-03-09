@@ -479,8 +479,12 @@ __device__ inline bool hit_scene(const CudaScene::Scene &scene, const ray_simple
  * This version uses compile-time material dispatch via CRTP templates.
  * The compiler generates optimized code for each material type with zero overhead.
  */
-__device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scene, curandState *state, int depth,
-                               int &local_ray_count)
+__device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scene, curandState *state, int depth
+#ifdef DIAGS
+                               ,
+                               int &local_ray_count
+#endif
+)
 {
    using namespace Materials;
 
@@ -490,7 +494,9 @@ __device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scen
 
    for (int bounce = 0; bounce < depth; bounce++)
    {
+#ifdef DIAGS
       local_ray_count++;
+#endif
       hit_record_simple rec;
 
       if (hit_scene(scene, current_ray, 0.001f, FLT_MAX, rec))
@@ -558,8 +564,8 @@ __device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scen
             return accumulated_color;
          }
 
-         // Russian Roulette path termination (after minimum bounces)
-         if (bounce > 3)
+         // Russian Roulette path termination (from bounce 1 for early path culling)
+         if (bounce > 0)
          {
             float max_component =
                 fmaxf(accumulated_attenuation.x, fmaxf(accumulated_attenuation.y, accumulated_attenuation.z));
@@ -570,6 +576,7 @@ __device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scen
                return accumulated_color;
             }
 
+            // Energy compensation: boost surviving paths to maintain unbiased result
             accumulated_attenuation = accumulated_attenuation / survival_prob;
          }
       }

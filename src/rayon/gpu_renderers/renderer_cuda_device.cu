@@ -144,17 +144,19 @@ extern "C" unsigned long long renderPixelsCUDAAccumulative(
    if (!scene)
       return 0ULL;
 
-   unsigned char *d_image = nullptr;
-   float *d_accum = nullptr;
-   unsigned long long *d_ray_count = nullptr;
+   float4 *d_accum = nullptr;
    curandState *d_rand_states = nullptr;
 
-   size_t image_size = (size_t)width * height * 3 * sizeof(unsigned char);
-   size_t accum_size = (size_t)width * height * 3 * sizeof(float);
+   size_t accum_size = (size_t)width * height * sizeof(float4);
    int num_pixels = width * height;
 
-   cudaMalloc(&d_image, image_size);
+#ifdef DIAGS
+   unsigned long long *d_ray_count = nullptr;
    cudaMalloc(&d_ray_count, sizeof(unsigned long long));
+#else
+   // When DIAGS is off, pass a dummy pointer — kernel won't write to it
+   unsigned long long *d_ray_count = nullptr;
+#endif
 
    bool need_rand_init = false;
 
@@ -173,14 +175,25 @@ extern "C" unsigned long long renderPixelsCUDAAccumulative(
    {
       cudaMalloc(&d_accum, accum_size);
       *d_accum_buffer_ptr = d_accum;
-      cudaMemcpy(d_accum, accum_buffer, accum_size, cudaMemcpyHostToDevice);
+
+      // Convert host float3 buffer to float4 for upload
+      size_t host_f4_size = (size_t)num_pixels * sizeof(float4);
+      float4 *host_f4 = (float4 *)malloc(host_f4_size);
+      for (int i = 0; i < num_pixels; ++i)
+      {
+         host_f4[i] = make_float4(accum_buffer[i * 3], accum_buffer[i * 3 + 1], accum_buffer[i * 3 + 2], 0.0f);
+      }
+      cudaMemcpy(d_accum, host_f4, accum_size, cudaMemcpyHostToDevice);
+      free(host_f4);
    }
    else
    {
-      d_accum = static_cast<float *>(*d_accum_buffer_ptr);
+      d_accum = static_cast<float4 *>(*d_accum_buffer_ptr);
    }
 
+#ifdef DIAGS
    cudaMemset(d_ray_count, 0, sizeof(unsigned long long));
+#endif
 
    // Use optimized thread block configuration
    dim3 threads = getOptimalBlockSize(width, height);
@@ -222,7 +235,7 @@ extern "C" unsigned long long renderPixelsCUDAAccumulative(
    }
 
    renderAccKernel<<<blocks, threads>>>(
-       d_accum, d_image, scene, width, height, samples_to_add, total_samples_so_far, max_depth, (float)cam_center_x,
+       d_accum, scene, width, height, samples_to_add, total_samples_so_far, max_depth, (float)cam_center_x,
        (float)cam_center_y, (float)cam_center_z, (float)pixel00_x, (float)pixel00_y, (float)pixel00_z, (float)delta_u_x,
        (float)delta_u_y, (float)delta_u_z, (float)delta_v_x, (float)delta_v_y, (float)delta_v_z, d_ray_count,
        d_rand_states, (float)cam_u_x, (float)cam_u_y, (float)cam_u_z, (float)cam_v_x, (float)cam_v_y, (float)cam_v_z);
@@ -239,16 +252,27 @@ extern "C" unsigned long long renderPixelsCUDAAccumulative(
       printf("❌ Kernel execution error: %s\n", cudaGetErrorString(sync_err));
    }
 
-   // Print ray count diagnostic
+   // Copy float4 accum buffer back and convert to float3 layout for host
+   float4 *host_f4 = (float4 *)malloc(accum_size);
+   cudaMemcpy(host_f4, d_accum, accum_size, cudaMemcpyDeviceToHost);
+   for (int i = 0; i < num_pixels; ++i)
+   {
+      accum_buffer[i * 3] = host_f4[i].x;
+      accum_buffer[i * 3 + 1] = host_f4[i].y;
+      accum_buffer[i * 3 + 2] = host_f4[i].z;
+   }
+   free(host_f4);
+
+#ifdef DIAGS
+   // Exact ray count from kernel (includes all bounces)
    unsigned long long host_ray_count = 0ULL;
    cudaMemcpy(&host_ray_count, d_ray_count, sizeof(unsigned long long), cudaMemcpyDeviceToHost);
-
-   cudaMemcpy(accum_buffer, d_accum, accum_size, cudaMemcpyDeviceToHost);
-   cudaMemcpy(&host_ray_count, d_ray_count, sizeof(unsigned long long), cudaMemcpyDeviceToHost);
-
-   cudaFree(d_image);
    cudaFree(d_ray_count);
    return host_ray_count;
+#else
+   // Estimate: primary rays only (width * height * samples)
+   return (unsigned long long)num_pixels * samples_to_add;
+#endif
 }
 
 // Use renderPixelsCUDAAccumulative for all rendering (one-shot and progressive).
