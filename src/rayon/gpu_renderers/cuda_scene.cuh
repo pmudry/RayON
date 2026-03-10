@@ -166,9 +166,22 @@ struct Geometry
 // BVH STRUCTURES (for Phase 5)
 //==============================================================================
 
-struct BVHNode
+/**
+ * @brief Cache-line-aligned BVH node (64 bytes)
+ *
+ * Packed to exactly one 64-byte cache line so that each node fetch loads
+ * all needed data in a single memory transaction. Layout:
+ *   bytes  0-11: bounds_min (f3)
+ *   bytes 12-23: bounds_max (f3)
+ *   bytes 24-27: left_child / first_geom_idx
+ *   bytes 28-31: right_child / geom_count
+ *   byte  32:    is_leaf
+ *   byte  33:    split_axis
+ *   bytes 34-63: padding (reserved for future use)
+ */
+struct alignas(64) BVHNode
 {
-   f3 bounds_min, bounds_max;
+   f3 bounds_min, bounds_max; // 24 bytes
 
    union NodeData
    {
@@ -185,10 +198,11 @@ struct BVHNode
       } leaf;
 
       __host__ __device__ NodeData() {} // Empty constructor for union
-   } data;
+   } data; // 8 bytes
 
-   bool is_leaf;
-   uint8_t split_axis;
+   bool is_leaf;       // 1 byte
+   uint8_t split_axis; // 1 byte
+   uint8_t _pad[30];   // Pad to 64 bytes
 };
 
 //==============================================================================

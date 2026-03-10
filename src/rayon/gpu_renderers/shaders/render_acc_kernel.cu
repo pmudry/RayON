@@ -1,5 +1,36 @@
 #include "render_acc_kernel.cuh"
 
+//==============================================================================
+// GPU-side gamma correction kernel — converts float4 accum buffer to uint8 display
+//==============================================================================
+__global__ void gammaCorrectKernel(const float4 *__restrict__ accum_buffer, unsigned char *display_image, int width,
+                                   int height, int num_samples, int channels, float gamma)
+{
+   int x = blockIdx.x * blockDim.x + threadIdx.x;
+   int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+   if (x >= width || y >= height)
+      return;
+
+   int pixel_idx = y * width + x;
+   float4 acc = accum_buffer[pixel_idx];
+
+   float inv_samples = 1.0f / (float)num_samples;
+   float inv_gamma = 1.0f / gamma;
+
+   // Gamma correction + tone mapping
+   float r = fminf(powf(fmaxf(acc.x * inv_samples, 0.0f), inv_gamma), 0.999f);
+   float g = fminf(powf(fmaxf(acc.y * inv_samples, 0.0f), inv_gamma), 0.999f);
+   float b = fminf(powf(fmaxf(acc.z * inv_samples, 0.0f), inv_gamma), 0.999f);
+
+   int image_idx = pixel_idx * channels;
+   display_image[image_idx + 0] = (unsigned char)(256.0f * r);
+   display_image[image_idx + 1] = (unsigned char)(256.0f * g);
+   display_image[image_idx + 2] = (unsigned char)(256.0f * b);
+   if (channels == 4)
+      display_image[image_idx + 3] = 255;
+}
+
 __global__ void renderAccKernel(float4 *accum_buffer, const CudaScene::Scene *__restrict__ scene, int width, int height,
                                 int samples_to_add, int total_samples_so_far, int max_depth, float cam_center_x,
                                 float cam_center_y, float cam_center_z, float pixel00_x, float pixel00_y,

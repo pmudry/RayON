@@ -28,6 +28,7 @@ class RendererCUDAProgressive : public IRenderer
    struct Settings
    {
       int samples_per_batch = 8;
+      int motion_samples = 10;
       bool auto_accumulate = true;
       int target_fps = 60;
       bool adaptive_depth = false;
@@ -54,6 +55,7 @@ class RendererCUDAProgressive : public IRenderer
    void render(const RenderRequest &request, RenderContext &context) override
    {
       int samples_per_batch = settings_.samples_per_batch;
+      int motion_samples = settings_.motion_samples;
       bool auto_accumulate = settings_.auto_accumulate;
       int target_fps = settings_.target_fps;
       bool adaptive_depth = settings_.adaptive_depth;
@@ -160,7 +162,6 @@ class RendererCUDAProgressive : public IRenderer
       // Rendering buffers
       SDL_Event event;
       vector<unsigned char> display_image(image_width * image_height * image_channels);
-      vector<float> accum_buffer(image_width * image_height * image_channels, 0.0f);
       RenderTargetView display_view{&display_image, image_width, image_height, image_channels};
 
       void *d_rand_states = nullptr;
@@ -270,17 +271,15 @@ class RendererCUDAProgressive : public IRenderer
             camera_changed = false;
             current_samples = 0;
             force_immediate_render = true; // Force rendering after camera/settings change
-            std::fill(accum_buffer.begin(), accum_buffer.end(), 0.0f);
 
             // Mark camera as moving
             last_camera_change_time = now;
             is_camera_moving = true;
 
-            // Reset only the accumulation buffer; keep RNG states alive to preserve jitter sequences
+            // Zero the device accumulation buffer in-place (no free/realloc)
             if (d_accum_buffer != nullptr)
             {
-               freeDeviceAccumBuffer(d_accum_buffer);
-               d_accum_buffer = nullptr;
+               ::resetDeviceAccumBuffer(d_accum_buffer, image_width * image_height);
             }
 
             refreshCameraFrame();
@@ -289,7 +288,10 @@ class RendererCUDAProgressive : public IRenderer
          // Only happens once at start or after toggling accumulation
          if (needs_rerender && current_samples > 0)
          {
-            render::convertAccumBufferToImage(display_view, accum_buffer, current_samples, gamma);
+            // Re-convert from GPU accum buffer for display update (e.g., after slider change)
+            auto &display_img = *display_view.pixels;
+            ::convertAccumToDisplayCUDA(d_accum_buffer, display_img.data(), display_view.width, display_view.height,
+                                        display_view.channels, current_samples, gamma);
 
             displayFrame(
                 gui, display_image, current_samples, adaptive_samples_per_batch, light_intensity, background_intensity,
@@ -315,10 +317,10 @@ class RendererCUDAProgressive : public IRenderer
             syncSamplesFromSlider();
             user_samples_per_batch = samples_per_batch;
 
-            // Adaptive sample rate: use fewer samples during motion for smooth 60 FPS
+            // Adaptive sample rate: use fewer samples during motion for smooth FPS
             if (is_camera_moving)
             {
-               adaptive_samples_per_batch = std::max(5, adaptive_samples_per_batch);
+               adaptive_samples_per_batch = std::max(motion_samples, adaptive_samples_per_batch);
             }
             else
             {
@@ -329,8 +331,8 @@ class RendererCUDAProgressive : public IRenderer
             // Start timing this frame
             auto frame_start = std::chrono::high_resolution_clock::now();
 
-            renderBatch(frame, accum_buffer, display_view, current_samples, max_samples, adaptive_samples_per_batch,
-                        gamma, d_rand_states, d_accum_buffer, gpu_scene, is_camera_moving, adaptive_depth, context);
+            renderBatch(frame, display_view, current_samples, max_samples, adaptive_samples_per_batch, gamma,
+                        d_rand_states, d_accum_buffer, gpu_scene, is_camera_moving, adaptive_depth, context);
 
             // Measure frame time and adapt sample rate for next frame
             auto frame_end = std::chrono::high_resolution_clock::now();
@@ -344,7 +346,7 @@ class RendererCUDAProgressive : public IRenderer
                // adaptive_samples_per_batch =
                //     std::max(5, static_cast<int>(adaptive_samples_per_batch * (1.0f - adaptive_speed) +
                //                                  target_samples * adaptive_speed));
-               adaptive_samples_per_batch = 5; // Fixed low sample count during motion for simplicity
+               adaptive_samples_per_batch = motion_samples;
             }
 
             displayFrame(
@@ -422,11 +424,13 @@ class RendererCUDAProgressive : public IRenderer
 
    /**
     * @brief Render a batch of samples using CUDA
+    *
+    * The accumulation buffer stays entirely on GPU. After rendering, gamma correction
+    * is done on GPU and only the small uint8 display image is copied back to host.
     */
-   void renderBatch(const CameraFrame &frame, vector<float> &accum_buffer, RenderTargetView display_target,
-                    int &current_samples, int max_samples, int samples_per_batch, float gamma, void *&d_rand_states,
-                    void *&d_accum_buffer, CudaScene::Scene *gpu_scene, bool is_moving, bool adaptive_depth,
-                    RenderContext &context)
+   void renderBatch(const CameraFrame &frame, RenderTargetView display_target, int &current_samples, int max_samples,
+                    int samples_per_batch, float gamma, void *&d_rand_states, void *&d_accum_buffer,
+                    CudaScene::Scene *gpu_scene, bool is_moving, bool adaptive_depth, RenderContext &context)
    {
       current_samples += samples_per_batch;
 
@@ -441,10 +445,9 @@ class RendererCUDAProgressive : public IRenderer
           adaptive_depth ? calculateProgressiveMaxDepth(current_samples, is_moving, frame.max_depth)
                          : frame.max_depth;
 
-      // Call CUDA to render and accumulate samples with progressive depth
-      // Note: First parameter (image) is unused by the kernel - it only updates accum_buffer
+      // Call CUDA to render and accumulate samples — accum buffer stays on GPU (pass nullptr for host buffer)
       unsigned long long cuda_ray_count = ::renderPixelsCUDAAccumulative(
-          nullptr, accum_buffer.data(), gpu_scene, frame.image_width, frame.image_height, frame.camera_center.x(),
+          nullptr, nullptr, gpu_scene, frame.image_width, frame.image_height, frame.camera_center.x(),
           frame.camera_center.y(), frame.camera_center.z(), frame.pixel00_loc.x(), frame.pixel00_loc.y(),
           frame.pixel00_loc.z(), frame.pixel_delta_u.x(), frame.pixel_delta_u.y(), frame.pixel_delta_u.z(),
           frame.pixel_delta_v.x(), frame.pixel_delta_v.y(), frame.pixel_delta_v.z(), actual_samples_to_add,
@@ -453,8 +456,10 @@ class RendererCUDAProgressive : public IRenderer
 
       context.ray_counter.fetch_add(cuda_ray_count, std::memory_order_relaxed);
 
-      render::convertAccumBufferToImage(display_target, accum_buffer, current_samples,
-                                        gamma); // Keep display + disk paths identical.
+      // GPU-side gamma correction → copy only uint8 display image to host
+      auto &display_image = *display_target.pixels;
+      ::convertAccumToDisplayCUDA(d_accum_buffer, display_image.data(), display_target.width, display_target.height,
+                                  display_target.channels, current_samples, gamma);
    }
 
    /**

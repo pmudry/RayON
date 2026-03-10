@@ -407,35 +407,35 @@ __device__ inline bool hit_scene(const CudaScene::Scene &scene, const ray_simple
          }
          else
          {
-            // Interior node: push children onto stack
-            // Push farther child first for better traversal order
+            // Interior node: push children, near child last (processed first)
+            // Use split axis + ray direction sign to determine near/far child
+            // This is a single comparison vs. two length_squared() computations
             int left_child = node.data.interior.left_child;
             int right_child = node.data.interior.right_child;
 
-            // Simple heuristic: test which child is closer
-            f3 left_center = (scene.bvh_nodes[left_child].bounds_min + scene.bvh_nodes[left_child].bounds_max) * 0.5f;
-            f3 right_center =
-                (scene.bvh_nodes[right_child].bounds_min + scene.bvh_nodes[right_child].bounds_max) * 0.5f;
-
-            float dist_left = (left_center - r.orig).length_squared();
-            float dist_right = (right_center - r.orig).length_squared();
-
-            if (dist_left < dist_right)
+            // Determine which child is "near" based on ray direction along split axis
+            float dir_component;
+            switch (node.split_axis)
             {
-               // Right is farther, push it first
-               if (stack_ptr < 32)
-                  stack[stack_ptr++] = right_child;
-               if (stack_ptr < 32)
-                  stack[stack_ptr++] = left_child;
+            case 0:
+               dir_component = r.dir.x;
+               break;
+            case 1:
+               dir_component = r.dir.y;
+               break;
+            default:
+               dir_component = r.dir.z;
+               break;
             }
-            else
-            {
-               // Left is farther, push it first
-               if (stack_ptr < 32)
-                  stack[stack_ptr++] = left_child;
-               if (stack_ptr < 32)
-                  stack[stack_ptr++] = right_child;
-            }
+
+            // If ray goes in positive direction along split axis, left child is near
+            int near_child = dir_component >= 0.0f ? left_child : right_child;
+            int far_child = dir_component >= 0.0f ? right_child : left_child;
+
+            if (stack_ptr < 32)
+               stack[stack_ptr++] = far_child;
+            if (stack_ptr < 32)
+               stack[stack_ptr++] = near_child;
          }
       }
    }
@@ -474,10 +474,69 @@ __device__ inline bool hit_scene(const CudaScene::Scene &scene, const ray_simple
 }
 
 /**
- * @brief Ray color computation using new material system
+ * @brief Inline material scatter — flat switch, no CRTP dispatch overhead.
  *
- * This version uses compile-time material dispatch via CRTP templates.
- * The compiler generates optimized code for each material type with zero overhead.
+ * Handles emission accumulation and scatter in a single switch.
+ * Returns true if the ray was scattered, false if absorbed/emissive.
+ */
+__device__ __forceinline__ bool scatter_material(const hit_record_simple &rec, const ray_simple &current_ray,
+                                                 ray_simple &scattered_ray, f3 &attenuation, f3 &emitted,
+                                                 curandState *state)
+{
+   using namespace Materials;
+
+   switch (rec.material)
+   {
+   case LAMBERTIAN:
+   {
+      Lambertian mat(LambertianParams{rec.color});
+      emitted = f3(0.0f, 0.0f, 0.0f);
+      return mat.scatter(current_ray, rec, attenuation, scattered_ray, state);
+   }
+   case MIRROR:
+   {
+      Mirror mat(MirrorParams{rec.color});
+      emitted = f3(0.0f, 0.0f, 0.0f);
+      return mat.scatter(current_ray, rec, attenuation, scattered_ray, state);
+   }
+   case ROUGH_MIRROR:
+   {
+      RoughMirror mat(RoughMirrorParams{rec.color, rec.roughness});
+      emitted = f3(0.0f, 0.0f, 0.0f);
+      return mat.scatter(current_ray, rec, attenuation, scattered_ray, state);
+   }
+   case GLASS:
+   {
+      Glass mat(GlassParams{rec.refractive_index});
+      emitted = f3(0.0f, 0.0f, 0.0f);
+      return mat.scatter(current_ray, rec, attenuation, scattered_ray, state);
+   }
+   case LIGHT:
+   {
+      emitted = rec.emission * g_light_intensity;
+      return false;
+   }
+   case CONSTANT:
+   {
+      emitted = rec.color;
+      return false;
+   }
+   case SHOW_NORMALS:
+   {
+      emitted = 0.5f * (rec.normal + f3(1.0f, 1.0f, 1.0f));
+      return false;
+   }
+   default:
+      emitted = f3(0.0f, 0.0f, 0.0f);
+      return false;
+   }
+}
+
+/**
+ * @brief Ray color computation with flattened material dispatch
+ *
+ * Uses a direct switch for material scatter/emission instead of CRTP template
+ * dispatch, reducing register pressure and giving nvcc better optimization control.
  */
 __device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scene, curandState *state, int depth
 #ifdef DIAGS
@@ -486,8 +545,6 @@ __device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scen
 #endif
 )
 {
-   using namespace Materials;
-
    f3 accumulated_color(0.0f, 0.0f, 0.0f);
    f3 accumulated_attenuation(1.0f, 1.0f, 1.0f);
    ray_simple current_ray = r;
@@ -501,68 +558,26 @@ __device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scen
 
       if (hit_scene(scene, current_ray, 0.001f, FLT_MAX, rec))
       {
-         // Create material descriptor from hit record
-         // TODO: This is a temporary adapter - ideally hit_scene would return MaterialDescriptor directly
-         MaterialDescriptor mat_desc;
+         f3 attenuation;
+         ray_simple scattered_ray;
+         f3 emitted;
 
-         switch (rec.material)
+         bool did_scatter = scatter_material(rec, current_ray, scattered_ray, attenuation, emitted, state);
+
+         if (emitted.length_squared() > 0.0f)
          {
-         case LAMBERTIAN:
-            mat_desc = MaterialDescriptor::makeLambertian(rec.color);
-            break;
-         case MIRROR:
-            mat_desc = MaterialDescriptor::makeMirror(rec.color);
-            break;
-         case ROUGH_MIRROR:
-            mat_desc = MaterialDescriptor::makeRoughMirror(rec.color, rec.roughness);
-            break;
-         case GLASS:
-            mat_desc = MaterialDescriptor::makeGlass(rec.refractive_index);
-            break;
-         case LIGHT:
-            mat_desc = MaterialDescriptor::makeLight(rec.emission);
-            break;
-         case CONSTANT:
-            mat_desc = MaterialDescriptor::makeConstant(rec.color);
-            break;
-         case SHOW_NORMALS:
-            mat_desc = MaterialDescriptor::makeShowNormals(rec.normal);
-            break;
+            accumulated_color = accumulated_color + accumulated_attenuation * emitted;
          }
 
-         // Dispatch to appropriate material using compile-time template magic
-         bool scattered = dispatch_material_bool(
-             mat_desc,
-             [&](auto material) -> bool
-             {
-                // Check if emissive first
-                f3 emitted = material.emission();
-                if (emitted.length_squared() > 0.0f)
-                {
-                   accumulated_color = accumulated_color + f3(accumulated_attenuation.x * emitted.x,
-                                                              accumulated_attenuation.y * emitted.y,
-                                                              accumulated_attenuation.z * emitted.z);
-                   return false; // Light materials don't scatter
-                }
-
-                // Scatter the ray
-                f3 attenuation;
-                ray_simple scattered_ray;
-                if (material.scatter(current_ray, rec, attenuation, scattered_ray, state))
-                {
-                   current_ray = scattered_ray;
-                   accumulated_attenuation =
-                       f3(accumulated_attenuation.x * attenuation.x, accumulated_attenuation.y * attenuation.y,
-                          accumulated_attenuation.z * attenuation.z);
-                   return true;
-                }
-                return false;
-             });
-
-         if (!scattered)
+         if (!did_scatter)
          {
             return accumulated_color;
          }
+
+         current_ray = scattered_ray;
+         accumulated_attenuation =
+             f3(accumulated_attenuation.x * attenuation.x, accumulated_attenuation.y * attenuation.y,
+                accumulated_attenuation.z * attenuation.z);
 
          // Russian Roulette path termination (from bounce 1 for early path culling)
          if (bounce > 0)

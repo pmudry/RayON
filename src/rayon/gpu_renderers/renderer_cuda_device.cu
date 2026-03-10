@@ -53,30 +53,27 @@ extern "C" void setDOFFocusDistance(float distance)
 
 /**
  * @brief Calculate optimal thread block configuration for 2D image rendering
- * @param width Image width
- * @param height Image height
- * @return dim3 with optimal block dimensions
+ * Caches the result after first query to avoid repeated cudaGetDeviceProperties calls.
  */
 static dim3 getOptimalBlockSize(int width, int height)
 {
-   // Query device properties
-   cudaDeviceProp prop;
-   cudaGetDeviceProperties(&prop, 0);
-
-   // For modern GPUs, 256 threads per block is often optimal
-   // Use rectangular blocks (32x8) for better memory coalescing
-   // 32 threads in x-direction aligns with warp size for coalesced memory access
-   int blockSizeX = 32;
-   int blockSizeY = 8;
-
-   // For older/smaller GPUs, fall back to 16x16
-   if (prop.maxThreadsPerBlock < 256)
+   static dim3 cached_block_size(0, 0);
+   if (cached_block_size.x == 0)
    {
-      blockSizeX = 16;
-      blockSizeY = 16;
-   }
+      cudaDeviceProp prop;
+      cudaGetDeviceProperties(&prop, 0);
 
-   return dim3(blockSizeX, blockSizeY);
+      int blockSizeX = 32;
+      int blockSizeY = 8;
+
+      if (prop.maxThreadsPerBlock < 256)
+      {
+         blockSizeX = 16;
+         blockSizeY = 16;
+      }
+      cached_block_size = dim3(blockSizeX, blockSizeY);
+   }
+   return cached_block_size;
 }
 
 extern "C" void freeDeviceRandomStates(void *d_rand_states)
@@ -92,6 +89,14 @@ extern "C" void freeDeviceAccumBuffer(void *d_accum_buffer)
    if (d_accum_buffer != nullptr)
    {
       cudaFree(d_accum_buffer);
+   }
+}
+
+extern "C" void resetDeviceAccumBuffer(void *d_accum_buffer, int num_pixels)
+{
+   if (d_accum_buffer != nullptr)
+   {
+      cudaMemset(d_accum_buffer, 0, (size_t)num_pixels * sizeof(float4));
    }
 }
 /**
@@ -176,15 +181,22 @@ extern "C" unsigned long long renderPixelsCUDAAccumulative(
       cudaMalloc(&d_accum, accum_size);
       *d_accum_buffer_ptr = d_accum;
 
-      // Convert host float3 buffer to float4 for upload
-      size_t host_f4_size = (size_t)num_pixels * sizeof(float4);
-      float4 *host_f4 = (float4 *)malloc(host_f4_size);
-      for (int i = 0; i < num_pixels; ++i)
+      if (accum_buffer != nullptr)
       {
-         host_f4[i] = make_float4(accum_buffer[i * 3], accum_buffer[i * 3 + 1], accum_buffer[i * 3 + 2], 0.0f);
+         // Batch renderer path: upload host float3 buffer as float4
+         float4 *host_f4 = (float4 *)malloc(accum_size);
+         for (int i = 0; i < num_pixels; ++i)
+         {
+            host_f4[i] = make_float4(accum_buffer[i * 3], accum_buffer[i * 3 + 1], accum_buffer[i * 3 + 2], 0.0f);
+         }
+         cudaMemcpy(d_accum, host_f4, accum_size, cudaMemcpyHostToDevice);
+         free(host_f4);
       }
-      cudaMemcpy(d_accum, host_f4, accum_size, cudaMemcpyHostToDevice);
-      free(host_f4);
+      else
+      {
+         // Progressive renderer path: start from zero, no host buffer involved
+         cudaMemset(d_accum, 0, accum_size);
+      }
    }
    else
    {
@@ -252,16 +264,20 @@ extern "C" unsigned long long renderPixelsCUDAAccumulative(
       printf("❌ Kernel execution error: %s\n", cudaGetErrorString(sync_err));
    }
 
-   // Copy float4 accum buffer back and convert to float3 layout for host
-   float4 *host_f4 = (float4 *)malloc(accum_size);
-   cudaMemcpy(host_f4, d_accum, accum_size, cudaMemcpyDeviceToHost);
-   for (int i = 0; i < num_pixels; ++i)
+   // Only copy accum buffer back to host when not using GPU-side display conversion.
+   // The progressive renderer uses convertAccumToDisplayCUDA() instead, avoiding this copy.
+   if (accum_buffer != nullptr)
    {
-      accum_buffer[i * 3] = host_f4[i].x;
-      accum_buffer[i * 3 + 1] = host_f4[i].y;
-      accum_buffer[i * 3 + 2] = host_f4[i].z;
+      float4 *host_f4 = (float4 *)malloc(accum_size);
+      cudaMemcpy(host_f4, d_accum, accum_size, cudaMemcpyDeviceToHost);
+      for (int i = 0; i < num_pixels; ++i)
+      {
+         accum_buffer[i * 3] = host_f4[i].x;
+         accum_buffer[i * 3 + 1] = host_f4[i].y;
+         accum_buffer[i * 3 + 2] = host_f4[i].z;
+      }
+      free(host_f4);
    }
-   free(host_f4);
 
 #ifdef DIAGS
    // Exact ray count from kernel (includes all bounces)
@@ -273,6 +289,53 @@ extern "C" unsigned long long renderPixelsCUDAAccumulative(
    // Estimate: primary rays only (width * height * samples)
    return (unsigned long long)num_pixels * samples_to_add;
 #endif
+}
+
+/**
+ * @brief GPU-side gamma correction and display image conversion
+ *
+ * Reads the device accumulation buffer, applies gamma correction on GPU,
+ * and copies only the small uint8 display image back to host.
+ * This avoids the expensive float4 D2H copy + host-side conversion.
+ *
+ * @param d_accum_buffer Device accumulation buffer (float4, persistent)
+ * @param display_image Host display image buffer (uint8, width*height*channels)
+ * @param width Image width
+ * @param height Image height
+ * @param channels Number of color channels (3 or 4)
+ * @param num_samples Total accumulated samples for normalization
+ * @param gamma Gamma correction value
+ */
+extern "C" void convertAccumToDisplayCUDA(void *d_accum_buffer, unsigned char *display_image, int width, int height,
+                                          int channels, int num_samples, float gamma)
+{
+   if (d_accum_buffer == nullptr || display_image == nullptr || num_samples <= 0)
+      return;
+
+   size_t display_size = (size_t)width * height * channels * sizeof(unsigned char);
+
+   // Allocate device display buffer (reuse across calls)
+   static unsigned char *d_display = nullptr;
+   static size_t d_display_size = 0;
+
+   if (d_display == nullptr || d_display_size != display_size)
+   {
+      if (d_display != nullptr)
+         cudaFree(d_display);
+      cudaMalloc(&d_display, display_size);
+      d_display_size = display_size;
+   }
+
+   dim3 threads = getOptimalBlockSize(width, height);
+   dim3 blocks((width + threads.x - 1) / threads.x, (height + threads.y - 1) / threads.y);
+
+   gammaCorrectKernel<<<blocks, threads>>>(static_cast<float4 *>(d_accum_buffer), d_display, width, height, num_samples,
+                                           channels, gamma);
+
+   cudaDeviceSynchronize();
+
+   // Copy only the small uint8 display image (3 bytes/pixel vs 16 bytes/pixel for float4)
+   cudaMemcpy(display_image, d_display, display_size, cudaMemcpyDeviceToHost);
 }
 
 // Use renderPixelsCUDAAccumulative for all rendering (one-shot and progressive).

@@ -23,6 +23,9 @@ extern "C"
    // Helper to free device accumulation buffer
    void freeDeviceAccumBuffer(void *d_accum_buffer);
 
+   // Zero the device accumulation buffer without freeing it
+   void resetDeviceAccumBuffer(void *d_accum_buffer, int num_pixels);
+
    // Set global light intensity (affects area light emission)
    void setLightIntensity(float intensity);
 
@@ -39,4 +42,8 @@ extern "C"
    void setDOFEnabled(bool enabled);
    void setDOFAperture(float aperture);
    void setDOFFocusDistance(float distance);
+
+   // GPU-side gamma correction: reads device accum buffer, writes uint8 display image to host
+   void convertAccumToDisplayCUDA(void *d_accum_buffer, unsigned char *display_image, int width, int height, int channels,
+                                  int num_samples, float gamma);
 }

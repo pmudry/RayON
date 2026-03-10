@@ -3,15 +3,17 @@
 ## Context
 RayON's CUDA renderer is significantly slower than a comparable Vulkan RT raytracer (RayTracingInVulkan) primarily because it performs BVH traversal and intersection in software on shader cores, while Vulkan uses dedicated RT cores. This plan catalogs actionable optimizations and assesses OptiX migration.
 
+See `explanations/VULKAN_VS_CUDA_PERFORMANCE.md` for the detailed comparison.
+
 ## Optimization Options
 
-### Option 1: Enable `--use_fast_math` (Easy, ~10-30% speedup)
-Uncomment `--use_fast_math` in CMakeLists.txt line ~208. Enables fast `rsqrtf`, fused multiply-add, relaxed denormals. Negligible visual impact for a renderer.
+### Option 1: Enable `--use_fast_math` — DONE
+Enables fast `rsqrtf`, fused multiply-add, relaxed denormals. Negligible visual impact.
 - **File**: `CMakeLists.txt`
 
-### Option 2: Fix accumulation buffer memory layout (Easy, ~5-15% speedup)
-Change from 3 separate float writes per pixel to `float4` coalesced writes.
-- **Files**: `gpu_renderers/shaders/render_acc_kernel.cu`, `renderer_cuda_device.cu`, `renderer_cuda_progressive_host.hpp`
+### Option 2: Fix accumulation buffer memory layout — DONE
+Kernel already uses `float4` coalesced reads/writes.
+- **Files**: `gpu_renderers/shaders/render_acc_kernel.cu`
 
 ### Option 3: Increase occupancy / tune kernel launch (Medium, ~10-20% speedup)
 Profile with `ncu`, test 512 threads/block, evaluate register pressure vs. occupancy tradeoff.
@@ -22,12 +24,11 @@ Bind BVH node and geometry arrays as CUDA texture objects for better cache behav
 - **Files**: `renderer_cuda_device.cu`, `scene_builder_cuda.cu`, `cuda_raytracer.cuh`
 
 ### Option 5: Compact BVH node layout (Medium, ~10-20% speedup)
-Pack BVH nodes to 64-byte cache-line alignment. Consider MBVH (4-wide) to reduce tree depth.
+Pack BVH nodes to 64-byte cache-line alignment. Store child AABBs together so both children can be tested with a single cache line fetch.
 - **Files**: `cuda_scene.cuh`, `cuda_raytracer.cuh`, `scene_builder_cuda.cu`, `scenes/scene_description.hpp`
 
-### Option 6: Russian roulette from bounce 1 (Easy, ~5-10% speedup)
-Start Russian roulette termination earlier (currently bounce 3) with energy compensation.
-- **Files**: `gpu_renderers/cuda_raytracer.cuh`
+### Option 6: Russian roulette from bounce 1 — DONE
+Already starts at bounce 1 with energy compensation in `cuda_raytracer.cuh`.
 
 ### Option 7: Wavefront path tracing (Hard, ~30-50% speedup)
 Split monolithic kernel into separate stages (ray gen → intersect → shade per material → bounce). Eliminates most warp divergence. Major architectural change.
@@ -39,6 +40,26 @@ Replace 1:1 pixel-thread mapping with fixed thread count pulling from global que
 
 ### Option 9: Migrate to OptiX (Hard, ~5-10x speedup)
 Use NVIDIA OptiX SDK to access hardware RT cores for BVH traversal and intersection. This is the only path to match Vulkan RT performance. See detailed assessment below.
+
+### Option A: Eliminate D2H round-trip in progressive renderer — DONE
+Accumulation buffer stays on GPU. GPU-side `gammaCorrectKernel` produces uint8 display image directly. Only the small uint8 image (3 bytes/pixel) is copied to host instead of the full float4 buffer (16 bytes/pixel). Also uses `cudaMemset` instead of free/realloc on camera change.
+- **Files**: `render_acc_kernel.cu`, `renderer_cuda_device.cu`, `renderer_cuda_progressive_host.hpp`
+
+### Option B: Cache device properties — DONE
+`getOptimalBlockSize()` caches result in static variable instead of calling `cudaGetDeviceProperties()` every frame.
+- **File**: `renderer_cuda_device.cu`
+
+### Option C: CUDA streams for async display copy (Medium, ~10-15% latency hiding)
+Overlap kernel execution with display buffer transfer using CUDA streams. Currently the pipeline is fully synchronous.
+- **Files**: `renderer_cuda_device.cu`
+
+### Option E: BVH child ordering by ray direction sign (Medium, ~5-15% speedup)
+Replace expensive distance-to-center heuristic with ray direction sign along split axis. One comparison instead of two `length_squared()` computations per interior node.
+- **Files**: `cuda_raytracer.cuh`
+
+### Option F: Flatten material dispatch in ray_color (Medium, ~5-15% speedup)
+Remove CRTP lambda dispatch (`dispatch_material_bool`) and replace with explicit switch. Reduces register pressure and gives `nvcc` better optimization control.
+- **Files**: `cuda_raytracer.cuh`
 
 ## OptiX Migration Assessment
 

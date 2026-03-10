@@ -36,6 +36,7 @@ struct ProgramArgs
    int samples = SAMPLES_PER_PIXEL;
    int height = IMAGE_HEIGHT;
    int start_samples = 32;           // Number of samples to render initially when moving camera
+   int motion_samples = 10;          // Minimum samples per batch during camera motion
    bool auto_accumulate = true;      // Enable auto-accumulation by default
    int target_fps = 60;              // Target FPS for interactive rendering (default: 60)
    bool adaptive_depth = false;      // Enable adaptive depth (default: off)
@@ -53,6 +54,7 @@ void dumpHelp()
         << IMAGE_HEIGHT << ")\n";
    cout << "  --scene <file>         Load scene from YAML file (default: built-in scene)\n";
    cout << "  --start-samples <n>    Set initial samples when moving camera in interactive mode (default: 32)\n";
+   cout << "  --motion-samples <n>   Set minimum samples per batch during camera motion (default: 10)\n";
    cout << "  --target-fps <fps>     Set target frame rate for interactive rendering (default: 60)\n";
    cout << "                         Higher values = smoother motion but lower quality preview\n";
    cout << "                         Lower values = better quality preview but less smooth motion\n";
@@ -131,6 +133,16 @@ ProgramArgs parseInput(int argc, char *argv[])
          {
             cerr << "Invalid start-samples value: " << args.start_samples << " (must be >= 1)\n";
             args.samples = -1; // Indicate error
+            return args;
+         }
+      }
+      else if (strcmp(argv[i], "--motion-samples") == 0 && i + 1 < argc)
+      {
+         args.motion_samples = atoi(argv[++i]);
+         if (args.motion_samples < 1)
+         {
+            cerr << "Invalid motion-samples value: " << args.motion_samples << " (must be >= 1)\n";
+            args.samples = -1;
             return args;
          }
       }
@@ -271,6 +283,7 @@ int main(int argc, char *argv[])
       RendererCUDAProgressive renderer;
       RendererCUDAProgressive::Settings settings;
       settings.samples_per_batch = args.start_samples;
+      settings.motion_samples = args.motion_samples;
       settings.auto_accumulate = args.auto_accumulate;
       settings.target_fps = args.target_fps;
       settings.adaptive_depth = args.adaptive_depth;
