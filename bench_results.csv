@@ -1,6 +1,4 @@
-timestamp,label,run,time_s,rays_traced,rays_per_sec
-2026-03-10T23:01:07,unlabeled,1,,,
-2026-03-10T23:01:07,unlabeled,2,,,
-2026-03-10T23:01:07,unlabeled,3,,,
-2026-03-10T23:01:07,unlabeled,4,,,
-2026-03-10T23:01:07,unlabeled,5,,,
+timestamp,commit,branch,gpu,resolution,samples,run,time_s
+2026-03-10T23:52:09+01:00,433000f-dirty,main,NVIDIA GB10,720,1024,1,1.767
+2026-03-10T23:52:09+01:00,433000f-dirty,main,NVIDIA GB10,720,1024,2,1.926
+2026-03-10T23:52:09+01:00,433000f-dirty,main,NVIDIA GB10,720,1024,3,1.764
