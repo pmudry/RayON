@@ -1,14 +1,13 @@
 /**
  * @class SDLGuiHandler
- * @brief Handles all SDL GUI components for the interactive renderer
+ * @brief Handles SDL window management and ImGui integration
  *
  * This class manages:
  * - SDL window and renderer creation/cleanup
- * - Logo loading and display
- * - Font loading and text rendering
- * - UI controls (sliders, buttons)
- * - Mouse and keyboard event handling
- * - Camera control state
+ * - Main ray-tracing texture display
+ * - Logo loading and overlay
+ * - ImGui context initialization and frame rendering
+ * - Basic SDL event polling
  */
 #pragma once
 
@@ -16,9 +15,10 @@
 #ifdef SDL2_FOUND
 
 #include <SDL.h>
-#ifdef SDL2_TTF_FOUND
-#include <SDL_ttf.h>
-#endif
+#include "imgui.h"
+#include "imgui_impl_sdl2.h"
+#include "imgui_impl_sdlrenderer2.h"
+
 #define STB_IMAGE_STATIC
 #define STB_IMAGE_IMPLEMENTATION
 #include "external/stb_image.h"
@@ -35,20 +35,12 @@ using std::endl;
 using std::string;
 using std::vector;
 
-// Structure to hold slider interaction bounds
-struct SliderBounds
-{
-   int x, y, width, height;
-   float min_val, max_val;
-   float *value_ptr;
-};
-
 class SDLGuiHandler
 {
  public:
    SDLGuiHandler(int image_width, int image_height)
-       : image_width(image_width), image_height(image_height), show_controls(true), window(nullptr), renderer(nullptr),
-         texture(nullptr), logo_texture(nullptr), font(nullptr)
+       : image_width(image_width), image_height(image_height), show_controls(true), collapse_headers(false),
+         reset_headers(false), window(nullptr), renderer(nullptr), texture(nullptr), logo_texture(nullptr)
    {
    }
 
@@ -62,17 +54,8 @@ class SDLGuiHandler
          return false;
       }
 
-#ifdef SDL2_TTF_FOUND
-      if (TTF_Init() < 0)
-      {
-         cerr << "SDL_ttf initialization failed: " << TTF_GetError() << "\n";
-         SDL_Quit();
-         return false;
-      }
-#endif
-
       std::string window_title =
-          "RayON (mui) v" + std::string(constants::version) + " - Interactive mode (LMB:Rotate RMB:Pan Wheel:Zoom)";
+          "RayON v" + std::string(constants::version) + " - Interactive mode (LMB:Rotate RMB:Pan Wheel:Zoom)";
       window = SDL_CreateWindow(window_title.c_str(), SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, image_width,
                                 image_height, SDL_WINDOW_SHOWN);
       if (!window)
@@ -103,20 +86,29 @@ class SDLGuiHandler
       }
 
       loadLogo();
-      loadFont();
 
+      // Initialize ImGui
+      IMGUI_CHECKVERSION();
+      ImGui::CreateContext();
+      ImGuiIO &io = ImGui::GetIO();
+      (void)io;
+      io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+      ImGui::StyleColorsDark();
+
+      // Semi-transparent window backgrounds
+      ImGuiStyle &style = ImGui::GetStyle();
+      style.Colors[ImGuiCol_WindowBg].w = 0.35f;
+
+      ImGui_ImplSDL2_InitForSDLRenderer(window, renderer);
+      ImGui_ImplSDLRenderer2_Init(renderer);
       return true;
    }
 
    void cleanup()
    {
-#ifdef SDL2_TTF_FOUND
-      if (font)
-      {
-         TTF_CloseFont(static_cast<TTF_Font *>(font));
-         font = nullptr;
-      }
-#endif
+      ImGui_ImplSDLRenderer2_Shutdown();
+      ImGui_ImplSDL2_Shutdown();
+      ImGui::DestroyContext();
 
       if (logo_texture)
       {
@@ -142,11 +134,144 @@ class SDLGuiHandler
       cleanupSDL();
    }
 
-   void updateDisplay(const vector<unsigned char> &image, int image_channels)
+   /**
+    * @brief Display the raytraced image and render the ImGui overlay
+    *
+    * All UI controls are drawn here using ImGui. Parameters are passed as pointers
+    * so ImGui can modify them directly.
+    */
+   void updateDisplay(const vector<unsigned char> &image, int image_channels, float sps, float ms_per_sample, int spp,
+                      bool *dof_enabled, float *aperture, float *focus_dist, float *light_intensity,
+                      float *background_intensity, float *metal_fuzziness, float *glass_ior,
+                      float *samples_per_batch, bool *auto_accumulate, bool *auto_orbit)
    {
       SDL_UpdateTexture(texture, nullptr, image.data(), image_width * image_channels);
       SDL_RenderClear(renderer);
       SDL_RenderCopy(renderer, texture, nullptr, nullptr);
+
+      // Begin ImGui frame
+      ImGui_ImplSDLRenderer2_NewFrame();
+      ImGui_ImplSDL2_NewFrame();
+      ImGui::NewFrame();
+
+      if (show_controls)
+      {
+         ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
+         if (ImGui::Begin("RayON - Interactive UI", nullptr,
+                          ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove))
+         {
+            // --- Performance Monitoring ---
+            if (reset_headers)
+               ImGui::SetNextItemOpen(!collapse_headers);
+            if (ImGui::CollapsingHeader("Performance Monitoring", ImGuiTreeNodeFlags_DefaultOpen))
+            {
+               ImGui::Text("SPP: %d", spp);
+               ImGui::Text("Throughput: %.0f SPS", sps);
+               ImGui::Text("Time/Sample: %.3f ms", ms_per_sample);
+
+               sps_history.push_back(sps);
+               ms_history.push_back(ms_per_sample);
+
+               if (sps_history.size() > 500)
+               {
+                  sps_history.erase(sps_history.begin());
+                  ms_history.erase(ms_history.begin());
+               }
+
+               if (!sps_history.empty())
+               {
+                  float max_sps = 0.0f;
+                  for (float f : sps_history)
+                     max_sps = std::max(max_sps, f);
+
+                  ImGui::PushStyleColor(ImGuiCol_PlotLines, ImVec4(0.0f, 1.0f, 0.0f, 1.0f));
+                  ImGui::PlotLines("Live SPS", sps_history.data(), static_cast<int>(sps_history.size()), 0, nullptr,
+                                   0.0f, max_sps * 1.1f, ImVec2(ImGui::CalcItemWidth(), 50));
+                  ImGui::PopStyleColor();
+
+                  float max_ms = 0.0f;
+                  for (float f : ms_history)
+                     max_ms = std::max(max_ms, f);
+
+                  ImGui::PushStyleColor(ImGuiCol_PlotLines, ImVec4(1.0f, 0.7f, 0.0f, 1.0f));
+                  ImGui::PlotLines("Time/Sample", ms_history.data(), static_cast<int>(ms_history.size()), 0, nullptr,
+                                   0.0f, max_ms * 1.1f, ImVec2(ImGui::CalcItemWidth(), 50));
+                  ImGui::PopStyleColor();
+               }
+
+               if (samples_per_batch && auto_accumulate)
+               {
+                  ImGui::Separator();
+                  ImGui::SliderFloat("Samples/Batch", samples_per_batch, 1.0f, 256.0f, "%.0f");
+                  ImGui::Checkbox("Auto-Accumulate (Space)", auto_accumulate);
+               }
+            }
+
+            // --- Camera Settings ---
+            if (reset_headers)
+               ImGui::SetNextItemOpen(!collapse_headers);
+            if (ImGui::CollapsingHeader("Camera Settings", ImGuiTreeNodeFlags_DefaultOpen))
+            {
+               if (auto_orbit)
+               {
+                  ImGui::Checkbox("Auto-Orbit (O)", auto_orbit);
+               }
+
+               if (dof_enabled && aperture && focus_dist)
+               {
+                  ImGui::Checkbox("Enable Depth of Field", dof_enabled);
+                  ImGui::SeparatorText("Lens Controls");
+
+                  if (!(*dof_enabled))
+                     ImGui::BeginDisabled();
+                  ImGui::SliderFloat("Aperture", aperture, 0.0f, 1.0f, "%.2f");
+                  ImGui::SliderFloat("Focus Dist", focus_dist, 0.1f, 100.0f, "%.1f");
+                  if (!(*dof_enabled))
+                     ImGui::EndDisabled();
+               }
+            }
+
+            // --- Environment & Materials ---
+            if (reset_headers)
+               ImGui::SetNextItemOpen(!collapse_headers);
+            if (ImGui::CollapsingHeader("Environment & Materials", ImGuiTreeNodeFlags_DefaultOpen))
+            {
+               if (light_intensity && background_intensity && metal_fuzziness && glass_ior)
+               {
+                  ImGui::SliderFloat("Light Intensity", light_intensity, 0.1f, 3.0f, "%.1f");
+                  ImGui::SliderFloat("Background", background_intensity, 0.0f, 5.0f, "%.2f");
+                  ImGui::SliderFloat("Metal Fuzz", metal_fuzziness, 0.0f, 5.0f, "%.2f");
+                  ImGui::SliderFloat("Glass IOR", glass_ior, 1.0f, 2.5f, "%.2f");
+               }
+            }
+
+            // --- Help ---
+            if (ImGui::CollapsingHeader("Controls & Help"))
+            {
+               ImGui::Text("Mouse:");
+               ImGui::BulletText("LMB: Rotate");
+               ImGui::BulletText("RMB: Pan");
+               ImGui::BulletText("Wheel: Zoom");
+
+               ImGui::Separator();
+               ImGui::Text("Keys:");
+               ImGui::BulletText("SPACE: Toggle Accumulation");
+               ImGui::BulletText("O: Auto-Orbit");
+               ImGui::BulletText("H: Toggle UI");
+               ImGui::BulletText("C: Collapse/Expand All");
+               ImGui::BulletText("R: Reset Defaults");
+               ImGui::BulletText("ESC: Exit");
+            }
+
+            if (reset_headers)
+               reset_headers = false;
+         }
+         ImGui::End();
+      }
+
+      // Finalize ImGui frame
+      ImGui::Render();
+      ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), renderer);
    }
 
    void drawLogo()
@@ -159,218 +284,46 @@ class SDLGuiHandler
 
    void present() { SDL_RenderPresent(renderer); }
 
-   void drawSampleCountText(int sample_count)
+   // Event handling — routes to ImGui first
+   static bool pollEvent(SDL_Event &event)
    {
-      // Don't draw sample count if controls are hidden
-      if (!show_controls)
-         return;
-
-#ifdef SDL2_TTF_FOUND
-      TTF_Font *ttf_font = static_cast<TTF_Font *>(font);
-      if (!ttf_font)
-         return;
-
-      std::string text = std::to_string(sample_count) + " SPP";
-
-      SDL_Color white = {255, 255, 255, 255};
-      SDL_Surface *text_surface = TTF_RenderText_Blended(ttf_font, text.c_str(), white);
-      if (!text_surface)
-         return;
-
-      SDL_Texture *text_texture = SDL_CreateTextureFromSurface(renderer, text_surface);
-
-      if (text_texture)
+      bool has_event = SDL_PollEvent(&event);
+      if (has_event)
       {
-         int text_width = text_surface->w;
-         int text_height = text_surface->h;
-         int padding = 15;
-         int box_width = 90;
-
-         SDL_Rect bg_rect = {image_width - box_width - padding, padding - 5, box_width, text_height + 10};
-         SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
-         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 200);
-         SDL_RenderFillRect(renderer, &bg_rect);
-
-         SDL_Rect text_rect = {image_width - padding - box_width + (box_width - text_width) / 2, padding, text_width,
-                               text_height};
-         SDL_RenderCopy(renderer, text_texture, nullptr, &text_rect);
-
-         SDL_DestroyTexture(text_texture);
+         ImGui_ImplSDL2_ProcessEvent(&event);
       }
-
-      SDL_FreeSurface(text_surface);
-#endif
+      return has_event;
    }
 
-   void drawUIControls(int samples_per_batch, float light_intensity, float background_intensity, float metal_fuzziness,
-                       float glass_refraction_index, bool accumulation_enabled, bool auto_orbit_enabled,
-                       SliderBounds &samples_slider_bounds, SliderBounds &intensity_slider_bounds,
-                       SliderBounds &background_slider_bounds, SliderBounds &fuzziness_slider_bounds,
-                       SliderBounds &glass_ior_slider_bounds, SDL_Rect &toggle_button_rect, SDL_Rect &orbit_button_rect)
-   {
-      // Don't draw controls if they're hidden
-      if (!show_controls)
-         return;
-
-#ifdef SDL2_TTF_FOUND
-      TTF_Font *ttf_font = static_cast<TTF_Font *>(font);
-      if (!ttf_font)
-         return;
-
-      TTF_Font *small_font = TTF_OpenFont("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 12);
-      if (!small_font)
-         small_font = ttf_font;
-
-      int padding = 15;
-      int control_width = 280;
-      int label_width = 120;
-      int slider_height = 25;
-      int spacing = 8;
-      int button_row_height = slider_height; // Height for row with two buttons
-      int start_y = image_height - (6 * slider_height + button_row_height + 6 * spacing + padding);
-
-      SDL_Color white = {255, 255, 255, 255};
-
-      drawPanelBackground(padding, start_y, control_width, 5 * slider_height + button_row_height + 6 * spacing);
-
-      // Draw two toggle buttons side by side
-      int button_width = (control_width - spacing) / 2;
-      drawToggleButton(small_font, padding, start_y, accumulation_enabled, white, toggle_button_rect, "Auto-Accum",
-                       button_width);
-      drawToggleButton(small_font, padding + button_width + spacing, start_y, auto_orbit_enabled, white,
-                      orbit_button_rect, "Auto-Orbit", button_width);
-
-      drawSamplesSlider(small_font, padding, start_y + button_row_height + spacing, control_width, samples_per_batch,
-                        samples_slider_bounds, label_width);
-      drawLightSlider(small_font, padding, start_y + button_row_height + slider_height + 2 * spacing, control_width,
-                      light_intensity, intensity_slider_bounds, label_width);
-      drawBackgroundSlider(small_font, padding, start_y + button_row_height + 2 * slider_height + 3 * spacing,
-                           control_width, background_intensity, background_slider_bounds, label_width);
-      drawFuzzinessSlider(small_font, padding, start_y + button_row_height + 3 * slider_height + 4 * spacing,
-                          control_width, metal_fuzziness, fuzziness_slider_bounds, label_width);
-      drawGlassIORSlider(small_font, padding, start_y + button_row_height + 4 * slider_height + 5 * spacing,
-                         control_width, glass_refraction_index, glass_ior_slider_bounds, label_width);
-
-      if (small_font != ttf_font)
-      {
-         TTF_CloseFont(small_font);
-      }
-#endif
-   }
-
-   void drawEffectsPanel(bool dof_enabled, float dof_aperture, float dof_focus_distance,
-                         SliderBounds &dof_aperture_slider_bounds, SliderBounds &dof_focus_slider_bounds,
-                         SDL_Rect &dof_button_rect)
-   {
-      // Don't draw effects panel if controls are hidden
-      if (!show_controls)
-         return;
-
-#ifdef SDL2_TTF_FOUND
-      TTF_Font *ttf_font = static_cast<TTF_Font *>(font);
-      if (!ttf_font)
-         return;
-
-      TTF_Font *small_font = TTF_OpenFont("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 12);
-      if (!small_font)
-      {
-         small_font = TTF_OpenFont("/usr/share/fonts/TTF/DejaVuSans.ttf", 12);
-      }
-      if (!small_font)
-      {
-         small_font = ttf_font;
-      }
-
-      int padding = 15;
-      int control_width = 220;
-      int label_width = 130;
-      int slider_height = 25;
-      int spacing = 8;
-      int button_row_height = slider_height;
-
-      // Position at top-right corner
-      int start_x = image_width - control_width - padding;
-      int start_y = padding + 40; // Below the sample count
-
-      SDL_Color white = {255, 255, 255, 255};
-
-      // Background for effects panel
-      drawPanelBackground(start_x, start_y, control_width, button_row_height + 2 * slider_height + 3 * spacing);
-
-      // DOF toggle button (full width)
-      drawToggleButton(small_font, start_x, start_y, dof_enabled, white, dof_button_rect, "Depth of Field",
-                       control_width);
-
-      // DOF sliders
-      drawDOFApertureSlider(small_font, start_x, start_y + button_row_height + spacing, control_width, dof_aperture,
-                            dof_aperture_slider_bounds, label_width);
-      drawDOFFocusSlider(small_font, start_x, start_y + button_row_height + slider_height + 2 * spacing, control_width,
-                         dof_focus_distance, dof_focus_slider_bounds, label_width);
-
-      if (small_font != ttf_font)
-      {
-         TTF_CloseFont(small_font);
-      }
-#endif
-   }
-
-   static void printControls(int samples_per_batch, int max_samples, bool auto_accumulate)
-   {
-      cout << "\n=== Interactive Ray Tracing with Real-time Display ===" << "\n";
-      cout << "Controls:" "\n";
-      cout << "  Left Mouse Button:   Rotate camera (orbit)" "\n";
-      cout << "  Right Mouse Button:  Pan camera" "\n";
-      cout << "  Mouse Wheel:         Zoom in/out" "\n";
-      cout << "  SPACEBAR:            Toggle automatic accumulation" "\n";
-      cout << "  O:                   Toggle auto-orbit camera" "\n";
-      cout << "  H:                   Hide/show GUI controls" "\n";
-      cout << "  Up/Down Arrows:      Adjust samples per batch (1-256)" "\n";
-      cout << "  Left/Right Arrows:   Adjust light intensity (0.1-3.0)" "\n";
-      cout << "  ESC:                 Exit" "\n" "\n";
-      cout << "Sample accumulation: " << samples_per_batch << " samples per batch, up to " << max_samples
-           << " total samples" "\n";
-      cout << "Auto-accumulation: " << (auto_accumulate ? "ON" : "OFF")<<  "\n";
-   }
-
-   // Event handling
-   static bool pollEvent(SDL_Event &event) { return SDL_PollEvent(&event); }
-
-   // Getters
-   SDL_Window *getWindow() { return window; }
-   SDL_Renderer *getRenderer() { return renderer; }
-   SDL_Texture *getTexture() { return texture; }
-   SDL_Texture *getLogoTexture() { return logo_texture; }
-   const SDL_Rect &getLogoRect() const { return logo_rect; }
-   void *getFont() { return font; }
+   void toggleControls() { show_controls = !show_controls; }
    bool getShowControls() const { return show_controls; }
 
-   // Control visibility toggle
-   void toggleControls() { show_controls = !show_controls; }
+   void toggleHeaderCollapse()
+   {
+      collapse_headers = !collapse_headers;
+      reset_headers = true;
+   }
 
  private:
    int image_width;
    int image_height;
-   bool show_controls; // Flag to show/hide GUI controls
+   bool show_controls;
+   bool collapse_headers;
+   bool reset_headers;
 
    SDL_Window *window;
    SDL_Renderer *renderer;
    SDL_Texture *texture;
    SDL_Texture *logo_texture;
    SDL_Rect logo_rect;
-   void *font;
+   std::vector<float> sps_history;
+   std::vector<float> ms_history;
 
-   static void cleanupSDL()
-   {
-#ifdef SDL2_TTF_FOUND
-      TTF_Quit();
-#endif
-      SDL_Quit();
-   }
+   static void cleanupSDL() { SDL_Quit(); }
 
    void loadLogo()
    {
-      const auto relative_width = 0.3F; // Logo width relative to
-      //  image width
+      const auto relative_width = 0.3F;
       int logo_img_width, logo_img_height, logo_img_channels;
       unsigned char *logo_data = stbi_load("../resources/ISC Logo inline white v3 - 1500px.png", &logo_img_width,
                                            &logo_img_height, &logo_img_channels, 4);
@@ -405,165 +358,5 @@ class SDLGuiHandler
          stbi_image_free(logo_data);
       }
    }
-
-   void loadFont()
-   {
-#ifdef SDL2_TTF_FOUND
-      font = TTF_OpenFont("/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf", 16);
-      if (font == nullptr)
-      {
-         font = TTF_OpenFont("/usr/share/fonts/TTF/DejaVuSansMono-Bold.ttf", 16);
-      }
-      if (font == nullptr)
-      {
-         cerr << "Warning: Could not load font: " << TTF_GetError()<<  "\n";
-      }
-#endif
-   }
-
-#ifdef SDL2_TTF_FOUND
-   // Helper function to render text to screen
-   void renderTextToScreen(TTF_Font *ttf_font, const char *text, SDL_Color color, int x, int y)
-   {
-      SDL_Surface *text_surface = TTF_RenderText_Blended(ttf_font, text, color);
-      if (text_surface != nullptr)
-      {
-         SDL_Texture *text_texture = SDL_CreateTextureFromSurface(renderer, text_surface);
-         if (text_texture != nullptr)
-         {
-            SDL_Rect text_rect = {x, y, text_surface->w, text_surface->h};
-            SDL_RenderCopy(renderer, text_texture, nullptr, &text_rect);
-            SDL_DestroyTexture(text_texture);
-         }
-         SDL_FreeSurface(text_surface);
-      }
-   }
-
-   // Helper function to draw semi-transparent panel background
-   void drawPanelBackground(int x, int y, int w, int h)
-   {
-      SDL_Rect bg_rect = {x - 5, y - 5, w + 10, h + 10};
-      SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
-      SDL_SetRenderDrawColor(renderer, 0, 0, 0, 200);
-      SDL_RenderFillRect(renderer, &bg_rect);
-   }
-
-   // Helper function to draw a generic slider with customizable appearance
-   void drawGenericSlider(TTF_Font *ttf_font, int padding, int y, int control_width, const char *label_format,
-                          float value, float min_val, float max_val, SDL_Color fill_color,
-                          SliderBounds &slider_bounds, int label_width)
-   {
-      char label[64];
-      snprintf(label, sizeof(label), label_format, value);
-
-      SDL_Color white = {255, 255, 255, 255};
-      renderTextToScreen(ttf_font, label, white, padding, y);
-
-      int slider_x = padding + label_width;
-      int slider_w = control_width - label_width;
-      SDL_Rect slider_bg = {slider_x, y + 8, slider_w, 8};
-      SDL_SetRenderDrawColor(renderer, 60, 60, 60, 255);
-      SDL_RenderFillRect(renderer, &slider_bg);
-
-      slider_bounds.x = slider_x;
-      slider_bounds.y = y + 8;
-      slider_bounds.width = slider_w;
-      slider_bounds.height = 8;
-      slider_bounds.min_val = min_val;
-      slider_bounds.max_val = max_val;
-
-      float ratio = (value - min_val) / (max_val - min_val);
-      int fill_w = static_cast<int>(slider_w * ratio);
-      SDL_Rect slider_fill = {slider_x, y + 8, fill_w, 8};
-      SDL_SetRenderDrawColor(renderer, fill_color.r, fill_color.g, fill_color.b, fill_color.a);
-      SDL_RenderFillRect(renderer, &slider_fill);
-
-      int handle_x = slider_x + fill_w - 3;
-      SDL_Rect handle = {handle_x, y + 4, 6, 16};
-      SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-      SDL_RenderFillRect(renderer, &handle);
-   }
-
-   void drawToggleButton(TTF_Font *ttf_font, int x, int y, bool enabled, SDL_Color white, SDL_Rect &button_rect,
-                         const char *label, int max_width)
-   {
-      int box_size = 14;
-      int box_y = y + 5;
-      SDL_Rect checkbox_bg = {x, box_y, box_size, box_size};
-
-      SDL_SetRenderDrawColor(renderer, 200, 200, 200, 255);
-      SDL_RenderDrawRect(renderer, &checkbox_bg);
-
-      SDL_Rect checkbox_fill = {x + 2, box_y + 2, box_size - 4, box_size - 4};
-      if (enabled)
-      {
-         SDL_SetRenderDrawColor(renderer, 0, 200, 0, 255);
-      }
-      else
-      {
-         SDL_SetRenderDrawColor(renderer, 200, 0, 0, 255);
-      }
-      SDL_RenderFillRect(renderer, &checkbox_fill);
-
-      renderTextToScreen(ttf_font, label, white, x + box_size + 8, y + 5);
-
-      button_rect.x = x;
-      button_rect.y = box_y;
-      button_rect.w = std::min(max_width, box_size + 8 + 80);
-      button_rect.h = box_size;
-   }
-
-
-
-   void drawSamplesSlider(TTF_Font *ttf_font, int padding, int y, int control_width, int samples_per_batch,
-                          SliderBounds &samples_slider, int label_width)
-   {
-      SDL_Color color = {100, 150, 255, 255};
-      drawGenericSlider(ttf_font, padding, y, control_width, "Samples: %d", static_cast<float>(samples_per_batch), 1.0f, 256.0f, color, samples_slider, label_width);
-   }
-
-   void drawLightSlider(TTF_Font *ttf_font, int padding, int y, int control_width, float light_intensity,
-                        SliderBounds &intensity_slider, int label_width)
-   {
-      SDL_Color color = {255, 200, 100, 255};
-      drawGenericSlider(ttf_font, padding, y, control_width, "Light: %.1f", light_intensity, 0.1f, 3.0f, color, intensity_slider, label_width);
-   }
-
-   void drawBackgroundSlider(TTF_Font *ttf_font, int padding, int y, int control_width, float background_intensity,
-                             SliderBounds &background_slider, int label_width)
-   {
-      SDL_Color color = {150, 100, 255, 255};
-      drawGenericSlider(ttf_font, padding, y, control_width, "Background: %.2f", background_intensity, 0.0f, 3.0f, color, background_slider, label_width);
-   }
-
-   void drawFuzzinessSlider(TTF_Font *ttf_font, int padding, int y, int control_width, float metal_fuzziness,
-                            SliderBounds &fuzziness_slider, int label_width)
-   {
-      SDL_Color color = {200, 200, 100, 255};
-      drawGenericSlider(ttf_font, padding, y, control_width, "Metal fuzz: %.2f", metal_fuzziness, 0.0f, 5.0f, color, fuzziness_slider, label_width);
-   }
-
-   void drawGlassIORSlider(TTF_Font *ttf_font, int padding, int y, int control_width, float glass_ior,
-                           SliderBounds &glass_ior_slider, int label_width)
-   {
-      SDL_Color color = {100, 200, 255, 255};
-      drawGenericSlider(ttf_font, padding, y, control_width, "Glass IOR: %.2f", glass_ior, 1.0f, 2.5f, color, glass_ior_slider, label_width);
-   }
-
-   void drawDOFApertureSlider(TTF_Font *ttf_font, int padding, int y, int control_width, float dof_aperture,
-                              SliderBounds &aperture_slider, int label_width)
-   {
-      SDL_Color color = {100, 200, 255, 255};
-      drawGenericSlider(ttf_font, padding, y, control_width, "DOF Aperture: %.2f", dof_aperture, 0.0f, 1.0f, color, aperture_slider, label_width);
-   }
-
-   void drawDOFFocusSlider(TTF_Font *ttf_font, int padding, int y, int control_width, float dof_focus_distance,
-                           SliderBounds &focus_slider, int label_width)
-   {
-      SDL_Color color = {255, 150, 100, 255};
-      drawGenericSlider(ttf_font, padding, y, control_width, "DOF Focus: %.1f", dof_focus_distance, 1.0f, 50.0f, color, focus_slider, label_width);
-   }
-#endif
 };
-
 #endif // SDL2_FOUND
