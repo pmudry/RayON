@@ -11,6 +11,10 @@
 #include "gpu_renderers/renderer_cuda_progressive_host.hpp"
 #endif
 
+#ifdef OPTIX_FOUND
+#include "gpu_renderers/renderer_optix_host.hpp"
+#endif
+
 #include "render/render_coordinator.hpp"
 
 #include <chrono>
@@ -81,6 +85,9 @@ ProgramArgs parseInput(int argc, char *argv[])
          if (strcmp(argv[i + 1], "0") == 0 || strcmp(argv[i + 1], "1") == 0 || strcmp(argv[i + 1], "2") == 0
 #ifdef SDL2_FOUND
              || strcmp(argv[i + 1], "3") == 0
+#endif
+#ifdef OPTIX_FOUND
+             || strcmp(argv[i + 1], "4") == 0
 #endif
          )
          {
@@ -209,9 +216,15 @@ int main(int argc, char *argv[])
 #ifdef SDL2_FOUND
       cout << "\t3. CUDA GPU with interactive SDL display" << "\n";
 #endif
+#ifdef OPTIX_FOUND
+      cout << "\t4. OptiX GPU (hardware RT cores)" << "\n";
+#endif
       cout << "Enter choice (0, 1, 2"
 #ifdef SDL2_FOUND
            << ", 3"
+#endif
+#ifdef OPTIX_FOUND
+           << ", 4"
 #endif
            << "): ";
       string input;
@@ -275,6 +288,15 @@ int main(int argc, char *argv[])
       settings.target_fps = args.target_fps;
       settings.adaptive_depth = args.adaptive_depth;
       renderer.setSettings(settings);
+      coordinator.render(renderer, localImage);
+      break;
+   }
+#endif
+#ifdef OPTIX_FOUND
+   case 4:
+   {
+      cout << "Using OptiX GPU rendering (hardware RT cores)..." << "\n";
+      RendererOptiX renderer;
       coordinator.render(renderer, localImage);
       break;
    }

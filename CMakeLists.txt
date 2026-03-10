@@ -82,6 +82,7 @@ set(SOURCE_RAYON
     src/rayon/gpu_renderers/scene_builder_cuda.cu
     src/rayon/gpu_renderers/shaders/render_acc_kernel.cu
     src/rayon/gpu_renderers/shaders/shader_golf.cu
+    src/rayon/gpu_renderers/optix/optix_renderer.cu
 )
 
 # Enable colored compiler output for Make builds
@@ -223,4 +224,66 @@ if(CUDA_FOUND)
     target_link_options(rayon PRIVATE
         $<DEVICE_LINK:-Xnvlink=--suppress-stack-size-warning,-w>
     )
+
+    #-------------------------------------------------------------------
+    # OptiX SDK (optional — enables hardware RT core rendering)
+    #-------------------------------------------------------------------
+    set(OPTIX_SEARCH_PATHS
+        $ENV{OptiX_INSTALL_DIR}
+        "$ENV{HOME}/Downloads/NVIDIA-OptiX-SDK-9.0.0-linux64-aarch64"
+        "$ENV{HOME}/Downloads/NVIDIA-OptiX-SDK-8.0.0-linux64-aarch64"
+        "/usr/local/NVIDIA-OptiX-SDK"
+        "/opt/optix"
+    )
+
+    find_path(OptiX_INCLUDE_DIR
+        NAMES optix.h
+        PATHS ${OPTIX_SEARCH_PATHS}
+        PATH_SUFFIXES include
+    )
+
+    if(OptiX_INCLUDE_DIR)
+        message(STATUS "OptiX SDK found: ${OptiX_INCLUDE_DIR}")
+        target_include_directories(rayon PRIVATE ${OptiX_INCLUDE_DIR})
+        add_definitions(-DOPTIX_FOUND)
+
+        # Compile OptiX device programs (.cu → .ptx)
+        # These are NOT compiled as regular CUDA — they produce PTX loaded at runtime by OptiX
+        set(OPTIX_PTX_SOURCE "${CMAKE_SOURCE_DIR}/src/rayon/gpu_renderers/optix/optix_programs.cu")
+        set(OPTIX_PTX_OUTPUT "${CMAKE_BINARY_DIR}/optix_programs.ptx")
+
+        # Collect include dirs as -I flags for nvcc
+        set(OPTIX_INCLUDE_FLAGS "")
+        foreach(dir ${INCLUDE_DIRS})
+            list(APPEND OPTIX_INCLUDE_FLAGS "-I${dir}")
+        endforeach()
+
+        add_custom_command(
+            OUTPUT ${OPTIX_PTX_OUTPUT}
+            COMMAND ${CMAKE_CUDA_COMPILER}
+                -ptx
+                -std=c++17
+                --use_fast_math
+                -O3
+                -I${OptiX_INCLUDE_DIR}
+                ${OPTIX_INCLUDE_FLAGS}
+                -o ${OPTIX_PTX_OUTPUT}
+                ${OPTIX_PTX_SOURCE}
+            DEPENDS ${OPTIX_PTX_SOURCE}
+                    "${CMAKE_SOURCE_DIR}/src/rayon/gpu_renderers/optix/optix_params.h"
+            COMMENT "Compiling OptiX PTX: optix_programs.cu -> optix_programs.ptx"
+            VERBATIM
+        )
+        add_custom_target(optix_ptx ALL DEPENDS ${OPTIX_PTX_OUTPUT})
+        add_dependencies(rayon optix_ptx)
+
+        # Link against CUDA driver API (needed for OptiX)
+        find_library(CUDA_DRIVER_LIBRARY cuda PATHS /usr/local/cuda/lib64 /usr/lib/aarch64-linux-gnu)
+        if(CUDA_DRIVER_LIBRARY)
+            target_link_libraries(rayon ${CUDA_DRIVER_LIBRARY})
+        endif()
+    else()
+        message(STATUS "OptiX SDK not found — OptiX renderer will be disabled")
+        message(STATUS "Set OptiX_INSTALL_DIR or download from https://developer.nvidia.com/optix")
+    endif()
 endif()
