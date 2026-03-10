@@ -13,6 +13,7 @@
 #include "render/renderer_interface.hpp"
 #include "renderer_cuda_host.hpp"
 #include "scene_builder.hpp"
+#include "scene_factory.hpp"
 #include "sdl_gui_controls.hpp"
 #include "sdl_gui_handler.hpp"
 
@@ -32,6 +33,7 @@ class RendererCUDAProgressive : public IRenderer
       bool auto_accumulate = true;
       int target_fps = 60;
       bool adaptive_depth = false;
+      GuiTheme theme = GuiTheme::NORD;
    };
 
    RendererCUDAProgressive() = default;
@@ -71,7 +73,7 @@ class RendererCUDAProgressive : public IRenderer
       refreshCameraFrame();
 
       // Initialize GUI
-      SDLGuiHandler gui(target.width, target.height);
+      SDLGuiHandler gui(target.width, target.height, settings_.theme);
       if (!gui.initialize())
          return;
       int max_samples = camera.samples_per_pixel;
@@ -138,8 +140,15 @@ class RendererCUDAProgressive : public IRenderer
       void *d_rand_states = nullptr;
       void *d_accum_buffer = nullptr; // Persistent device accumulation buffer
 
-      // Build scene once
-      CudaScene::Scene *gpu_scene = Scene::CudaSceneBuilder::buildGPUScene(scene);
+      // Scene selection
+      static const char *scene_names[] = {"Default Scene", "Single Object", "Cornell Box (YAML)",
+                                          "Simple Scene (YAML)", "BVH Test (YAML)"};
+      static const int scene_count = 5;
+      int current_scene_index = 0; // Start with whatever was passed in
+      Scene::SceneDescription active_scene = scene; // Mutable copy
+
+      // Build initial GPU scene
+      CudaScene::Scene *gpu_scene = Scene::CudaSceneBuilder::buildGPUScene(active_scene);
 
       // Timing for auto-orbit
       auto last_frame_time = std::chrono::high_resolution_clock::now();
@@ -165,12 +174,6 @@ class RendererCUDAProgressive : public IRenderer
                    event.type == SDL_MOUSEMOTION || event.type == SDL_MOUSEWHEEL)
                   continue;
             }
-            if (io.WantCaptureKeyboard)
-            {
-               if (event.type == SDL_KEYDOWN || event.type == SDL_KEYUP)
-                  continue;
-            }
-
             if (event.type == SDL_KEYDOWN)
             {
                if (event.key.keysym.sym == SDLK_h)
@@ -289,7 +292,7 @@ class RendererCUDAProgressive : public IRenderer
 
             if (is_camera_moving)
             {
-               adaptive_samples_per_batch = std::max(motion_samples, adaptive_samples_per_batch);
+               adaptive_samples_per_batch = motion_samples;
             }
             else
             {
@@ -306,7 +309,10 @@ class RendererCUDAProgressive : public IRenderer
 
             if (frame_time.count() > 0.0f)
             {
-               current_sps = (static_cast<float>(adaptive_samples_per_batch) * 1000.0f) / frame_time.count();
+               // SPS = total samples computed per second (samples_per_pixel * pixel_count / time)
+               float total_samples = static_cast<float>(adaptive_samples_per_batch) * image_width * image_height;
+               current_sps = (total_samples * 1000.0f) / frame_time.count();
+               // ms per sample-pass (one pass = all pixels get one more sample)
                current_ms_per_sample = frame_time.count() / static_cast<float>(adaptive_samples_per_batch);
             }
 
@@ -331,6 +337,7 @@ class RendererCUDAProgressive : public IRenderer
          float old_background = background_intensity;
          float old_fuzz = metal_fuzziness;
          float old_ior = glass_refraction_index;
+         int old_scene_index = current_scene_index;
 
          // Draw ImGui UI — passes pointers so ImGui can modify values directly
          bool auto_orbit = camera_control.isAutoOrbitEnabled();
@@ -338,7 +345,7 @@ class RendererCUDAProgressive : public IRenderer
          gui.updateDisplay(display_image, image_channels, current_sps, current_ms_per_sample, current_samples,
                            &dof_enabled, &dof_aperture, &dof_focus_distance, &light_intensity, &background_intensity,
                            &metal_fuzziness, &glass_refraction_index, &samples_per_batch_float, &accumulation_enabled,
-                           &auto_orbit);
+                           &auto_orbit, &current_scene_index, scene_names, scene_count);
 
          if (auto_orbit != camera_control.isAutoOrbitEnabled())
          {
@@ -347,6 +354,38 @@ class RendererCUDAProgressive : public IRenderer
 
          gui.drawLogo();
          gui.present();
+
+         // Handle scene change from UI
+         if (current_scene_index != old_scene_index)
+         {
+            std::cout << "Switching to scene: " << scene_names[current_scene_index] << std::endl;
+            switch (current_scene_index)
+            {
+            case 0:
+               active_scene = Scene::SceneFactory::createDefaultScene();
+               break;
+            case 1:
+               active_scene = Scene::SceneFactory::singleObjectScene();
+               break;
+            case 2:
+               active_scene = Scene::SceneFactory::fromYAML("../resources/cornell_box.yaml");
+               break;
+            case 3:
+               active_scene = Scene::SceneFactory::fromYAML("../resources/simple_scene.yaml");
+               break;
+            case 4:
+               active_scene = Scene::SceneFactory::fromYAML("../resources/bvh_test_scene.yaml");
+               break;
+            }
+
+            // Rebuild GPU scene
+            Scene::CudaSceneBuilder::freeGPUScene(gpu_scene);
+            gpu_scene = Scene::CudaSceneBuilder::buildGPUScene(active_scene);
+
+            // Reset rendering state
+            camera_changed = true;
+            applySceneSettings();
+         }
 
          // Detect if ImGui changed any scene parameter
          if (dof_enabled != old_dof || dof_aperture != old_aperture || dof_focus_distance != old_focus ||
@@ -373,8 +412,7 @@ class RendererCUDAProgressive : public IRenderer
 
       // Cleanup scene
       Scene::CudaSceneBuilder::freeGPUScene(gpu_scene);
-
-      gui.cleanup();
+      // gui is cleaned up by its destructor
    }
 
  private:

@@ -30,6 +30,31 @@ using namespace utils;
 
 static constexpr const char *current_build_configuration() { return RT_BUILD_TYPE_STRING; }
 
+#ifdef SDL2_FOUND
+static GuiTheme parseThemeName(const char *name)
+{
+   if (!name)
+      return GuiTheme::NORD;
+   std::string s(name);
+   // Convert to lowercase for case-insensitive matching
+   for (auto &ch : s)
+      ch = static_cast<char>(tolower(ch));
+   if (s == "light")
+      return GuiTheme::LIGHT;
+   if (s == "classic")
+      return GuiTheme::CLASSIC;
+   if (s == "nord")
+      return GuiTheme::NORD;
+   if (s == "dracula")
+      return GuiTheme::DRACULA;
+   if (s == "gruvbox")
+      return GuiTheme::GRUVBOX;
+   if (s == "catppuccin" || s == "mocha")
+      return GuiTheme::CATPPUCCIN;
+   return GuiTheme::NORD;
+}
+#endif
+
 struct ProgramArgs
 {
    int rendering_method = -1; // -1 means not specified, will ask user
@@ -41,6 +66,7 @@ struct ProgramArgs
    int target_fps = 60;              // Target FPS for interactive rendering (default: 60)
    bool adaptive_depth = false;      // Enable adaptive depth (default: off)
    const char *scene_file = nullptr; // Optional scene file to load
+   const char *theme = nullptr;      // Optional GUI theme name
 };
 
 void dumpHelp()
@@ -60,6 +86,7 @@ void dumpHelp()
    cout << "                         Lower values = better quality preview but less smooth motion\n";
    cout << "  --adaptive-depth       Enable adaptive depth in interactive mode (progressively increases max depth)\n";
    cout << "  --no-auto-accumulate   Disable automatic sample accumulation in interactive mode\n";
+   cout << "  --theme <name>         Set GUI theme (dark, light, classic, nord, dracula, gruvbox, catppuccin)\n";
 }
 
 ProgramArgs parseInput(int argc, char *argv[])
@@ -155,6 +182,10 @@ ProgramArgs parseInput(int argc, char *argv[])
             args.samples = -1; // Indicate error
             return args;
          }
+      }
+      else if (strcmp(argv[i], "--theme") == 0 && i + 1 < argc)
+      {
+         args.theme = argv[++i];
       }
       else if (argv[i][0] == '-')
       {
@@ -279,7 +310,7 @@ int main(int argc, char *argv[])
    case 3:
    {
       cout << "Using CUDA GPU with interactive SDL display..." << "\n";
-      camera.samples_per_pixel = 2000;
+      camera.samples_per_pixel = 10000;
       RendererCUDAProgressive renderer;
       RendererCUDAProgressive::Settings settings;
       settings.samples_per_batch = args.start_samples;
@@ -287,6 +318,7 @@ int main(int argc, char *argv[])
       settings.auto_accumulate = args.auto_accumulate;
       settings.target_fps = args.target_fps;
       settings.adaptive_depth = args.adaptive_depth;
+      settings.theme = parseThemeName(args.theme);
       renderer.setSettings(settings);
       coordinator.render(renderer, localImage);
       break;

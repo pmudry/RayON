@@ -24,6 +24,7 @@ CompileFlags:
     # The include section is automatically generated my cmake at build, do NOT modify.
     - -I/home/pmudry/git/RayON/src
     - -I/home/pmudry/git/RayON/src/external
+    - -I/home/pmudry/git/RayON/src/external/imgui
     - -I/home/pmudry/git/RayON/src/rayon
     - -I/home/pmudry/git/RayON/src/rayon/camera
     - -I/home/pmudry/git/RayON/src/rayon/camera/sdl

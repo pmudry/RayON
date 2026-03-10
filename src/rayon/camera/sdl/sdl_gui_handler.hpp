@@ -8,6 +8,7 @@
  * - Logo loading and overlay
  * - ImGui context initialization and frame rendering
  * - Basic SDL event polling
+ * - Color theme selection
  */
 #pragma once
 
@@ -35,12 +36,27 @@ using std::endl;
 using std::string;
 using std::vector;
 
+enum class GuiTheme : int
+{
+   DARK = 0,
+   LIGHT,
+   CLASSIC,
+   NORD,
+   DRACULA,
+   GRUVBOX,
+   CATPPUCCIN,
+   COUNT // must be last
+};
+
+static const char *themeNames[] = {"Dark", "Light", "Classic", "Nord", "Dracula", "Gruvbox", "Catppuccin Mocha"};
+
 class SDLGuiHandler
 {
  public:
-   SDLGuiHandler(int image_width, int image_height)
+   SDLGuiHandler(int image_width, int image_height, GuiTheme initial_theme = GuiTheme::NORD)
        : image_width(image_width), image_height(image_height), show_controls(true), collapse_headers(false),
-         reset_headers(false), window(nullptr), renderer(nullptr), texture(nullptr), logo_texture(nullptr)
+         reset_headers(false), current_theme(initial_theme), initialized(false), window(nullptr), renderer(nullptr),
+         texture(nullptr), logo_texture(nullptr)
    {
    }
 
@@ -93,19 +109,21 @@ class SDLGuiHandler
       ImGuiIO &io = ImGui::GetIO();
       (void)io;
       io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-      ImGui::StyleColorsDark();
 
-      // Semi-transparent window backgrounds
-      ImGuiStyle &style = ImGui::GetStyle();
-      style.Colors[ImGuiCol_WindowBg].w = 0.35f;
+      applyTheme(current_theme);
 
       ImGui_ImplSDL2_InitForSDLRenderer(window, renderer);
       ImGui_ImplSDLRenderer2_Init(renderer);
+      initialized = true;
       return true;
    }
 
    void cleanup()
    {
+      if (!initialized)
+         return;
+      initialized = false;
+
       ImGui_ImplSDLRenderer2_Shutdown();
       ImGui_ImplSDL2_Shutdown();
       ImGui::DestroyContext();
@@ -143,7 +161,8 @@ class SDLGuiHandler
    void updateDisplay(const vector<unsigned char> &image, int image_channels, float sps, float ms_per_sample, int spp,
                       bool *dof_enabled, float *aperture, float *focus_dist, float *light_intensity,
                       float *background_intensity, float *metal_fuzziness, float *glass_ior,
-                      float *samples_per_batch, bool *auto_accumulate, bool *auto_orbit)
+                      float *samples_per_batch, bool *auto_accumulate, bool *auto_orbit,
+                      int *scene_index, const char *const *scene_names, int scene_count)
    {
       SDL_UpdateTexture(texture, nullptr, image.data(), image_width * image_channels);
       SDL_RenderClear(renderer);
@@ -163,19 +182,29 @@ class SDLGuiHandler
             // --- Performance Monitoring ---
             if (reset_headers)
                ImGui::SetNextItemOpen(!collapse_headers);
-            if (ImGui::CollapsingHeader("Performance Monitoring", ImGuiTreeNodeFlags_DefaultOpen))
+            if (ImGui::CollapsingHeader("Performance Monitoring"))
             {
                ImGui::Text("SPP: %d", spp);
-               ImGui::Text("Throughput: %.0f SPS", sps);
-               ImGui::Text("Time/Sample: %.3f ms", ms_per_sample);
+               if (sps >= 1e9f)
+                  ImGui::Text("Throughput: %.2f GS/s", sps * 1e-9f);
+               else if (sps >= 1e6f)
+                  ImGui::Text("Throughput: %.2f MS/s", sps * 1e-6f);
+               else if (sps >= 1e3f)
+                  ImGui::Text("Throughput: %.1f kS/s", sps * 1e-3f);
+               else
+                  ImGui::Text("Throughput: %.0f S/s", sps);
+               ImGui::Text("Time/Pass: %.3f ms", ms_per_sample);
 
-               sps_history.push_back(sps);
-               ms_history.push_back(ms_per_sample);
-
-               if (sps_history.size() > 500)
+               if (sps > 0.0f)
                {
-                  sps_history.erase(sps_history.begin());
-                  ms_history.erase(ms_history.begin());
+                  sps_history.push_back(sps);
+                  ms_history.push_back(ms_per_sample);
+
+                  if (sps_history.size() > 500)
+                  {
+                     sps_history.erase(sps_history.begin());
+                     ms_history.erase(ms_history.begin());
+                  }
                }
 
                if (!sps_history.empty())
@@ -199,10 +228,9 @@ class SDLGuiHandler
                   ImGui::PopStyleColor();
                }
 
-               if (samples_per_batch && auto_accumulate)
+               if (auto_accumulate)
                {
                   ImGui::Separator();
-                  ImGui::SliderFloat("Samples/Batch", samples_per_batch, 1.0f, 256.0f, "%.0f");
                   ImGui::Checkbox("Auto-Accumulate (Space)", auto_accumulate);
                }
             }
@@ -245,6 +273,28 @@ class SDLGuiHandler
                }
             }
 
+            // --- Scene Selection ---
+            if (scene_index && scene_names && scene_count > 0)
+            {
+               if (reset_headers)
+                  ImGui::SetNextItemOpen(!collapse_headers);
+               if (ImGui::CollapsingHeader("Scene Selection", ImGuiTreeNodeFlags_DefaultOpen))
+               {
+                  ImGui::Combo("Scene", scene_index, scene_names, scene_count);
+               }
+            }
+
+            // --- Appearance ---
+            if (ImGui::CollapsingHeader("Appearance"))
+            {
+               int theme_idx = static_cast<int>(current_theme);
+               if (ImGui::Combo("Theme", &theme_idx, themeNames, static_cast<int>(GuiTheme::COUNT)))
+               {
+                  current_theme = static_cast<GuiTheme>(theme_idx);
+                  applyTheme(current_theme);
+               }
+            }
+
             // --- Help ---
             if (ImGui::CollapsingHeader("Controls & Help"))
             {
@@ -284,7 +334,7 @@ class SDLGuiHandler
 
    void present() { SDL_RenderPresent(renderer); }
 
-   // Event handling — routes to ImGui first
+   // Event handling - routes to ImGui first
    static bool pollEvent(SDL_Event &event)
    {
       bool has_event = SDL_PollEvent(&event);
@@ -310,6 +360,8 @@ class SDLGuiHandler
    bool show_controls;
    bool collapse_headers;
    bool reset_headers;
+   GuiTheme current_theme;
+   bool initialized;
 
    SDL_Window *window;
    SDL_Renderer *renderer;
@@ -320,6 +372,129 @@ class SDLGuiHandler
    std::vector<float> ms_history;
 
    static void cleanupSDL() { SDL_Quit(); }
+
+   void applyTheme(GuiTheme theme)
+   {
+      ImGuiStyle &style = ImGui::GetStyle();
+
+      switch (theme)
+      {
+      case GuiTheme::LIGHT:
+         ImGui::StyleColorsLight();
+         style.Colors[ImGuiCol_WindowBg].w = 0.60f;
+         break;
+
+      case GuiTheme::CLASSIC:
+         ImGui::StyleColorsClassic();
+         style.Colors[ImGuiCol_WindowBg].w = 0.45f;
+         break;
+
+      case GuiTheme::NORD:
+      {
+         ImGui::StyleColorsDark();
+         ImVec4 *c = style.Colors;
+         // Nord palette: polar night + snow storm + frost
+         c[ImGuiCol_WindowBg] = ImVec4(0.18f, 0.20f, 0.25f, 0.45f);
+         c[ImGuiCol_Header] = ImVec4(0.26f, 0.30f, 0.37f, 0.80f);
+         c[ImGuiCol_HeaderHovered] = ImVec4(0.33f, 0.37f, 0.44f, 0.80f);
+         c[ImGuiCol_HeaderActive] = ImVec4(0.37f, 0.42f, 0.50f, 0.80f);
+         c[ImGuiCol_FrameBg] = ImVec4(0.22f, 0.25f, 0.31f, 0.70f);
+         c[ImGuiCol_FrameBgHovered] = ImVec4(0.26f, 0.30f, 0.37f, 0.70f);
+         c[ImGuiCol_FrameBgActive] = ImVec4(0.33f, 0.37f, 0.44f, 0.70f);
+         c[ImGuiCol_SliderGrab] = ImVec4(0.53f, 0.75f, 0.82f, 1.00f);
+         c[ImGuiCol_SliderGrabActive] = ImVec4(0.56f, 0.74f, 0.73f, 1.00f);
+         c[ImGuiCol_CheckMark] = ImVec4(0.53f, 0.75f, 0.82f, 1.00f);
+         c[ImGuiCol_Button] = ImVec4(0.26f, 0.30f, 0.37f, 0.80f);
+         c[ImGuiCol_ButtonHovered] = ImVec4(0.33f, 0.37f, 0.44f, 0.80f);
+         c[ImGuiCol_ButtonActive] = ImVec4(0.37f, 0.42f, 0.50f, 0.80f);
+         c[ImGuiCol_TitleBg] = ImVec4(0.18f, 0.20f, 0.25f, 1.00f);
+         c[ImGuiCol_TitleBgActive] = ImVec4(0.22f, 0.25f, 0.31f, 1.00f);
+         c[ImGuiCol_Text] = ImVec4(0.85f, 0.87f, 0.91f, 1.00f);
+         break;
+      }
+
+      case GuiTheme::DRACULA:
+      {
+         ImGui::StyleColorsDark();
+         ImVec4 *c = style.Colors;
+         c[ImGuiCol_WindowBg] = ImVec4(0.16f, 0.16f, 0.21f, 0.45f);
+         c[ImGuiCol_Header] = ImVec4(0.27f, 0.22f, 0.39f, 0.80f);
+         c[ImGuiCol_HeaderHovered] = ImVec4(0.39f, 0.30f, 0.55f, 0.80f);
+         c[ImGuiCol_HeaderActive] = ImVec4(0.44f, 0.35f, 0.60f, 0.80f);
+         c[ImGuiCol_FrameBg] = ImVec4(0.21f, 0.20f, 0.28f, 0.70f);
+         c[ImGuiCol_FrameBgHovered] = ImVec4(0.27f, 0.22f, 0.39f, 0.70f);
+         c[ImGuiCol_FrameBgActive] = ImVec4(0.39f, 0.30f, 0.55f, 0.70f);
+         c[ImGuiCol_SliderGrab] = ImVec4(0.74f, 0.58f, 0.98f, 1.00f);
+         c[ImGuiCol_SliderGrabActive] = ImVec4(1.00f, 0.47f, 0.66f, 1.00f);
+         c[ImGuiCol_CheckMark] = ImVec4(0.74f, 0.58f, 0.98f, 1.00f);
+         c[ImGuiCol_Button] = ImVec4(0.27f, 0.22f, 0.39f, 0.80f);
+         c[ImGuiCol_ButtonHovered] = ImVec4(0.39f, 0.30f, 0.55f, 0.80f);
+         c[ImGuiCol_ButtonActive] = ImVec4(0.44f, 0.35f, 0.60f, 0.80f);
+         c[ImGuiCol_TitleBg] = ImVec4(0.16f, 0.16f, 0.21f, 1.00f);
+         c[ImGuiCol_TitleBgActive] = ImVec4(0.21f, 0.20f, 0.28f, 1.00f);
+         c[ImGuiCol_Text] = ImVec4(0.97f, 0.97f, 0.95f, 1.00f);
+         break;
+      }
+
+      case GuiTheme::GRUVBOX:
+      {
+         ImGui::StyleColorsDark();
+         ImVec4 *c = style.Colors;
+         c[ImGuiCol_WindowBg] = ImVec4(0.16f, 0.15f, 0.13f, 0.45f);
+         c[ImGuiCol_Header] = ImVec4(0.31f, 0.24f, 0.16f, 0.80f);
+         c[ImGuiCol_HeaderHovered] = ImVec4(0.40f, 0.31f, 0.20f, 0.80f);
+         c[ImGuiCol_HeaderActive] = ImVec4(0.50f, 0.38f, 0.24f, 0.80f);
+         c[ImGuiCol_FrameBg] = ImVec4(0.20f, 0.19f, 0.17f, 0.70f);
+         c[ImGuiCol_FrameBgHovered] = ImVec4(0.31f, 0.24f, 0.16f, 0.70f);
+         c[ImGuiCol_FrameBgActive] = ImVec4(0.40f, 0.31f, 0.20f, 0.70f);
+         c[ImGuiCol_SliderGrab] = ImVec4(0.98f, 0.72f, 0.20f, 1.00f);
+         c[ImGuiCol_SliderGrabActive] = ImVec4(0.84f, 0.60f, 0.13f, 1.00f);
+         c[ImGuiCol_CheckMark] = ImVec4(0.72f, 0.84f, 0.15f, 1.00f);
+         c[ImGuiCol_Button] = ImVec4(0.31f, 0.24f, 0.16f, 0.80f);
+         c[ImGuiCol_ButtonHovered] = ImVec4(0.40f, 0.31f, 0.20f, 0.80f);
+         c[ImGuiCol_ButtonActive] = ImVec4(0.50f, 0.38f, 0.24f, 0.80f);
+         c[ImGuiCol_TitleBg] = ImVec4(0.16f, 0.15f, 0.13f, 1.00f);
+         c[ImGuiCol_TitleBgActive] = ImVec4(0.20f, 0.19f, 0.17f, 1.00f);
+         c[ImGuiCol_Text] = ImVec4(0.92f, 0.86f, 0.70f, 1.00f);
+         break;
+      }
+
+      case GuiTheme::CATPPUCCIN:
+      {
+         ImGui::StyleColorsDark();
+         ImVec4 *c = style.Colors;
+         // Catppuccin Mocha palette
+         c[ImGuiCol_WindowBg] = ImVec4(0.12f, 0.12f, 0.18f, 0.45f);
+         c[ImGuiCol_Header] = ImVec4(0.18f, 0.19f, 0.29f, 0.80f);
+         c[ImGuiCol_HeaderHovered] = ImVec4(0.24f, 0.25f, 0.38f, 0.80f);
+         c[ImGuiCol_HeaderActive] = ImVec4(0.29f, 0.30f, 0.45f, 0.80f);
+         c[ImGuiCol_FrameBg] = ImVec4(0.18f, 0.19f, 0.29f, 0.70f);
+         c[ImGuiCol_FrameBgHovered] = ImVec4(0.24f, 0.25f, 0.38f, 0.70f);
+         c[ImGuiCol_FrameBgActive] = ImVec4(0.29f, 0.30f, 0.45f, 0.70f);
+         c[ImGuiCol_SliderGrab] = ImVec4(0.52f, 0.65f, 0.99f, 1.00f);
+         c[ImGuiCol_SliderGrabActive] = ImVec4(0.95f, 0.55f, 0.66f, 1.00f);
+         c[ImGuiCol_CheckMark] = ImVec4(0.65f, 0.89f, 0.63f, 1.00f);
+         c[ImGuiCol_Button] = ImVec4(0.18f, 0.19f, 0.29f, 0.80f);
+         c[ImGuiCol_ButtonHovered] = ImVec4(0.24f, 0.25f, 0.38f, 0.80f);
+         c[ImGuiCol_ButtonActive] = ImVec4(0.29f, 0.30f, 0.45f, 0.80f);
+         c[ImGuiCol_TitleBg] = ImVec4(0.12f, 0.12f, 0.18f, 1.00f);
+         c[ImGuiCol_TitleBgActive] = ImVec4(0.18f, 0.19f, 0.29f, 1.00f);
+         c[ImGuiCol_Text] = ImVec4(0.80f, 0.84f, 0.96f, 1.00f);
+         break;
+      }
+
+      case GuiTheme::DARK:
+      default:
+         ImGui::StyleColorsDark();
+         style.Colors[ImGuiCol_WindowBg].w = 0.35f;
+         break;
+      }
+
+      // Common style tweaks
+      style.WindowRounding = 4.0f;
+      style.FrameRounding = 2.0f;
+      style.GrabRounding = 2.0f;
+   }
 
    void loadLogo()
    {
