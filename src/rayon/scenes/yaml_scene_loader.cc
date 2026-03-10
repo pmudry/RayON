@@ -157,7 +157,7 @@ class SimpleYAMLParser
             material_index = 0;
             continue;
          }
-         else if (trimmed == "geometry:")
+         else if (trimmed == "geometry:" || trimmed == "geometries:")
          {
             in_materials = false;
             in_geometry = true;
@@ -180,6 +180,50 @@ class SimpleYAMLParser
                section_stack.clear();
                section_stack.push_back("geom" + to_string(geometry_index));
                geometry_index++;
+            }
+
+            // Handle flow-style inline maps: { key: val, key: val, ... }
+            if (!trimmed.empty() && trimmed.front() == '{' && trimmed.back() == '}')
+            {
+               string inner = trimmed.substr(1, trimmed.size() - 2);
+               // Split by comma, but respect brackets for arrays like [1,2,3]
+               vector<string> pairs;
+               int bracket_depth = 0;
+               string current;
+               for (char ch : inner)
+               {
+                  if (ch == '[')
+                     bracket_depth++;
+                  else if (ch == ']')
+                     bracket_depth--;
+                  if (ch == ',' && bracket_depth == 0)
+                  {
+                     pairs.push_back(current);
+                     current.clear();
+                  }
+                  else
+                  {
+                     current += ch;
+                  }
+               }
+               if (!current.empty())
+                  pairs.push_back(current);
+
+               for (const auto &pair : pairs)
+               {
+                  size_t cp = pair.find(':');
+                  if (cp != string::npos)
+                  {
+                     string k = trimWhitespace(pair.substr(0, cp));
+                     string v = trimWhitespace(pair.substr(cp + 1));
+                     string fk = k;
+                     for (const auto &s : section_stack)
+                        fk = s + "." + fk;
+                     if (!v.empty())
+                        values_[fk] = v;
+                  }
+               }
+               continue;
             }
          }
 
