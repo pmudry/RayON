@@ -154,6 +154,7 @@ class SimpleYAMLParser
          {
             in_materials = true;
             in_geometry = false;
+            section_stack.clear();
             material_index = 0;
             continue;
          }
@@ -161,7 +162,16 @@ class SimpleYAMLParser
          {
             in_materials = false;
             in_geometry = true;
+            section_stack.clear();
             geometry_index = 0;
+            continue;
+         }
+         else if (trimmed == "camera:" || trimmed == "settings:")
+         {
+            in_materials = false;
+            in_geometry = false;
+            section_stack.clear();
+            section_stack.push_back(trimmed.substr(0, trimmed.size() - 1)); // "camera" or "settings"
             continue;
          }
 
@@ -382,6 +392,10 @@ static bool loadGeometry(const SimpleYAMLParser &parser, SceneDescription &scene
       }
       int mat_id = it->second;
 
+      // Check visibility flag (default: true)
+      string vis_str = removeQuotes(parser.getString(prefix + ".visible", "true"));
+      bool visible = (vis_str != "false" && vis_str != "0");
+
       if (geom_type == "sphere")
       {
          Vec3 center = parser.getVec3(prefix + ".center");
@@ -404,7 +418,11 @@ static bool loadGeometry(const SimpleYAMLParser &parser, SceneDescription &scene
          scene.addRectangle(corner, u, v, mat_id);
       }
 
-      cout << "  Loaded " << geom_type << " with material " << mat_name << "\n";
+      // Apply visibility flag to the last added geometry
+      if (!scene.geometries.empty())
+         scene.geometries.back().visible = visible;
+
+      cout << "  Loaded " << geom_type << " with material " << mat_name << (visible ? "" : " (invisible)") << "\n";
    }
 
    return !scene.geometries.empty();
@@ -427,6 +445,29 @@ bool loadSceneFromYAML(const char *filename, SceneDescription &scene)
    scene.materials.clear();
    scene.geometries.clear();
    scene.meshes.clear();
+
+   // Load camera settings (optional)
+   if (parser.hasKey("camera.position"))
+      scene.camera_position = parser.getVec3("camera.position");
+   if (parser.hasKey("camera.look_at"))
+      scene.camera_look_at = parser.getVec3("camera.look_at");
+   if (parser.hasKey("camera.up"))
+      scene.camera_up = parser.getVec3("camera.up");
+   if (parser.hasKey("camera.fov"))
+      scene.camera_fov = parser.getFloat("camera.fov", 90.0f);
+
+   // Load scene settings (optional)
+   if (parser.hasKey("settings.background_color"))
+      scene.background_color = parser.getVec3("settings.background_color");
+   if (parser.hasKey("settings.ambient_light"))
+      scene.ambient_light = parser.getFloat("settings.ambient_light", 0.1f);
+   if (parser.hasKey("settings.background_intensity"))
+      scene.background_intensity = parser.getFloat("settings.background_intensity", 1.0f);
+   if (parser.hasKey("settings.use_bvh"))
+   {
+      string bvh_val = removeQuotes(parser.getString("settings.use_bvh", "false"));
+      scene.use_bvh = (bvh_val == "true" || bvh_val == "1");
+   }
 
    // Load materials first
    map<string, int> material_name_to_id;

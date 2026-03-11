@@ -285,6 +285,12 @@ int main(int argc, char *argv[])
 
    Camera camera(Vec3(0, 0, 0), image_width, image_height, CHANNELS, args.samples);
 
+   // Apply camera settings from scene description (YAML or factory)
+   camera.look_from = scene_desc.camera_position;
+   camera.look_at = scene_desc.camera_look_at;
+   camera.vup = scene_desc.camera_up;
+   camera.vfov = scene_desc.camera_fov;
+
    RenderCoordinator coordinator(camera, scene_desc);
 
    auto render_start = chrono::high_resolution_clock::now();

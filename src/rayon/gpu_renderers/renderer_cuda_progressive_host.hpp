@@ -180,6 +180,10 @@ class RendererCUDAProgressive : public IRenderer
                {
                   gui.toggleControls();
                }
+               else if (event.key.keysym.sym == SDLK_RETURN)
+               {
+                  gui.toggleWindowCollapse();
+               }
                else if (event.key.keysym.sym == SDLK_c)
                {
                   gui.toggleHeaderCollapse();
@@ -342,10 +346,13 @@ class RendererCUDAProgressive : public IRenderer
          // Draw ImGui UI — passes pointers so ImGui can modify values directly
          bool auto_orbit = camera_control.isAutoOrbitEnabled();
 
+         float cam_pos[3] = {(float)look_from.x(), (float)look_from.y(), (float)look_from.z()};
+         float cam_lookat[3] = {(float)look_at.x(), (float)look_at.y(), (float)look_at.z()};
          gui.updateDisplay(display_image, image_channels, current_sps, current_ms_per_sample, current_samples,
                            &dof_enabled, &dof_aperture, &dof_focus_distance, &light_intensity, &background_intensity,
                            &metal_fuzziness, &glass_refraction_index, &samples_per_batch_float, &accumulation_enabled,
-                           &auto_orbit, &current_scene_index, scene_names, scene_count);
+                           &auto_orbit, &current_scene_index, scene_names, scene_count,
+                           cam_pos, cam_lookat, (float)camera.vfov);
 
          if (auto_orbit != camera_control.isAutoOrbitEnabled())
          {
@@ -377,6 +384,16 @@ class RendererCUDAProgressive : public IRenderer
                active_scene = Scene::SceneFactory::fromYAML("../resources/bvh_test_scene.yaml");
                break;
             }
+
+            // Apply scene camera
+            look_from = active_scene.camera_position;
+            look_at = active_scene.camera_look_at;
+            camera.vup = active_scene.camera_up;
+            camera.vfov = active_scene.camera_fov;
+            camera_control.initializeCameraControls(look_from, look_at);
+
+            // Apply scene-specific rendering settings
+            background_intensity = active_scene.background_intensity;
 
             // Rebuild GPU scene
             Scene::CudaSceneBuilder::freeGPUScene(gpu_scene);

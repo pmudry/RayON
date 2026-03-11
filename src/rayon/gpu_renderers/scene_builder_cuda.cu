@@ -65,6 +65,7 @@ static CudaScene::Geometry convertGeometry(const GeometryDesc &desc)
    // Convert geometry type
    geom.type = static_cast<CudaScene::GeometryType>(static_cast<uint8_t>(desc.type));
    geom.material_id = desc.material_id;
+   geom.visible = desc.visible;
 
    // Convert bounding box
    geom.bounds_min = f3(static_cast<float>(desc.bounds_min.x()), static_cast<float>(desc.bounds_min.y()),

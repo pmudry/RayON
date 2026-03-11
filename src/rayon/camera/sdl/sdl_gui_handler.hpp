@@ -55,7 +55,7 @@ class SDLGuiHandler
  public:
    SDLGuiHandler(int image_width, int image_height, GuiTheme initial_theme = GuiTheme::NORD)
        : image_width(image_width), image_height(image_height), show_controls(true), collapse_headers(false),
-         reset_headers(false), current_theme(initial_theme), initialized(false), window(nullptr), renderer(nullptr),
+         reset_headers(false), window_collapse_requested(false), window_collapsed(false), current_theme(initial_theme), initialized(false), window(nullptr), renderer(nullptr),
          texture(nullptr), logo_texture(nullptr)
    {
    }
@@ -162,7 +162,8 @@ class SDLGuiHandler
                       bool *dof_enabled, float *aperture, float *focus_dist, float *light_intensity,
                       float *background_intensity, float *metal_fuzziness, float *glass_ior,
                       float *samples_per_batch, bool *auto_accumulate, bool *auto_orbit,
-                      int *scene_index, const char *const *scene_names, int scene_count)
+                      int *scene_index, const char *const *scene_names, int scene_count,
+                      const float *cam_pos = nullptr, const float *cam_lookat = nullptr, float cam_fov = 0.0f)
    {
       SDL_UpdateTexture(texture, nullptr, image.data(), image_width * image_channels);
       SDL_RenderClear(renderer);
@@ -176,6 +177,12 @@ class SDLGuiHandler
       if (show_controls)
       {
          ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
+         if (window_collapse_requested)
+         {
+            window_collapsed = !window_collapsed;
+            ImGui::SetNextWindowCollapsed(window_collapsed, ImGuiCond_Always);
+            window_collapse_requested = false;
+         }
          if (ImGui::Begin("RayON - Interactive UI", nullptr,
                           ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove))
          {
@@ -259,6 +266,19 @@ class SDLGuiHandler
                }
             }
 
+            // --- Camera Info ---
+            if (cam_pos && cam_lookat)
+            {
+               if (reset_headers)
+                  ImGui::SetNextItemOpen(!collapse_headers);
+               if (ImGui::CollapsingHeader("Camera Info"))
+               {
+                  ImGui::Text("Position: %.2f, %.2f, %.2f", cam_pos[0], cam_pos[1], cam_pos[2]);
+                  ImGui::Text("Look At:  %.2f, %.2f, %.2f", cam_lookat[0], cam_lookat[1], cam_lookat[2]);
+                  ImGui::Text("FOV:      %.1f", cam_fov);
+               }
+            }
+
             // --- Environment & Materials ---
             if (reset_headers)
                ImGui::SetNextItemOpen(!collapse_headers);
@@ -307,8 +327,9 @@ class SDLGuiHandler
                ImGui::Text("Keys:");
                ImGui::BulletText("SPACE: Toggle Accumulation");
                ImGui::BulletText("O: Auto-Orbit");
-               ImGui::BulletText("H: Toggle UI");
-               ImGui::BulletText("C: Collapse/Expand All");
+               ImGui::BulletText("Enter: Collapse/Expand Window");
+               ImGui::BulletText("H: Hide/Show UI");
+               ImGui::BulletText("C: Collapse/Expand All Sections");
                ImGui::BulletText("R: Reset Defaults");
                ImGui::BulletText("ESC: Exit");
             }
@@ -348,6 +369,8 @@ class SDLGuiHandler
    void toggleControls() { show_controls = !show_controls; }
    bool getShowControls() const { return show_controls; }
 
+   void toggleWindowCollapse() { window_collapse_requested = true; }
+
    void toggleHeaderCollapse()
    {
       collapse_headers = !collapse_headers;
@@ -360,6 +383,8 @@ class SDLGuiHandler
    bool show_controls;
    bool collapse_headers;
    bool reset_headers;
+   bool window_collapse_requested;
+   bool window_collapsed;
    GuiTheme current_theme;
    bool initialized;
 

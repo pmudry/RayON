@@ -65,6 +65,11 @@ class SceneFactory
       using namespace Scene;
       SceneDescription scene_desc;
 
+      scene_desc.camera_position = Vec3(0, 0.6, 2);
+      scene_desc.camera_look_at = Vec3(0, 0.3, -1);
+      scene_desc.camera_up = Vec3(0, 1, 0);
+      scene_desc.camera_fov = 40.0f;
+
       int mat_red = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(0.9, 0.1, 0.1)));
       int mat_grey = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(0.3, 0.3, 0.3)));
       scene_desc.addSphere(Vec3(0, 0.6, -1), 0.5, mat_red);
@@ -82,6 +87,12 @@ class SceneFactory
       cout << "Creating default scene..." "\n";
       using namespace Scene;
       SceneDescription scene_desc;
+
+      // Camera
+      scene_desc.camera_position = Vec3(-2, 2, 5);
+      scene_desc.camera_look_at = Vec3(-2, -0.5, -1);
+      scene_desc.camera_up = Vec3(0, 1, 0);
+      scene_desc.camera_fov = 35.0f;
 
       // === Default scene - Materials ===
       int mat_ground = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(0.44, 0.7, 0.95)));

@@ -59,6 +59,7 @@ struct hit_record_simple
    float refractive_index;
    f3 emission;
    float roughness;
+   bool visible; // Whether the hit geometry is visible (invisible geometry still emits light)
 };
 
 #include "materials/material_dispatcher.cuh"
@@ -322,15 +323,15 @@ __device__ __forceinline__ void apply_material(const CudaScene::Material &mat, h
       rec.material = LAMBERTIAN;
       rec.color = mat.albedo;
       break;
-   case MaterialType::METAL:
    case MaterialType::MIRROR:
       rec.material = MIRROR;
       rec.color = mat.albedo;
       break;
+   case MaterialType::METAL:
    case MaterialType::ROUGH_MIRROR:
       rec.material = ROUGH_MIRROR;
       rec.color = mat.albedo;
-      rec.roughness = mat.roughness;
+      rec.roughness = mat.roughness > 0.0f ? mat.roughness : 0.3f;
       break;
    case MaterialType::GLASS:
    case MaterialType::DIELECTRIC:
@@ -368,6 +369,7 @@ __device__ inline bool hit_scene(const CudaScene::Scene &scene, const ray_simple
    float closest_so_far = t_max;
    int closest_material_id = -1;
    int closest_geom_idx = -1;
+   bool closest_visible = true;
 
    // Use BVH if available, otherwise linear scan
    if (scene.use_bvh && scene.bvh_root_idx >= 0)
@@ -402,6 +404,7 @@ __device__ inline bool hit_scene(const CudaScene::Scene &scene, const ray_simple
                   rec = temp_rec;
                   closest_material_id = geom.material_id;
                   closest_geom_idx = first + i;
+                  closest_visible = geom.visible;
                }
             }
          }
@@ -453,6 +456,7 @@ __device__ inline bool hit_scene(const CudaScene::Scene &scene, const ray_simple
             rec = temp_rec;
             closest_material_id = geom.material_id;
             closest_geom_idx = i;
+            closest_visible = geom.visible;
          }
       }
    }
@@ -469,6 +473,7 @@ __device__ inline bool hit_scene(const CudaScene::Scene &scene, const ray_simple
          }
       }
       apply_material(scene.materials[closest_material_id], rec, geom_center);
+      rec.visible = closest_visible;
    }
    return hit_anything;
 }
@@ -558,6 +563,13 @@ __device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scen
 
       if (hit_scene(scene, current_ray, 0.001f, FLT_MAX, rec))
       {
+         // Invisible geometry: camera rays pass through, bounced rays interact normally
+         if (!rec.visible && bounce == 0)
+         {
+            current_ray = ray_simple(rec.p + current_ray.dir * 0.01f, current_ray.dir);
+            continue;
+         }
+
          f3 attenuation;
          ray_simple scattered_ray;
          f3 emitted;

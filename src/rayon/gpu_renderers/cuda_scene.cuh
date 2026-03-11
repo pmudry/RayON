@@ -159,6 +159,8 @@ struct Geometry
       __host__ __device__ GeomData() {} // Empty constructor for union
    } data;
 
+   bool visible; // If false, geometry is invisible to rays but still emits light
+
    f3 bounds_min, bounds_max;
 };
 
