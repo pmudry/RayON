@@ -19,9 +19,13 @@
 
 #include <SDL.h>
 #include <algorithm>
+#include <cctype>
 #include <chrono>
+#include <filesystem>
 #include <iostream>
 #include <cmath>
+#include <set>
+#include <string>
 #include <vector>
 
 class RendererCUDAProgressive : public IRenderer
@@ -155,10 +159,75 @@ class RendererCUDAProgressive : public IRenderer
       float normal_arrow_scale = 0.6f;        // Arrow length multiplier
       float normal_arrow_thickness = 1.2f;    // Arrow thickness in pixels
 
-      // Scene selection
-      static const char *scene_names[] = {"Default Scene", "Single Object", "Cornell Box (YAML)",
-                                          "Simple Scene (YAML)", "BVH Test (YAML)"};
-      static const int scene_count = 5;
+      // Scene selection: built-ins + all YAML files discovered at runtime.
+      struct SceneEntry
+      {
+         std::string label;
+         std::string yaml_path;
+      };
+
+      std::vector<SceneEntry> scene_entries;
+      scene_entries.push_back({"Default Scene", ""});
+      scene_entries.push_back({"Single Object", ""});
+
+      std::set<std::string> seen_yaml_paths;
+      std::vector<std::string> yaml_files;
+
+      auto appendYAMLFromDirectory = [&](const std::string &dir)
+      {
+         namespace fs = std::filesystem;
+         std::error_code ec;
+         if (!fs::exists(dir, ec) || !fs::is_directory(dir, ec))
+            return;
+
+         for (const auto &entry : fs::directory_iterator(dir, ec))
+         {
+            if (ec)
+               break;
+            if (!entry.is_regular_file(ec))
+               continue;
+
+            fs::path path = entry.path();
+            std::string ext = path.extension().string();
+            std::transform(ext.begin(), ext.end(), ext.begin(),
+                           [](unsigned char c)
+                           { return static_cast<char>(std::tolower(c)); });
+            if (ext != ".yaml" && ext != ".yml")
+               continue;
+
+            std::string key;
+            std::error_code canon_ec;
+            fs::path canonical_path = fs::weakly_canonical(path, canon_ec);
+            key = canon_ec ? path.lexically_normal().string() : canonical_path.string();
+
+            if (seen_yaml_paths.insert(key).second)
+            {
+               yaml_files.push_back(path.lexically_normal().string());
+            }
+         }
+      };
+
+      appendYAMLFromDirectory("../resources/scenes");
+      appendYAMLFromDirectory("resources/scenes");
+      appendYAMLFromDirectory("../resources");
+      appendYAMLFromDirectory("resources");
+
+      std::sort(yaml_files.begin(), yaml_files.end());
+      for (const auto &yaml_file : yaml_files)
+      {
+         std::string stem = std::filesystem::path(yaml_file).stem().string();
+         scene_entries.push_back({"YAML: " + stem, yaml_file});
+      }
+
+      std::vector<const char *> scene_name_ptrs;
+      scene_name_ptrs.reserve(scene_entries.size());
+      for (const auto &entry : scene_entries)
+      {
+         scene_name_ptrs.push_back(entry.label.c_str());
+      }
+
+      const char *const *scene_names = scene_name_ptrs.empty() ? nullptr : scene_name_ptrs.data();
+      const int scene_count = static_cast<int>(scene_name_ptrs.size());
       int current_scene_index = 0; // Start with whatever was passed in
       Scene::SceneDescription active_scene = scene; // Mutable copy
       Scene::SceneDescription original_scene = scene; // Keep original to restore materials
@@ -312,24 +381,26 @@ class RendererCUDAProgressive : public IRenderer
       CudaScene::Scene *gpu_scene = Scene::CudaSceneBuilder::buildGPUScene(active_scene);
 
       auto applySceneSelectionChange = [&]() {
-         std::cout << "Switching to scene: " << scene_names[current_scene_index] << std::endl;
-         switch (current_scene_index)
+         if (current_scene_index < 0 || current_scene_index >= scene_count)
+            current_scene_index = 0;
+
+         const SceneEntry &selected = scene_entries[current_scene_index];
+         std::cout << "Switching to scene: " << selected.label;
+         if (!selected.yaml_path.empty())
+            std::cout << " (" << selected.yaml_path << ")";
+         std::cout << std::endl;
+
+         if (current_scene_index == 0)
          {
-         case 0:
             active_scene = Scene::SceneFactory::createDefaultScene();
-            break;
-         case 1:
+         }
+         else if (current_scene_index == 1)
+         {
             active_scene = Scene::SceneFactory::singleObjectScene();
-            break;
-         case 2:
-            active_scene = Scene::SceneFactory::fromYAML("../resources/cornell_box.yaml");
-            break;
-         case 3:
-            active_scene = Scene::SceneFactory::fromYAML("../resources/simple_scene.yaml");
-            break;
-         case 4:
-            active_scene = Scene::SceneFactory::fromYAML("../resources/bvh_test_scene.yaml");
-            break;
+         }
+         else
+         {
+            active_scene = Scene::SceneFactory::fromYAML(selected.yaml_path);
          }
 
          // Update original_scene as well, then re-apply visualization mode.

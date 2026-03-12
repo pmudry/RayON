@@ -322,12 +322,20 @@ class SDLGuiHandler
             {
                if (auto_orbit)
                {
-                  ImGui::Checkbox("Auto-Orbit (O)", auto_orbit);
+                  ImGui::Checkbox("Auto orbit", auto_orbit);
+                  if (dof_enabled && aperture && focus_dist)
+                  {
+                     ImGui::SameLine();
+                     ImGui::Checkbox("Depth of field", dof_enabled);
+                  }
+               }
+               else if (dof_enabled && aperture && focus_dist)
+               {
+                  ImGui::Checkbox("Depth of field", dof_enabled);
                }
 
                if (dof_enabled && aperture && focus_dist)
                {
-                  ImGui::Checkbox("Enable Depth of Field", dof_enabled);
                   ImGui::SeparatorText("Lens Controls");
 
                   if (!(*dof_enabled))
@@ -440,7 +448,7 @@ class SDLGuiHandler
                ImGui::BulletText("A: Toggle Normal Arrows");
                ImGui::BulletText("N: Toggle Show Normals");
                ImGui::BulletText("Left/Right: Previous/Next Scene");
-               ImGui::BulletText("O: Auto-Orbit");
+               ImGui::BulletText("O: Auto orbit");
                ImGui::BulletText("Enter: Collapse/Expand Window");
                ImGui::BulletText("H: Hide/Show UI");
                ImGui::BulletText("C: Collapse/Expand All Sections");

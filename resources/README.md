@@ -1,6 +1,8 @@
 # Scene Files
 
-This directory contains YAML scene definitions for the raytracer.
+This directory contains assets for the raytracer.
+
+YAML scene files are stored in `resources/scenes/`.
 
 ## Available Scenes
 
@@ -38,19 +40,40 @@ Minimal test scene with:
 
 **Recommended settings:** `-s 20 -r 360`
 
+## Additional Showcase Scenes
+
+- `material_laboratory.yaml`: Roughness/metal/glass comparison setup.
+- `caustics_chapel.yaml`: Dark interior with glass and strong area light.
+- `displacement_garden.yaml`: Displaced sphere lineup with increasing displacement.
+- `pattern_gallery.yaml`: Fibonacci/checker/stripes procedural material gallery.
+- `invisible_light_studio.yaml`: Studio look using invisible area light geometry.
+- `mirror_tunnel.yaml`: Multi-bounce reflection corridor.
+- `color_bleed_box.yaml`: Cornell-style color bleed stress scene.
+- `interactive_preview_fast.yaml`: Lightweight scene for quick interactive testing.
+- `photoreal_interior_harder.yaml`: Higher-difficulty interior lighting scene.
+- `bvh_stress_courtyard.yaml`: Medium-density BVH stress benchmark.
+- `pure_bvh_benchmark_highcount.yaml`: High object count BVH benchmark scene.
+
+Load them with the same `--scene` flag, for example:
+
+```bash
+./rayon --scene ../resources/scenes/material_laboratory.yaml -s 32 -r 720
+./rayon --scene ../resources/scenes/pure_bvh_benchmark_highcount.yaml -s 8 -r 360
+```
+
 ## Usage
 
 Load any scene with the `--scene` flag:
 
 ```bash
 # Cornell box
-./302_raytracer --scene ../resources/cornell_box.yaml -s 100 -r 720
+./302_raytracer --scene ../resources/scenes/cornell_box.yaml -s 100 -r 720
 
 # Default scene
-./302_raytracer --scene ../resources/default_scene.yaml -s 50 -r 720
+./302_raytracer --scene ../resources/scenes/default_scene.yaml -s 50 -r 720
 
 # Simple scene
-./302_raytracer --scene ../resources/simple_scene.yaml -s 20 -r 360
+./302_raytracer --scene ../resources/scenes/simple_scene.yaml -s 20 -r 360
 ```
 
 ## Creating Your Own Scenes
