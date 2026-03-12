@@ -26,6 +26,7 @@
 #define STB_IMAGE_RESIZE_IMPLEMENTATION
 #include "external/stb_image_resize2.h"
 
+#include <cmath>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -172,10 +173,12 @@ class SDLGuiHandler
                       float *background_intensity, float *metal_fuzziness, float *glass_ior,
                       float *samples_per_batch, bool *auto_accumulate, bool *auto_orbit,
                       int *scene_index, const char *const *scene_names, int scene_count,
-                      const float *cam_pos = nullptr, const float *cam_lookat = nullptr, float cam_fov = 0.0f,
+                      const float *cam_pos = nullptr, const float *cam_lookat = nullptr, float *cam_fov = nullptr,
                       bool *adaptive_sampling = nullptr, float *adaptive_threshold = nullptr,
                       float convergence_pct = 0.0f, bool *show_heatmap = nullptr,
-                      int *visualization_mode = nullptr)
+                      int *visualization_mode = nullptr,
+                      bool *show_normal_arrows = nullptr, int *normal_arrow_count = nullptr,
+                      float *normal_arrow_scale = nullptr, float *normal_arrow_thickness = nullptr)
    {
       SDL_UpdateTexture(texture, nullptr, image.data(), image_width * image_channels);
       SDL_RenderClear(renderer);
@@ -310,18 +313,20 @@ class SDLGuiHandler
                   if (!(*dof_enabled))
                      ImGui::EndDisabled();
                }
-            }
 
-            // --- Camera Info ---
-            if (cam_pos && cam_lookat)
-            {
-               if (reset_headers)
-                  ImGui::SetNextItemOpen(!collapse_headers);
-               if (ImGui::CollapsingHeader("Camera Info"))
+               if (cam_fov)
                {
-                  ImGui::Text("Position: %.2f, %.2f, %.2f", cam_pos[0], cam_pos[1], cam_pos[2]);
-                  ImGui::Text("Look At:  %.2f, %.2f, %.2f", cam_lookat[0], cam_lookat[1], cam_lookat[2]);
-                  ImGui::Text("FOV:      %.1f", cam_fov);
+                  ImGui::SliderFloat("FOV", cam_fov, 10.0f, 140.0f, "%.1f");
+               }
+
+               if (cam_pos && cam_lookat)
+               {
+                  if (ImGui::CollapsingHeader("Camera Info"))
+                  {
+                     ImGui::Text("Position: %.2f, %.2f, %.2f", cam_pos[0], cam_pos[1], cam_pos[2]);
+                     ImGui::Text("Look At:  %.2f, %.2f, %.2f", cam_lookat[0], cam_lookat[1], cam_lookat[2]);
+                     ImGui::Text("FOV:      %.1f", cam_fov ? *cam_fov : 0.0f);
+                  }
                }
             }
 
@@ -333,16 +338,45 @@ class SDLGuiHandler
                if (light_intensity && background_intensity && metal_fuzziness && glass_ior)
                {
                   ImGui::SliderFloat("Light Intensity", light_intensity, 0.1f, 3.0f, "%.1f");
-                  ImGui::SliderFloat("Background", background_intensity, 0.0f, 5.0f, "%.2f");
+                  ImGui::SliderFloat("Ambient Light", background_intensity, 0.0f, 5.0f, "%.2f");
                   ImGui::SliderFloat("Metal Fuzz", metal_fuzziness, 0.0f, 5.0f, "%.2f");
                   ImGui::SliderFloat("Glass IOR", glass_ior, 1.0f, 2.5f, "%.2f");
                }
                
                ImGui::Separator();
-               
-               if (visualization_mode)
+
+               if (show_normal_arrows && normal_arrow_count && normal_arrow_scale && normal_arrow_thickness)
                {
-                  ImGui::Combo("Visualization", visualization_mode, visualizationModeNames, static_cast<int>(VisualizationMode::COUNT));
+                  ImGui::Checkbox("Normal Arrows (CPU)", show_normal_arrows);
+
+                  if (visualization_mode)
+                  {
+                     bool show_normals = (*visualization_mode == static_cast<int>(VisualizationMode::SHOW_NORMALS));
+                     ImGui::SameLine();
+                     if (ImGui::Checkbox("Show Normals", &show_normals))
+                     {
+                        *visualization_mode =
+                            show_normals ? static_cast<int>(VisualizationMode::SHOW_NORMALS)
+                                         : static_cast<int>(VisualizationMode::NORMAL);
+                     }
+                  }
+
+                  if (*show_normal_arrows)
+                  {
+                     ImGui::SliderInt("Arrow Count", normal_arrow_count, 40, 2500);
+                     ImGui::SliderFloat("Arrow Scale", normal_arrow_scale, 0.2f, 1.8f, "%.2f");
+                     ImGui::SliderFloat("Arrow Thickness", normal_arrow_thickness, 1.0f, 2.5f, "%.1f");
+                  }
+               }
+               else if (visualization_mode)
+               {
+                  bool show_normals = (*visualization_mode == static_cast<int>(VisualizationMode::SHOW_NORMALS));
+                  if (ImGui::Checkbox("Show Normals", &show_normals))
+                  {
+                     *visualization_mode =
+                         show_normals ? static_cast<int>(VisualizationMode::SHOW_NORMALS)
+                                      : static_cast<int>(VisualizationMode::NORMAL);
+                  }
                }
             }
 

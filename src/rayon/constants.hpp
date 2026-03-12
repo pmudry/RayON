@@ -23,4 +23,5 @@ namespace constants
     // Interactive renderer defaults (mode 3)
     const int INTERACTIVE_SAMPLES_PER_BATCH = 50;  // Samples per batch when camera is still
     const int INTERACTIVE_MOTION_SAMPLES = 10;     // Samples per batch while camera is moving
+    const int INTERACTIVE_MAX_SPP = 50000;         // Max SPP budget for interactive accumulation
 };
