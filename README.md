@@ -3,7 +3,7 @@
 # _RayON_ - An interactive ray-tracer
 
 ---
-Dr Pierre-André Mudry, November 2025.
+Dr Pierre-André Mudry, 2025-2026.
 
 <p align="center">
     <img src="images/real_time_raytrace.png" alt="Interactive path tracer rendering spheres with various materials including reflective metal, glass with refraction, and diffuse surfaces, displayed at 2000 samples per pixel in continuous accumulation mode with depth of field controls and real-time camera manipulation via mouse orbit, pan, and zoom" width="60%">
@@ -18,9 +18,7 @@ This project started as a hand-made re-implementation of the `InOneWeekend` rayt
 1. GPU CUDA accelerated
 1. GPU CUDA real-time raytracing with accumulative sampling
 
-It uses [single-file public domain (or MIT licensed) libraries for C/C++](https://github.com/nothings/stb/tree/master) for opening and saving images.
-
-The project is declined (in another branch) in a much simpler form that serves as a reference implementation for the students of [ISC degree programme](https://isc.hevs.ch) _302 High-performance computing_ part.
+It uses `stb` [single-file public domain (or MIT licensed) libraries for C/C++](https://github.com/nothings/stb/tree/master) for opening and saving images as well as immediate-mode GUI controls using [Dear ImGui](https://github.com/ocornut/imgui).
 
 # How to compile and environment setup in VSCode
 
@@ -38,14 +36,14 @@ make -j
 This will generate the appropriate `compile_commands.json` for `clangd` so that you get syntax highlighting, code completion etc. in VS Code. Additionally, CMake automatically updates the `.clangd` file with include paths for all subdirectories under `src/`, ensuring clangd has the correct `-I` flags without manual maintenance. You can then run from the `build directory`
 
 ```bash
-./302_raytracer --help
+./rayon --help
 ```
 
 Or, all at once : 
 
 ## Running
 ```bash
-make -j && ./302_raytracer -m 2
+make -j && ./rayon -m 2
 ```
 
 Rendered frames are written to `rendered_images/` with timestamped filenames such as `output_2025-11-15_14-22-09.png`. Each run produces a new PNG (timestamp uses local time, second precision), so you can sort files chronologically without overwriting previous renders.
@@ -67,5 +65,5 @@ PR's are welcome, please feel free to contribute !
 
 # Known issues
 
-- Compilation has been tested on DGX Spark, other platforms are untested yet.
+- Compilation has been tested on `DGX Spark`, other platforms are untested yet.
 - The code depends on a proper installation of [`libsdl`](https://www.libsdl.org/) for creating the real-time rendering context. It might work without it in non-interactive mode but this has not been tested. Use at you own risks (or create a PR)
