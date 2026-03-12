@@ -70,6 +70,40 @@ Uses `split_axis` stored in BVH node + ray direction sign to determine near/far 
 Replaced CRTP material object construction with fully inlined scatter logic in `scatter_material()`. All scatter code (Lambertian cosine sampling, mirror reflection, rough mirror, glass refraction/Fresnel) is directly in the switch cases — no temporary objects, no template instantiation, giving nvcc full optimization visibility.
 - **Files**: `cuda_raytracer.cuh`
 
+## Feature Roadmap
+
+### Feature G: Triangle intersection (Medium)
+Implement Möller–Trumbore ray-triangle intersection for the existing `TRIANGLE` geometry type in `cuda_scene.cuh`. The data structure (v0/v1/v2, optional vertex normals n0/n1/n2) is already defined — only the intersection and shading code is missing. Enables rendering of arbitrary triangle meshes once OBJ loading is in place.
+- **Files**: `cuda_raytracer.cuh`, `scene_builder_cuda.cu`
+
+### Feature H: OBJ file loading (Medium)
+Load Wavefront `.obj` files (vertices, normals, texture coordinates, face indices) and convert to `TRIANGLE` or `TRIANGLE_MESH` geometry. Use a lightweight parser (tinyobjloader or hand-rolled) to avoid heavy dependencies. Build per-mesh BVH for acceleration.
+- **Files**: New `scenes/obj_loader.hpp`, `scene_description.hpp`, `scene_builder_cuda.cu`
+
+### Feature I: Mixed YAML + OBJ scenes (Medium)
+Extend the YAML scene format to reference external `.obj` files with transform (position, rotation, scale) and material override. Example:
+```yaml
+geometries:
+  - type: obj
+    file: models/bunny.obj
+    position: [0, 0, 0]
+    scale: [1, 1, 1]
+    material: lambertian
+```
+Requires Feature H (OBJ loading) as a prerequisite.
+- **Files**: `scenes/yaml_scene_loader.cc`, `scene_description.hpp`
+
+### Feature J: Volumetric rendering (Hard)
+Participating media (fog, smoke, clouds) using ray marching through homogeneous or heterogeneous volumes. Implement as a special geometry type with density, scattering albedo, and phase function (Henyey-Greenstein). Uses stochastic sampling: at each step, randomly decide between absorption, scattering, or transmission based on the Beer-Lambert law.
+- **Files**: `cuda_raytracer.cuh`, `cuda_scene.cuh`, `scene_description.hpp`, `yaml_scene_loader.cc`
+
+### Feature K: Caustics via photon mapping or bidirectional path tracing (Hard)
+Standard unidirectional path tracing cannot efficiently render caustics (focused light through glass/water). Options:
+- **Photon mapping**: Two-pass — trace photons from lights, store in spatial hash map, gather during camera ray tracing. Adds a precomputation step but handles specular-diffuse-specular (SDS) paths.
+- **Bidirectional path tracing (BDPT)**: Trace paths from both camera and lights, connect subpaths via multiple importance sampling. More general but significantly more complex.
+- **Simpler alternative**: Caustic-approximate heuristics or next-event estimation with specular surfaces.
+- **Files**: New kernel files, `cuda_raytracer.cuh`, possibly new buffer management in `renderer_cuda_device.cu`
+
 ## OptiX Migration Assessment
 
 ### What OptiX Provides
