@@ -1,0 +1,56 @@
+camera:
+  position: [0.0, 1.2, 6.5]
+  look_at: [0.0, 0.7, 0.0]
+  up: [0.0, 1.0, 0.0]
+  fov: 45.0
+
+settings:
+  background_color: [0.02, 0.02, 0.03]
+  ambient_light: 0.01
+  background_intensity: 0.0
+  use_bvh: true
+
+materials:
+  - name: ground
+    type: lambertian
+    albedo: [0.45, 0.45, 0.48]
+  - name: light
+    type: light
+    emission: [14.0, 12.0, 10.0]
+    albedo: [1.0, 1.0, 1.0]
+  - name: metal_0
+    type: rough_mirror
+    albedo: [0.90, 0.85, 0.78]
+    roughness: 0.01
+    metallic: 1.0
+  - name: metal_1
+    type: rough_mirror
+    albedo: [0.90, 0.85, 0.78]
+    roughness: 0.08
+    metallic: 1.0
+  - name: metal_2
+    type: rough_mirror
+    albedo: [0.90, 0.85, 0.78]
+    roughness: 0.2
+    metallic: 1.0
+  - name: glass
+    type: glass
+    albedo: [1.0, 1.0, 1.0]
+    refractive_index: 1.52
+    transmission: 1.0
+
+geometry:
+  - type: sphere
+    material: ground
+    center: [0.0, -1000.0, 0.0]
+    radius: 1000.0
+  - type: rectangle
+    material: light
+    corner: [-2.0, 4.0, -1.5]
+    u: [4.0, 0.0, 0.0]
+    v: [0.0, 0.0, 3.0]
+    visible: false
+  - { type: sphere, material: metal_0, center: [-2.2, 0.7, 0.0], radius: 0.7 }
+  - { type: sphere, material: metal_1, center: [0.0, 0.7, 0.0], radius: 0.7 }
+  - { type: sphere, material: metal_2, center: [2.2, 0.7, 0.0], radius: 0.7 }
+  - { type: sphere, material: glass, center: [0.0, 0.7, -2.0], radius: 0.7 }

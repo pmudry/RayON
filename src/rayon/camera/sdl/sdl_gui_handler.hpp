@@ -26,6 +26,7 @@
 #define STB_IMAGE_RESIZE_IMPLEMENTATION
 #include "external/stb_image_resize2.h"
 
+#include <chrono>
 #include <cmath>
 #include <iostream>
 #include <string>
@@ -66,7 +67,8 @@ class SDLGuiHandler
    SDLGuiHandler(int image_width, int image_height, GuiTheme initial_theme = GuiTheme::NORD)
        : image_width(image_width), image_height(image_height), show_controls(true), collapse_headers(false),
          reset_headers(false), window_collapse_requested(false), window_collapsed(false), current_theme(initial_theme), initialized(false), window(nullptr), renderer(nullptr),
-         texture(nullptr), logo_texture(nullptr)
+         texture(nullptr), logo_texture(nullptr), last_perf_sample_time_ms(0),
+         perf_sample_interval_ms(50), perf_time_window_ms(20000)
    {
    }
 
@@ -217,15 +219,36 @@ class SDLGuiHandler
                   ImGui::Text("Throughput: %.0f S/s", sps);
                ImGui::Text("Time/Pass: %.3f ms", ms_per_sample);
 
+               ImGui::Text("Graph dt: %u ms", perf_sample_interval_ms);
+               ImGui::SameLine();
+               if (ImGui::SmallButton("-##graph_dt"))
+               {
+                  perf_sample_interval_ms = (perf_sample_interval_ms > 20) ? perf_sample_interval_ms - 20 : 20;
+                  last_perf_sample_time_ms = 0;
+               }
+               ImGui::SameLine();
+               if (ImGui::SmallButton("+##graph_dt"))
+               {
+                  perf_sample_interval_ms = (perf_sample_interval_ms < 1000) ? perf_sample_interval_ms + 20 : 1000;
+                  last_perf_sample_time_ms = 0;
+               }
+
                if (sps > 0.0f)
                {
-                  sps_history.push_back(sps);
-                  ms_history.push_back(ms_per_sample);
-
-                  if (sps_history.size() > 500)
+                  const Uint32 now_ms = SDL_GetTicks();
+                  if (last_perf_sample_time_ms == 0 || now_ms - last_perf_sample_time_ms >= perf_sample_interval_ms)
                   {
-                     sps_history.erase(sps_history.begin());
-                     ms_history.erase(ms_history.begin());
+                     sps_history.push_back(sps);
+                     ms_history.push_back(ms_per_sample);
+                     last_perf_sample_time_ms = now_ms;
+
+                     // Fixed x-axis time range: keep only the last N seconds worth of samples.
+                     const size_t max_points = std::max<size_t>(10, perf_time_window_ms / perf_sample_interval_ms);
+                     if (sps_history.size() > max_points)
+                     {
+                        sps_history.erase(sps_history.begin());
+                        ms_history.erase(ms_history.begin());
+                     }
                   }
                }
 
@@ -250,11 +273,6 @@ class SDLGuiHandler
                   ImGui::PopStyleColor();
                }
 
-               if (auto_accumulate)
-               {
-                  ImGui::Separator();
-                  ImGui::Checkbox("Auto-Accumulate (Space)", auto_accumulate);
-               }
             }
 
             // --- Adaptive Sampling ---
@@ -264,7 +282,13 @@ class SDLGuiHandler
                   ImGui::SetNextItemOpen(!collapse_headers);
                if (ImGui::CollapsingHeader("Adaptive Sampling"))
                {
-                  ImGui::Checkbox("Enable Adaptive Sampling", adaptive_sampling);
+                  if (auto_accumulate)
+                  {
+                     ImGui::Checkbox("Accumulate", auto_accumulate);
+                     ImGui::SameLine();
+                  }
+
+                  ImGui::Checkbox("Adaptive Sampling##adaptive_toggle", adaptive_sampling);
 
                   if (*adaptive_sampling)
                   {
@@ -415,6 +439,7 @@ class SDLGuiHandler
                ImGui::BulletText("SPACE: Toggle Accumulation");
                ImGui::BulletText("A: Toggle Normal Arrows");
                ImGui::BulletText("N: Toggle Show Normals");
+               ImGui::BulletText("Left/Right: Previous/Next Scene");
                ImGui::BulletText("O: Auto-Orbit");
                ImGui::BulletText("Enter: Collapse/Expand Window");
                ImGui::BulletText("H: Hide/Show UI");
@@ -484,6 +509,9 @@ class SDLGuiHandler
    SDL_Rect logo_rect;
    std::vector<float> sps_history;
    std::vector<float> ms_history;
+   Uint32 last_perf_sample_time_ms;
+   Uint32 perf_sample_interval_ms;
+   Uint32 perf_time_window_ms;
 
    static void cleanupSDL() { SDL_Quit(); }
 

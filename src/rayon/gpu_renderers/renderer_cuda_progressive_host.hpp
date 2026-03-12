@@ -136,6 +136,7 @@ class RendererCUDAProgressive : public IRenderer
       // Rendering buffers
       SDL_Event event;
       vector<unsigned char> display_image(image_width * image_height * image_channels);
+      vector<unsigned char> base_display_image(image_width * image_height * image_channels);
       RenderTargetView display_view{&display_image, image_width, image_height, image_channels};
 
       void *d_rand_states = nullptr;
@@ -310,6 +311,52 @@ class RendererCUDAProgressive : public IRenderer
       // Build initial GPU scene
       CudaScene::Scene *gpu_scene = Scene::CudaSceneBuilder::buildGPUScene(active_scene);
 
+      auto applySceneSelectionChange = [&]() {
+         std::cout << "Switching to scene: " << scene_names[current_scene_index] << std::endl;
+         switch (current_scene_index)
+         {
+         case 0:
+            active_scene = Scene::SceneFactory::createDefaultScene();
+            break;
+         case 1:
+            active_scene = Scene::SceneFactory::singleObjectScene();
+            break;
+         case 2:
+            active_scene = Scene::SceneFactory::fromYAML("../resources/cornell_box.yaml");
+            break;
+         case 3:
+            active_scene = Scene::SceneFactory::fromYAML("../resources/simple_scene.yaml");
+            break;
+         case 4:
+            active_scene = Scene::SceneFactory::fromYAML("../resources/bvh_test_scene.yaml");
+            break;
+         }
+
+         // Update original_scene as well, then re-apply visualization mode.
+         original_scene = active_scene;
+         cpu_scene_for_arrows = Scene::CPUSceneBuilder::buildCPUScene(original_scene);
+         applyVisualizationToActiveScene();
+
+         // Apply scene camera
+         look_from = active_scene.camera_position;
+         look_at = active_scene.camera_look_at;
+         camera.vup = active_scene.camera_up;
+         camera.vfov = active_scene.camera_fov;
+         cam_fov_ui = static_cast<float>(camera.vfov);
+         camera_control.initializeCameraControls(look_from, look_at);
+
+         // Apply scene-specific rendering settings
+         background_intensity = active_scene.background_intensity;
+
+         // Rebuild GPU scene
+         Scene::CudaSceneBuilder::freeGPUScene(gpu_scene);
+         gpu_scene = Scene::CudaSceneBuilder::buildGPUScene(active_scene);
+
+         // Reset rendering state
+         camera_changed = true;
+         applySceneSettings();
+      };
+
       // Timing for auto-orbit
       auto last_frame_time = std::chrono::high_resolution_clock::now();
 
@@ -319,6 +366,7 @@ class RendererCUDAProgressive : public IRenderer
       while (running)
       {
          bool visualization_toggled_by_key = false;
+         bool scene_switched_by_key = false;
 
          // Handle events
          while (SDLGuiHandler::pollEvent(event))
@@ -383,6 +431,16 @@ class RendererCUDAProgressive : public IRenderer
                           : static_cast<int>(VisualizationMode::SHOW_NORMALS);
                   visualization_toggled_by_key = true;
                }
+               else if (event.key.keysym.sym == SDLK_LEFT)
+               {
+                  current_scene_index = (current_scene_index - 1 + scene_count) % scene_count;
+                  scene_switched_by_key = true;
+               }
+               else if (event.key.keysym.sym == SDLK_RIGHT)
+               {
+                  current_scene_index = (current_scene_index + 1) % scene_count;
+                  scene_switched_by_key = true;
+               }
                else if (camera_control.handleKeyDown(event, accumulation_enabled, samples_per_batch_float,
                                                       light_intensity, background_intensity, needs_rerender,
                                                       camera_changed))
@@ -415,6 +473,11 @@ class RendererCUDAProgressive : public IRenderer
                   camera_changed = true;
                }
             }
+         }
+
+         if (scene_switched_by_key)
+         {
+            applySceneSelectionChange();
          }
 
          if (visualization_toggled_by_key)
@@ -478,6 +541,9 @@ class RendererCUDAProgressive : public IRenderer
                ::renderSampleHeatmapCUDA(d_pixel_sample_counts, display_img.data(), display_view.width,
                                          display_view.height, display_view.channels, current_samples);
             }
+
+            // Keep a clean, overlay-free base image for deterministic per-frame compositing.
+            base_display_image = display_image;
 
             if (target.pixels)
                *target.pixels = display_image;
@@ -551,6 +617,9 @@ class RendererCUDAProgressive : public IRenderer
                                          image_channels, current_samples);
             }
 
+            // Keep a clean, overlay-free base image for deterministic per-frame compositing.
+            base_display_image = display_image;
+
             if (target.pixels)
                *target.pixels = display_image;
          }
@@ -584,6 +653,8 @@ class RendererCUDAProgressive : public IRenderer
          float cam_pos[3] = {(float)look_from.x(), (float)look_from.y(), (float)look_from.z()};
          float cam_lookat[3] = {(float)look_at.x(), (float)look_at.y(), (float)look_at.z()};
 
+         // Recompose from a stable base every frame so overlays don't stack over time.
+         display_image = base_display_image;
          drawCPUArrowOverlay(display_image);
 
          gui.updateDisplay(display_image, image_channels, current_sps, current_ms_per_sample, current_samples,
@@ -606,49 +677,7 @@ class RendererCUDAProgressive : public IRenderer
          // Handle scene change from UI
          if (current_scene_index != old_scene_index)
          {
-            std::cout << "Switching to scene: " << scene_names[current_scene_index] << std::endl;
-            switch (current_scene_index)
-            {
-            case 0:
-               active_scene = Scene::SceneFactory::createDefaultScene();
-               break;
-            case 1:
-               active_scene = Scene::SceneFactory::singleObjectScene();
-               break;
-            case 2:
-               active_scene = Scene::SceneFactory::fromYAML("../resources/cornell_box.yaml");
-               break;
-            case 3:
-               active_scene = Scene::SceneFactory::fromYAML("../resources/simple_scene.yaml");
-               break;
-            case 4:
-               active_scene = Scene::SceneFactory::fromYAML("../resources/bvh_test_scene.yaml");
-               break;
-            }
-
-            // Update original_scene as well, then re-apply visualization mode.
-            original_scene = active_scene;
-            cpu_scene_for_arrows = Scene::CPUSceneBuilder::buildCPUScene(original_scene);
-            applyVisualizationToActiveScene();
-            
-            // Apply scene camera
-            look_from = active_scene.camera_position;
-            look_at = active_scene.camera_look_at;
-            camera.vup = active_scene.camera_up;
-            camera.vfov = active_scene.camera_fov;
-            cam_fov_ui = static_cast<float>(camera.vfov);
-            camera_control.initializeCameraControls(look_from, look_at);
-
-            // Apply scene-specific rendering settings
-            background_intensity = active_scene.background_intensity;
-
-            // Rebuild GPU scene
-            Scene::CudaSceneBuilder::freeGPUScene(gpu_scene);
-            gpu_scene = Scene::CudaSceneBuilder::buildGPUScene(active_scene);
-
-            // Reset rendering state
-            camera_changed = true;
-            applySceneSettings();
+            applySceneSelectionChange();
          }
 
          // Handle visualization mode change
