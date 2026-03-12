@@ -318,6 +318,8 @@ class RendererCUDAProgressive : public IRenderer
       // Main rendering loop
       while (running)
       {
+         bool visualization_toggled_by_key = false;
+
          // Handle events
          while (SDLGuiHandler::pollEvent(event))
          {
@@ -367,6 +369,20 @@ class RendererCUDAProgressive : public IRenderer
                   camera_changed = true;
                   applySceneSettings();
                }
+               else if (event.key.keysym.sym == SDLK_a)
+               {
+                  show_normal_arrows = !show_normal_arrows;
+                  // Overlay is composited in display buffer; force refresh even if accumulation stopped.
+                  needs_rerender = true;
+               }
+               else if (event.key.keysym.sym == SDLK_n)
+               {
+                  visualization_mode =
+                      (visualization_mode == static_cast<int>(VisualizationMode::SHOW_NORMALS))
+                          ? static_cast<int>(VisualizationMode::NORMAL)
+                          : static_cast<int>(VisualizationMode::SHOW_NORMALS);
+                  visualization_toggled_by_key = true;
+               }
                else if (camera_control.handleKeyDown(event, accumulation_enabled, samples_per_batch_float,
                                                       light_intensity, background_intensity, needs_rerender,
                                                       camera_changed))
@@ -399,6 +415,15 @@ class RendererCUDAProgressive : public IRenderer
                   camera_changed = true;
                }
             }
+         }
+
+         if (visualization_toggled_by_key)
+         {
+            applyVisualizationToActiveScene();
+            Scene::CudaSceneBuilder::freeGPUScene(gpu_scene);
+            gpu_scene = Scene::CudaSceneBuilder::buildGPUScene(active_scene);
+            camera_changed = true;
+            applySceneSettings();
          }
 
          // Update auto-orbit
@@ -446,6 +471,13 @@ class RendererCUDAProgressive : public IRenderer
             ::convertAccumToDisplayCUDA(d_accum_buffer, display_img.data(), display_view.width, display_view.height,
                                         display_view.channels, current_samples, gamma,
                                         adaptive_sampling_enabled ? d_pixel_sample_counts : nullptr);
+
+            // Allow heatmap visualization refresh even when no new samples are rendered.
+            if (show_heatmap && d_pixel_sample_counts != nullptr)
+            {
+               ::renderSampleHeatmapCUDA(d_pixel_sample_counts, display_img.data(), display_view.width,
+                                         display_view.height, display_view.channels, current_samples);
+            }
 
             if (target.pixels)
                *target.pixels = display_image;
@@ -539,6 +571,7 @@ class RendererCUDAProgressive : public IRenderer
          int old_scene_index = current_scene_index;
          bool old_adaptive = adaptive_sampling_enabled;
          float old_adaptive_thresh = adaptive_threshold;
+         bool old_show_heatmap = show_heatmap;
          int old_visualization_mode = visualization_mode;
          bool old_show_normal_arrows = show_normal_arrows;
          int old_normal_arrow_count = normal_arrow_count;
@@ -654,6 +687,12 @@ class RendererCUDAProgressive : public IRenderer
                show_heatmap = false;
 
             camera_changed = true;
+         }
+
+         if (show_heatmap != old_show_heatmap)
+         {
+            // Heatmap is a display overlay; force refresh even when sampling is finished.
+            needs_rerender = true;
          }
 
          // Arrow overlay settings affect the composited display image even when sampling is done,

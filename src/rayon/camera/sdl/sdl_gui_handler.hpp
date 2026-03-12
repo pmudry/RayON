@@ -413,6 +413,8 @@ class SDLGuiHandler
                ImGui::Separator();
                ImGui::Text("Keys:");
                ImGui::BulletText("SPACE: Toggle Accumulation");
+               ImGui::BulletText("A: Toggle Normal Arrows");
+               ImGui::BulletText("N: Toggle Show Normals");
                ImGui::BulletText("O: Auto-Orbit");
                ImGui::BulletText("Enter: Collapse/Expand Window");
                ImGui::BulletText("H: Hide/Show UI");
