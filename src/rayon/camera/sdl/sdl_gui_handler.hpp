@@ -163,7 +163,9 @@ class SDLGuiHandler
                       float *background_intensity, float *metal_fuzziness, float *glass_ior,
                       float *samples_per_batch, bool *auto_accumulate, bool *auto_orbit,
                       int *scene_index, const char *const *scene_names, int scene_count,
-                      const float *cam_pos = nullptr, const float *cam_lookat = nullptr, float cam_fov = 0.0f)
+                      const float *cam_pos = nullptr, const float *cam_lookat = nullptr, float cam_fov = 0.0f,
+                      bool *adaptive_sampling = nullptr, float *adaptive_threshold = nullptr,
+                      float convergence_pct = 0.0f, bool *show_heatmap = nullptr)
    {
       SDL_UpdateTexture(texture, nullptr, image.data(), image_width * image_channels);
       SDL_RenderClear(renderer);
@@ -239,6 +241,40 @@ class SDLGuiHandler
                {
                   ImGui::Separator();
                   ImGui::Checkbox("Auto-Accumulate (Space)", auto_accumulate);
+               }
+            }
+
+            // --- Adaptive Sampling ---
+            if (adaptive_sampling)
+            {
+               if (reset_headers)
+                  ImGui::SetNextItemOpen(!collapse_headers);
+               if (ImGui::CollapsingHeader("Adaptive Sampling"))
+               {
+                  ImGui::Checkbox("Enable Adaptive Sampling", adaptive_sampling);
+
+                  if (*adaptive_sampling)
+                  {
+                     if (adaptive_threshold)
+                     {
+                        // Display threshold as power of 10 for readability
+                        // Slider works in log10 space: -4.0 = 10^-4 = 0.0001, -1.3 = 10^-1.3 = 0.05
+                        float log_val = log10f(*adaptive_threshold);
+                        char label[32];
+                        snprintf(label, sizeof(label), "10^%.1f", log_val);
+                        if (ImGui::SliderFloat("Threshold", &log_val, -6.0f, -1.0f, label))
+                        {
+                           *adaptive_threshold = powf(10.0f, log_val);
+                        }
+                     }
+                     if (show_heatmap)
+                        ImGui::Checkbox("Show Sample Heatmap", show_heatmap);
+
+                     ImGui::Text("Converged: %.1f%%", convergence_pct);
+
+                     // Visual progress bar for convergence
+                     ImGui::ProgressBar(convergence_pct / 100.0f, ImVec2(-1, 0), "");
+                  }
                }
             }
 

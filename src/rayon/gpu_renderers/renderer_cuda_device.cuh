@@ -15,7 +15,8 @@ extern "C"
        double cam_center_y, double cam_center_z, double pixel00_x, double pixel00_y, double pixel00_z, double delta_u_x,
        double delta_u_y, double delta_u_z, double delta_v_x, double delta_v_y, double delta_v_z, int samples_to_add,
        int total_samples_so_far, int max_depth, void **d_rand_states_ptr, void **d_accum_buffer_ptr, double cam_u_x,
-       double cam_u_y, double cam_u_z, double cam_v_x, double cam_v_y, double cam_v_z);
+       double cam_u_y, double cam_u_z, double cam_v_x, double cam_v_y, double cam_v_z,
+       void *d_pixel_sample_counts = nullptr, int min_adaptive_samples = 32, float adaptive_threshold = 0.01f);
 
    // Helper to free device random states
    void freeDeviceRandomStates(void *d_rand_states);
@@ -44,6 +45,19 @@ extern "C"
    void setDOFFocusDistance(float distance);
 
    // GPU-side gamma correction: reads device accum buffer, writes uint8 display image to host
+   // When d_pixel_sample_counts is non-null, uses per-pixel sample counts (adaptive sampling)
    void convertAccumToDisplayCUDA(void *d_accum_buffer, unsigned char *display_image, int width, int height, int channels,
-                                  int num_samples, float gamma);
+                                  int num_samples, float gamma, void *d_pixel_sample_counts = nullptr);
+
+   // Adaptive sampling: per-pixel sample count buffer management
+   void allocateAdaptiveBuffer(void **d_pixel_sample_counts, int num_pixels);
+   void resetAdaptiveBuffer(void *d_pixel_sample_counts, int num_pixels);
+   void freeAdaptiveBuffer(void *d_pixel_sample_counts);
+
+   // Count how many pixels have converged (sample count < 0). Returns count on host.
+   int countConvergedPixels(void *d_pixel_sample_counts, int num_pixels);
+
+   // Render sample count heatmap using Plasma colormap (purple=few samples, yellow=many)
+   void renderSampleHeatmapCUDA(void *d_pixel_sample_counts, unsigned char *display_image, int width, int height,
+                                int channels, int max_samples_for_scale);
 }

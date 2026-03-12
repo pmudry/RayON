@@ -49,16 +49,25 @@ Accumulation buffer stays on GPU. GPU-side `gammaCorrectKernel` produces uint8 d
 `getOptimalBlockSize()` caches result in static variable instead of calling `cudaGetDeviceProperties()` every frame.
 - **File**: `renderer_cuda_device.cu`
 
+### Option D: Adaptive sampling (converged pixel skip) — DONE
+Per-pixel convergence tracking. Each pixel maintains its own sample count (sign bit encodes convergence flag). After `min_adaptive_samples` (default 32), the kernel compares the batch luminance change against the running average. If the relative change falls below `adaptive_threshold` (default 10^-4.5), the pixel is marked converged and skipped in future batches. Rendering stops entirely when 100% of pixels converge. Features:
+- Toggleable via ImGui checkbox + `--no-adaptive-sampling` CLI flag (enabled by default)
+- Log-scale threshold slider (10^-6 to 10^-1) with power-of-ten display
+- Convergence progress bar in GUI
+- Plasma colormap heatmap visualization of per-pixel sample counts (purple=few, yellow=many)
+- Works best on scenes with mixed complexity (e.g. BVH test scene with dark background). Less effective on uniformly complex scenes (e.g. Cornell box with all-indirect lighting).
+- **Files**: `render_acc_kernel.cu`, `renderer_cuda_device.cu`, `renderer_cuda_progressive_host.hpp`, `sdl_gui_handler.hpp`, `main.cc`
+
 ### Option C: CUDA streams for async display copy (Medium, ~10-15% latency hiding)
 Overlap kernel execution with display buffer transfer using CUDA streams. Currently the pipeline is fully synchronous.
 - **Files**: `renderer_cuda_device.cu`
 
-### Option E: BVH child ordering by ray direction sign (Medium, ~5-15% speedup)
-Replace expensive distance-to-center heuristic with ray direction sign along split axis. One comparison instead of two `length_squared()` computations per interior node.
-- **Files**: `cuda_raytracer.cuh`
+### Option E: BVH child ordering by ray direction sign — DONE
+Uses `split_axis` stored in BVH node + ray direction sign to determine near/far child ordering. Single comparison instead of two `length_squared()` computations per interior node.
+- **Files**: `cuda_raytracer.cuh`, `cuda_scene.cuh`
 
-### Option F: Flatten material dispatch in ray_color (Medium, ~5-15% speedup)
-Remove CRTP lambda dispatch (`dispatch_material_bool`) and replace with explicit switch. Reduces register pressure and gives `nvcc` better optimization control.
+### Option F: Flatten material dispatch in ray_color — DONE
+Replaced CRTP material object construction with fully inlined scatter logic in `scatter_material()`. All scatter code (Lambertian cosine sampling, mirror reflection, rough mirror, glass refraction/Fresnel) is directly in the switch cases — no temporary objects, no template instantiation, giving nvcc full optimization visibility.
 - **Files**: `cuda_raytracer.cuh`
 
 ## OptiX Migration Assessment

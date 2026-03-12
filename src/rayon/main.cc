@@ -65,6 +65,7 @@ struct ProgramArgs
    bool auto_accumulate = true;      // Enable auto-accumulation by default
    int target_fps = 60;              // Target FPS for interactive rendering (default: 60)
    bool adaptive_depth = false;      // Enable adaptive depth (default: off)
+   bool adaptive_sampling = true;    // Enable adaptive sampling (default: on)
    const char *scene_file = nullptr; // Optional scene file to load
    const char *theme = nullptr;      // Optional GUI theme name
 };
@@ -85,6 +86,7 @@ void dumpHelp()
    cout << "                         Higher values = smoother motion but lower quality preview\n";
    cout << "                         Lower values = better quality preview but less smooth motion\n";
    cout << "  --adaptive-depth       Enable adaptive depth in interactive mode (progressively increases max depth)\n";
+   cout << "  --no-adaptive-sampling Disable adaptive sampling (skip converged pixels) in interactive mode\n";
    cout << "  --no-auto-accumulate   Disable automatic sample accumulation in interactive mode\n";
    cout << "  --theme <name>         Set GUI theme (dark, light, classic, nord, dracula, gruvbox, catppuccin)\n";
 }
@@ -148,6 +150,10 @@ ProgramArgs parseInput(int argc, char *argv[])
       else if (strcmp(argv[i], "--adaptive-depth") == 0)
       {
          args.adaptive_depth = true;
+      }
+      else if (strcmp(argv[i], "--no-adaptive-sampling") == 0)
+      {
+         args.adaptive_sampling = false;
       }
       else if (strcmp(argv[i], "--scene") == 0 && i + 1 < argc)
       {
@@ -324,6 +330,7 @@ int main(int argc, char *argv[])
       settings.auto_accumulate = args.auto_accumulate;
       settings.target_fps = args.target_fps;
       settings.adaptive_depth = args.adaptive_depth;
+      settings.adaptive_sampling = args.adaptive_sampling;
       settings.theme = parseThemeName(args.theme);
       renderer.setSettings(settings);
       coordinator.render(renderer, localImage);

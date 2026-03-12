@@ -11,6 +11,7 @@
 #include <cuda_runtime.h>
 #include <curand_kernel.h>
 #include <device_launch_parameters.h>
+#include <vector>
 
 //==================== HOST MODIFIED PARAMETERS ====================
 // Global device constants (single definition here)
@@ -130,7 +131,8 @@ extern "C" unsigned long long renderPixelsCUDAAccumulative(
     double cam_center_y, double cam_center_z, double pixel00_x, double pixel00_y, double pixel00_z, double delta_u_x,
     double delta_u_y, double delta_u_z, double delta_v_x, double delta_v_y, double delta_v_z, int samples_to_add,
     int total_samples_so_far, int max_depth, void **d_rand_states_ptr, void **d_accum_buffer_ptr, double cam_u_x,
-    double cam_u_y, double cam_u_z, double cam_v_x, double cam_v_y, double cam_v_z)
+    double cam_u_y, double cam_u_z, double cam_v_x, double cam_v_y, double cam_v_z,
+    void *d_pixel_sample_counts, int min_adaptive_samples, float adaptive_threshold)
 {
 #ifdef DIAGS
    static bool first_call = true;
@@ -250,7 +252,8 @@ extern "C" unsigned long long renderPixelsCUDAAccumulative(
        d_accum, scene, width, height, samples_to_add, total_samples_so_far, max_depth, (float)cam_center_x,
        (float)cam_center_y, (float)cam_center_z, (float)pixel00_x, (float)pixel00_y, (float)pixel00_z, (float)delta_u_x,
        (float)delta_u_y, (float)delta_u_z, (float)delta_v_x, (float)delta_v_y, (float)delta_v_z, d_ray_count,
-       d_rand_states, (float)cam_u_x, (float)cam_u_y, (float)cam_u_z, (float)cam_v_x, (float)cam_v_y, (float)cam_v_z);
+       d_rand_states, (float)cam_u_x, (float)cam_u_y, (float)cam_u_z, (float)cam_v_x, (float)cam_v_y, (float)cam_v_z,
+       static_cast<int *>(d_pixel_sample_counts), min_adaptive_samples, adaptive_threshold);
 
    cudaError_t kernel_err = cudaGetLastError();
    if (kernel_err != cudaSuccess)
@@ -307,7 +310,7 @@ extern "C" unsigned long long renderPixelsCUDAAccumulative(
  * @param gamma Gamma correction value
  */
 extern "C" void convertAccumToDisplayCUDA(void *d_accum_buffer, unsigned char *display_image, int width, int height,
-                                          int channels, int num_samples, float gamma)
+                                          int channels, int num_samples, float gamma, void *d_pixel_sample_counts)
 {
    if (d_accum_buffer == nullptr || display_image == nullptr || num_samples <= 0)
       return;
@@ -330,12 +333,87 @@ extern "C" void convertAccumToDisplayCUDA(void *d_accum_buffer, unsigned char *d
    dim3 blocks((width + threads.x - 1) / threads.x, (height + threads.y - 1) / threads.y);
 
    gammaCorrectKernel<<<blocks, threads>>>(static_cast<float4 *>(d_accum_buffer), d_display, width, height, num_samples,
-                                           channels, gamma);
+                                           channels, gamma, static_cast<const int *>(d_pixel_sample_counts));
 
    cudaDeviceSynchronize();
 
    // Copy only the small uint8 display image (3 bytes/pixel vs 16 bytes/pixel for float4)
    cudaMemcpy(display_image, d_display, display_size, cudaMemcpyDeviceToHost);
+}
+
+//==================== ADAPTIVE SAMPLING BUFFER MANAGEMENT ====================
+
+extern "C" void allocateAdaptiveBuffer(void **d_pixel_sample_counts, int num_pixels)
+{
+   if (*d_pixel_sample_counts == nullptr)
+   {
+      cudaMalloc(d_pixel_sample_counts, (size_t)num_pixels * sizeof(int));
+      cudaMemset(*d_pixel_sample_counts, 0, (size_t)num_pixels * sizeof(int));
+   }
+}
+
+extern "C" void resetAdaptiveBuffer(void *d_pixel_sample_counts, int num_pixels)
+{
+   if (d_pixel_sample_counts != nullptr)
+   {
+      cudaMemset(d_pixel_sample_counts, 0, (size_t)num_pixels * sizeof(int));
+   }
+}
+
+extern "C" void freeAdaptiveBuffer(void *d_pixel_sample_counts)
+{
+   if (d_pixel_sample_counts != nullptr)
+   {
+      cudaFree(d_pixel_sample_counts);
+   }
+}
+
+extern "C" int countConvergedPixels(void *d_pixel_sample_counts, int num_pixels)
+{
+   if (d_pixel_sample_counts == nullptr)
+      return 0;
+
+   // Copy buffer to host and count negative values (converged pixels)
+   std::vector<int> host_counts(num_pixels);
+   cudaMemcpy(host_counts.data(), d_pixel_sample_counts, (size_t)num_pixels * sizeof(int), cudaMemcpyDeviceToHost);
+
+   int converged = 0;
+   for (int i = 0; i < num_pixels; ++i)
+   {
+      if (host_counts[i] < 0)
+         ++converged;
+   }
+   return converged;
+}
+
+extern "C" void renderSampleHeatmapCUDA(void *d_pixel_sample_counts, unsigned char *display_image, int width, int height,
+                                        int channels, int max_samples_for_scale)
+{
+   if (d_pixel_sample_counts == nullptr || display_image == nullptr)
+      return;
+
+   size_t display_size = (size_t)width * height * channels * sizeof(unsigned char);
+
+   // Reuse the same static display buffer as convertAccumToDisplayCUDA
+   static unsigned char *d_display_heatmap = nullptr;
+   static size_t d_display_heatmap_size = 0;
+
+   if (d_display_heatmap == nullptr || d_display_heatmap_size != display_size)
+   {
+      if (d_display_heatmap != nullptr)
+         cudaFree(d_display_heatmap);
+      cudaMalloc(&d_display_heatmap, display_size);
+      d_display_heatmap_size = display_size;
+   }
+
+   dim3 threads = getOptimalBlockSize(width, height);
+   dim3 blocks((width + threads.x - 1) / threads.x, (height + threads.y - 1) / threads.y);
+
+   sampleHeatmapKernel<<<blocks, threads>>>(static_cast<const int *>(d_pixel_sample_counts), d_display_heatmap, width,
+                                            height, channels, max_samples_for_scale);
+
+   cudaDeviceSynchronize();
+   cudaMemcpy(display_image, d_display_heatmap, display_size, cudaMemcpyDeviceToHost);
 }
 
 // Use renderPixelsCUDAAccumulative for all rendering (one-shot and progressive).

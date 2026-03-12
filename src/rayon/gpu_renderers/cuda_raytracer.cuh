@@ -7,6 +7,7 @@
 #include <cfloat>
 #include <cmath>
 #include <curand_kernel.h>
+#include <math_constants.h>
 
 // Extern declarations for device-side global constants (defined once in renderer_cuda_device.cu)
 extern __constant__ float g_light_intensity;
@@ -479,42 +480,78 @@ __device__ inline bool hit_scene(const CudaScene::Scene &scene, const ray_simple
 }
 
 /**
- * @brief Inline material scatter — flat switch, no CRTP dispatch overhead.
+ * @brief Fully inlined material scatter — no object construction, no CRTP.
  *
- * Handles emission accumulation and scatter in a single switch.
+ * All scatter logic is directly in the switch cases, giving nvcc full visibility
+ * for register allocation and optimization. This avoids constructing temporary
+ * material objects and eliminates any template instantiation overhead.
+ *
  * Returns true if the ray was scattered, false if absorbed/emissive.
  */
 __device__ __forceinline__ bool scatter_material(const hit_record_simple &rec, const ray_simple &current_ray,
                                                  ray_simple &scattered_ray, f3 &attenuation, f3 &emitted,
                                                  curandState *state)
 {
-   using namespace Materials;
+   emitted = f3(0.0f, 0.0f, 0.0f);
 
    switch (rec.material)
    {
    case LAMBERTIAN:
    {
-      Lambertian mat(LambertianParams{rec.color});
-      emitted = f3(0.0f, 0.0f, 0.0f);
-      return mat.scatter(current_ray, rec, attenuation, scattered_ray, state);
+      // Cosine-weighted hemisphere sampling (Lambert's law)
+      f3 w = normalize(rec.normal);
+      f3 u_basis, v_basis;
+      build_orthonormal_basis(w, u_basis, v_basis);
+
+      float u1 = rand_float(state);
+      float u2 = rand_float(state);
+      float r = sqrtf(u1);
+      float theta = 2.0f * CUDART_PI_F * u2;
+      f3 local_dir(r * cosf(theta), r * sinf(theta), sqrtf(fmaxf(0.0f, 1.0f - u1)));
+      f3 scatter_dir = local_dir.x * u_basis + local_dir.y * v_basis + local_dir.z * w;
+
+      scattered_ray = ray_simple(rec.p + 0.0001f * rec.normal, scatter_dir);
+      attenuation = rec.color;
+      return true;
    }
    case MIRROR:
    {
-      Mirror mat(MirrorParams{rec.color});
-      emitted = f3(0.0f, 0.0f, 0.0f);
-      return mat.scatter(current_ray, rec, attenuation, scattered_ray, state);
+      // Perfect specular reflection
+      f3 reflected = reflect(normalize(current_ray.dir), rec.normal);
+      scattered_ray = ray_simple(rec.p, reflected);
+      attenuation = rec.color;
+      return dot(reflected, rec.normal) > 0.0f;
    }
    case ROUGH_MIRROR:
    {
-      RoughMirror mat(RoughMirrorParams{rec.color, rec.roughness});
-      emitted = f3(0.0f, 0.0f, 0.0f);
-      return mat.scatter(current_ray, rec, attenuation, scattered_ray, state);
+      // Reflection with roughness-perturbed normal (microfacet approximation)
+      f3 perturbed_normal = normalize(rec.normal + rec.roughness * g_metal_fuzziness * randOnUnitSphere(state));
+      f3 reflected = reflect(normalize(current_ray.dir), perturbed_normal);
+      scattered_ray = ray_simple(rec.p, reflected);
+      attenuation = rec.color;
+      return dot(reflected, rec.normal) > 0.0f;
    }
    case GLASS:
    {
-      Glass mat(GlassParams{rec.refractive_index});
-      emitted = f3(0.0f, 0.0f, 0.0f);
-      return mat.scatter(current_ray, rec, attenuation, scattered_ray, state);
+      // Refraction/reflection with Fresnel (Schlick's approximation)
+      f3 unit_dir = normalize(current_ray.dir);
+      float ri = g_glass_refraction_index;
+      float ratio = rec.front_face ? (1.0f / ri) : ri;
+
+      float cos_theta = fminf(dot(-unit_dir, rec.normal), 1.0f);
+      float sin_theta = sqrtf(1.0f - cos_theta * cos_theta);
+
+      bool total_internal_reflection = ratio * sin_theta > 1.0f;
+
+      f3 direction;
+      if (total_internal_reflection || reflectance(cos_theta, ratio) > rand_float(state))
+         direction = reflect(unit_dir, rec.normal);
+      else
+         direction = refract(unit_dir, rec.normal, ratio);
+
+      scattered_ray = ray_simple(rec.p, direction);
+      attenuation = f3(1.0f, 1.0f, 1.0f);
+      return true;
    }
    case LIGHT:
    {
@@ -532,7 +569,6 @@ __device__ __forceinline__ bool scatter_material(const hit_record_simple &rec, c
       return false;
    }
    default:
-      emitted = f3(0.0f, 0.0f, 0.0f);
       return false;
    }
 }

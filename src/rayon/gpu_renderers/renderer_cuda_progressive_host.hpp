@@ -33,6 +33,7 @@ class RendererCUDAProgressive : public IRenderer
       bool auto_accumulate = true;
       int target_fps = 60;
       bool adaptive_depth = false;
+      bool adaptive_sampling = true;
       GuiTheme theme = GuiTheme::NORD;
    };
 
@@ -139,6 +140,14 @@ class RendererCUDAProgressive : public IRenderer
 
       void *d_rand_states = nullptr;
       void *d_accum_buffer = nullptr; // Persistent device accumulation buffer
+
+      // Adaptive sampling state
+      void *d_pixel_sample_counts = nullptr; // Per-pixel sample counts (null = disabled)
+      bool adaptive_sampling_enabled = settings_.adaptive_sampling;
+      int min_adaptive_samples = 32;         // Don't check convergence before this many samples
+      float adaptive_threshold = 3.16e-5f;   // Relative luminance change threshold (default ~10^-4.5)
+      float convergence_pct = 0.0f;          // % of pixels that have converged (for display)
+      bool show_heatmap = false;              // Toggle to display sample count heatmap
 
       // Scene selection
       static const char *scene_names[] = {"Default Scene", "Single Object", "Cornell Box (YAML)",
@@ -268,6 +277,10 @@ class RendererCUDAProgressive : public IRenderer
                ::resetDeviceAccumBuffer(d_accum_buffer, image_width * image_height);
             }
 
+            // Reset adaptive sampling state so all pixels start fresh
+            ::resetAdaptiveBuffer(d_pixel_sample_counts, image_width * image_height);
+            convergence_pct = 0.0f;
+
             refreshCameraFrame();
          }
 
@@ -276,7 +289,8 @@ class RendererCUDAProgressive : public IRenderer
          {
             auto &display_img = *display_view.pixels;
             ::convertAccumToDisplayCUDA(d_accum_buffer, display_img.data(), display_view.width, display_view.height,
-                                        display_view.channels, current_samples, gamma);
+                                        display_view.channels, current_samples, gamma,
+                                        adaptive_sampling_enabled ? d_pixel_sample_counts : nullptr);
 
             if (target.pixels)
                *target.pixels = display_image;
@@ -284,7 +298,9 @@ class RendererCUDAProgressive : public IRenderer
          }
 
          // Render logic
-         bool should_render = (current_samples < max_samples && !camera_changed && running) || force_immediate_render;
+         // Stop rendering when max SPP reached, OR when adaptive sampling reports 100% convergence
+         bool all_converged = adaptive_sampling_enabled && convergence_pct >= 100.0f;
+         bool should_render = (current_samples < max_samples && !all_converged && !camera_changed && running) || force_immediate_render;
          bool needs_initial_render = current_samples == 0 && !accumulation_enabled;
 
          if (should_render && (accumulation_enabled || needs_initial_render || force_immediate_render))
@@ -305,8 +321,16 @@ class RendererCUDAProgressive : public IRenderer
 
             auto frame_start = std::chrono::high_resolution_clock::now();
 
+            // Allocate adaptive sampling buffer on first use (lazy init)
+            if (adaptive_sampling_enabled && d_pixel_sample_counts == nullptr)
+            {
+               ::allocateAdaptiveBuffer(&d_pixel_sample_counts, image_width * image_height);
+            }
+
             renderBatch(frame, display_view, current_samples, max_samples, adaptive_samples_per_batch, gamma,
-                        d_rand_states, d_accum_buffer, gpu_scene, is_camera_moving, adaptive_depth, context);
+                        d_rand_states, d_accum_buffer, gpu_scene, is_camera_moving, adaptive_depth, context,
+                        adaptive_sampling_enabled ? d_pixel_sample_counts : nullptr,
+                        min_adaptive_samples, adaptive_threshold);
 
             auto frame_end = std::chrono::high_resolution_clock::now();
             std::chrono::duration<float, std::milli> frame_time = frame_end - frame_start;
@@ -323,6 +347,21 @@ class RendererCUDAProgressive : public IRenderer
             if (is_camera_moving)
             {
                adaptive_samples_per_batch = motion_samples;
+            }
+
+            // Update convergence percentage for GUI display (every 10th frame to avoid overhead)
+            if (adaptive_sampling_enabled && d_pixel_sample_counts != nullptr && current_samples % 50 < adaptive_samples_per_batch)
+            {
+               int num_pixels = image_width * image_height;
+               int converged = ::countConvergedPixels(d_pixel_sample_counts, num_pixels);
+               convergence_pct = 100.0f * (float)converged / (float)num_pixels;
+            }
+
+            // Overlay heatmap if enabled (replaces the normal display with sample count visualization)
+            if (show_heatmap && d_pixel_sample_counts != nullptr)
+            {
+               ::renderSampleHeatmapCUDA(d_pixel_sample_counts, display_image.data(), image_width, image_height,
+                                         image_channels, current_samples);
             }
 
             if (target.pixels)
@@ -342,6 +381,8 @@ class RendererCUDAProgressive : public IRenderer
          float old_fuzz = metal_fuzziness;
          float old_ior = glass_refraction_index;
          int old_scene_index = current_scene_index;
+         bool old_adaptive = adaptive_sampling_enabled;
+         float old_adaptive_thresh = adaptive_threshold;
 
          // Draw ImGui UI — passes pointers so ImGui can modify values directly
          bool auto_orbit = camera_control.isAutoOrbitEnabled();
@@ -352,7 +393,8 @@ class RendererCUDAProgressive : public IRenderer
                            &dof_enabled, &dof_aperture, &dof_focus_distance, &light_intensity, &background_intensity,
                            &metal_fuzziness, &glass_refraction_index, &samples_per_batch_float, &accumulation_enabled,
                            &auto_orbit, &current_scene_index, scene_names, scene_count,
-                           cam_pos, cam_lookat, (float)camera.vfov);
+                           cam_pos, cam_lookat, (float)camera.vfov,
+                           &adaptive_sampling_enabled, &adaptive_threshold, convergence_pct, &show_heatmap);
 
          if (auto_orbit != camera_control.isAutoOrbitEnabled())
          {
@@ -412,6 +454,16 @@ class RendererCUDAProgressive : public IRenderer
             camera_changed = true;
             applySceneSettings();
          }
+
+         // Adaptive sampling toggled or threshold changed — restart accumulation
+         if (adaptive_sampling_enabled != old_adaptive || adaptive_threshold != old_adaptive_thresh)
+         {
+            // Turning off adaptive sampling also disables the heatmap
+            if (!adaptive_sampling_enabled)
+               show_heatmap = false;
+
+            camera_changed = true;
+         }
       }
 
       auto total_end = std::chrono::high_resolution_clock::now();
@@ -425,6 +477,10 @@ class RendererCUDAProgressive : public IRenderer
       if (d_accum_buffer != nullptr)
       {
          freeDeviceAccumBuffer(d_accum_buffer);
+      }
+      if (d_pixel_sample_counts != nullptr)
+      {
+         freeAdaptiveBuffer(d_pixel_sample_counts);
       }
 
       // Cleanup scene
@@ -471,7 +527,9 @@ class RendererCUDAProgressive : public IRenderer
     */
    void renderBatch(const CameraFrame &frame, RenderTargetView display_target, int &current_samples, int max_samples,
                     int samples_per_batch, float gamma, void *&d_rand_states, void *&d_accum_buffer,
-                    CudaScene::Scene *gpu_scene, bool is_moving, bool adaptive_depth, RenderContext &context)
+                    CudaScene::Scene *gpu_scene, bool is_moving, bool adaptive_depth, RenderContext &context,
+                    void *d_pixel_sample_counts = nullptr, int min_adaptive_samples = 32,
+                    float adaptive_threshold = 0.01f)
    {
       current_samples += samples_per_batch;
 
@@ -493,14 +551,15 @@ class RendererCUDAProgressive : public IRenderer
           frame.pixel00_loc.z(), frame.pixel_delta_u.x(), frame.pixel_delta_u.y(), frame.pixel_delta_u.z(),
           frame.pixel_delta_v.x(), frame.pixel_delta_v.y(), frame.pixel_delta_v.z(), actual_samples_to_add,
           current_samples, progressive_depth, &d_rand_states, &d_accum_buffer, frame.u.x(), frame.u.y(), frame.u.z(),
-          frame.v.x(), frame.v.y(), frame.v.z());
+          frame.v.x(), frame.v.y(), frame.v.z(), d_pixel_sample_counts, min_adaptive_samples, adaptive_threshold);
 
       context.ray_counter.fetch_add(cuda_ray_count, std::memory_order_relaxed);
 
       // GPU-side gamma correction -> copy only uint8 display image to host
+      // Pass per-pixel sample counts so each pixel divides by its own count
       auto &display_image = *display_target.pixels;
       ::convertAccumToDisplayCUDA(d_accum_buffer, display_image.data(), display_target.width, display_target.height,
-                                  display_target.channels, current_samples, gamma);
+                                  display_target.channels, current_samples, gamma, d_pixel_sample_counts);
    }
 };
 
