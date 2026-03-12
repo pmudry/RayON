@@ -15,9 +15,9 @@ Enables fast `rsqrtf`, fused multiply-add, relaxed denormals. Negligible visual 
 Kernel already uses `float4` coalesced reads/writes.
 - **Files**: `gpu_renderers/shaders/render_acc_kernel.cu`
 
-### Option 3: Increase occupancy / tune kernel launch (Medium, ~10-20% speedup)
-Profile with `ncu`, test 512 threads/block, evaluate register pressure vs. occupancy tradeoff.
-- **Files**: `renderer_cuda_device.cu`
+### Option 3: Occupancy tuning (register cap + block shape) — TESTED, NO CONSISTENT GAIN
+Profiled register usage (80 regs, 50% occupancy). Tested `--maxrregcount` at 48/56/64/80 and block shapes 32x8/16x16/8x32. At 720p, 64 regs + 16x16 gave ~7% speedup; at 1080p/2000spp the spill overhead cancelled the occupancy gain. Reverted to 80 regs + 32x8 as the safer default across resolutions.
+- **Files**: `CMakeLists.txt`, `renderer_cuda_device.cu`
 
 ### Option 4: Use texture memory for BVH/geometry (Medium, ~5-15% speedup)
 Bind BVH node and geometry arrays as CUDA texture objects for better cache behavior during traversal.

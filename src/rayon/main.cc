@@ -223,7 +223,7 @@ int main(int argc, char *argv[])
    cout << "\n";
    cout << "====================================" << "\n";
    cout << " RayON raytracer v" << version << " - " << compiled_config << "\n";
-   cout << " Dr P.-A. Mudry, 2025-2026" << "\n";
+   cout << " An ISC demo by Dr P.-A. Mudry, 2025-2026" << "\n";
    cout << "====================================" << "\n";
 #ifdef DIAGS
    cout << "Using features : yaml_scene_loader, unified_scene_descriptions, cuda_optimization_1, BVH" << "\n";

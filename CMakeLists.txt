@@ -206,7 +206,7 @@ if(CUDA_FOUND)
     # CUDA compiler flags for optimization and warning suppression
     target_compile_options(rayon PRIVATE
         $<$<COMPILE_LANGUAGE:CUDA>:
-        -maxrregcount 80               # Limit max registers per thread for better occupancy (TO BE TUNED)
+        -maxrregcount 80               # Profiled: 64 regs gave 67% occupancy but spill hurt at high res
         -Xcompiler=-fno-strict-aliasing -rdynamic -lineinfo # Optimize memory access
         --expt-relaxed-constexpr # Allow relaxed constexpr
         --expt-extended-lambda # Enable extended lambda support
