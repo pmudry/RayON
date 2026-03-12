@@ -23,9 +23,9 @@ Profile with `ncu`, test 512 threads/block, evaluate register pressure vs. occup
 Bind BVH node and geometry arrays as CUDA texture objects for better cache behavior during traversal.
 - **Files**: `renderer_cuda_device.cu`, `scene_builder_cuda.cu`, `cuda_raytracer.cuh`
 
-### Option 5: Compact BVH node layout (Medium, ~10-20% speedup)
-Pack BVH nodes to 64-byte cache-line alignment. Store child AABBs together so both children can be tested with a single cache line fetch.
-- **Files**: `cuda_scene.cuh`, `cuda_raytracer.cuh`, `scene_builder_cuda.cu`, `scenes/scene_description.hpp`
+### Option 5: Compact BVH node layout — DONE
+`BVHNode` is `alignas(64)` with packed 64-byte cache-line layout: bounds (24B), child/leaf union (8B), `is_leaf` + `split_axis` (2B), padding (30B). Each node fetch loads all needed data in a single memory transaction.
+- **Files**: `cuda_scene.cuh`
 
 ### Option 6: Russian roulette from bounce 1 — DONE
 Already starts at bounce 1 with energy compensation in `cuda_raytracer.cuh`.

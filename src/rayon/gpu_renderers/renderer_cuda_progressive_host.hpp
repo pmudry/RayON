@@ -28,10 +28,9 @@ class RendererCUDAProgressive : public IRenderer
  public:
    struct Settings
    {
-      int samples_per_batch = 8;
-      int motion_samples = 10;
+      int samples_per_batch = constants::INTERACTIVE_SAMPLES_PER_BATCH;
+      int motion_samples = constants::INTERACTIVE_MOTION_SAMPLES;
       bool auto_accumulate = true;
-      int target_fps = 60;
       bool adaptive_depth = false;
       bool adaptive_sampling = true;
       GuiTheme theme = GuiTheme::NORD;
@@ -47,7 +46,6 @@ class RendererCUDAProgressive : public IRenderer
       int samples_per_batch = settings_.samples_per_batch;
       int motion_samples = settings_.motion_samples;
       bool auto_accumulate = settings_.auto_accumulate;
-      int target_fps = settings_.target_fps;
       bool adaptive_depth = settings_.adaptive_depth;
 
       auto &camera = request.camera;

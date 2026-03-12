@@ -6,7 +6,7 @@ namespace constants
 {
     const std::string ver_major = "1";
     const std::string ver_minor = "5";
-    const std::string ver_patch = "0";
+    const std::string ver_patch = "2";
     const std::string version = ver_major + "." + ver_minor + "." + ver_patch;
 
     // Image specifics settings
@@ -16,7 +16,11 @@ namespace constants
     const int IMAGE_WIDTH = (int)(ASPECT_RATIO * SET_IMAGE_HEIGHT);
     const int CHANNELS = 3; // RGB
 
-    // Renderer specific settings
-    const int SAMPLES_PER_PIXEL = 64; // Number of samples per pixel for anti-aliasing
-    const int MAX_DEPTH = 16;         // Maximum recursion depth for ray tracing
-}; 
+    // Default renderer settings
+    const int SAMPLES_PER_PIXEL = 64; // Default samples per pixel for path tracing
+    const int MAX_DEPTH = 16;         // Maximum ray bounce depth
+
+    // Interactive renderer defaults (mode 3)
+    const int INTERACTIVE_SAMPLES_PER_BATCH = 50;  // Samples per batch when camera is still
+    const int INTERACTIVE_MOTION_SAMPLES = 10;     // Samples per batch while camera is moving
+};
