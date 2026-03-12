@@ -1,0 +1,189 @@
+camera:
+  position: [0.0, 8.0, 20.0]
+  look_at: [0.0, 0.5, 0.0]
+  up: [0.0, 1.0, 0.0]
+  fov: 35.0
+
+settings:
+  background_color: [0.35, 0.55, 0.85]
+  ambient_light: 0.08
+  background_intensity: 0.2
+  use_bvh: true
+
+materials:
+  - { name: ground, type: lambertian, albedo: [0.38, 0.40, 0.42] }
+  - { name: light, type: light, emission: [8.0, 7.0, 6.0], albedo: [1.0, 1.0, 1.0] }
+  - { name: mat_a, type: lambertian, albedo: [0.87, 0.31, 0.29] }
+  - { name: mat_b, type: lambertian, albedo: [0.28, 0.74, 0.42] }
+  - { name: mat_c, type: lambertian, albedo: [0.30, 0.55, 0.88] }
+  - { name: mat_d, type: rough_mirror, albedo: [0.88, 0.86, 0.82], roughness: 0.12, metallic: 1.0 }
+  - { name: mat_e, type: glass, albedo: [1.0, 1.0, 1.0], refractive_index: 1.5, transmission: 1.0 }
+
+geometry:
+  - { type: sphere, material: ground, center: [0.0, -1000.0, 0.0], radius: 1000.0 }
+  - { type: rectangle, material: light, corner: [-8.0, 10.0, -8.0], u: [16.0, 0.0, 0.0], v: [0.0, 0.0, 16.0], visible: false }
+  - { type: sphere, material: mat_c, center: [-14, 0.35, -10], radius: 0.35 }
+  - { type: sphere, material: mat_d, center: [-12, 0.35, -10], radius: 0.35 }
+  - { type: sphere, material: , center: [-10, 0.35, -10], radius: 0.35 }
+  - { type: sphere, material: mat_a, center: [-8, 0.35, -10], radius: 0.35 }
+  - { type: sphere, material: mat_b, center: [-6, 0.35, -10], radius: 0.35 }
+  - { type: sphere, material: mat_c, center: [-4, 0.35, -10], radius: 0.35 }
+  - { type: sphere, material: mat_d, center: [-2, 0.35, -10], radius: 0.35 }
+  - { type: sphere, material: , center: [0, 0.35, -10], radius: 0.35 }
+  - { type: sphere, material: mat_a, center: [2, 0.35, -10], radius: 0.35 }
+  - { type: sphere, material: mat_b, center: [4, 0.35, -10], radius: 0.35 }
+  - { type: sphere, material: mat_c, center: [6, 0.35, -10], radius: 0.35 }
+  - { type: sphere, material: mat_d, center: [8, 0.35, -10], radius: 0.35 }
+  - { type: sphere, material: , center: [10, 0.35, -10], radius: 0.35 }
+  - { type: sphere, material: mat_a, center: [12, 0.35, -10], radius: 0.35 }
+  - { type: sphere, material: mat_b, center: [14, 0.35, -10], radius: 0.35 }
+  - { type: sphere, material: mat_d, center: [-14, 0.35, -8], radius: 0.35 }
+  - { type: sphere, material: , center: [-12, 0.35, -8], radius: 0.35 }
+  - { type: sphere, material: mat_a, center: [-10, 0.35, -8], radius: 0.35 }
+  - { type: sphere, material: mat_b, center: [-8, 0.35, -8], radius: 0.35 }
+  - { type: sphere, material: mat_c, center: [-6, 0.35, -8], radius: 0.35 }
+  - { type: sphere, material: mat_d, center: [-4, 0.35, -8], radius: 0.35 }
+  - { type: sphere, material: , center: [-2, 0.35, -8], radius: 0.35 }
+  - { type: sphere, material: mat_a, center: [0, 0.35, -8], radius: 0.35 }
+  - { type: sphere, material: mat_b, center: [2, 0.35, -8], radius: 0.35 }
+  - { type: sphere, material: mat_c, center: [4, 0.35, -8], radius: 0.35 }
+  - { type: sphere, material: mat_d, center: [6, 0.35, -8], radius: 0.35 }
+  - { type: sphere, material: , center: [8, 0.35, -8], radius: 0.35 }
+  - { type: sphere, material: mat_a, center: [10, 0.35, -8], radius: 0.35 }
+  - { type: sphere, material: mat_b, center: [12, 0.35, -8], radius: 0.35 }
+  - { type: sphere, material: mat_c, center: [14, 0.35, -8], radius: 0.35 }
+  - { type: sphere, material: , center: [-14, 0.35, -6], radius: 0.35 }
+  - { type: sphere, material: mat_a, center: [-12, 0.35, -6], radius: 0.35 }
+  - { type: sphere, material: mat_b, center: [-10, 0.35, -6], radius: 0.35 }
+  - { type: sphere, material: mat_c, center: [-8, 0.35, -6], radius: 0.35 }
+  - { type: sphere, material: mat_d, center: [-6, 0.35, -6], radius: 0.35 }
+  - { type: sphere, material: , center: [-4, 0.35, -6], radius: 0.35 }
+  - { type: sphere, material: mat_a, center: [-2, 0.35, -6], radius: 0.35 }
+  - { type: sphere, material: mat_b, center: [0, 0.35, -6], radius: 0.35 }
+  - { type: sphere, material: mat_c, center: [2, 0.35, -6], radius: 0.35 }
+  - { type: sphere, material: mat_d, center: [4, 0.35, -6], radius: 0.35 }
+  - { type: sphere, material: , center: [6, 0.35, -6], radius: 0.35 }
+  - { type: sphere, material: mat_a, center: [8, 0.35, -6], radius: 0.35 }
+  - { type: sphere, material: mat_b, center: [10, 0.35, -6], radius: 0.35 }
+  - { type: sphere, material: mat_c, center: [12, 0.35, -6], radius: 0.35 }
+  - { type: sphere, material: mat_d, center: [14, 0.35, -6], radius: 0.35 }
+  - { type: sphere, material: mat_a, center: [-14, 0.35, -4], radius: 0.35 }
+  - { type: sphere, material: mat_b, center: [-12, 0.35, -4], radius: 0.35 }
+  - { type: sphere, material: mat_c, center: [-10, 0.35, -4], radius: 0.35 }
+  - { type: sphere, material: mat_d, center: [-8, 0.35, -4], radius: 0.35 }
+  - { type: sphere, material: , center: [-6, 0.35, -4], radius: 0.35 }
+  - { type: sphere, material: mat_a, center: [-4, 0.35, -4], radius: 0.35 }
+  - { type: sphere, material: mat_b, center: [-2, 0.35, -4], radius: 0.35 }
+  - { type: sphere, material: mat_c, center: [0, 0.35, -4], radius: 0.35 }
+  - { type: sphere, material: mat_d, center: [2, 0.35, -4], radius: 0.35 }
+  - { type: sphere, material: , center: [4, 0.35, -4], radius: 0.35 }
+  - { type: sphere, material: mat_a, center: [6, 0.35, -4], radius: 0.35 }
+  - { type: sphere, material: mat_b, center: [8, 0.35, -4], radius: 0.35 }
+  - { type: sphere, material: mat_c, center: [10, 0.35, -4], radius: 0.35 }
+  - { type: sphere, material: mat_d, center: [12, 0.35, -4], radius: 0.35 }
+  - { type: sphere, material: , center: [14, 0.35, -4], radius: 0.35 }
+  - { type: sphere, material: mat_b, center: [-14, 0.35, -2], radius: 0.35 }
+  - { type: sphere, material: mat_c, center: [-12, 0.35, -2], radius: 0.35 }
+  - { type: sphere, material: mat_d, center: [-10, 0.35, -2], radius: 0.35 }
+  - { type: sphere, material: , center: [-8, 0.35, -2], radius: 0.35 }
+  - { type: sphere, material: mat_a, center: [-6, 0.35, -2], radius: 0.35 }
+  - { type: sphere, material: mat_b, center: [-4, 0.35, -2], radius: 0.35 }
+  - { type: sphere, material: mat_c, center: [-2, 0.35, -2], radius: 0.35 }
+  - { type: sphere, material: mat_d, center: [0, 0.35, -2], radius: 0.35 }
+  - { type: sphere, material: , center: [2, 0.35, -2], radius: 0.35 }
+  - { type: sphere, material: mat_a, center: [4, 0.35, -2], radius: 0.35 }
+  - { type: sphere, material: mat_b, center: [6, 0.35, -2], radius: 0.35 }
+  - { type: sphere, material: mat_c, center: [8, 0.35, -2], radius: 0.35 }
+  - { type: sphere, material: mat_d, center: [10, 0.35, -2], radius: 0.35 }
+  - { type: sphere, material: , center: [12, 0.35, -2], radius: 0.35 }
+  - { type: sphere, material: mat_a, center: [14, 0.35, -2], radius: 0.35 }
+  - { type: sphere, material: mat_c, center: [-14, 0.35, 0], radius: 0.35 }
+  - { type: sphere, material: mat_d, center: [-12, 0.35, 0], radius: 0.35 }
+  - { type: sphere, material: , center: [-10, 0.35, 0], radius: 0.35 }
+  - { type: sphere, material: mat_a, center: [-8, 0.35, 0], radius: 0.35 }
+  - { type: sphere, material: mat_b, center: [-6, 0.35, 0], radius: 0.35 }
+  - { type: sphere, material: mat_c, center: [-4, 0.35, 0], radius: 0.35 }
+  - { type: sphere, material: mat_d, center: [-2, 0.35, 0], radius: 0.35 }
+  - { type: sphere, material: , center: [0, 0.35, 0], radius: 0.35 }
+  - { type: sphere, material: mat_a, center: [2, 0.35, 0], radius: 0.35 }
+  - { type: sphere, material: mat_b, center: [4, 0.35, 0], radius: 0.35 }
+  - { type: sphere, material: mat_c, center: [6, 0.35, 0], radius: 0.35 }
+  - { type: sphere, material: mat_d, center: [8, 0.35, 0], radius: 0.35 }
+  - { type: sphere, material: , center: [10, 0.35, 0], radius: 0.35 }
+  - { type: sphere, material: mat_a, center: [12, 0.35, 0], radius: 0.35 }
+  - { type: sphere, material: mat_b, center: [14, 0.35, 0], radius: 0.35 }
+  - { type: sphere, material: mat_d, center: [-14, 0.35, 2], radius: 0.35 }
+  - { type: sphere, material: , center: [-12, 0.35, 2], radius: 0.35 }
+  - { type: sphere, material: mat_a, center: [-10, 0.35, 2], radius: 0.35 }
+  - { type: sphere, material: mat_b, center: [-8, 0.35, 2], radius: 0.35 }
+  - { type: sphere, material: mat_c, center: [-6, 0.35, 2], radius: 0.35 }
+  - { type: sphere, material: mat_d, center: [-4, 0.35, 2], radius: 0.35 }
+  - { type: sphere, material: , center: [-2, 0.35, 2], radius: 0.35 }
+  - { type: sphere, material: mat_a, center: [0, 0.35, 2], radius: 0.35 }
+  - { type: sphere, material: mat_b, center: [2, 0.35, 2], radius: 0.35 }
+  - { type: sphere, material: mat_c, center: [4, 0.35, 2], radius: 0.35 }
+  - { type: sphere, material: mat_d, center: [6, 0.35, 2], radius: 0.35 }
+  - { type: sphere, material: , center: [8, 0.35, 2], radius: 0.35 }
+  - { type: sphere, material: mat_a, center: [10, 0.35, 2], radius: 0.35 }
+  - { type: sphere, material: mat_b, center: [12, 0.35, 2], radius: 0.35 }
+  - { type: sphere, material: mat_c, center: [14, 0.35, 2], radius: 0.35 }
+  - { type: sphere, material: , center: [-14, 0.35, 4], radius: 0.35 }
+  - { type: sphere, material: mat_a, center: [-12, 0.35, 4], radius: 0.35 }
+  - { type: sphere, material: mat_b, center: [-10, 0.35, 4], radius: 0.35 }
+  - { type: sphere, material: mat_c, center: [-8, 0.35, 4], radius: 0.35 }
+  - { type: sphere, material: mat_d, center: [-6, 0.35, 4], radius: 0.35 }
+  - { type: sphere, material: , center: [-4, 0.35, 4], radius: 0.35 }
+  - { type: sphere, material: mat_a, center: [-2, 0.35, 4], radius: 0.35 }
+  - { type: sphere, material: mat_b, center: [0, 0.35, 4], radius: 0.35 }
+  - { type: sphere, material: mat_c, center: [2, 0.35, 4], radius: 0.35 }
+  - { type: sphere, material: mat_d, center: [4, 0.35, 4], radius: 0.35 }
+  - { type: sphere, material: , center: [6, 0.35, 4], radius: 0.35 }
+  - { type: sphere, material: mat_a, center: [8, 0.35, 4], radius: 0.35 }
+  - { type: sphere, material: mat_b, center: [10, 0.35, 4], radius: 0.35 }
+  - { type: sphere, material: mat_c, center: [12, 0.35, 4], radius: 0.35 }
+  - { type: sphere, material: mat_d, center: [14, 0.35, 4], radius: 0.35 }
+  - { type: sphere, material: mat_a, center: [-14, 0.35, 6], radius: 0.35 }
+  - { type: sphere, material: mat_b, center: [-12, 0.35, 6], radius: 0.35 }
+  - { type: sphere, material: mat_c, center: [-10, 0.35, 6], radius: 0.35 }
+  - { type: sphere, material: mat_d, center: [-8, 0.35, 6], radius: 0.35 }
+  - { type: sphere, material: , center: [-6, 0.35, 6], radius: 0.35 }
+  - { type: sphere, material: mat_a, center: [-4, 0.35, 6], radius: 0.35 }
+  - { type: sphere, material: mat_b, center: [-2, 0.35, 6], radius: 0.35 }
+  - { type: sphere, material: mat_c, center: [0, 0.35, 6], radius: 0.35 }
+  - { type: sphere, material: mat_d, center: [2, 0.35, 6], radius: 0.35 }
+  - { type: sphere, material: , center: [4, 0.35, 6], radius: 0.35 }
+  - { type: sphere, material: mat_a, center: [6, 0.35, 6], radius: 0.35 }
+  - { type: sphere, material: mat_b, center: [8, 0.35, 6], radius: 0.35 }
+  - { type: sphere, material: mat_c, center: [10, 0.35, 6], radius: 0.35 }
+  - { type: sphere, material: mat_d, center: [12, 0.35, 6], radius: 0.35 }
+  - { type: sphere, material: , center: [14, 0.35, 6], radius: 0.35 }
+  - { type: sphere, material: mat_b, center: [-14, 0.35, 8], radius: 0.35 }
+  - { type: sphere, material: mat_c, center: [-12, 0.35, 8], radius: 0.35 }
+  - { type: sphere, material: mat_d, center: [-10, 0.35, 8], radius: 0.35 }
+  - { type: sphere, material: , center: [-8, 0.35, 8], radius: 0.35 }
+  - { type: sphere, material: mat_a, center: [-6, 0.35, 8], radius: 0.35 }
+  - { type: sphere, material: mat_b, center: [-4, 0.35, 8], radius: 0.35 }
+  - { type: sphere, material: mat_c, center: [-2, 0.35, 8], radius: 0.35 }
+  - { type: sphere, material: mat_d, center: [0, 0.35, 8], radius: 0.35 }
+  - { type: sphere, material: , center: [2, 0.35, 8], radius: 0.35 }
+  - { type: sphere, material: mat_a, center: [4, 0.35, 8], radius: 0.35 }
+  - { type: sphere, material: mat_b, center: [6, 0.35, 8], radius: 0.35 }
+  - { type: sphere, material: mat_c, center: [8, 0.35, 8], radius: 0.35 }
+  - { type: sphere, material: mat_d, center: [10, 0.35, 8], radius: 0.35 }
+  - { type: sphere, material: , center: [12, 0.35, 8], radius: 0.35 }
+  - { type: sphere, material: mat_a, center: [14, 0.35, 8], radius: 0.35 }
+  - { type: sphere, material: mat_c, center: [-14, 0.35, 10], radius: 0.35 }
+  - { type: sphere, material: mat_d, center: [-12, 0.35, 10], radius: 0.35 }
+  - { type: sphere, material: , center: [-10, 0.35, 10], radius: 0.35 }
+  - { type: sphere, material: mat_a, center: [-8, 0.35, 10], radius: 0.35 }
+  - { type: sphere, material: mat_b, center: [-6, 0.35, 10], radius: 0.35 }
+  - { type: sphere, material: mat_c, center: [-4, 0.35, 10], radius: 0.35 }
+  - { type: sphere, material: mat_d, center: [-2, 0.35, 10], radius: 0.35 }
+  - { type: sphere, material: , center: [0, 0.35, 10], radius: 0.35 }
+  - { type: sphere, material: mat_a, center: [2, 0.35, 10], radius: 0.35 }
+  - { type: sphere, material: mat_b, center: [4, 0.35, 10], radius: 0.35 }
+  - { type: sphere, material: mat_c, center: [6, 0.35, 10], radius: 0.35 }
+  - { type: sphere, material: mat_d, center: [8, 0.35, 10], radius: 0.35 }
+  - { type: sphere, material: , center: [10, 0.35, 10], radius: 0.35 }
+  - { type: sphere, material: mat_a, center: [12, 0.35, 10], radius: 0.35 }
+  - { type: sphere, material: mat_b, center: [14, 0.35, 10], radius: 0.35 }

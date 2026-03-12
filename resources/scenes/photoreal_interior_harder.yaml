@@ -1,0 +1,31 @@
+camera:
+  position: [0.0, 1.4, 6.8]
+  look_at: [0.0, 1.0, 0.0]
+  up: [0.0, 1.0, 0.0]
+  fov: 36.0
+
+settings:
+  background_color: [0.0, 0.0, 0.0]
+  ambient_light: 0.0
+  background_intensity: 0.0
+  use_bvh: true
+
+materials:
+  - { name: plaster, type: lambertian, albedo: [0.78, 0.77, 0.75] }
+  - { name: warm_wall, type: lambertian, albedo: [0.70, 0.62, 0.55] }
+  - { name: wood, type: lambertian, albedo: [0.45, 0.30, 0.18] }
+  - { name: steel, type: rough_mirror, albedo: [0.82, 0.84, 0.88], roughness: 0.09, metallic: 1.0 }
+  - { name: glass, type: glass, albedo: [1.0, 1.0, 1.0], refractive_index: 1.5, transmission: 1.0 }
+  - { name: lamp, type: light, emission: [12.0, 10.0, 8.0], albedo: [1.0, 1.0, 1.0] }
+
+geometry:
+  - { type: rectangle, material: wood, corner: [-3.0, 0.0, -4.0], u: [6.0, 0.0, 0.0], v: [0.0, 0.0, 8.0] }
+  - { type: rectangle, material: plaster, corner: [-3.0, 3.0, -4.0], u: [6.0, 0.0, 0.0], v: [0.0, 0.0, 8.0] }
+  - { type: rectangle, material: warm_wall, corner: [-3.0, 0.0, -4.0], u: [6.0, 0.0, 0.0], v: [0.0, 3.0, 0.0] }
+  - { type: rectangle, material: plaster, corner: [-3.0, 0.0, -4.0], u: [0.0, 0.0, 8.0], v: [0.0, 3.0, 0.0] }
+  - { type: rectangle, material: plaster, corner: [3.0, 0.0, -4.0], u: [0.0, 0.0, 8.0], v: [0.0, 3.0, 0.0] }
+  - { type: rectangle, material: lamp, corner: [-0.8, 2.85, -1.2], u: [1.6, 0.0, 0.0], v: [0.0, 0.0, 1.6], visible: false }
+  - { type: sphere, material: steel, center: [-1.0, 0.55, 0.3], radius: 0.55 }
+  - { type: sphere, material: glass, center: [0.1, 0.55, -0.2], radius: 0.55 }
+  - { type: sphere, material: plaster, center: [1.2, 0.35, 0.7], radius: 0.35 }
+  - { type: displaced_sphere, material: wood, center: [0.0, 0.35, -1.6], radius: 0.35, displacement_scale: 0.12, pattern_type: 0 }

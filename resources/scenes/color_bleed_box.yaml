@@ -1,0 +1,29 @@
+camera:
+  position: [0.0, 1.1, 5.2]
+  look_at: [0.0, 1.0, 0.0]
+  up: [0.0, 1.0, 0.0]
+  fov: 41.0
+
+settings:
+  background_color: [0.0, 0.0, 0.0]
+  ambient_light: 0.0
+  background_intensity: 0.0
+  use_bvh: true
+
+materials:
+  - { name: white, type: lambertian, albedo: [0.75, 0.75, 0.75] }
+  - { name: red, type: lambertian, albedo: [0.80, 0.15, 0.15] }
+  - { name: green, type: lambertian, albedo: [0.18, 0.75, 0.22] }
+  - { name: blue, type: lambertian, albedo: [0.15, 0.25, 0.80] }
+  - { name: light, type: light, emission: [16.0, 16.0, 16.0], albedo: [1.0, 1.0, 1.0] }
+  - { name: neutral_obj, type: lambertian, albedo: [0.72, 0.72, 0.72] }
+
+geometry:
+  - { type: rectangle, material: white, corner: [-1.5, 0.0, -1.5], u: [3.0, 0.0, 0.0], v: [0.0, 0.0, 3.0] }
+  - { type: rectangle, material: white, corner: [-1.5, 2.2, -1.5], u: [3.0, 0.0, 0.0], v: [0.0, 0.0, 3.0] }
+  - { type: rectangle, material: blue, corner: [-1.5, 0.0, -1.5], u: [3.0, 0.0, 0.0], v: [0.0, 2.2, 0.0] }
+  - { type: rectangle, material: red, corner: [-1.5, 0.0, -1.5], u: [0.0, 0.0, 3.0], v: [0.0, 2.2, 0.0] }
+  - { type: rectangle, material: green, corner: [1.5, 0.0, -1.5], u: [0.0, 0.0, 3.0], v: [0.0, 2.2, 0.0] }
+  - { type: rectangle, material: light, corner: [-0.45, 2.19, -0.45], u: [0.9, 0.0, 0.0], v: [0.0, 0.0, 0.9] }
+  - { type: sphere, material: neutral_obj, center: [-0.45, 0.45, -0.1], radius: 0.45 }
+  - { type: sphere, material: neutral_obj, center: [0.55, 0.25, 0.35], radius: 0.25 }
