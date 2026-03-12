@@ -9,6 +9,10 @@ Dr Pierre-André Mudry, 2025-2026.
     <img src="images/real_time_raytrace.png" alt="Interactive path tracer rendering spheres with various materials including reflective metal, glass with refraction, and diffuse surfaces, displayed at 2000 samples per pixel in continuous accumulation mode with depth of field controls and real-time camera manipulation via mouse orbit, pan, and zoom" width="60%">
 </p>
 
+<p align="center">
+    <a href="#sample-gallery">Open the sample gallery</a>
+</p>
+
 Based on the [Ray-tracing In One Weekend](https://github.com/RayTracing/raytracing.github.io/tree/release/src/InOneWeekend) series, an amazing resource for discovering ray-tracing magic! 
 
 This project started as a hand-made re-implementation of the `InOneWeekend` raytracer version to get started and understand how it works. It went out of control rapidly and it turned out as an interactive accumulative samples real-time ray-tracer. As a result, there are multiple renderers available: 
@@ -19,6 +23,33 @@ This project started as a hand-made re-implementation of the `InOneWeekend` rayt
 1. GPU CUDA real-time raytracing with accumulative sampling
 
 It uses `stb` [single-file public domain (or MIT licensed) libraries for C/C++](https://github.com/nothings/stb/tree/master) for opening and saving images as well as immediate-mode GUI controls using [Dear ImGui](https://github.com/ocornut/imgui).
+
+# Sample gallery
+
+<details>
+<summary>Rendered samples from <code>images/samples</code></summary>
+
+<p align="center">
+    <img src="images/samples/cornell.png" alt="Cornell box sample render" width="48%">
+    <img src="images/samples/golf.png" alt="Golf scene sample render" width="48%">
+</p>
+
+<p align="center">
+    <img src="images/samples/indoor%20spheres.png" alt="Indoor spheres sample render" width="48%">
+    <img src="images/samples/isc%20spheres.png" alt="ISC spheres sample render" width="48%">
+</p>
+
+<p align="center">
+    <img src="images/samples/metals%20shine.png" alt="Metals shine sample render" width="48%">
+    <img src="images/samples/metals%20shine%202.png" alt="Metals shine alternate sample render" width="48%">
+</p>
+
+<p align="center">
+    <img src="images/samples/normals.png" alt="Normals visualization sample render" width="48%">
+    <img src="images/samples/Screenshot%20from%202026-03-12%2022-25-58.png" alt="Interactive renderer screenshot" width="48%">
+</p>
+
+</details>
 
 # How to compile and environment setup in VSCode
 
