@@ -146,6 +146,7 @@ class RendererCUDAProgressive : public IRenderer
       float adaptive_threshold = 3.16e-5f;   // Relative luminance change threshold (default ~10^-4.5)
       float convergence_pct = 0.0f;          // % of pixels that have converged (for display)
       bool show_heatmap = false;              // Toggle to display sample count heatmap
+      int visualization_mode = static_cast<int>(VisualizationMode::NORMAL); // Visualization mode (normal vs show normals)
 
       // Scene selection
       static const char *scene_names[] = {"Default Scene", "Single Object", "Cornell Box (YAML)",
@@ -153,6 +154,20 @@ class RendererCUDAProgressive : public IRenderer
       static const int scene_count = 5;
       int current_scene_index = 0; // Start with whatever was passed in
       Scene::SceneDescription active_scene = scene; // Mutable copy
+      Scene::SceneDescription original_scene = scene; // Keep original to restore materials
+
+      auto applyVisualizationToActiveScene = [&]() {
+         // Always start from original materials, then apply visualization override.
+         active_scene = original_scene;
+         if (visualization_mode == static_cast<int>(VisualizationMode::SHOW_NORMALS))
+         {
+            int material_index = active_scene.addMaterial(Scene::MaterialDesc::normal());
+            for (auto &geom : active_scene.geometries)
+            {
+               geom.material_id = material_index;
+            }
+         }
+      };
 
       // Build initial GPU scene
       CudaScene::Scene *gpu_scene = Scene::CudaSceneBuilder::buildGPUScene(active_scene);
@@ -381,6 +396,7 @@ class RendererCUDAProgressive : public IRenderer
          int old_scene_index = current_scene_index;
          bool old_adaptive = adaptive_sampling_enabled;
          float old_adaptive_thresh = adaptive_threshold;
+         int old_visualization_mode = visualization_mode;
 
          // Draw ImGui UI — passes pointers so ImGui can modify values directly
          bool auto_orbit = camera_control.isAutoOrbitEnabled();
@@ -392,7 +408,8 @@ class RendererCUDAProgressive : public IRenderer
                            &metal_fuzziness, &glass_refraction_index, &samples_per_batch_float, &accumulation_enabled,
                            &auto_orbit, &current_scene_index, scene_names, scene_count,
                            cam_pos, cam_lookat, (float)camera.vfov,
-                           &adaptive_sampling_enabled, &adaptive_threshold, convergence_pct, &show_heatmap);
+                           &adaptive_sampling_enabled, &adaptive_threshold, convergence_pct, &show_heatmap,
+                           &visualization_mode);
 
          if (auto_orbit != camera_control.isAutoOrbitEnabled())
          {
@@ -425,6 +442,10 @@ class RendererCUDAProgressive : public IRenderer
                break;
             }
 
+            // Update original_scene as well, then re-apply visualization mode.
+            original_scene = active_scene;
+            applyVisualizationToActiveScene();
+            
             // Apply scene camera
             look_from = active_scene.camera_position;
             look_at = active_scene.camera_look_at;
@@ -439,6 +460,21 @@ class RendererCUDAProgressive : public IRenderer
             Scene::CudaSceneBuilder::freeGPUScene(gpu_scene);
             gpu_scene = Scene::CudaSceneBuilder::buildGPUScene(active_scene);
 
+            // Reset rendering state
+            camera_changed = true;
+            applySceneSettings();
+         }
+
+         // Handle visualization mode change
+         if (visualization_mode != old_visualization_mode)
+         {
+            std::cout << "Switching visualization mode" << std::endl;
+            applyVisualizationToActiveScene();
+            
+            // Rebuild GPU scene
+            Scene::CudaSceneBuilder::freeGPUScene(gpu_scene);
+            gpu_scene = Scene::CudaSceneBuilder::buildGPUScene(active_scene);
+            
             // Reset rendering state
             camera_changed = true;
             applySceneSettings();

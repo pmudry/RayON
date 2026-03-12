@@ -50,6 +50,15 @@ enum class GuiTheme : int
 
 static const char *themeNames[] = {"Dark", "Light", "Classic", "Nord", "Dracula", "Gruvbox", "Catppuccin Mocha"};
 
+enum class VisualizationMode : int
+{
+   NORMAL = 0,
+   SHOW_NORMALS,
+   COUNT // must be last
+};
+
+static const char *visualizationModeNames[] = {"Normal Render", "Show Normals"};
+
 class SDLGuiHandler
 {
  public:
@@ -165,7 +174,8 @@ class SDLGuiHandler
                       int *scene_index, const char *const *scene_names, int scene_count,
                       const float *cam_pos = nullptr, const float *cam_lookat = nullptr, float cam_fov = 0.0f,
                       bool *adaptive_sampling = nullptr, float *adaptive_threshold = nullptr,
-                      float convergence_pct = 0.0f, bool *show_heatmap = nullptr)
+                      float convergence_pct = 0.0f, bool *show_heatmap = nullptr,
+                      int *visualization_mode = nullptr)
    {
       SDL_UpdateTexture(texture, nullptr, image.data(), image_width * image_channels);
       SDL_RenderClear(renderer);
@@ -326,6 +336,13 @@ class SDLGuiHandler
                   ImGui::SliderFloat("Background", background_intensity, 0.0f, 5.0f, "%.2f");
                   ImGui::SliderFloat("Metal Fuzz", metal_fuzziness, 0.0f, 5.0f, "%.2f");
                   ImGui::SliderFloat("Glass IOR", glass_ior, 1.0f, 2.5f, "%.2f");
+               }
+               
+               ImGui::Separator();
+               
+               if (visualization_mode)
+               {
+                  ImGui::Combo("Visualization", visualization_mode, visualizationModeNames, static_cast<int>(VisualizationMode::COUNT));
                }
             }
 
