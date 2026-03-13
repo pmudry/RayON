@@ -20,7 +20,7 @@ This project started as a hand-made re-implementation of the `InOneWeekend` rayt
 
 It uses [single-file public domain (or MIT licensed) libraries for C/C++](https://github.com/nothings/stb/tree/master) for opening and saving images.
 
-The project is declined (in another branch) in a much simpler form that serves as a reference implementation for the students of [ISC degree programme](https://isc.hevs.ch) _302 High-performance computing_ part.
+The project is a much improved form from the reference implementation for the students of [ISC degree programme](https://isc.hevs.ch) _302 High-performance computing_ part.
 
 # How to compile and environment setup in VSCode
 
