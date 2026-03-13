@@ -22,11 +22,15 @@ This project started as a hand-made re-implementation of the `InOneWeekend` rayt
 1. GPU CUDA accelerated
 1. GPU CUDA real-time raytracing with accumulative sampling
 
+## Interactive performance
+
+In interactive mode, the renderer is real-time on the development machine (DGX Spark) and a 100 Hz monitor, with continuous camera manipulation and progressive accumulation designed to keep the display responsive while samples converge.
+
 It uses `stb` [single-file public domain (or MIT licensed) libraries for C/C++](https://github.com/nothings/stb/tree/master) for opening and saving images as well as immediate-mode GUI controls using [Dear ImGui](https://github.com/ocornut/imgui).
 
 # Sample gallery
 
-<details>
+<details open>
 <summary>Rendered samples from <code>images/samples</code></summary>
 
 <p align="center">
