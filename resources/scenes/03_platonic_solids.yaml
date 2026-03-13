@@ -45,12 +45,11 @@ materials:
     emission: [3, 3, 4]
 
 geometry:
-  # Ground plane
   - type: "rectangle"
     material: "ground"
-    corner: [-8, -0.5, -8]
-    u: [16, 0, 0]
-    v: [0, 0, 16]
+    corner: [-200000000, -0.5, -200000000]
+    u: [400000000, 0, 0]
+    v: [0, 0, 400000000]
 
   # Main area light (overhead, slightly forward)
   - type: "rectangle"

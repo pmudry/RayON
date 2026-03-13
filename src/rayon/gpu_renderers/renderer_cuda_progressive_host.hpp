@@ -168,7 +168,6 @@ class RendererCUDAProgressive : public IRenderer
 
       std::vector<SceneEntry> scene_entries;
       scene_entries.push_back({"Default Scene", ""});
-      scene_entries.push_back({"Single Object", ""});
 
       std::set<std::string> seen_yaml_paths;
       std::vector<std::string> yaml_files;
@@ -394,10 +393,6 @@ class RendererCUDAProgressive : public IRenderer
          if (current_scene_index == 0)
          {
             active_scene = Scene::SceneFactory::createDefaultScene();
-         }
-         else if (current_scene_index == 1)
-         {
-            active_scene = Scene::SceneFactory::singleObjectScene();
          }
          else
          {

@@ -67,7 +67,7 @@ class SDLGuiHandler
    SDLGuiHandler(int image_width, int image_height, GuiTheme initial_theme = GuiTheme::NORD)
        : image_width(image_width), image_height(image_height), show_controls(true), collapse_headers(false),
          reset_headers(false), window_collapse_requested(false), window_collapsed(false), current_theme(initial_theme), initialized(false), window(nullptr), renderer(nullptr),
-         texture(nullptr), logo_texture(nullptr), last_perf_sample_time_ms(0),
+         texture(nullptr), logo_texture(nullptr), perf_write_index(0), last_perf_sample_time_ms(0),
          perf_sample_interval_ms(50), perf_time_window_ms(20000)
    {
    }
@@ -256,28 +256,33 @@ class SDLGuiHandler
                   const Uint32 now_ms = SDL_GetTicks();
                   if (last_perf_sample_time_ms == 0 || now_ms - last_perf_sample_time_ms >= perf_sample_interval_ms)
                   {
-                     sps_history.push_back(sps);
-                     ms_history.push_back(ms_per_sample);
-                     last_perf_sample_time_ms = now_ms;
-
-                     // Fixed x-axis time range: keep only the last N seconds worth of samples.
                      const size_t max_points = std::max<size_t>(10, perf_time_window_ms / perf_sample_interval_ms);
-                     if (sps_history.size() > max_points)
+
+                     // Ensure buffers are sized to max_points (filled with 0)
+                     if (sps_history.size() != max_points)
                      {
-                        sps_history.erase(sps_history.begin());
-                        ms_history.erase(ms_history.begin());
+                        sps_history.assign(max_points, 0.0f);
+                        ms_history.assign(max_points, 0.0f);
+                        perf_write_index = 0;
                      }
+
+                     sps_history[perf_write_index] = sps;
+                     ms_history[perf_write_index] = ms_per_sample;
+                     perf_write_index = (perf_write_index + 1) % static_cast<int>(max_points);
+                     last_perf_sample_time_ms = now_ms;
                   }
                }
 
                if (!sps_history.empty())
                {
+                  const int n = static_cast<int>(sps_history.size());
+
                   float max_sps = 0.0f;
                   for (float f : sps_history)
                      max_sps = std::max(max_sps, f);
 
                   ImGui::PushStyleColor(ImGuiCol_PlotLines, ImVec4(0.0f, 1.0f, 0.0f, 1.0f));
-                  ImGui::PlotLines("Live SPS", sps_history.data(), static_cast<int>(sps_history.size()), 0, nullptr,
+                  ImGui::PlotLines("Live SPS", sps_history.data(), n, perf_write_index, nullptr,
                                    0.0f, max_sps * 1.1f, ImVec2(ImGui::CalcItemWidth(), 50));
                   ImGui::PopStyleColor();
 
@@ -286,7 +291,7 @@ class SDLGuiHandler
                      max_ms = std::max(max_ms, f);
 
                   ImGui::PushStyleColor(ImGuiCol_PlotLines, ImVec4(1.0f, 0.7f, 0.0f, 1.0f));
-                  ImGui::PlotLines("Time/Sample", ms_history.data(), static_cast<int>(ms_history.size()), 0, nullptr,
+                  ImGui::PlotLines("Time/Sample", ms_history.data(), n, perf_write_index, nullptr,
                                    0.0f, max_ms * 1.1f, ImVec2(ImGui::CalcItemWidth(), 50));
                   ImGui::PopStyleColor();
                }
@@ -537,6 +542,7 @@ class SDLGuiHandler
    SDL_Rect logo_rect;
    std::vector<float> sps_history;
    std::vector<float> ms_history;
+   int perf_write_index;
    Uint32 last_perf_sample_time_ms;
    Uint32 perf_sample_interval_ms;
    Uint32 perf_time_window_ms;

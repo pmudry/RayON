@@ -47,7 +47,7 @@ geometry:
   # OBJ mesh loaded from file
   - type: "obj"
     material: "triangle_blue"
-    file: "../models/suzanne.obj"
+    file: "../models/nefertiti2.obj"
     position: [0, 0.5, 0]
     scale: [0.8, 0.8, 0.8]
 
