@@ -4,6 +4,8 @@ rendered_images/
 out/
 docs/
 .cache/
+scripts/__pycache__/
+material_gallery/
 docs/
 CMakeFiles/
 CMakeCache.txt

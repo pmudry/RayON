@@ -50,18 +50,18 @@ materials:
 
 geometry:
   # Floor
-  - { type: rectangle, material: floor, corner: [-6.0, 0.0, -4.0], u: [12.0, 0.0, 0.0], v: [0.0, 0.0, 8.0] }
+  - { type: rectangle, material: floor, corner: [-50.0, 0.0, -4.0], u: [100.0, 0.0, 0.0], v: [0.0, 0.0, 50.0] }
 
   # Back wall
-  - { type: rectangle, material: wall, corner: [-6.0, 0.0, -4.0], u: [12.0, 0.0, 0.0], v: [0.0, 5.0, 0.0] }
+  - { type: rectangle, material: wall, corner: [-50.0, 0.0, -4.0], u: [100.0, 0.0, 0.0], v: [0.0, 50.0, 0.0] }
 
   # Overhead light
   - { type: rectangle, material: light, corner: [-2.0, 4.0, -1.0], u: [4.0, 0.0, 0.0], v: [0.0, 0.0, 4.0] }
 
   # Front row — large bubbles
-  - { type: sphere, material: bubble_300, center: [-2.2, 0.85, 1.5], radius: 0.85 }
-  - { type: sphere, material: bubble_400, center: [-0.3, 0.75, 1.8], radius: 0.75 }
-  - { type: sphere, material: bubble_500, center: [1.6,  0.90, 1.3], radius: 0.90 }
+  - { type: sphere, material: bubble_300, center: [-2.2, 0.95, 1.5], radius: 0.85 }
+  - { type: sphere, material: bubble_400, center: [-0.3, 1.15, 1.8], radius: 0.75 }
+  - { type: sphere, material: bubble_500, center: [1.6,  1.20, 1.3], radius: 0.90 }
 
   # Back row — medium bubbles
   - { type: sphere, material: bubble_600, center: [-1.5, 0.65, -0.3], radius: 0.65 }

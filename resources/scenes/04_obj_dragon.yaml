@@ -2,8 +2,8 @@
 # Tests Feature G (triangle intersection), H (OBJ loading), and I (YAML+OBJ)
 
 camera:
-  position: [1.35, 2.9, 3.75]
-  look_at: [0, 0.67, 0]
+  position: [1.32, 0.41, -1.12]
+  look_at: [0.16, -0.63, 0.05]
   fov: 40
 
 settings:
