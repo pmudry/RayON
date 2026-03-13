@@ -503,6 +503,11 @@ bool loadSceneFromYAML(const char *filename, SceneDescription &scene)
       string bvh_val = removeQuotes(parser.getString("settings.use_bvh", "false"));
       scene.use_bvh = (bvh_val == "true" || bvh_val == "1");
    }
+   if (parser.hasKey("settings.adaptive_sampling"))
+   {
+      string val = removeQuotes(parser.getString("settings.adaptive_sampling", "false"));
+      scene.adaptive_sampling = (val == "true" || val == "1");
+   }
 
    // Derive scene directory for resolving relative OBJ paths
    string scene_file(filename);

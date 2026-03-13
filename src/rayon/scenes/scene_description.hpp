@@ -380,6 +380,7 @@ public:
     float ambient_light;
     float background_intensity;               // Sky/background brightness multiplier
     bool use_bvh;                             // Enable scene BVH
+    bool adaptive_sampling;                   // Enable adaptive sampling
 
     // Constructor
     SceneDescription()
@@ -391,6 +392,7 @@ public:
         , ambient_light(0.1f)
         , background_intensity(1.0f)
         , use_bvh(false)
+        , adaptive_sampling(true)
     {}
     
     //==========================================================================

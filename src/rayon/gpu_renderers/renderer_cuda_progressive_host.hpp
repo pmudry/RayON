@@ -207,6 +207,7 @@ class RendererCUDAProgressive : public IRenderer
          }
       };
 
+      // Path depend on where the main program is run, so check multiple likely locations for resources. This allows flexibility
       appendYAMLFromDirectory("../resources/scenes");
       appendYAMLFromDirectory("resources/scenes");
       appendYAMLFromDirectory("../resources");
@@ -418,6 +419,7 @@ class RendererCUDAProgressive : public IRenderer
 
          // Apply scene-specific rendering settings
          background_intensity = active_scene.background_intensity;
+         adaptive_sampling_enabled = active_scene.adaptive_sampling;
 
          // Rebuild GPU scene
          Scene::CudaSceneBuilder::freeGPUScene(gpu_scene);
@@ -455,7 +457,7 @@ class RendererCUDAProgressive : public IRenderer
                    event.type == SDL_MOUSEMOTION || event.type == SDL_MOUSEWHEEL)
                   continue;
             }
-            if (event.type == SDL_KEYDOWN)
+            if (event.type == SDL_KEYDOWN && !io.WantCaptureKeyboard)
             {
                if (event.key.keysym.sym == SDLK_h)
                {
@@ -728,6 +730,10 @@ class RendererCUDAProgressive : public IRenderer
          display_image = base_display_image;
          drawCPUArrowOverlay(display_image);
 
+         int tri_count = 0;
+         for (const auto &g : active_scene.geometries)
+            if (g.type == Scene::GeometryType::TRIANGLE) ++tri_count;
+
          gui.updateDisplay(display_image, image_channels, current_sps, current_ms_per_sample, current_samples,
                            &dof_enabled, &dof_aperture, &dof_focus_distance, &light_intensity, &background_intensity,
                            &metal_fuzziness, &glass_refraction_index, &samples_per_batch_float, &accumulation_enabled,
@@ -735,7 +741,7 @@ class RendererCUDAProgressive : public IRenderer
                            cam_pos, cam_lookat, &cam_fov_ui,
                            &adaptive_sampling_enabled, &adaptive_threshold, convergence_pct, &show_heatmap,
                            &visualization_mode, &show_normal_arrows, &normal_arrow_count,
-                           &normal_arrow_scale, &normal_arrow_thickness);
+                           &normal_arrow_scale, &normal_arrow_thickness, tri_count);
 
          if (auto_orbit != camera_control.isAutoOrbitEnabled())
          {

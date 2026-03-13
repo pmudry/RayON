@@ -138,7 +138,6 @@ class SDLGuiHandler
       ImGui::CreateContext();
       ImGuiIO &io = ImGui::GetIO();
       (void)io;
-      io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
       applyTheme(current_theme);
 
@@ -198,7 +197,8 @@ class SDLGuiHandler
                       float convergence_pct = 0.0f, bool *show_heatmap = nullptr,
                       int *visualization_mode = nullptr,
                       bool *show_normal_arrows = nullptr, int *normal_arrow_count = nullptr,
-                      float *normal_arrow_scale = nullptr, float *normal_arrow_thickness = nullptr)
+                      float *normal_arrow_scale = nullptr, float *normal_arrow_thickness = nullptr,
+                      int triangle_count = 0)
    {
       SDL_UpdateTexture(texture, nullptr, image.data(), image_width * image_channels);
       SDL_RenderClear(renderer);
@@ -430,14 +430,16 @@ class SDLGuiHandler
                }
             }
 
-            // --- Scene Selection ---
+            // --- Scene ---
             if (scene_index && scene_names && scene_count > 0)
             {
                if (reset_headers)
                   ImGui::SetNextItemOpen(!collapse_headers);
-               if (ImGui::CollapsingHeader("Scene Selection", ImGuiTreeNodeFlags_DefaultOpen))
+               if (ImGui::CollapsingHeader("Scene", ImGuiTreeNodeFlags_DefaultOpen))
                {
                   ImGui::Combo("Scene", scene_index, scene_names, scene_count);
+                  if (triangle_count > 0)
+                     ImGui::Text("Triangles: %d", triangle_count);
                }
             }
 
