@@ -503,16 +503,17 @@ public:
         geom.data.triangle.v2 = v2;
         geom.data.triangle.has_normals = false;
         
-        // Compute bounding box
+        // Compute bounding box with epsilon padding to avoid zero-thickness AABBs
+        constexpr double eps = 1e-4;
         geom.bounds_min = Vec3(
-            std::min(std::min(v0.x(), v1.x()), v2.x()),
-            std::min(std::min(v0.y(), v1.y()), v2.y()),
-            std::min(std::min(v0.z(), v1.z()), v2.z())
+            std::min(std::min(v0.x(), v1.x()), v2.x()) - eps,
+            std::min(std::min(v0.y(), v1.y()), v2.y()) - eps,
+            std::min(std::min(v0.z(), v1.z()), v2.z()) - eps
         );
         geom.bounds_max = Vec3(
-            std::max(std::max(v0.x(), v1.x()), v2.x()),
-            std::max(std::max(v0.y(), v1.y()), v2.y()),
-            std::max(std::max(v0.z(), v1.z()), v2.z())
+            std::max(std::max(v0.x(), v1.x()), v2.x()) + eps,
+            std::max(std::max(v0.y(), v1.y()), v2.y()) + eps,
+            std::max(std::max(v0.z(), v1.z()), v2.z()) + eps
         );
         
         geometries.push_back(geom);
@@ -531,16 +532,17 @@ public:
         geom.data.triangle.n2 = n2;
         geom.data.triangle.has_normals = true;
         
-        // Compute bounding box
+        // Compute bounding box with epsilon padding to avoid zero-thickness AABBs
+        constexpr double eps = 1e-4;
         geom.bounds_min = Vec3(
-            std::min(std::min(v0.x(), v1.x()), v2.x()),
-            std::min(std::min(v0.y(), v1.y()), v2.y()),
-            std::min(std::min(v0.z(), v1.z()), v2.z())
+            std::min(std::min(v0.x(), v1.x()), v2.x()) - eps,
+            std::min(std::min(v0.y(), v1.y()), v2.y()) - eps,
+            std::min(std::min(v0.z(), v1.z()), v2.z()) - eps
         );
         geom.bounds_max = Vec3(
-            std::max(std::max(v0.x(), v1.x()), v2.x()),
-            std::max(std::max(v0.y(), v1.y()), v2.y()),
-            std::max(std::max(v0.z(), v1.z()), v2.z())
+            std::max(std::max(v0.x(), v1.x()), v2.x()) + eps,
+            std::max(std::max(v0.y(), v1.y()), v2.y()) + eps,
+            std::max(std::max(v0.z(), v1.z()), v2.z()) + eps
         );
         
         geometries.push_back(geom);

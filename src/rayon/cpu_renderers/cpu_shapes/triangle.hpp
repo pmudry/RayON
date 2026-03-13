@@ -50,17 +50,25 @@ class TriangleShape : public Hittable
       rec.p = r.at(t);
       rec.mat_ptr = mat;
 
-      Vec3 outward_normal;
+      // Always use geometric normal for front-face determination
+      Vec3 geo_normal = unit_vector(cross(edge1, edge2));
+
+      Vec3 shading_normal;
       if (has_normals)
       {
          double w = 1.0 - u - v;
-         outward_normal = unit_vector(w * n0 + u * n1 + v * n2);
+         shading_normal = unit_vector(w * n0 + u * n1 + v * n2);
+         // Ensure smooth normal is on the same hemisphere as geometric normal
+         if (dot(shading_normal, geo_normal) < 0.0)
+            shading_normal = -shading_normal;
       }
       else
       {
-         outward_normal = unit_vector(cross(edge1, edge2));
+         shading_normal = geo_normal;
       }
-      rec.set_face_normal(r, outward_normal);
+
+      rec.frontFacing = dot(r.direction(), geo_normal) < 0;
+      rec.normal = rec.frontFacing ? shading_normal : -shading_normal;
       return true;
    }
 

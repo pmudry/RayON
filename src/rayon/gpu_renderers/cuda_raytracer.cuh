@@ -285,21 +285,27 @@ __device__ inline bool hit_triangle(const f3 &v0, const f3 &v1, const f3 &v2,
    rec.t = t;
    rec.p = r.at(t);
 
-   f3 outward_normal;
+   // Always use geometric normal for front-face determination
+   const f3 geo_normal = normalize(cross(edge1, edge2));
+   rec.front_face = dot(r.dir, geo_normal) < 0;
+
+   f3 shading_normal;
    if (has_normals)
    {
       // Smooth shading: interpolate vertex normals using barycentric coords
       const float w = 1.0f - u - v;
-      outward_normal = normalize(w * n0 + u * n1 + v * n2);
+      shading_normal = normalize(w * n0 + u * n1 + v * n2);
+      // Ensure smooth normal is on the same hemisphere as geometric normal
+      if (dot(shading_normal, geo_normal) < 0.0f)
+         shading_normal = f3(-shading_normal.x, -shading_normal.y, -shading_normal.z);
    }
    else
    {
-      // Flat shading: geometric normal from cross product
-      outward_normal = normalize(cross(edge1, edge2));
+      // Flat shading: use geometric normal directly
+      shading_normal = geo_normal;
    }
 
-   rec.front_face = dot(r.dir, outward_normal) < 0;
-   rec.normal = rec.front_face ? outward_normal : f3(-outward_normal.x, -outward_normal.y, -outward_normal.z);
+   rec.normal = rec.front_face ? shading_normal : f3(-shading_normal.x, -shading_normal.y, -shading_normal.z);
    return true;
 }
 
