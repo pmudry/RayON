@@ -1,14 +1,11 @@
-# Anisotropic Metals Test Scene
-# Demonstrates the GGX microfacet anisotropic conductor materials
-#
-# Back row  (gold): SAME roughness (0.45), VARYING anisotropy: 0.0 → 0.5 → 0.95
-# Front row (gold): SAME anisotropy (0.8), VARYING roughness:  0.15 → 0.35 → 0.6
-# This isolates each variable so the effect is clearly visible.
+# Anisotropic Aluminum 4×4 Grid
+# 16 spheres: X = anisotropy (0.0, 0.33, 0.66, 0.95), Y = roughness (0.1, 0.3, 0.5, 0.8)
+# Roughness increases front to back, anisotropy increases left to right.
 
 camera:
-  position: [0, 3.5, 7]
-  look_at: [0, 0.3, -1]
-  fov: 38
+  position: [0, 5, 9]
+  look_at: [0, 0.3, -1.5]
+  fov: 42
 
 settings:
   use_bvh: true
@@ -24,50 +21,12 @@ materials:
   - name: "light_top"
     type: "light"
     color: [1.0, 0.875, 0.75]
-    emission_intensity: 8    
+    emission_intensity: 8
 
   - name: "light_side"
     type: "light"
     color: [1.0, 0.875, 0.75]
     emission_intensity: 2
-
-  # --- Back row: SAME roughness 0.45, VARYING anisotropy ---
-  - name: "gold_aniso_00"
-    type: "anisotropic_metal"
-    roughness: 0.45
-    anisotropy: 0.0
-    preset: "gold"
-
-  - name: "gold_aniso_50"
-    type: "anisotropic_metal"
-    roughness: 0.45
-    anisotropy: 0.5
-    preset: "gold"
-
-  - name: "gold_aniso_95"
-    type: "anisotropic_metal"
-    roughness: 0.45
-    anisotropy: 0.95
-    preset: "gold"
-
-  # --- Front row: SAME anisotropy 0.8, VARYING roughness ---
-  - name: "gold_rough_15"
-    type: "anisotropic_metal"
-    roughness: 0.15
-    anisotropy: 0.8
-    preset: "gold"
-
-  - name: "gold_rough_35"
-    type: "anisotropic_metal"
-    roughness: 0.35
-    anisotropy: 0.8
-    preset: "gold"
-
-  - name: "gold_rough_60"
-    type: "anisotropic_metal"
-    roughness: 0.6
-    anisotropy: 0.8
-    preset: "gold"
 
   # Colored walls for visible environment reflections
   - name: "wall_red"
@@ -77,6 +36,107 @@ materials:
   - name: "wall_blue"
     type: "lambertian"
     albedo: [0.12, 0.12, 0.85]
+
+  # --- 4×4 grid: roughness × anisotropy, aluminum preset ---
+  # Row 0 (front): roughness 0.1
+  - name: "al_r010_a000"
+    type: "anisotropic_metal"
+    roughness: 0.1
+    anisotropy: 0.0
+    preset: "aluminum"
+
+  - name: "al_r010_a033"
+    type: "anisotropic_metal"
+    roughness: 0.1
+    anisotropy: 0.33
+    preset: "aluminum"
+
+  - name: "al_r010_a066"
+    type: "anisotropic_metal"
+    roughness: 0.1
+    anisotropy: 0.66
+    preset: "aluminum"
+
+  - name: "al_r010_a095"
+    type: "anisotropic_metal"
+    roughness: 0.1
+    anisotropy: 0.95
+    preset: "aluminum"
+
+  # Row 1: roughness 0.3
+  - name: "al_r030_a000"
+    type: "anisotropic_metal"
+    roughness: 0.3
+    anisotropy: 0.0
+    preset: "aluminum"
+
+  - name: "al_r030_a033"
+    type: "anisotropic_metal"
+    roughness: 0.3
+    anisotropy: 0.33
+    preset: "aluminum"
+
+  - name: "al_r030_a066"
+    type: "anisotropic_metal"
+    roughness: 0.3
+    anisotropy: 0.66
+    preset: "aluminum"
+
+  - name: "al_r030_a095"
+    type: "anisotropic_metal"
+    roughness: 0.3
+    anisotropy: 0.95
+    preset: "aluminum"
+
+  # Row 2: roughness 0.5
+  - name: "al_r050_a000"
+    type: "anisotropic_metal"
+    roughness: 0.5
+    anisotropy: 0.0
+    preset: "aluminum"
+
+  - name: "al_r050_a033"
+    type: "anisotropic_metal"
+    roughness: 0.5
+    anisotropy: 0.33
+    preset: "aluminum"
+
+  - name: "al_r050_a066"
+    type: "anisotropic_metal"
+    roughness: 0.5
+    anisotropy: 0.66
+    preset: "aluminum"
+
+  - name: "al_r050_a095"
+    type: "anisotropic_metal"
+    roughness: 0.5
+    anisotropy: 0.95
+    preset: "aluminum"
+
+  # Row 3 (back): roughness 0.8
+  - name: "al_r080_a000"
+    type: "anisotropic_metal"
+    roughness: 0.8
+    anisotropy: 0.0
+    preset: "aluminum"
+
+  - name: "al_r080_a033"
+    type: "anisotropic_metal"
+    roughness: 0.8
+    anisotropy: 0.33
+    preset: "aluminum"
+
+  - name: "al_r080_a066"
+    type: "anisotropic_metal"
+    roughness: 0.8
+    anisotropy: 0.66
+    preset: "aluminum"
+
+  - name: "al_r080_a095"
+    type: "anisotropic_metal"
+    roughness: 0.8
+    anisotropy: 0.95
+    preset: "aluminum"
 
 geometry:
   # Ground
@@ -88,58 +148,114 @@ geometry:
   # Top area light (narrow strip to show anisotropic stretching)
   - type: "rectangle"
     material: "light_top"
-    corner: [-1.0, 5, -3]
-    u: [2.0, 0, 0]
-    v: [0, 0, 4]
+    corner: [-2.0, 6, -5]
+    u: [4.0, 0, 0]
+    v: [0, 0, 6]
 
   # Side fill light
   - type: "rectangle"
     material: "light_side"
-    corner: [5, 1, -4]
-    u: [0, 2, 0]
-    v: [0, 0, 4]
-
-  # --- Back row: varying anisotropy (left=isotropic, right=brushed) ---
-  - type: "sphere"
-    material: "gold_aniso_00"
-    center: [-2.5, 0.8, -2.5]
-    radius: 0.8
-
-  - type: "sphere"
-    material: "gold_aniso_50"
-    center: [0, 0.8, -2.5]
-    radius: 0.8
-
-  - type: "sphere"
-    material: "gold_aniso_95"
-    center: [2.5, 0.8, -2.5]
-    radius: 0.8
-
-  # --- Front row: varying roughness (left=smooth, right=rough) ---
-  - type: "sphere"
-    material: "gold_rough_15"
-    center: [-2.5, 0.8, 0.5]
-    radius: 0.8
-
-  - type: "sphere"
-    material: "gold_rough_35"
-    center: [0, 0.8, 0.5]
-    radius: 0.8
-
-  - type: "sphere"
-    material: "gold_rough_60"
-    center: [2.5, 0.8, 0.5]
-    radius: 0.8
+    corner: [19, 1, -8]
+    u: [0, 3, 0]
+    v: [0, 0, 12]
 
   # Colored side walls (provide reflectable environment)
   - type: "rectangle"
     material: "wall_red"
-    corner: [-6, 0, -5]
-    u: [0, 4, 0]
-    v: [0, 0, 8]
+    corner: [-20, 0, -10]
+    u: [0, 6, 0]
+    v: [0, 0, 16]
 
   - type: "rectangle"
     material: "wall_blue"
-    corner: [6, 0, -5]
-    u: [0, 4, 0]
-    v: [0, 0, 8]
+    corner: [20, 0, -10]
+    u: [0, 6, 0]
+    v: [0, 0, 16]
+
+  # === 4×4 grid of spheres ===
+  # X = anisotropy (left to right: 0.0, 0.33, 0.66, 0.95)
+  # Z = roughness  (front to back: 0.1, 0.3, 0.5, 0.8)
+
+  # Row 0 (front, z=1.5): roughness 0.1
+  - type: "sphere"
+    material: "al_r010_a000"
+    center: [-3, 0.7, 1.5]
+    radius: 0.7
+
+  - type: "sphere"
+    material: "al_r010_a033"
+    center: [-1, 0.7, 1.5]
+    radius: 0.7
+
+  - type: "sphere"
+    material: "al_r010_a066"
+    center: [1, 0.7, 1.5]
+    radius: 0.7
+
+  - type: "sphere"
+    material: "al_r010_a095"
+    center: [3, 0.7, 1.5]
+    radius: 0.7
+
+  # Row 1 (z=-0.5): roughness 0.3
+  - type: "sphere"
+    material: "al_r030_a000"
+    center: [-3, 0.7, -0.5]
+    radius: 0.7
+
+  - type: "sphere"
+    material: "al_r030_a033"
+    center: [-1, 0.7, -0.5]
+    radius: 0.7
+
+  - type: "sphere"
+    material: "al_r030_a066"
+    center: [1, 0.7, -0.5]
+    radius: 0.7
+
+  - type: "sphere"
+    material: "al_r030_a095"
+    center: [3, 0.7, -0.5]
+    radius: 0.7
+
+  # Row 2 (z=-2.5): roughness 0.5
+  - type: "sphere"
+    material: "al_r050_a000"
+    center: [-3, 0.7, -2.5]
+    radius: 0.7
+
+  - type: "sphere"
+    material: "al_r050_a033"
+    center: [-1, 0.7, -2.5]
+    radius: 0.7
+
+  - type: "sphere"
+    material: "al_r050_a066"
+    center: [1, 0.7, -2.5]
+    radius: 0.7
+
+  - type: "sphere"
+    material: "al_r050_a095"
+    center: [3, 0.7, -2.5]
+    radius: 0.7
+
+  # Row 3 (back, z=-4.5): roughness 0.8
+  - type: "sphere"
+    material: "al_r080_a000"
+    center: [-3, 0.7, -4.5]
+    radius: 0.7
+
+  - type: "sphere"
+    material: "al_r080_a033"
+    center: [-1, 0.7, -4.5]
+    radius: 0.7
+
+  - type: "sphere"
+    material: "al_r080_a066"
+    center: [1, 0.7, -4.5]
+    radius: 0.7
+
+  - type: "sphere"
+    material: "al_r080_a095"
+    center: [3, 0.7, -4.5]
+    radius: 0.7
