@@ -1,4 +1,4 @@
-# Anisotropic Aluminum 4×4 Grid (OBJ version)
+# Anisotropic gold 4×4 Grid (OBJ version)
 # 16 icosahedra: X = anisotropy (0.0, 0.33, 0.66, 0.95), Y = roughness (0.1, 0.3, 0.5, 0.8)
 # Roughness increases front to back, anisotropy increases left to right.
 
@@ -37,106 +37,106 @@ materials:
     type: "lambertian"
     albedo: [0.12, 0.12, 0.85]
 
-  # --- 4×4 grid: roughness × anisotropy, aluminum preset ---
+  # --- 4×4 grid: roughness × anisotropy, gold preset ---
   # Row 0 (front): roughness 0.1
   - name: "al_r010_a000"
     type: "anisotropic_metal"
     roughness: 0.1
     anisotropy: 0.0
-    preset: "aluminum"
+    preset: "gold"
 
   - name: "al_r010_a033"
     type: "anisotropic_metal"
     roughness: 0.1
     anisotropy: 0.33
-    preset: "aluminum"
+    preset: "gold"
 
   - name: "al_r010_a066"
     type: "anisotropic_metal"
     roughness: 0.1
     anisotropy: 0.66
-    preset: "aluminum"
+    preset: "gold"
 
   - name: "al_r010_a095"
     type: "anisotropic_metal"
     roughness: 0.1
     anisotropy: 0.95
-    preset: "aluminum"
+    preset: "gold"
 
   # Row 1: roughness 0.3
   - name: "al_r030_a000"
     type: "anisotropic_metal"
     roughness: 0.3
     anisotropy: 0.0
-    preset: "aluminum"
+    preset: "gold"
 
   - name: "al_r030_a033"
     type: "anisotropic_metal"
     roughness: 0.3
     anisotropy: 0.33
-    preset: "aluminum"
+    preset: "gold"
 
   - name: "al_r030_a066"
     type: "anisotropic_metal"
     roughness: 0.3
     anisotropy: 0.66
-    preset: "aluminum"
+    preset: "gold"
 
   - name: "al_r030_a095"
     type: "anisotropic_metal"
     roughness: 0.3
     anisotropy: 0.95
-    preset: "aluminum"
+    preset: "gold"
 
   # Row 2: roughness 0.5
   - name: "al_r050_a000"
     type: "anisotropic_metal"
     roughness: 0.5
     anisotropy: 0.0
-    preset: "aluminum"
+    preset: "gold"
 
   - name: "al_r050_a033"
     type: "anisotropic_metal"
     roughness: 0.5
     anisotropy: 0.33
-    preset: "aluminum"
+    preset: "gold"
 
   - name: "al_r050_a066"
     type: "anisotropic_metal"
     roughness: 0.5
     anisotropy: 0.66
-    preset: "aluminum"
+    preset: "gold"
 
   - name: "al_r050_a095"
     type: "anisotropic_metal"
     roughness: 0.5
     anisotropy: 0.95
-    preset: "aluminum"
+    preset: "gold"
 
   # Row 3 (back): roughness 0.8
   - name: "al_r080_a000"
     type: "anisotropic_metal"
     roughness: 0.8
     anisotropy: 0.0
-    preset: "aluminum"
+    preset: "gold"
 
   - name: "al_r080_a033"
     type: "anisotropic_metal"
     roughness: 0.8
     anisotropy: 0.33
-    preset: "aluminum"
+    preset: "gold"
 
   - name: "al_r080_a066"
     type: "anisotropic_metal"
     roughness: 0.8
     anisotropy: 0.66
-    preset: "aluminum"
+    preset: "gold"
 
   - name: "al_r080_a095"
     type: "anisotropic_metal"
     roughness: 0.8
     anisotropy: 0.95
-    preset: "aluminum"
+    preset: "gold"
 
 geometry:
   # Ground

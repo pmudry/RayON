@@ -55,18 +55,20 @@ enum LegacyMaterialType
 struct hit_record_simple
 {
    f3 p, normal;
-   f3 tangent;          // Surface tangent for anisotropic materials
    float t;
    bool front_face;
    LegacyMaterialType material;
    f3 color;
-   float refractive_index;
    f3 emission;
    float roughness;
-   float anisotropy;    // Anisotropy ratio [0-1]
-   f3 eta;              // Complex IOR real part (conductor Fresnel)
-   f3 k_extinction;     // Complex IOR imaginary part (conductor Fresnel)
-   bool visible;        // Whether the hit geometry is visible (invisible geometry still emits light)
+   float refractive_index;  // GLASS
+   bool visible;
+
+   // Anisotropic metal fields (only meaningful when material == ANISOTROPIC_METAL)
+   f3 tangent;
+   float anisotropy;
+   f3 eta;
+   f3 k_extinction;
 };
 
 //==============================================================================
@@ -678,7 +680,7 @@ __device__ __forceinline__ bool scatter_material(const hit_record_simple &rec, c
 
       // Build TBN frame (tangent, bitangent, normal)
       f3 N = normalize(rec.normal);
-      f3 T = normalize(rec.tangent - dot(rec.tangent, N) * N); // Re-orthogonalize
+      f3 T = normalize(rec.tangent - dot(rec.tangent, N) * N);
       f3 B = cross(N, T);
 
       // Transform outgoing direction (toward viewer) to local shading space
