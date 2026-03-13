@@ -516,6 +516,34 @@ public:
         geometries.push_back(geom);
     }
     
+    void addTriangleWithNormals(const Vec3& v0, const Vec3& v1, const Vec3& v2,
+                                const Vec3& n0, const Vec3& n1, const Vec3& n2, int mat_id) {
+        GeometryDesc geom;
+        geom.type = GeometryType::TRIANGLE;
+        geom.material_id = mat_id;
+        geom.data.triangle.v0 = v0;
+        geom.data.triangle.v1 = v1;
+        geom.data.triangle.v2 = v2;
+        geom.data.triangle.n0 = n0;
+        geom.data.triangle.n1 = n1;
+        geom.data.triangle.n2 = n2;
+        geom.data.triangle.has_normals = true;
+        
+        // Compute bounding box
+        geom.bounds_min = Vec3(
+            std::min(std::min(v0.x(), v1.x()), v2.x()),
+            std::min(std::min(v0.y(), v1.y()), v2.y()),
+            std::min(std::min(v0.z(), v1.z()), v2.z())
+        );
+        geom.bounds_max = Vec3(
+            std::max(std::max(v0.x(), v1.x()), v2.x()),
+            std::max(std::max(v0.y(), v1.y()), v2.y()),
+            std::max(std::max(v0.z(), v1.z()), v2.z())
+        );
+        
+        geometries.push_back(geom);
+    }
+    
     void addMeshInstance(int mesh_id, const Vec3& pos, const Vec3& rot, const Vec3& scale, int mat_id) {
         GeometryDesc geom;
         geom.type = GeometryType::TRIANGLE_MESH;
@@ -719,6 +747,10 @@ private:
         Vec3 extent = node.bounds_max - node.bounds_min;
         float parent_area = 2.0f * (extent.x() * extent.y() + extent.y() * extent.z() + extent.z() * extent.x());
         
+        // Prefix/suffix sweep arrays for O(n) SAH evaluation per axis
+        std::vector<Vec3> prefix_min(count), prefix_max(count);
+        std::vector<Vec3> suffix_min(count), suffix_max(count);
+        
         // Try each axis
         for (int axis = 0; axis < 3; ++axis) {
             // Sort geometries along this axis by centroid
@@ -729,35 +761,39 @@ private:
                     return ca[axis] < cb[axis];
                 });
             
-            // Try different split positions using SAH
-            for (int i = start + 1; i < end; ++i) {
-                // Compute left and right bounding boxes
-                Vec3 left_min(1e30, 1e30, 1e30), left_max(-1e30, -1e30, -1e30);
-                Vec3 right_min(1e30, 1e30, 1e30), right_max(-1e30, -1e30, -1e30);
-                
-                for (int j = start; j < i; ++j) {
-                    const GeometryDesc& geom = geometries[geom_indices[j]];
-                    left_min = Vec3(std::min(left_min.x(), geom.bounds_min.x()),
-                                   std::min(left_min.y(), geom.bounds_min.y()),
-                                   std::min(left_min.z(), geom.bounds_min.z()));
-                    left_max = Vec3(std::max(left_max.x(), geom.bounds_max.x()),
-                                   std::max(left_max.y(), geom.bounds_max.y()),
-                                   std::max(left_max.z(), geom.bounds_max.z()));
-                }
-                
-                for (int j = i; j < end; ++j) {
-                    const GeometryDesc& geom = geometries[geom_indices[j]];
-                    right_min = Vec3(std::min(right_min.x(), geom.bounds_min.x()),
-                                    std::min(right_min.y(), geom.bounds_min.y()),
-                                    std::min(right_min.z(), geom.bounds_min.z()));
-                    right_max = Vec3(std::max(right_max.x(), geom.bounds_max.x()),
-                                    std::max(right_max.y(), geom.bounds_max.y()),
-                                    std::max(right_max.z(), geom.bounds_max.z()));
-                }
-                
-                // Compute surface areas
-                Vec3 left_extent = left_max - left_min;
-                Vec3 right_extent = right_max - right_min;
+            // Build prefix bounds (left-to-right sweep)
+            Vec3 running_min(1e30, 1e30, 1e30), running_max(-1e30, -1e30, -1e30);
+            for (int i = 0; i < count; ++i) {
+                const GeometryDesc& geom = geometries[geom_indices[start + i]];
+                running_min = Vec3(std::min(running_min.x(), geom.bounds_min.x()),
+                                   std::min(running_min.y(), geom.bounds_min.y()),
+                                   std::min(running_min.z(), geom.bounds_min.z()));
+                running_max = Vec3(std::max(running_max.x(), geom.bounds_max.x()),
+                                   std::max(running_max.y(), geom.bounds_max.y()),
+                                   std::max(running_max.z(), geom.bounds_max.z()));
+                prefix_min[i] = running_min;
+                prefix_max[i] = running_max;
+            }
+            
+            // Build suffix bounds (right-to-left sweep)
+            running_min = Vec3(1e30, 1e30, 1e30);
+            running_max = Vec3(-1e30, -1e30, -1e30);
+            for (int i = count - 1; i >= 0; --i) {
+                const GeometryDesc& geom = geometries[geom_indices[start + i]];
+                running_min = Vec3(std::min(running_min.x(), geom.bounds_min.x()),
+                                   std::min(running_min.y(), geom.bounds_min.y()),
+                                   std::min(running_min.z(), geom.bounds_min.z()));
+                running_max = Vec3(std::max(running_max.x(), geom.bounds_max.x()),
+                                   std::max(running_max.y(), geom.bounds_max.y()),
+                                   std::max(running_max.z(), geom.bounds_max.z()));
+                suffix_min[i] = running_min;
+                suffix_max[i] = running_max;
+            }
+            
+            // Evaluate SAH at each split position in O(1) using precomputed bounds
+            for (int i = 1; i < count; ++i) {
+                Vec3 left_extent = prefix_max[i - 1] - prefix_min[i - 1];
+                Vec3 right_extent = suffix_max[i] - suffix_min[i];
                 float left_area = 2.0f * (left_extent.x() * left_extent.y() + 
                                          left_extent.y() * left_extent.z() + 
                                          left_extent.z() * left_extent.x());
@@ -766,15 +802,13 @@ private:
                                           right_extent.z() * right_extent.x());
                 
                 // SAH cost: C_traverse + P_left * C_left + P_right * C_right
-                int left_count = i - start;
-                int right_count = end - i;
-                float cost = 1.0f + (left_area / parent_area) * left_count + 
-                                   (right_area / parent_area) * right_count;
+                float cost = 1.0f + (left_area / parent_area) * i + 
+                                   (right_area / parent_area) * (count - i);
                 
                 if (cost < best_cost) {
                     best_cost = cost;
                     best_axis = axis;
-                    best_split_idx = i;
+                    best_split_idx = start + i;
                 }
             }
         }

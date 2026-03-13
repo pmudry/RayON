@@ -249,6 +249,61 @@ __device__ inline bool hit_rectangle(const f3 &corner, const f3 &u, const f3 &v,
 }
 
 //==============================================================================
+// TRIANGLE INTERSECTION (Möller–Trumbore)
+//==============================================================================
+
+__device__ inline bool hit_triangle(const f3 &v0, const f3 &v1, const f3 &v2,
+                                    const f3 &n0, const f3 &n1, const f3 &n2,
+                                    bool has_normals,
+                                    const ray_simple &r, float t_min, float t_max,
+                                    hit_record_simple &rec)
+{
+   const f3 edge1 = v1 - v0;
+   const f3 edge2 = v2 - v0;
+   const f3 h = cross(r.dir, edge2);
+   const float a = dot(edge1, h);
+
+   // Ray parallel to triangle
+   if (fabsf(a) < 1e-8f)
+      return false;
+
+   const float f = 1.0f / a;
+   const f3 s = r.orig - v0;
+   const float u = f * dot(s, h);
+   if (u < 0.0f || u > 1.0f)
+      return false;
+
+   const f3 q = cross(s, edge1);
+   const float v = f * dot(r.dir, q);
+   if (v < 0.0f || u + v > 1.0f)
+      return false;
+
+   const float t = f * dot(edge2, q);
+   if (t < t_min || t > t_max)
+      return false;
+
+   rec.t = t;
+   rec.p = r.at(t);
+
+   f3 outward_normal;
+   if (has_normals)
+   {
+      // Smooth shading: interpolate vertex normals using barycentric coords
+      const float w = 1.0f - u - v;
+      outward_normal = normalize(w * n0 + u * n1 + v * n2);
+   }
+   else
+   {
+      // Flat shading: geometric normal from cross product
+      outward_normal = normalize(cross(edge1, edge2));
+   }
+
+   rec.front_face = dot(r.dir, outward_normal) < 0;
+   rec.normal = rec.front_face ? outward_normal : f3(-outward_normal.x, -outward_normal.y, -outward_normal.z);
+   return true;
+}
+
+//==============================================================================
 // SCENE & MATERIAL APPLICATION
 //==============================================================================
 
@@ -266,6 +321,11 @@ __device__ __forceinline__ bool intersect_geometry(const CudaScene::Geometry &ge
    case GeometryType::DISPLACED_SPHERE:
       return hit_golf_ball_sphere(geom.data.displaced_sphere.center, geom.data.displaced_sphere.radius, r, t_min, t_max,
                                   rec);
+   case GeometryType::TRIANGLE:
+      return hit_triangle(geom.data.triangle.v0, geom.data.triangle.v1, geom.data.triangle.v2,
+                          geom.data.triangle.n0, geom.data.triangle.n1, geom.data.triangle.n2,
+                          geom.data.triangle.has_normals,
+                          r, t_min, t_max, rec);
    default:
       return false;
    }

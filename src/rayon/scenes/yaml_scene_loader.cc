@@ -4,6 +4,7 @@
  */
 
 #include "yaml_scene_loader.hpp"
+#include "obj_loader.hpp"
 #include <algorithm>
 #include <cctype>
 #include <fstream>
@@ -368,7 +369,8 @@ static bool loadMaterials(const SimpleYAMLParser &parser, SceneDescription &scen
 }
 
 static bool loadGeometry(const SimpleYAMLParser &parser, SceneDescription &scene,
-                         const map<string, int> &material_name_to_id)
+                         const map<string, int> &material_name_to_id,
+                         const string &scene_dir)
 {
    // Try to load geometry by index
    for (int i = 0; i < 1000; ++i)
@@ -416,6 +418,39 @@ static bool loadGeometry(const SimpleYAMLParser &parser, SceneDescription &scene
          Vec3 u = parser.getVec3(prefix + ".u");
          Vec3 v = parser.getVec3(prefix + ".v");
          scene.addRectangle(corner, u, v, mat_id);
+      }
+      else if (geom_type == "triangle")
+      {
+         Vec3 v0 = parser.getVec3(prefix + ".v0");
+         Vec3 v1 = parser.getVec3(prefix + ".v1");
+         Vec3 v2 = parser.getVec3(prefix + ".v2");
+
+         if (parser.hasKey(prefix + ".n0"))
+         {
+            Vec3 n0 = parser.getVec3(prefix + ".n0");
+            Vec3 n1 = parser.getVec3(prefix + ".n1");
+            Vec3 n2 = parser.getVec3(prefix + ".n2");
+            scene.addTriangleWithNormals(v0, v1, v2, n0, n1, n2, mat_id);
+         }
+         else
+         {
+            scene.addTriangle(v0, v1, v2, mat_id);
+         }
+      }
+      else if (geom_type == "obj")
+      {
+         string obj_file = removeQuotes(parser.getString(prefix + ".file"));
+         Vec3 obj_position = parser.getVec3(prefix + ".position", Vec3(0, 0, 0));
+         Vec3 obj_scale = parser.getVec3(prefix + ".scale", Vec3(1, 1, 1));
+
+         // Resolve path relative to scene file directory
+         string obj_path = obj_file;
+         if (!obj_file.empty() && obj_file[0] != '/')
+            obj_path = scene_dir + "/" + obj_file;
+
+         int tri_count = OBJLoader::loadOBJ(obj_path, scene, mat_id, obj_position, obj_scale);
+         if (tri_count < 0)
+            cerr << "ERROR: Failed to load OBJ file: " << obj_path << "\n";
       }
 
       // Apply visibility flag to the last added geometry
@@ -469,6 +504,13 @@ bool loadSceneFromYAML(const char *filename, SceneDescription &scene)
       scene.use_bvh = (bvh_val == "true" || bvh_val == "1");
    }
 
+   // Derive scene directory for resolving relative OBJ paths
+   string scene_file(filename);
+   string scene_dir = ".";
+   size_t last_slash = scene_file.find_last_of("/\\");
+   if (last_slash != string::npos)
+      scene_dir = scene_file.substr(0, last_slash);
+
    // Load materials first
    map<string, int> material_name_to_id;
    if (!loadMaterials(parser, scene, material_name_to_id))
@@ -479,7 +521,7 @@ bool loadSceneFromYAML(const char *filename, SceneDescription &scene)
    }
 
    // Then load geometry (which references materials)
-   if (!loadGeometry(parser, scene, material_name_to_id))
+   if (!loadGeometry(parser, scene, material_name_to_id, scene_dir))
    {
       cerr << "ERROR: Failed to load geometry"
               "\n";

@@ -1,0 +1,105 @@
+# Platonic Solids showcase - ISC colors, Lambertian only
+# The five Platonic solids: tetrahedron, cube, octahedron, dodecahedron, icosahedron
+
+camera:
+  position: [0, 3, 9]
+  look_at: [0, 0.2, 0]
+  fov: 40
+
+settings:
+  background_color: [0.08, 0.08, 0.12]
+  background_intensity: 0.2
+  use_bvh: true
+
+materials:
+  - name: "ground"
+    type: "lambertian"
+    albedo: [0.35, 0.35, 0.38]
+
+  - name: "isc_yellow"
+    type: "lambertian"
+    albedo: [0.969, 0.945, 0.624]
+
+  - name: "isc_blue"
+    type: "lambertian"
+    albedo: [0.549, 0.776, 0.902]
+
+  - name: "isc_violet"
+    type: "lambertian"
+    albedo: [0.659, 0.565, 0.753]
+
+  - name: "isc_rose"
+    type: "lambertian"
+    albedo: [0.886, 0.671, 0.729]
+
+  - name: "isc_green"
+    type: "lambertian"
+    albedo: [0.596, 0.780, 0.749]
+
+  - name: "area_light"
+    type: "light"
+    emission: [12, 11, 10]
+
+  - name: "fill_light"
+    type: "light"
+    emission: [3, 3, 4]
+
+geometry:
+  # Ground plane
+  - type: "rectangle"
+    material: "ground"
+    corner: [-8, -0.5, -8]
+    u: [16, 0, 0]
+    v: [0, 0, 16]
+
+  # Main area light (overhead, slightly forward)
+  - type: "rectangle"
+    material: "area_light"
+    corner: [-3, 5, -2]
+    u: [6, 0, 0]
+    v: [0, 0, 4]
+
+  # Fill light (behind camera, subtle)
+  - type: "rectangle"
+    material: "fill_light"
+    corner: [-2, 3, 8]
+    u: [4, 0, 0]
+    v: [0, 0, 1]
+    visible: false
+
+  # === The five Platonic solids, left to right ===
+
+  # 1. Tetrahedron (4 faces) - ISC Yellow
+  - type: "obj"
+    material: "isc_yellow"
+    file: "../models/tetrahedron.obj"
+    position: [-4, 0.5, 0]
+    scale: [1.0, 1.0, 1.0]
+
+  # 2. Cube (6 faces) - ISC Blue
+  - type: "obj"
+    material: "isc_blue"
+    file: "../models/cube.obj"
+    position: [-2, 0.1, 0]
+    scale: [1.0, 1.0, 1.0]
+
+  # 3. Octahedron (8 faces) - ISC Violet
+  - type: "obj"
+    material: "isc_violet"
+    file: "../models/octahedron.obj"
+    position: [0, 0.5, 0]
+    scale: [1.0, 1.0, 1.0]
+
+  # 4. Dodecahedron (12 faces) - ISC Rose
+  - type: "obj"
+    material: "isc_rose"
+    file: "../models/dodecahedron.obj"
+    position: [2, 0.1, 0]
+    scale: [1.0, 1.0, 1.0]
+
+  # 5. Icosahedron (20 faces) - ISC Green
+  - type: "obj"
+    material: "isc_green"
+    file: "../models/icosahedron.obj"
+    position: [4, 0.5, 0]
+    scale: [1.0, 1.0, 1.0]

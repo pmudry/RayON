@@ -5,6 +5,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <chrono>
 
 using namespace std;
 
@@ -37,8 +38,11 @@ class SceneFactory
             if (scene_desc.use_bvh)
             {
                cout << "Building BVH acceleration structure..." "\n";
+               auto bvh_start = std::chrono::high_resolution_clock::now();
                scene_desc.buildBVH();
-               cout << "BVH built with " << scene_desc.top_level_bvh.nodes.size() << " nodes" "\n";
+               auto bvh_end = std::chrono::high_resolution_clock::now();
+               auto bvh_ms = std::chrono::duration_cast<std::chrono::milliseconds>(bvh_end - bvh_start).count();
+               cout << "BVH built with " << scene_desc.top_level_bvh.nodes.size() << " nodes in " << bvh_ms << " ms" "\n";
             }
             return scene_desc; // Successfully loaded
          }

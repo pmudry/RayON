@@ -1,0 +1,59 @@
+# Test scene: OBJ loading and triangle rendering
+# Tests Feature G (triangle intersection), H (OBJ loading), and I (YAML+OBJ)
+
+camera:
+  position: [0, 2, 6]
+  look_at: [0, 0, 0]
+  fov: 40
+
+settings:
+  background_color: [0.1, 0.1, 0.15]
+  background_intensity: 0.3
+  use_bvh: true
+
+materials:
+  - name: "ground"
+    type: "lambertian"
+    albedo: [0.5, 0.5, 0.5]
+
+  - name: "obj_material"
+    type: "rough_mirror"
+    albedo: [0.9, 0.6, 0.2]
+    roughness: 0.15
+
+  - name: "triangle_blue"
+    type: "lambertian"
+    albedo: [0.2, 0.4, 0.9]
+
+  - name: "area_light"
+    type: "light"
+    emission: [15, 15, 15]
+
+geometry:
+  # Ground plane
+  - type: "rectangle"
+    material: "ground"
+    corner: [-5, -1, -5]
+    u: [10, 0, 0]
+    v: [0, 0, 10]
+
+  # Area light
+  - type: "rectangle"
+    material: "area_light"
+    corner: [-1.5, 4, -1.5]
+    u: [3, 0, 0]
+    v: [0, 0, 3]
+
+  # OBJ mesh loaded from file
+  - type: "obj"
+    material: "triangle_blue"
+    file: "../models/bunny-3.obj"
+    position: [0, 0.5, 0]
+    scale: [0.8, 0.8, 0.8]
+
+  # Standalone triangle for testing direct triangle geometry
+  - type: "triangle"
+    material: "triangle_blue"
+    v0: [-3, -1, -1]
+    v1: [-1, -1, -1]
+    v2: [-2, 1, -0.5]

@@ -72,26 +72,26 @@ Replaced CRTP material object construction with fully inlined scatter logic in `
 
 ## Feature Roadmap
 
-### Feature G: Triangle intersection (Medium)
-Implement Möller–Trumbore ray-triangle intersection for the existing `TRIANGLE` geometry type in `cuda_scene.cuh`. The data structure (v0/v1/v2, optional vertex normals n0/n1/n2) is already defined — only the intersection and shading code is missing. Enables rendering of arbitrary triangle meshes once OBJ loading is in place.
-- **Files**: `cuda_raytracer.cuh`, `scene_builder_cuda.cu`
+### Feature G: Triangle intersection — DONE
+Implemented Möller–Trumbore ray-triangle intersection for the `TRIANGLE` geometry type. GPU intersection in `cuda_raytracer.cuh::hit_triangle()`, CPU intersection in `cpu_shapes/triangle.hpp::TriangleShape`, wired through `scene_builder_cuda.cu::convertGeometry()` and `scene_builder.hpp::createGeometry()`. Supports both flat shading (geometric normal) and smooth shading (barycentric interpolation of vertex normals). `addTriangleWithNormals()` added to SceneDescription. YAML parser extended with `type: "triangle"` geometry.
+- **Files**: `cuda_raytracer.cuh`, `scene_builder_cuda.cu`, `scene_builder.hpp`, `cpu_shapes/triangle.hpp`, `scene_description.hpp`, `yaml_scene_loader.cc`
 
-### Feature H: OBJ file loading (Medium)
-Load Wavefront `.obj` files (vertices, normals, texture coordinates, face indices) and convert to `TRIANGLE` or `TRIANGLE_MESH` geometry. Use a lightweight parser (tinyobjloader or hand-rolled) to avoid heavy dependencies. Build per-mesh BVH for acceleration.
-- **Files**: New `scenes/obj_loader.hpp`, `scene_description.hpp`, `scene_builder_cuda.cu`
+### Feature H: OBJ file loading — DONE
+Lightweight Wavefront `.obj` parser in `obj_loader.hpp::OBJLoader::loadOBJ()`. Supports vertices (`v`), vertex normals (`vn`), texture coordinates (`vt`), and face indices (`f`) with formats `v`, `v/vt`, `v/vt/vn`, `v//vn`. Handles negative (relative) indices, fan-triangulates polygons with 4+ vertices, and applies position/scale transforms during loading. Triangles are added directly to SceneDescription (no intermediate mesh struct needed for basic use).
+- **Files**: `scenes/obj_loader.hpp`, `scene_description.hpp`
 
-### Feature I: Mixed YAML + OBJ scenes (Medium)
-Extend the YAML scene format to reference external `.obj` files with transform (position, rotation, scale) and material override. Example:
+### Feature I: Mixed YAML + OBJ scenes — DONE
+YAML scene format extended with `type: "obj"` geometry entries that reference external `.obj` files with position and scale transforms. OBJ paths are resolved relative to the scene file directory. Example:
 ```yaml
-geometries:
-  - type: obj
-    file: models/bunny.obj
+geometry:
+  - type: "obj"
+    material: "gold"
+    file: "../models/bunny.obj"
     position: [0, 0, 0]
     scale: [1, 1, 1]
-    material: lambertian
 ```
-Requires Feature H (OBJ loading) as a prerequisite.
-- **Files**: `scenes/yaml_scene_loader.cc`, `scene_description.hpp`
+Test scene at `resources/scenes/obj_test_scene.yaml` with test model `resources/models/tetrahedron.obj`.
+- **Files**: `yaml_scene_loader.cc`, `obj_loader.hpp`
 
 ### Feature J: Volumetric rendering (Hard)
 Participating media (fog, smoke, clouds) using ray marching through homogeneous or heterogeneous volumes. Implement as a special geometry type with density, scattering albedo, and phase function (Henyey-Greenstein). Uses stochastic sampling: at each step, randomly decide between absorption, scattering, or transmission based on the Beer-Lambert law.
