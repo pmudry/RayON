@@ -56,9 +56,9 @@ geometry:
   # Ground plane
   - type: "rectangle"
     material: "ground"
-    corner: [-5, -1, -5]
-    u: [10, 0, 0]
-    v: [0, 0, 10]
+    corner: [-5000, -1, -5000]
+    u: [10000, 0, 0]
+    v: [0, 0, 10000]
 
   # Area light
   - type: "rectangle"
@@ -71,7 +71,7 @@ geometry:
   - type: "obj"
     # material: "triangle_blue"
     material: "triangle_blue"
-    file: "../models/suzanne.obj"
+    file: "../models/victory.obj"
     position: [0, -1, 0]
     scale: [1, 1, 1]
 

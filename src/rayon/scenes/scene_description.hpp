@@ -38,7 +38,8 @@ enum class MaterialType : uint8_t {
     SHOW_NORMALS,
     SDF_MATERIAL,        // For ray-marched objects
     ANISOTROPIC_METAL,   // Physically-based anisotropic conductor (GGX)
-    THIN_FILM            // Thin-film interference (soap bubbles, oil slicks)
+    THIN_FILM,           // Thin-film interference (soap bubbles, oil slicks)
+    CLEAR_COAT           // Two-layer: glossy dielectric coat over diffuse base
 };
 
 /**
@@ -223,6 +224,23 @@ struct MaterialDesc {
         mat.film_ior = film_ior;
         mat.refractive_index = base_ior;
         mat.transmission = 1.0f;
+        return mat;
+    }
+
+    /**
+     * @brief Two-layer clear-coat material (car paint, lacquered wood, plastic)
+     *
+     * Combines a smooth dielectric coat (Fresnel specular) over a diffuse base.
+     * @param base_color   Diffuse base color seen through the coat
+     * @param coat_roughness  Roughness of the clear coat (0 = mirror, 0.1 = slightly rough)
+     * @param coat_ior     Refractive index of the coat layer (1.5 = typical plastic/lacquer)
+     */
+    static MaterialDesc clearCoat(const Vec3& base_color, float coat_roughness = 0.05f, float coat_ior = 1.5f) {
+        MaterialDesc mat;
+        mat.type = MaterialType::CLEAR_COAT;
+        mat.albedo = base_color;
+        mat.roughness = coat_roughness;
+        mat.refractive_index = coat_ior;
         return mat;
     }
 };

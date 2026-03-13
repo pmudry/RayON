@@ -50,7 +50,8 @@ enum LegacyMaterialType
    CONSTANT = 5,
    SHOW_NORMALS = 6,
    ANISOTROPIC_METAL = 7,
-   THIN_FILM = 8
+   THIN_FILM = 8,
+   CLEAR_COAT = 9
 };
 
 struct hit_record_simple
@@ -456,6 +457,12 @@ __device__ __forceinline__ void apply_material(const CudaScene::Material &mat, h
       rec.film_ior = mat.film_ior;
       rec.refractive_index = mat.refractive_index;
       break;
+   case MaterialType::CLEAR_COAT:
+      rec.material = CLEAR_COAT;
+      rec.color = mat.albedo;           // base diffuse color
+      rec.roughness = mat.roughness;    // coat roughness
+      rec.refractive_index = mat.refractive_index > 1.0f ? mat.refractive_index : 1.5f; // coat IOR
+      break;
    }
    if (mat.pattern != CudaScene::ProceduralPattern::NONE)
    {
@@ -729,6 +736,100 @@ __device__ __forceinline__ bool scatter_material(const hit_record_simple &rec, c
       scattered_ray = ray_simple(rec.p + 0.0001f * rec.normal, wi_world);
       attenuation = weight;
       return true;
+   }
+   case THIN_FILM:
+   {
+      // Thin-film interference (soap bubbles, oil slicks).
+      // Stochastic reflect/transmit based on the Airy formula evaluated at
+      // three representative wavelengths (R=650nm, G=550nm, B=450nm).
+      f3 unit_dir = normalize(current_ray.dir);
+      float cos_i = fmaxf(fabsf(dot(-unit_dir, rec.normal)), 0.001f);
+
+      float n0 = rec.refractive_index;   // exterior medium (air ≈ 1.0)
+      float n1 = rec.film_ior;           // film (soap/water ≈ 1.33)
+      float d  = rec.film_thickness;     // film thickness in nanometers
+
+      // Snell: refraction angle inside the film
+      float sin_i = sqrtf(fmaxf(0.0f, 1.0f - cos_i * cos_i));
+      float sin_t = (n0 / n1) * sin_i;
+      float cos_t = (sin_t >= 1.0f) ? 0.0f : sqrtf(1.0f - sin_t * sin_t);
+
+      // Schlick reflectance at exterior→film and film→interior interfaces
+      // (interior = exterior for a free-standing bubble)
+      float r01_v = (n0 - n1) / (n0 + n1); r01_v *= r01_v;
+      float x01 = 1.0f - cos_i;
+      float R01 = r01_v + (1.0f - r01_v) * x01 * x01 * x01 * x01 * x01;
+
+      float r12_v = (n1 - n0) / (n1 + n0); r12_v *= r12_v;
+      float x12 = 1.0f - cos_t;
+      float R12 = r12_v + (1.0f - r12_v) * x12 * x12 * x12 * x12 * x12;
+
+      float sqrt_R = sqrtf(R01 * R12);
+
+      // Airy formula for a single wavelength
+      auto airy = [&](float lambda) -> float {
+         float delta = (4.0f * CUDART_PI_F * n1 * d * cos_t) / lambda;
+         float c = cosf(delta);
+         float num = R01 + R12 + 2.0f * sqrt_R * c;
+         float den = 1.0f + R01 * R12 + 2.0f * sqrt_R * c;
+         return num / fmaxf(den, 1e-8f);
+      };
+
+      float Rr = airy(650.0f), Rg = airy(550.0f), Rb = airy(450.0f);
+      float avg_R = (Rr + Rg + Rb) / 3.0f;
+
+      if (rand_float(state) < avg_R)
+      {
+         // Reflect — carry the iridescent color; divide by selection probability
+         f3 reflected = reflect(unit_dir, rec.normal);
+         scattered_ray = ray_simple(rec.p + 0.0001f * rec.normal, reflected);
+         attenuation = f3(Rr, Rg, Rb) * (1.0f / fmaxf(avg_R, 0.001f));
+         return dot(reflected, rec.normal) > 0.0f;
+      }
+      else
+      {
+         // Transmit — pass straight through, complementary energy
+         scattered_ray = ray_simple(rec.p - 0.0001f * rec.normal, unit_dir);
+         attenuation = f3(1.0f - Rr, 1.0f - Rg, 1.0f - Rb) * (1.0f / fmaxf(1.0f - avg_R, 0.001f));
+         return true;
+      }
+   }
+   case CLEAR_COAT:
+   {
+      // Two-lobe model: glossy dielectric coat (Fresnel) over Lambertian base.
+      // Stochastic selection: coat lobe chosen with probability F, base with (1-F).
+      f3 unit_dir = normalize(current_ray.dir);
+      float cos_theta = fminf(dot(-unit_dir, rec.normal), 1.0f);
+      float coat_ior = rec.refractive_index; // e.g. 1.5
+      float F = reflectance(cos_theta, coat_ior);
+
+      if (rand_float(state) < F)
+      {
+         // Coat specular reflection (GGX-like roughness perturbation)
+         f3 perturbed_normal = (rec.roughness > 1e-3f)
+            ? normalize(rec.normal + rec.roughness * randOnUnitSphere(state))
+            : rec.normal;
+         f3 reflected = reflect(unit_dir, perturbed_normal);
+         scattered_ray = ray_simple(rec.p + 0.0001f * rec.normal, reflected);
+         attenuation = f3(1.0f, 1.0f, 1.0f); // clear coat is achromatic
+         return dot(reflected, rec.normal) > 0.0f;
+      }
+      else
+      {
+         // Base diffuse (Lambertian, cosine-weighted hemisphere)
+         f3 w = normalize(rec.normal);
+         f3 u_basis, v_basis;
+         build_orthonormal_basis(w, u_basis, v_basis);
+         float u1 = rand_float(state);
+         float u2 = rand_float(state);
+         float r_s = sqrtf(u1);
+         float theta_s = 2.0f * CUDART_PI_F * u2;
+         f3 local_dir(r_s * cosf(theta_s), r_s * sinf(theta_s), sqrtf(fmaxf(0.0f, 1.0f - u1)));
+         f3 scatter_dir = local_dir.x * u_basis + local_dir.y * v_basis + local_dir.z * w;
+         scattered_ray = ray_simple(rec.p + 0.0001f * rec.normal, scatter_dir);
+         attenuation = rec.color; // base albedo
+         return true;
+      }
    }
    default:
       return false;

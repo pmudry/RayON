@@ -17,6 +17,7 @@
 #include "legacy/rough_mirror.cuh"
 #include "legacy/show_normals.cuh"
 #include "legacy/thin_film.cuh"
+#include "legacy/clear_coat.cuh"
 #include "material_base.cuh"
 
 namespace Materials
@@ -42,6 +43,7 @@ union MaterialParamsUnion
    ConstantParams constant;
    ShowNormalsParams show_normals;
    ThinFilmParams thin_film;
+   ClearCoatParams clear_coat;
 
    __device__ __host__ MaterialParamsUnion() {}
 };
@@ -131,6 +133,16 @@ struct MaterialDescriptor
       desc.params.thin_film.exterior_ior = exterior_ior;
       return desc;
    }
+
+   __device__ __host__ static MaterialDescriptor makeClearCoat(const f3 &albedo, float roughness, float coat_ior)
+   {
+      MaterialDescriptor desc;
+      desc.type = CLEAR_COAT;
+      desc.params.clear_coat.albedo = albedo;
+      desc.params.clear_coat.roughness = roughness;
+      desc.params.clear_coat.coat_ior = coat_ior;
+      return desc;
+   }
 };
 
 //==============================================================================
@@ -196,6 +208,9 @@ __device__ __forceinline__ auto dispatch_material(const MaterialDescriptor &desc
    case THIN_FILM:
       return func(ThinFilm(desc.params.thin_film));
 
+   case CLEAR_COAT:
+      return func(ClearCoat(desc.params.clear_coat));
+
    default:
       // Fallback to Lambertian (shouldn't happen in correct usage)
       return func(Lambertian(desc.params.lambertian));
@@ -229,6 +244,8 @@ __device__ __forceinline__ bool dispatch_material_bool(const MaterialDescriptor 
       return func(ShowNormals(desc.params.show_normals));
    case THIN_FILM:
       return func(ThinFilm(desc.params.thin_film));
+   case CLEAR_COAT:
+      return func(ClearCoat(desc.params.clear_coat));
    default:
       return func(Lambertian(desc.params.lambertian));
    }
@@ -259,6 +276,8 @@ template <typename Func> __device__ __forceinline__ f3 dispatch_material_f3(cons
       return func(ShowNormals(desc.params.show_normals));
    case THIN_FILM:
       return func(ThinFilm(desc.params.thin_film));
+   case CLEAR_COAT:
+      return func(ClearCoat(desc.params.clear_coat));
    default:
       return func(Lambertian(desc.params.lambertian));
    }

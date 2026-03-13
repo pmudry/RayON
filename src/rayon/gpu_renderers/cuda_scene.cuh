@@ -36,7 +36,8 @@ enum class MaterialType : uint8_t
    SHOW_NORMALS,
    SDF_MATERIAL,
    ANISOTROPIC_METAL,
-   THIN_FILM
+   THIN_FILM,
+   CLEAR_COAT   // Two-layer: glossy dielectric coat over diffuse base
 };
 
 /**

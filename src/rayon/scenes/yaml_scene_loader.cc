@@ -100,6 +100,8 @@ static MaterialType parseMaterialType(const string &type_str)
       return MaterialType::ANISOTROPIC_METAL;
    if (type_str == "thin_film")
       return MaterialType::THIN_FILM;
+   if (type_str == "clear_coat")
+      return MaterialType::CLEAR_COAT;
    return MaterialType::LAMBERTIAN;
 }
 
@@ -620,6 +622,9 @@ bool saveSceneToYAML(const char *filename, const SceneDescription &scene)
          break;
       case MaterialType::THIN_FILM:
          file << "\"thin_film\"";
+         break;
+      case MaterialType::CLEAR_COAT:
+         file << "\"clear_coat\"";
          break;
       default:
          file << "\"lambertian\"";
