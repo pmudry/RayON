@@ -7,8 +7,8 @@ camera:
   fov: 40
 
 settings:
-  background_color: [0.08, 0.08, 0.12]
-  background_intensity: 0.2
+  background_color: [0.04, 0.04, 0.8]
+  background_intensity: 0.1
   use_bvh: true
 
 materials:
@@ -38,11 +38,13 @@ materials:
 
   - name: "area_light"
     type: "light"
-    emission: [12, 11, 10]
+    color: [1.0, 0.875, 0.75]
+    emission_intensity: 8
 
   - name: "fill_light"
     type: "light"
-    emission: [3, 3, 4]
+    color: [1.0, 1.167, 1.0]
+    emission_intensity: 6
 
 geometry:
   - type: "rectangle"
@@ -61,7 +63,7 @@ geometry:
   # Fill light (behind camera, subtle)
   - type: "rectangle"
     material: "fill_light"
-    corner: [-2, 3, 8]
+    corner: [-2, 3, -8]
     u: [4, 0, 0]
     v: [0, 0, 1]
     visible: false
@@ -72,33 +74,33 @@ geometry:
   - type: "obj"
     material: "isc_yellow"
     file: "../models/tetrahedron.obj"
-    position: [-4, 0.5, 0]
-    scale: [1.0, 1.0, 1.0]
+    position: [-4, 0.8, 0]
+    scale: [0.8, 0.8, 0.8]
 
   # 2. Cube (6 faces) - ISC Blue
   - type: "obj"
     material: "isc_blue"
     file: "../models/cube.obj"
-    position: [-2, 0.1, 0]
-    scale: [1.0, 1.0, 1.0]
+    position: [-2, 0.8, 0]
+    scale: [0.8, 0.8, 0.8]
 
   # 3. Octahedron (8 faces) - ISC Violet
   - type: "obj"
     material: "isc_violet"
     file: "../models/octahedron.obj"
-    position: [0, 0.5, 0]
-    scale: [1.0, 1.0, 1.0]
+    position: [0, 0.8, 0]
+    scale: [0.8, 0.8, 0.8]
 
   # 4. Dodecahedron (12 faces) - ISC Rose
   - type: "obj"
     material: "isc_rose"
     file: "../models/dodecahedron.obj"
-    position: [2, 0.1, 0]
-    scale: [1.0, 1.0, 1.0]
+    position: [2, 0.8, 0]
+    scale: [0.8, 0.8, 0.8]
 
   # 5. Icosahedron (20 faces) - ISC Green
   - type: "obj"
     material: "isc_green"
     file: "../models/icosahedron.obj"
-    position: [4, 0.5, 0]
-    scale: [1.0, 1.0, 1.0]
+    position: [4, 0.8, 0]
+    scale: [0.8, 0.8, 0.8]

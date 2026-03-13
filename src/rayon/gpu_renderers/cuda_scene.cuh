@@ -34,7 +34,8 @@ enum class MaterialType : uint8_t
    LIGHT,
    CONSTANT,
    SHOW_NORMALS,
-   SDF_MATERIAL
+   SDF_MATERIAL,
+   ANISOTROPIC_METAL
 };
 
 /**
@@ -60,6 +61,9 @@ struct Material
    float metallic;
    float refractive_index;
    float transmission;
+   float anisotropy;    // Anisotropy ratio [0-1]
+   f3 eta;              // Complex IOR real part
+   f3 k;                // Complex IOR imaginary part
    int texture_id;
 
    // Procedural pattern support
@@ -70,7 +74,8 @@ struct Material
 
    __host__ __device__ Material()
        : type(MaterialType::LAMBERTIAN), albedo(0, 0, 0), emission(0, 0, 0), roughness(0), metallic(0),
-         refractive_index(1), transmission(0), texture_id(-1), pattern(ProceduralPattern::NONE), pattern_color(0, 0, 0),
+         refractive_index(1), transmission(0), anisotropy(0), eta(0, 0, 0), k(0, 0, 0),
+         texture_id(-1), pattern(ProceduralPattern::NONE), pattern_color(0, 0, 0),
          pattern_param1(0), pattern_param2(0)
    {
    }

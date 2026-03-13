@@ -36,7 +36,8 @@ enum class MaterialType : uint8_t {
     LIGHT,
     CONSTANT,
     SHOW_NORMALS,
-    SDF_MATERIAL     // For ray-marched objects
+    SDF_MATERIAL,        // For ray-marched objects
+    ANISOTROPIC_METAL    // Physically-based anisotropic conductor (GGX)
 };
 
 /**
@@ -61,6 +62,9 @@ struct MaterialDesc {
     float metallic;           // Metallic factor [0-1]
     float refractive_index;   // For glass/dielectric materials
     float transmission;       // Transparency [0-1]
+    float anisotropy;         // Anisotropy ratio [0-1] (0=isotropic, 1=max stretch)
+    Vec3 eta;                 // Complex IOR real part (conductor Fresnel)
+    Vec3 k;                   // Complex IOR imaginary/extinction part (conductor Fresnel)
     int texture_id;           // Texture index (-1 = none, for future use)
     
     // Procedural pattern support
@@ -78,6 +82,9 @@ struct MaterialDesc {
         , metallic(0.0f)
         , refractive_index(1.0f)
         , transmission(0.0f)
+        , anisotropy(0.0f)
+        , eta(0, 0, 0)
+        , k(0, 0, 0)
         , texture_id(-1)
         , pattern(ProceduralPattern::NONE)
         , pattern_color(0, 0, 0)
@@ -161,6 +168,38 @@ struct MaterialDesc {
         mat.pattern_param1 = static_cast<float>(dot_count);
         mat.pattern_param2 = dot_radius;
         return mat;
+    }
+    
+    // Factory methods for anisotropic metals (GGX microfacet)
+    static MaterialDesc anisotropicMetal(float roughness, float anisotropy,
+                                         const Vec3& eta, const Vec3& k) {
+        MaterialDesc mat;
+        mat.type = MaterialType::ANISOTROPIC_METAL;
+        mat.albedo = Vec3(1, 1, 1);
+        mat.roughness = roughness;
+        mat.anisotropy = anisotropy;
+        mat.metallic = 1.0f;
+        mat.eta = eta;
+        mat.k = k;
+        return mat;
+    }
+
+    // Named presets with measured IOR values (RGB approximation for visible spectrum)
+    static MaterialDesc anisotropicGold(float roughness, float anisotropy) {
+        return anisotropicMetal(roughness, anisotropy,
+                                Vec3(0.18, 0.42, 1.37), Vec3(3.42, 2.35, 1.77));
+    }
+    static MaterialDesc anisotropicSilver(float roughness, float anisotropy) {
+        return anisotropicMetal(roughness, anisotropy,
+                                Vec3(0.05, 0.06, 0.05), Vec3(4.18, 3.35, 2.58));
+    }
+    static MaterialDesc anisotropicCopper(float roughness, float anisotropy) {
+        return anisotropicMetal(roughness, anisotropy,
+                                Vec3(0.27, 0.68, 1.22), Vec3(3.60, 2.63, 2.29));
+    }
+    static MaterialDesc anisotropicAluminum(float roughness, float anisotropy) {
+        return anisotropicMetal(roughness, anisotropy,
+                                Vec3(1.35, 0.97, 0.53), Vec3(7.47, 6.40, 5.28));
     }
 };
 

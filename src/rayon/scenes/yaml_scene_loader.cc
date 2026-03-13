@@ -96,6 +96,8 @@ static MaterialType parseMaterialType(const string &type_str)
       return MaterialType::CONSTANT;
    if (type_str == "show_normals")
       return MaterialType::SHOW_NORMALS;
+   if (type_str == "anisotropic_metal")
+      return MaterialType::ANISOTROPIC_METAL;
    return MaterialType::LAMBERTIAN;
 }
 
@@ -342,11 +344,38 @@ static bool loadMaterials(const SimpleYAMLParser &parser, SceneDescription &scen
       MaterialDesc mat;
       mat.type = parseMaterialType(mat_type);
       mat.albedo = parser.getVec3(prefix + ".albedo", Vec3(0.7, 0.7, 0.7));
-      mat.emission = parser.getVec3(prefix + ".emission", Vec3(0, 0, 0));
+      if (parser.hasKey(prefix + ".color") && parser.hasKey(prefix + ".emission_intensity"))
+      {
+         Vec3 color = parser.getVec3(prefix + ".color", Vec3(1, 1, 1));
+         float intensity = parser.getFloat(prefix + ".emission_intensity", 1.0f);
+         mat.emission = color * intensity;
+      }
+      else
+      {
+         mat.emission = parser.getVec3(prefix + ".emission", Vec3(0, 0, 0));
+      }
       mat.roughness = parser.getFloat(prefix + ".roughness", 0.0f);
       mat.metallic = parser.getFloat(prefix + ".metallic", 0.0f);
       mat.refractive_index = parser.getFloat(prefix + ".refractive_index", 1.0f);
       mat.transmission = parser.getFloat(prefix + ".transmission", 0.0f);
+      mat.anisotropy = parser.getFloat(prefix + ".anisotropy", 0.0f);
+      mat.eta = parser.getVec3(prefix + ".eta", Vec3(0, 0, 0));
+      mat.k = parser.getVec3(prefix + ".k", Vec3(0, 0, 0));
+
+      // Support named metal presets for anisotropic_metal
+      if (mat.type == MaterialType::ANISOTROPIC_METAL && parser.hasKey(prefix + ".preset"))
+      {
+         string preset = removeQuotes(parser.getString(prefix + ".preset"));
+         if (preset == "gold") {
+            mat.eta = Vec3(0.18, 0.42, 1.37); mat.k = Vec3(3.42, 2.35, 1.77);
+         } else if (preset == "silver") {
+            mat.eta = Vec3(0.05, 0.06, 0.05); mat.k = Vec3(4.18, 3.35, 2.58);
+         } else if (preset == "copper") {
+            mat.eta = Vec3(0.27, 0.68, 1.22); mat.k = Vec3(3.60, 2.63, 2.29);
+         } else if (preset == "aluminum") {
+            mat.eta = Vec3(1.35, 0.97, 0.53); mat.k = Vec3(7.47, 6.40, 5.28);
+         }
+      }
 
       // Check for procedural pattern
       if (parser.hasKey(prefix + ".pattern.type"))
@@ -582,6 +611,9 @@ bool saveSceneToYAML(const char *filename, const SceneDescription &scene)
       case MaterialType::LIGHT:
          file << "\"light\"";
          break;
+      case MaterialType::ANISOTROPIC_METAL:
+         file << "\"anisotropic_metal\"";
+         break;
       default:
          file << "\"lambertian\"";
          break;
@@ -609,6 +641,15 @@ bool saveSceneToYAML(const char *filename, const SceneDescription &scene)
       if (mat.transmission > 0)
       {
          file << "    transmission: " << mat.transmission << "\n";
+      }
+      if (mat.anisotropy > 0)
+      {
+         file << "    anisotropy: " << mat.anisotropy << "\n";
+      }
+      if (mat.eta.x() > 0 || mat.eta.y() > 0 || mat.eta.z() > 0)
+      {
+         file << "    eta: [" << mat.eta.x() << ", " << mat.eta.y() << ", " << mat.eta.z() << "]\n";
+         file << "    k: [" << mat.k.x() << ", " << mat.k.y() << ", " << mat.k.z() << "]\n";
       }
 
       // Pattern

@@ -1,0 +1,145 @@
+# Anisotropic Metals Test Scene
+# Demonstrates the GGX microfacet anisotropic conductor materials
+#
+# Back row  (gold): SAME roughness (0.45), VARYING anisotropy: 0.0 → 0.5 → 0.95
+# Front row (gold): SAME anisotropy (0.8), VARYING roughness:  0.15 → 0.35 → 0.6
+# This isolates each variable so the effect is clearly visible.
+
+camera:
+  position: [0, 3.5, 7]
+  look_at: [0, 0.3, -1]
+  fov: 38
+
+settings:
+  use_bvh: true
+  background_color: [0.04, 0.04, 0.8]
+  background_intensity: 0.05
+  adaptive_sampling: false
+
+materials:
+  - name: "ground"
+    type: "lambertian"
+    albedo: [0.4, 0.4, 0.4]
+
+  - name: "light_top"
+    type: "light"
+    color: [1.0, 0.875, 0.75]
+    emission_intensity: 8    
+
+  - name: "light_side"
+    type: "light"
+    color: [1.0, 0.875, 0.75]
+    emission_intensity: 2
+
+  # --- Back row: SAME roughness 0.45, VARYING anisotropy ---
+  - name: "gold_aniso_00"
+    type: "anisotropic_metal"
+    roughness: 0.45
+    anisotropy: 0.0
+    preset: "gold"
+
+  - name: "gold_aniso_50"
+    type: "anisotropic_metal"
+    roughness: 0.45
+    anisotropy: 0.5
+    preset: "gold"
+
+  - name: "gold_aniso_95"
+    type: "anisotropic_metal"
+    roughness: 0.45
+    anisotropy: 0.95
+    preset: "gold"
+
+  # --- Front row: SAME anisotropy 0.8, VARYING roughness ---
+  - name: "gold_rough_15"
+    type: "anisotropic_metal"
+    roughness: 0.15
+    anisotropy: 0.8
+    preset: "gold"
+
+  - name: "gold_rough_35"
+    type: "anisotropic_metal"
+    roughness: 0.35
+    anisotropy: 0.8
+    preset: "gold"
+
+  - name: "gold_rough_60"
+    type: "anisotropic_metal"
+    roughness: 0.6
+    anisotropy: 0.8
+    preset: "gold"
+
+  # Colored walls for visible environment reflections
+  - name: "wall_red"
+    type: "lambertian"
+    albedo: [0.85, 0.12, 0.12]
+
+  - name: "wall_blue"
+    type: "lambertian"
+    albedo: [0.12, 0.12, 0.85]
+
+geometry:
+  # Ground
+  - type: "sphere"
+    material: "ground"
+    center: [0, -1000, -1]
+    radius: 1000
+
+  # Top area light (narrow strip to show anisotropic stretching)
+  - type: "rectangle"
+    material: "light_top"
+    corner: [-1.0, 5, -3]
+    u: [2.0, 0, 0]
+    v: [0, 0, 4]
+
+  # Side fill light
+  - type: "rectangle"
+    material: "light_side"
+    corner: [5, 1, -4]
+    u: [0, 2, 0]
+    v: [0, 0, 4]
+
+  # --- Back row: varying anisotropy (left=isotropic, right=brushed) ---
+  - type: "sphere"
+    material: "gold_aniso_00"
+    center: [-2.5, 0.8, -2.5]
+    radius: 0.8
+
+  - type: "sphere"
+    material: "gold_aniso_50"
+    center: [0, 0.8, -2.5]
+    radius: 0.8
+
+  - type: "sphere"
+    material: "gold_aniso_95"
+    center: [2.5, 0.8, -2.5]
+    radius: 0.8
+
+  # --- Front row: varying roughness (left=smooth, right=rough) ---
+  - type: "sphere"
+    material: "gold_rough_15"
+    center: [-2.5, 0.8, 0.5]
+    radius: 0.8
+
+  - type: "sphere"
+    material: "gold_rough_35"
+    center: [0, 0.8, 0.5]
+    radius: 0.8
+
+  - type: "sphere"
+    material: "gold_rough_60"
+    center: [2.5, 0.8, 0.5]
+    radius: 0.8
+
+  # Colored side walls (provide reflectable environment)
+  - type: "rectangle"
+    material: "wall_red"
+    corner: [-6, 0, -5]
+    u: [0, 4, 0]
+    v: [0, 0, 8]
+
+  - type: "rectangle"
+    material: "wall_blue"
+    corner: [6, 0, -5]
+    u: [0, 4, 0]
+    v: [0, 0, 8]

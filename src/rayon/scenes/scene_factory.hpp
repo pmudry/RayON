@@ -113,12 +113,20 @@ class SceneFactory
       int mat_torus_orange = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(1.0, 0.6, 0.2)));
       int mat_normal = scene_desc.addMaterial(MaterialDesc::normal());
 
+      // Anisotropic metal demo materials
+      int mat_aniso_gold = scene_desc.addMaterial(MaterialDesc::anisotropicGold(0.3, 0.8));
+      int mat_aniso_copper = scene_desc.addMaterial(MaterialDesc::anisotropicCopper(0.15, 0.5));
+
       // === Default scene - Geometry ===
       scene_desc.addSphere(Vec3(0, -950.5, -1), 950.0, mat_ground); // Ground "plane"
       scene_desc.addSphere(Vec3(-3.5, 0.45, -1.8), 0.8, mat_golden);
       scene_desc.addDisplacedSphere(Vec3(1.2, 0, -2), 0.5, mat_blue_rough, 0.2f, 0);
       scene_desc.addSphere(Vec3(-1.3, 0.18, -5), 0.7, mat_red_dots);
       scene_desc.addSphere(Vec3(-0.7, 0.2, -0.3), 0.6, mat_glass);
+
+      // Anisotropic metal demo spheres
+      scene_desc.addSphere(Vec3(2.5, 0.3, -1.0), 0.7, mat_aniso_gold);
+      scene_desc.addSphere(Vec3(1.5, 0.0, 0.5), 0.5, mat_aniso_copper);
 
       // ISC spheres
       scene_desc.addSphere(Vec3(-3.5, -0.3, 1.2), 0.2, mat_yellow);

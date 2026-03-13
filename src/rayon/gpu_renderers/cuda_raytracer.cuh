@@ -3,6 +3,7 @@
 #include "cuda_float3.cuh"
 #include "cuda_scene.cuh"
 #include "cuda_utils.cuh"
+#include "microfacet_ggx.cuh"
 
 #include <cfloat>
 #include <cmath>
@@ -47,12 +48,14 @@ enum LegacyMaterialType
    LIGHT = 3,
    ROUGH_MIRROR = 4,
    CONSTANT = 5,
-   SHOW_NORMALS = 6
+   SHOW_NORMALS = 6,
+   ANISOTROPIC_METAL = 7
 };
 
 struct hit_record_simple
 {
    f3 p, normal;
+   f3 tangent;          // Surface tangent for anisotropic materials
    float t;
    bool front_face;
    LegacyMaterialType material;
@@ -60,7 +63,10 @@ struct hit_record_simple
    float refractive_index;
    f3 emission;
    float roughness;
-   bool visible; // Whether the hit geometry is visible (invisible geometry still emits light)
+   float anisotropy;    // Anisotropy ratio [0-1]
+   f3 eta;              // Complex IOR real part (conductor Fresnel)
+   f3 k_extinction;     // Complex IOR imaginary part (conductor Fresnel)
+   bool visible;        // Whether the hit geometry is visible (invisible geometry still emits light)
 };
 
 //==============================================================================
@@ -209,6 +215,12 @@ __device__ inline bool hit_sphere(const f3 &center, float radius, const ray_simp
    f3 outward_normal = (rec.p - center) / radius;
    rec.front_face = dot(r.dir, outward_normal) < 0;
    rec.normal = rec.front_face ? outward_normal : f3(-outward_normal.x, -outward_normal.y, -outward_normal.z);
+   // Compute tangent for anisotropic materials (azimuthal direction)
+   f3 up_dir(0.0f, 1.0f, 0.0f);
+   f3 tangent = cross(up_dir, outward_normal);
+   if (tangent.length_squared() < 1e-6f)
+      tangent = f3(1.0f, 0.0f, 0.0f); // Degenerate at poles
+   rec.tangent = normalize(tangent);
    return true;
 }
 
@@ -245,6 +257,8 @@ __device__ inline bool hit_rectangle(const f3 &corner, const f3 &u, const f3 &v,
    rec.p = intersection;
    rec.front_face = dot(r.dir, normal) < 0;
    rec.normal = rec.front_face ? normal : f3(-normal.x, -normal.y, -normal.z);
+   // Compute tangent for anisotropic materials (along u edge)
+   rec.tangent = normalize(u);
    return true;
 }
 
@@ -306,6 +320,8 @@ __device__ inline bool hit_triangle(const f3 &v0, const f3 &v1, const f3 &v2,
    }
 
    rec.normal = rec.front_face ? shading_normal : f3(-shading_normal.x, -shading_normal.y, -shading_normal.z);
+   // Compute tangent for anisotropic materials (along edge v0->v1)
+   rec.tangent = normalize(edge1);
    return true;
 }
 
@@ -413,6 +429,14 @@ __device__ __forceinline__ void apply_material(const CudaScene::Material &mat, h
       break;
    case MaterialType::SHOW_NORMALS:
       rec.material = SHOW_NORMALS;
+      break;
+   case MaterialType::ANISOTROPIC_METAL:
+      rec.material = ANISOTROPIC_METAL;
+      rec.color = mat.albedo;
+      rec.roughness = mat.roughness;
+      rec.anisotropy = mat.anisotropy;
+      rec.eta = mat.eta;
+      rec.k_extinction = mat.k;
       break;
    case MaterialType::SDF_MATERIAL: // TODO: Implement SDF materials
       rec.material = LAMBERTIAN;
@@ -631,6 +655,66 @@ __device__ __forceinline__ bool scatter_material(const hit_record_simple &rec, c
    {
       emitted = 0.5f * (rec.normal + f3(1.0f, 1.0f, 1.0f));
       return false;
+   }
+   case ANISOTROPIC_METAL:
+   {
+      // Anisotropic GGX microfacet conductor (PBR Book §9.6)
+
+      // Convert roughness + anisotropy to alpha_x/alpha_y (Disney convention)
+      float aspect = sqrtf(fmaxf(1e-4f, 1.0f - 0.9f * rec.anisotropy));
+      float r2 = rec.roughness * rec.roughness;
+      float alpha_x = fmaxf(1e-4f, r2 / aspect);
+      float alpha_y = fmaxf(1e-4f, r2 * aspect);
+
+      // Effectively smooth: fall back to perfect mirror with Fresnel tint
+      if (fmaxf(alpha_x, alpha_y) < 1e-3f)
+      {
+         f3 refl = reflect(normalize(current_ray.dir), rec.normal);
+         scattered_ray = ray_simple(rec.p + 0.0001f * rec.normal, refl);
+         float cos_i = fmaxf(dot(-normalize(current_ray.dir), rec.normal), 0.0f);
+         attenuation = FrComplex(cos_i, rec.eta, rec.k_extinction);
+         return dot(refl, rec.normal) > 0.0f;
+      }
+
+      // Build TBN frame (tangent, bitangent, normal)
+      f3 N = normalize(rec.normal);
+      f3 T = normalize(rec.tangent - dot(rec.tangent, N) * N); // Re-orthogonalize
+      f3 B = cross(N, T);
+
+      // Transform outgoing direction (toward viewer) to local shading space
+      f3 wo_world = normalize(f3(-current_ray.dir.x, -current_ray.dir.y, -current_ray.dir.z));
+      f3 wo_local(dot(wo_world, T), dot(wo_world, B), dot(wo_world, N));
+
+      // Ensure wo is in upper hemisphere
+      if (wo_local.z <= 0.0f)
+         return false;
+
+      // Sample microfacet normal via VNDF
+      f3 wm = Sample_wm_GGX(wo_local, alpha_x, alpha_y,
+                              rand_float(state), rand_float(state));
+
+      // Reflect wo around wm to get wi
+      f3 wi_local = reflect(f3(-wo_local.x, -wo_local.y, -wo_local.z), wm);
+
+      // Check that reflected direction is in upper hemisphere
+      if (wi_local.z <= 0.0f)
+         return false;
+
+      // Transform wi back to world space
+      f3 wi_world = wi_local.x * T + wi_local.y * B + wi_local.z * N;
+
+      // Compute Fresnel reflectance at microfacet
+      float cos_theta_i = fmaxf(dot(wo_local, wm), 0.0f);
+      f3 F = FrComplex(cos_theta_i, rec.eta, rec.k_extinction);
+
+      // VNDF importance sampling weight: F * G(wo,wi) / G1(wo)
+      float G = G_GGX(wo_local, wi_local, alpha_x, alpha_y);
+      float G1 = G1_GGX(wo_local, alpha_x, alpha_y);
+      f3 weight = F * (G / fmaxf(G1, 1e-6f));
+
+      scattered_ray = ray_simple(rec.p + 0.0001f * rec.normal, wi_world);
+      attenuation = weight;
+      return true;
    }
    default:
       return false;

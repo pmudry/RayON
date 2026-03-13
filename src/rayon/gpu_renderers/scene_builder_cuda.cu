@@ -43,6 +43,11 @@ static CudaScene::Material convertMaterial(const MaterialDesc &desc)
    mat.metallic = desc.metallic;
    mat.refractive_index = desc.refractive_index;
    mat.transmission = desc.transmission;
+   mat.anisotropy = desc.anisotropy;
+   mat.eta = f3(static_cast<float>(desc.eta.x()), static_cast<float>(desc.eta.y()),
+                static_cast<float>(desc.eta.z()));
+   mat.k = f3(static_cast<float>(desc.k.x()), static_cast<float>(desc.k.y()),
+              static_cast<float>(desc.k.z()));
    mat.texture_id = desc.texture_id;
 
    // Copy pattern information
