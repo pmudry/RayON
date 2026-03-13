@@ -98,6 +98,8 @@ static MaterialType parseMaterialType(const string &type_str)
       return MaterialType::SHOW_NORMALS;
    if (type_str == "anisotropic_metal")
       return MaterialType::ANISOTROPIC_METAL;
+   if (type_str == "thin_film")
+      return MaterialType::THIN_FILM;
    return MaterialType::LAMBERTIAN;
 }
 
@@ -361,6 +363,8 @@ static bool loadMaterials(const SimpleYAMLParser &parser, SceneDescription &scen
       mat.anisotropy = parser.getFloat(prefix + ".anisotropy", 0.0f);
       mat.eta = parser.getVec3(prefix + ".eta", Vec3(0, 0, 0));
       mat.k = parser.getVec3(prefix + ".k", Vec3(0, 0, 0));
+      mat.film_thickness = parser.getFloat(prefix + ".film_thickness", 400.0f);
+      mat.film_ior = parser.getFloat(prefix + ".film_ior", 1.33f);
 
       // Support named metal presets for anisotropic_metal
       if (mat.type == MaterialType::ANISOTROPIC_METAL && parser.hasKey(prefix + ".preset"))
@@ -613,6 +617,9 @@ bool saveSceneToYAML(const char *filename, const SceneDescription &scene)
          break;
       case MaterialType::ANISOTROPIC_METAL:
          file << "\"anisotropic_metal\"";
+         break;
+      case MaterialType::THIN_FILM:
+         file << "\"thin_film\"";
          break;
       default:
          file << "\"lambertian\"";

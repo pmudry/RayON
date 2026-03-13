@@ -102,6 +102,7 @@ class CPUSceneBuilder
       case MaterialType::LIGHT:
       case MaterialType::SDF_MATERIAL:
       case MaterialType::ANISOTROPIC_METAL:
+      case MaterialType::THIN_FILM:
       default:
          // Use Lambertian as fallback
          return make_shared<Lambertian>(desc.albedo);

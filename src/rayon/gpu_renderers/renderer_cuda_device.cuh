@@ -7,6 +7,11 @@ struct Scene;
 // Forward declarations of CUDA functions
 extern "C"
 {
+   // CUDA stream management: call initCudaStreams() before rendering to enable
+   // async display pipeline (display stream + pinned host memory).
+   void initCudaStreams();
+   void cleanupCudaStreams();
+
    // Host function for accumulative CUDA rendering (used for both one-shot and progressive rendering)
    // For one-shot rendering: call once with samples_to_add = total samples, total_samples_so_far = 0
    // For progressive rendering: call multiple times, incrementing total_samples_so_far each time

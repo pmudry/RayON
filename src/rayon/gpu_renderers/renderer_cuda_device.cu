@@ -25,6 +25,34 @@ __constant__ bool g_dof_enabled = false;
 __constant__ float g_dof_aperture = 0.1f;
 __constant__ float g_dof_focus_distance = 10.0f;
 
+//==================== CUDA STREAM & PINNED MEMORY ====================
+// Display stream: gamma-correct kernel + async D2H copy pipeline.
+// Non-blocking so it does not implicitly synchronize with the default stream.
+static cudaStream_t s_display_stream = nullptr;
+static unsigned char *s_pinned_display = nullptr;
+static size_t s_pinned_display_size = 0;
+
+extern "C" void initCudaStreams()
+{
+   if (s_display_stream == nullptr)
+      cudaStreamCreateWithFlags(&s_display_stream, cudaStreamNonBlocking);
+}
+
+extern "C" void cleanupCudaStreams()
+{
+   if (s_display_stream != nullptr)
+   {
+      cudaStreamDestroy(s_display_stream);
+      s_display_stream = nullptr;
+   }
+   if (s_pinned_display != nullptr)
+   {
+      cudaFreeHost(s_pinned_display);
+      s_pinned_display = nullptr;
+      s_pinned_display_size = 0;
+   }
+}
+
 //==================== HOST INTERFACE FUNCTIONS ====================
 extern "C" void setLightIntensity(float intensity) { cudaMemcpyToSymbol(g_light_intensity, &intensity, sizeof(float)); }
 
@@ -329,16 +357,39 @@ extern "C" void convertAccumToDisplayCUDA(void *d_accum_buffer, unsigned char *d
       d_display_size = display_size;
    }
 
+   // Allocate/resize pinned host staging buffer for async D2H copy
+   if (s_display_stream && (s_pinned_display == nullptr || s_pinned_display_size != display_size))
+   {
+      if (s_pinned_display != nullptr)
+         cudaFreeHost(s_pinned_display);
+      cudaMallocHost(&s_pinned_display, display_size);
+      s_pinned_display_size = display_size;
+   }
+
    dim3 threads = getOptimalBlockSize(width, height);
    dim3 blocks((width + threads.x - 1) / threads.x, (height + threads.y - 1) / threads.y);
 
-   gammaCorrectKernel<<<blocks, threads>>>(static_cast<float4 *>(d_accum_buffer), d_display, width, height, num_samples,
-                                           channels, gamma, static_cast<const int *>(d_pixel_sample_counts));
+   // Use display stream: kernel and async copy are pipelined with no CPU gap between them.
+   // Falls back to default stream if initCudaStreams() was not called.
+   cudaStream_t stream = s_display_stream ? s_display_stream : 0;
 
-   cudaDeviceSynchronize();
+   gammaCorrectKernel<<<blocks, threads, 0, stream>>>(
+       static_cast<float4 *>(d_accum_buffer), d_display, width, height, num_samples,
+       channels, gamma, static_cast<const int *>(d_pixel_sample_counts));
 
-   // Copy only the small uint8 display image (3 bytes/pixel vs 16 bytes/pixel for float4)
-   cudaMemcpy(display_image, d_display, display_size, cudaMemcpyDeviceToHost);
+   if (s_display_stream && s_pinned_display)
+   {
+      // Async path: kernel → DMA copy queued on same stream, single sync at end
+      cudaMemcpyAsync(s_pinned_display, d_display, display_size, cudaMemcpyDeviceToHost, s_display_stream);
+      cudaStreamSynchronize(s_display_stream);
+      memcpy(display_image, s_pinned_display, display_size);
+   }
+   else
+   {
+      // Fallback synchronous path
+      cudaDeviceSynchronize();
+      cudaMemcpy(display_image, d_display, display_size, cudaMemcpyDeviceToHost);
+   }
 }
 
 //==================== ADAPTIVE SAMPLING BUFFER MANAGEMENT ====================
@@ -409,11 +460,21 @@ extern "C" void renderSampleHeatmapCUDA(void *d_pixel_sample_counts, unsigned ch
    dim3 threads = getOptimalBlockSize(width, height);
    dim3 blocks((width + threads.x - 1) / threads.x, (height + threads.y - 1) / threads.y);
 
-   sampleHeatmapKernel<<<blocks, threads>>>(static_cast<const int *>(d_pixel_sample_counts), d_display_heatmap, width,
-                                            height, channels, max_samples_for_scale);
+   sampleHeatmapKernel<<<blocks, threads, 0, s_display_stream ? s_display_stream : 0>>>(
+       static_cast<const int *>(d_pixel_sample_counts), d_display_heatmap, width, height, channels,
+       max_samples_for_scale);
 
-   cudaDeviceSynchronize();
-   cudaMemcpy(display_image, d_display_heatmap, display_size, cudaMemcpyDeviceToHost);
+   if (s_display_stream && s_pinned_display)
+   {
+      cudaMemcpyAsync(s_pinned_display, d_display_heatmap, display_size, cudaMemcpyDeviceToHost, s_display_stream);
+      cudaStreamSynchronize(s_display_stream);
+      memcpy(display_image, s_pinned_display, display_size);
+   }
+   else
+   {
+      cudaDeviceSynchronize();
+      cudaMemcpy(display_image, d_display_heatmap, display_size, cudaMemcpyDeviceToHost);
+   }
 }
 
 // Use renderPixelsCUDAAccumulative for all rendering (one-shot and progressive).

@@ -35,7 +35,8 @@ enum class MaterialType : uint8_t
    CONSTANT,
    SHOW_NORMALS,
    SDF_MATERIAL,
-   ANISOTROPIC_METAL
+   ANISOTROPIC_METAL,
+   THIN_FILM
 };
 
 /**
@@ -66,6 +67,10 @@ struct Material
    f3 k;                // Complex IOR imaginary part
    int texture_id;
 
+   // Thin-film interference parameters
+   float film_thickness;   // Film thickness in nanometers
+   float film_ior;         // Refractive index of the thin film
+
    // Procedural pattern support
    ProceduralPattern pattern;
    f3 pattern_color;
@@ -75,7 +80,8 @@ struct Material
    __host__ __device__ Material()
        : type(MaterialType::LAMBERTIAN), albedo(0, 0, 0), emission(0, 0, 0), roughness(0), metallic(0),
          refractive_index(1), transmission(0), anisotropy(0), eta(0, 0, 0), k(0, 0, 0),
-         texture_id(-1), pattern(ProceduralPattern::NONE), pattern_color(0, 0, 0),
+         texture_id(-1), film_thickness(400.0f), film_ior(1.33f),
+         pattern(ProceduralPattern::NONE), pattern_color(0, 0, 0),
          pattern_param1(0), pattern_param2(0)
    {
    }

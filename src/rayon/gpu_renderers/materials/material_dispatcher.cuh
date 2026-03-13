@@ -16,6 +16,7 @@
 #include "legacy/mirror.cuh"
 #include "legacy/rough_mirror.cuh"
 #include "legacy/show_normals.cuh"
+#include "legacy/thin_film.cuh"
 #include "material_base.cuh"
 
 namespace Materials
@@ -40,6 +41,7 @@ union MaterialParamsUnion
    LightParams light;
    ConstantParams constant;
    ShowNormalsParams show_normals;
+   ThinFilmParams thin_film;
 
    __device__ __host__ MaterialParamsUnion() {}
 };
@@ -119,6 +121,16 @@ struct MaterialDescriptor
       desc.params.show_normals.normal = normal;
       return desc;
    }
+
+   __device__ __host__ static MaterialDescriptor makeThinFilm(float thickness, float film_ior, float exterior_ior)
+   {
+      MaterialDescriptor desc;
+      desc.type = THIN_FILM;
+      desc.params.thin_film.film_thickness = thickness;
+      desc.params.thin_film.film_ior = film_ior;
+      desc.params.thin_film.exterior_ior = exterior_ior;
+      return desc;
+   }
 };
 
 //==============================================================================
@@ -181,6 +193,9 @@ __device__ __forceinline__ auto dispatch_material(const MaterialDescriptor &desc
    case SHOW_NORMALS:
       return func(ShowNormals(desc.params.show_normals));
 
+   case THIN_FILM:
+      return func(ThinFilm(desc.params.thin_film));
+
    default:
       // Fallback to Lambertian (shouldn't happen in correct usage)
       return func(Lambertian(desc.params.lambertian));
@@ -212,6 +227,8 @@ __device__ __forceinline__ bool dispatch_material_bool(const MaterialDescriptor 
       return func(Constant(desc.params.constant));
    case SHOW_NORMALS:
       return func(ShowNormals(desc.params.show_normals));
+   case THIN_FILM:
+      return func(ThinFilm(desc.params.thin_film));
    default:
       return func(Lambertian(desc.params.lambertian));
    }
@@ -240,6 +257,8 @@ template <typename Func> __device__ __forceinline__ f3 dispatch_material_f3(cons
       return func(Constant(desc.params.constant));
    case SHOW_NORMALS:
       return func(ShowNormals(desc.params.show_normals));
+   case THIN_FILM:
+      return func(ThinFilm(desc.params.thin_film));
    default:
       return func(Lambertian(desc.params.lambertian));
    }

@@ -29,6 +29,29 @@ materials:
     type: "light"
     emission: [15, 15, 15]
 
+  - name: glass
+    type: glass
+    albedo: [1.0, 1.0, 1.0]
+    refractive_index: 1.52
+    transmission: 1.0
+
+  - name: "brushed"
+    type: "anisotropic_metal"
+    roughness: 0.3
+    anisotropy: 0.7
+    preset: "silver"  
+  - name: "worn"
+    type: "anisotropic_metal"
+    roughness: 0.8
+    anisotropy: 0.3
+    preset: "gold"    
+  - name: "machined"
+    type: "anisotropic_metal"
+    roughness: 0.4
+    anisotropy: 0.9
+    preset: "copper"
+      
+
 geometry:
   # Ground plane
   - type: "rectangle"
@@ -46,14 +69,15 @@ geometry:
 
   # OBJ mesh loaded from file
   - type: "obj"
+    # material: "triangle_blue"
     material: "triangle_blue"
-    file: "../models/cylinder.obj"
-    position: [-2, 0.1, 0]
-    scale: [0.1, 0.1, 0.1]
+    file: "../models/suzanne.obj"
+    position: [0, -1, 0]
+    scale: [1, 1, 1]
 
-  # Standalone triangle for testing direct triangle geometry
-  - type: "triangle"
-    material: "triangle_blue"
-    v0: [-3, -1, -1]
-    v1: [-1, -1, -1]
-    v2: [-2, 1, -0.5]
+  # # Standalone triangle for testing direct triangle geometry
+  # - type: "triangle"
+  #   material: "triangle_blue"
+  #   v0: [-3, -1, -1]
+  #   v1: [-1, -1, -1]
+  #   v2: [-2, 1, -0.5]

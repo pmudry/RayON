@@ -146,6 +146,9 @@ class RendererCUDAProgressive : public IRenderer
       void *d_rand_states = nullptr;
       void *d_accum_buffer = nullptr; // Persistent device accumulation buffer
 
+      // Initialize CUDA display stream for async gamma-correct + D2H pipeline
+      ::initCudaStreams();
+
       // Adaptive sampling state
       void *d_pixel_sample_counts = nullptr; // Per-pixel sample counts (null = disabled)
       bool adaptive_sampling_enabled = settings_.adaptive_sampling;
@@ -824,6 +827,7 @@ class RendererCUDAProgressive : public IRenderer
 
       // Cleanup scene
       Scene::CudaSceneBuilder::freeGPUScene(gpu_scene);
+      ::cleanupCudaStreams();
       // gui is cleaned up by its destructor
    }
 

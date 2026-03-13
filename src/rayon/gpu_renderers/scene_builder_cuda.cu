@@ -57,6 +57,10 @@ static CudaScene::Material convertMaterial(const MaterialDesc &desc)
    mat.pattern_param1 = desc.pattern_param1;
    mat.pattern_param2 = desc.pattern_param2;
 
+   // Copy thin-film interference parameters
+   mat.film_thickness = desc.film_thickness;
+   mat.film_ior = desc.film_ior;
+
    return mat;
 }
 

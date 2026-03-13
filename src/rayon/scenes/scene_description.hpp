@@ -37,7 +37,8 @@ enum class MaterialType : uint8_t {
     CONSTANT,
     SHOW_NORMALS,
     SDF_MATERIAL,        // For ray-marched objects
-    ANISOTROPIC_METAL    // Physically-based anisotropic conductor (GGX)
+    ANISOTROPIC_METAL,   // Physically-based anisotropic conductor (GGX)
+    THIN_FILM            // Thin-film interference (soap bubbles, oil slicks)
 };
 
 /**
@@ -67,6 +68,10 @@ struct MaterialDesc {
     Vec3 k;                   // Complex IOR imaginary/extinction part (conductor Fresnel)
     int texture_id;           // Texture index (-1 = none, for future use)
     
+    // Thin-film interference parameters
+    float film_thickness;     // Film thickness in nanometers (200-800 typical)
+    float film_ior;           // Refractive index of the thin film layer
+    
     // Procedural pattern support
     ProceduralPattern pattern;    // Pattern type
     Vec3 pattern_color;           // Secondary color for pattern
@@ -86,6 +91,8 @@ struct MaterialDesc {
         , eta(0, 0, 0)
         , k(0, 0, 0)
         , texture_id(-1)
+        , film_thickness(400.0f)
+        , film_ior(1.33f)
         , pattern(ProceduralPattern::NONE)
         , pattern_color(0, 0, 0)
         , pattern_param1(0.0f)
@@ -200,6 +207,23 @@ struct MaterialDesc {
     static MaterialDesc anisotropicAluminum(float roughness, float anisotropy) {
         return anisotropicMetal(roughness, anisotropy,
                                 Vec3(1.35, 0.97, 0.53), Vec3(7.47, 6.40, 5.28));
+    }
+    
+    /**
+     * @brief Create a thin-film interference material (soap bubbles, oil slicks)
+     * @param film_thickness Film thickness in nanometers (200-800nm typical)
+     * @param film_ior Refractive index of the thin film (1.33 for soap/water)
+     * @param base_ior Refractive index of the medium behind the film (1.0 for air)
+     */
+    static MaterialDesc thinFilm(float film_thickness, float film_ior = 1.33f, float base_ior = 1.0f) {
+        MaterialDesc mat;
+        mat.type = MaterialType::THIN_FILM;
+        mat.albedo = Vec3(1, 1, 1);
+        mat.film_thickness = film_thickness;
+        mat.film_ior = film_ior;
+        mat.refractive_index = base_ior;
+        mat.transmission = 1.0f;
+        return mat;
     }
 };
 

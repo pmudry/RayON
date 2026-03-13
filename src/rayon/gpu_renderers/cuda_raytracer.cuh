@@ -49,7 +49,8 @@ enum LegacyMaterialType
    ROUGH_MIRROR = 4,
    CONSTANT = 5,
    SHOW_NORMALS = 6,
-   ANISOTROPIC_METAL = 7
+   ANISOTROPIC_METAL = 7,
+   THIN_FILM = 8
 };
 
 struct hit_record_simple
@@ -69,6 +70,10 @@ struct hit_record_simple
    float anisotropy;
    f3 eta;
    f3 k_extinction;
+
+   // Thin-film interference fields (only meaningful when material == THIN_FILM)
+   float film_thickness;   // Film thickness in nanometers
+   float film_ior;         // Refractive index of the thin film
 };
 
 //==============================================================================
@@ -443,6 +448,13 @@ __device__ __forceinline__ void apply_material(const CudaScene::Material &mat, h
    case MaterialType::SDF_MATERIAL: // TODO: Implement SDF materials
       rec.material = LAMBERTIAN;
       rec.color = mat.albedo;
+      break;
+   case MaterialType::THIN_FILM:
+      rec.material = THIN_FILM;
+      rec.color = mat.albedo;
+      rec.film_thickness = mat.film_thickness;
+      rec.film_ior = mat.film_ior;
+      rec.refractive_index = mat.refractive_index;
       break;
    }
    if (mat.pattern != CudaScene::ProceduralPattern::NONE)
