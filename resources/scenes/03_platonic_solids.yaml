@@ -9,6 +9,7 @@ camera:
 settings:
   background_color: [0.04, 0.04, 0.8]
   background_intensity: 0.1
+  adaptive_sampling: false
   use_bvh: true
 
 materials:

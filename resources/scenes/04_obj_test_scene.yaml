@@ -47,7 +47,7 @@ geometry:
   # OBJ mesh loaded from file
   - type: "obj"
     material: "triangle_blue"
-    file: "../models/isc-text.obj"
+    file: "../models/cylinder.obj"
     position: [-2, 0.1, 0]
     scale: [0.1, 0.1, 0.1]
 
