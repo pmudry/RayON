@@ -93,6 +93,24 @@ class SDLGuiHandler
          return false;
       }
 
+      // Set window icon from ISC logo
+      {
+         int icon_w, icon_h, icon_ch;
+         unsigned char *icon_data = stbi_load("../resources/ISC_logo_rvb.png", &icon_w, &icon_h, &icon_ch, 4);
+         if (icon_data)
+         {
+            SDL_Surface *icon_surface = SDL_CreateRGBSurfaceFrom(
+                icon_data, icon_w, icon_h, 32, icon_w * 4,
+                0x000000FF, 0x0000FF00, 0x00FF0000, 0xFF000000);
+            if (icon_surface)
+            {
+               SDL_SetWindowIcon(window, icon_surface);
+               SDL_FreeSurface(icon_surface);
+            }
+            stbi_image_free(icon_data);
+         }
+      }
+
       renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
       if (!renderer)
       {
