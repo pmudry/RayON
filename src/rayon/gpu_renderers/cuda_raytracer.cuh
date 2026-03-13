@@ -63,8 +63,6 @@ struct hit_record_simple
    bool visible; // Whether the hit geometry is visible (invisible geometry still emits light)
 };
 
-#include "materials/material_dispatcher.cuh"
-
 //==============================================================================
 // OPTICAL PHYSICS FUNCTIONS
 //==============================================================================
