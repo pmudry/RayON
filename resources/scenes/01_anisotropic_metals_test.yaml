@@ -3,8 +3,8 @@
 # Roughness increases front to back, anisotropy increases left to right.
 
 camera:
-  position: [0, 5, 9]
-  look_at: [0, 0.3, -1.5]
+  position: [0, 5.85, 8.42]
+  look_at: [0, 00, -1.5]
   fov: 42
 
 settings:
