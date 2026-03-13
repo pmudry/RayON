@@ -1,7 +1,7 @@
 # TODO List
 
 ## Interactive renderer
-- [ ] Gamma correction in interactive renderer is wrong when displayed, but saved correctly -> it's related to how program handle color profiles.
+- [x] Gamma correction in interactive renderer is wrong when displayed, but saved correctly -> it's related to how program handle color profiles.
 - [x] Change of speeds in interactive renderer, as they are not very nice
 - [x] Add a ray/second counter somewhere -> SPPS instead, as ray counting is too costly on gpu side
 
@@ -9,12 +9,12 @@
 - [ ] Implement anisotropic metals / shading
 - [ ] SDL3 migration
 - [x] Refactor constants f3_ones, f3_zero and others
-- [ ] New sphere light types
+- [ ] New sphere / point light light types
 - [ ] Textures loading (Venturi's style)
-- [ ] SDF integration
+- [ ] SDF integration in CUDA
 - [x] Time per pixel shading for performance display
-- [ ] Normals as lines for spheres
-- [ ] Ray-marching
+- [x] Normals as lines for spheres
+- [ ] Volumetric smoke ray-marching
 - [ ] Normals color toggle for interactive renderer
 - [ ] Depth map exportingLet'
 
@@ -39,7 +39,7 @@
 ## Optimisations
 - [x] Fast maths
 
-## Semester project
+## Others things
 - [x] `ImGUI` GUI integration for controls -> reimplement existing controls + add more
 - [x] Implement benchmarks for static renderer on typical scenes (multiple renders + average)
 - [ ] Impact of different rendering optimizations reporting -> find a way and report (for instance, color complexity per pixel)
