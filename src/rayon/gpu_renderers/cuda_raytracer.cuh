@@ -706,7 +706,7 @@ __device__ __forceinline__ bool scatter_material(const hit_record_simple &rec, c
          f3 refl = reflect(normalize(current_ray.dir), rec.normal);
          scattered_ray = ray_simple(rec.p + 0.0001f * rec.normal, refl);
          float cos_i = fmaxf(dot(-normalize(current_ray.dir), rec.normal), 0.0f);
-         attenuation = FrComplex(cos_i, rec.eta, rec.k_extinction);
+         attenuation = rec.color * FrComplex(cos_i, rec.eta, rec.k_extinction);
          return dot(refl, rec.normal) > 0.0f;
       }
 
@@ -747,7 +747,7 @@ __device__ __forceinline__ bool scatter_material(const hit_record_simple &rec, c
       f3 weight = F * (G / fmaxf(G1, 1e-6f));
 
       scattered_ray = ray_simple(rec.p + 0.0001f * rec.normal, wi_world);
-      attenuation = weight;
+      attenuation = rec.color * weight;
       return true;
    }
    case THIN_FILM:

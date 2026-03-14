@@ -1,4 +1,4 @@
-# Platonic Solids showcase - ISC colors, Lambertian only
+# Platonic Solids showcase - ISC colors, anisotropic metals
 # The five Platonic solids: tetrahedron, cube, octahedron, dodecahedron, icosahedron
 
 camera:
@@ -18,34 +18,45 @@ materials:
     albedo: [0.35, 0.35, 0.38]
 
   - name: "isc_yellow"
-    type: "lambertian"
+    type: "anisotropic_metal"
     albedo: [0.969, 0.945, 0.624]
+    preset: "silver"
+    roughness: 0.35
+    anisotropy: 0.92
 
   - name: "isc_blue"
-    type: "lambertian"
+    type: "anisotropic_metal"
     albedo: [0.549, 0.776, 0.902]
+    preset: "silver"
+    roughness: 0.35
+    anisotropy: 0.92
 
   - name: "isc_violet"
-    type: "lambertian"
+    type: "anisotropic_metal"
     albedo: [0.659, 0.565, 0.753]
+    preset: "silver"
+    roughness: 0.35
+    anisotropy: 0.92
 
   - name: "isc_rose"
-    type: "lambertian"
+    type: "anisotropic_metal"
     albedo: [0.886, 0.671, 0.729]
+    preset: "silver"
+    roughness: 0.35
+    anisotropy: 0.92
 
   - name: "isc_green"
-    type: "lambertian"
+    type: "anisotropic_metal"
     albedo: [0.596, 0.780, 0.749]
+    preset: "silver"
+    roughness: 0.35
+    anisotropy: 0.92
 
   - name: "area_light"
     type: "light"
     color: [1.0, 0.875, 0.75]
     emission_intensity: 8
 
-  - name: "fill_light"
-    type: "light"
-    color: [1.0, 1.167, 1.0]
-    emission_intensity: 6
 
 geometry:
   - type: "rectangle"
@@ -54,6 +65,13 @@ geometry:
     u: [400000000, 0, 0]
     v: [0, 0, 400000000]
 
+  # Back wall
+  - type: "rectangle"
+    material: "ground"
+    corner: [-200000000, -0.5, -18]
+    u: [400000000, 0, 0]
+    v: [0, 200000000, 0]
+
   # Main area light (overhead, slightly forward)
   - type: "rectangle"
     material: "area_light"
@@ -61,15 +79,7 @@ geometry:
     u: [6, 0, 0]
     v: [0, 0, 4]
 
-  # Fill light (behind camera, subtle)
-  - type: "rectangle"
-    material: "fill_light"
-    corner: [-2, 3, -8]
-    u: [4, 0, 0]
-    v: [0, 0, 1]
-    visible: false
-
-  # === The five Platonic solids, left to right ===
+# === The five Platonic solids, left to right ===
 
   # 1. Tetrahedron (4 faces) - ISC Yellow
   - type: "obj"
