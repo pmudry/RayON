@@ -1,0 +1,12 @@
+[project]
+name = "rayon-docs"
+version = "0.1.0"
+description = "Documentation dependencies for the RayON path tracer website"
+requires-python = ">=3.11"
+dependencies = []
+
+[dependency-groups]
+docs = [
+    "mkdocs-material>=9.5",
+    "mkdocs-minify-plugin>=0.8",
+]

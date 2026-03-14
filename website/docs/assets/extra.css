@@ -1,0 +1,207 @@
+/* ─── Custom styles for RayON documentation ─── */
+
+/* Hero image on the home page */
+.hero-image {
+  width: 100%;
+  max-height: 520px;
+  object-fit: cover;
+  border-radius: 8px;
+  margin: 1.5rem 0;
+  display: block;
+}
+
+/* Full-width hero banner */
+.hero-banner {
+  position: relative;
+  text-align: center;
+  margin: 0 -1.2rem 2rem;
+  overflow: hidden;
+  border-radius: 0 0 8px 8px;
+}
+
+.hero-banner img {
+  width: 100%;
+  max-height: 540px;
+  object-fit: cover;
+  display: block;
+}
+
+.hero-banner .hero-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 2rem;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.8));
+  color: #fff;
+}
+
+.hero-banner .hero-overlay h1 {
+  font-size: 2.4rem;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  margin: 0 0 0.4rem;
+  color: #fff;
+}
+
+.hero-banner .hero-overlay p {
+  font-size: 1.1rem;
+  opacity: 0.85;
+  margin: 0;
+}
+
+/* Feature grid on home page */
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+  margin: 2rem 0;
+}
+
+.feature-card {
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 8px;
+  padding: 1.2rem 1.4rem;
+  background: var(--md-code-bg-color);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.feature-card:hover {
+  border-color: var(--md-accent-fg-color);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+}
+
+.feature-card h3 {
+  margin: 0 0 0.4rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.feature-card p {
+  margin: 0;
+  font-size: 0.85rem;
+  opacity: 0.8;
+  line-height: 1.5;
+}
+
+/* Comparison image grid */
+.img-grid {
+  display: grid;
+  gap: 6px;
+  margin: 1.5rem 0;
+}
+
+.img-grid.cols-2 { grid-template-columns: 1fr 1fr; }
+.img-grid.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+.img-grid.cols-6 { grid-template-columns: repeat(6, 1fr); }
+
+.img-grid figure {
+  margin: 0;
+}
+
+.img-grid figure img {
+  width: 100%;
+  border-radius: 4px;
+  display: block;
+}
+
+.img-grid figure figcaption {
+  font-size: 0.72rem;
+  text-align: center;
+  opacity: 0.7;
+  margin-top: 4px;
+  padding: 0 4px;
+}
+
+/* Progression strip (horizontal) */
+.progression-strip {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 4px;
+  margin: 1.5rem 0;
+}
+
+.progression-strip figure {
+  margin: 0;
+}
+
+.progression-strip figure img {
+  width: 100%;
+  border-radius: 3px;
+}
+
+.progression-strip figcaption {
+  font-size: 0.68rem;
+  text-align: center;
+  opacity: 0.65;
+  margin-top: 3px;
+}
+
+/* Render showcase image */
+.render-img {
+  border-radius: 6px;
+  display: block;
+  width: 100%;
+  max-width: 800px;
+  margin: 1rem auto;
+}
+
+/* Inline formula highlight */
+.formula-block {
+  background: var(--md-code-bg-color);
+  border-left: 4px solid var(--md-accent-fg-color);
+  border-radius: 0 4px 4px 0;
+  padding: 0.8rem 1.2rem;
+  margin: 1rem 0;
+  font-size: 1.05rem;
+}
+
+/* Wide tables */
+.wide-table {
+  overflow-x: auto;
+  font-size: 0.85rem;
+}
+
+/* Material swatch preview */
+.material-swatch {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  vertical-align: middle;
+  margin-right: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* Badge chips */
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.badge-done  { background: #1b3a2d; color: #80cbc4; }
+.badge-wip   { background: #1a2a3a; color: #90caf9; }
+.badge-plan  { background: #1a237e; color: #90caf9; }
+
+/* Responsive: stack image grids on mobile */
+@media (max-width: 640px) {
+  .img-grid.cols-3,
+  .img-grid.cols-6,
+  .progression-strip {
+    grid-template-columns: 1fr 1fr;
+  }
+  .img-grid.cols-2 {
+    grid-template-columns: 1fr;
+  }
+  .hero-banner .hero-overlay h1 {
+    font-size: 1.6rem;
+  }
+  .feature-grid {
+    grid-template-columns: 1fr;
+  }
+}

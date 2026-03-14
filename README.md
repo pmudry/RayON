@@ -110,6 +110,7 @@ This is all you need. There are *tasks* created in the `.vscode` folder that can
 If required, the documentation can be built with `doxygen`, which should be run in the main directory. The results are not saved in the git repository to save space.
 
 # Contributing
+
 PRs are welcome, please feel free to contribute.
 
 # Known issues

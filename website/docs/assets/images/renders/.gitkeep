@@ -1,0 +1,2 @@
+# This directory holds manually committed render images for the documentation.
+# Files here ARE tracked by git (unlike docs/assets/images/ which is auto-generated).
