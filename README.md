@@ -1,4 +1,4 @@
-[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0) 
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0) [![Documentation](https://img.shields.io/badge/docs-online-blue)](https://pmudry.github.io/RayON)
 
 # _RayON_ - An interactive ray-tracer
 
@@ -10,6 +10,7 @@ Dr Pierre-André Mudry, 2025-2026.
 </p>
 
 <p align="center">
+    <a href="https://pmudry.github.io/RayON">📖 Documentation website</a> &nbsp;·&nbsp;
     <a href="#sample-gallery">Open the sample gallery</a>
 </p>
 
