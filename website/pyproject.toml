@@ -9,4 +9,5 @@ dependencies = []
 docs = [
     "mkdocs-material>=9.5",
     "mkdocs-minify-plugin>=0.8",
+    "mkdocs-glightbox>=0.4",
 ]

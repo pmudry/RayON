@@ -106,6 +106,14 @@ hooks:
 
 plugins:
   - search
+  - glightbox:
+      touchNavigation: true
+      loop: false
+      effect: zoom
+      width: 100%
+      height: auto
+      zoomable: true
+      draggable: true
   - minify:
       minify_html: true
 
