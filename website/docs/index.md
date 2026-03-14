@@ -19,7 +19,7 @@ hide:
 RayON is an educational and experimental **path tracer** built in C++ with optional CUDA acceleration.
 It started as a re-implementation of the classic
 [Ray Tracing in One Weekend](https://github.com/RayTracing/raytracing.github.io) series and evolved
-into a fully interactive renderer running at **100 Hz** on an NVIDIA DGX Spark.
+into a fully interactive raytracer running at **> 100 FPS @ 720p** on an NVIDIA DGX Spark.
 
 Four rendering back-ends are available at runtime — no recompilation needed:
 
@@ -44,13 +44,9 @@ One-shot CUDA kernel with 32×4 thread blocks, warp-friendly memory layout, and 
 
 SDL2 window with progressive accumulation. Orbit, pan, zoom with the mouse. ImGui sliders for live DOF, samples, light intensity, and roughness.
 </div>
-<div class="feature-card" markdown>
-**BVH Acceleration**
-
-CPU-built, GPU-traversed Bounding Volume Hierarchy with Surface Area Heuristic (SAH) splitting. 5–50× speedup on scenes with 100+ objects.
 </div>
 
-</div>
+It also features **BVH Acceleration**, CPU-built, with GPU-traversed Bounding Volume Hierarchy with Surface Area Heuristic (SAH) splitting. This provides 5–50× speedup on scenes with 100+ objects.
 
 ---
 
