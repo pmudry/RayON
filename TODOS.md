@@ -6,7 +6,7 @@
 - [x] Add a ray/second counter somewhere -> SPPS instead, as ray counting is too costly on gpu side
 
 ## CUDA renderer
-- [ ] Implement anisotropic metals / shading
+- [x] Implement anisotropic metals / shading
 - [ ] SDL3 migration
 - [x] Refactor constants f3_ones, f3_zero and others
 - [ ] New sphere / point light light types
@@ -15,8 +15,8 @@
 - [x] Time per pixel shading for performance display
 - [x] Normals as lines for spheres
 - [ ] Volumetric smoke ray-marching
-- [ ] Normals color toggle for interactive renderer
-- [ ] Depth map exportingLet'
+- [x] Normals color toggle for interactive renderer
+- [ ] Depth map exporting
 
 ## General code organization
 - [x] There are still discrepancies for the cuda renderers
@@ -51,5 +51,6 @@
 - [ ] Pipeline CI/CD pour runner les tests unitaires ci-dessus (si possible, besoin CUDA sur Github)
 - [ ] Profiling and low-level optimizations + document changes using `nsight-systems` and `nsight-compute`
 - [ ] implement dynamic screen rescaling 
+- [ ] arbitrary resolution (other than 16/9) 
 - [ ] Implement NVIDIA OptiX image denoising
 - [ ] Save image as OpenEXR format

@@ -60,11 +60,13 @@ struct ProgramArgs
    int rendering_method = -1; // -1 means not specified, will ask user
    int samples = SAMPLES_PER_PIXEL;
    int height = IMAGE_HEIGHT;
+   int width = -1; // -1 means derive from height using 16:9
    int samples_per_batch = INTERACTIVE_SAMPLES_PER_BATCH;
    int motion_samples = INTERACTIVE_MOTION_SAMPLES;
    bool auto_accumulate = true;
    bool adaptive_depth = false;
    bool adaptive_sampling = true;
+   bool show_menu = false;
    const char *scene_file = nullptr;
    const char *theme = nullptr;
 };
@@ -74,8 +76,10 @@ void dumpHelp()
    cout << "Options:\n";
    cout << "  -h, --help, /?         Show this help message\n";
    cout << "  -m <method>            Rendering method: 0=CPU sequential, 1=CPU parallel,\n";
-   cout << "                         2=CUDA offline, 3=CUDA interactive (default: 2)\n";
-   cout << "  -r <height>            Vertical resolution: 2160, 1080, 720, 360, 180 (default: "
+   cout << "                         2=CUDA offline, 3=CUDA interactive (default: 3)\n";
+   cout << "  --menu                 Show interactive method selection menu\n";
+   cout << "  -r <WxH>               Arbitrary resolution, e.g. 1920x1080 or 800x600\n";
+   cout << "  -r <height>            Preset height (16:9): 2160, 1080, 720, 360, 180 (default: "
         << IMAGE_HEIGHT << ")\n";
    cout << "  --scene <file>         Load scene from YAML file (default: built-in scene)\n";
    cout << "\n";
@@ -94,7 +98,6 @@ void dumpHelp()
 ProgramArgs parseInput(int argc, char *argv[])
 {
    ProgramArgs args;
-   const vector<int> allowed_heights = {2160, 1080, 720, 360, 180};
 
    // Parse command-line arguments
    for (int i = 1; i < argc; ++i)
@@ -130,17 +133,33 @@ ProgramArgs parseInput(int argc, char *argv[])
       }
       else if (strcmp(argv[i], "-r") == 0 && i + 1 < argc)
       {
-         int height = atoi(argv[++i]);
-         if (find(allowed_heights.begin(), allowed_heights.end(), height) != allowed_heights.end())
+         const char *res = argv[++i];
+         const char *x_ptr = strchr(res, 'x');
+         if (x_ptr != nullptr)
          {
-            args.height = height;
+            // WxH format
+            int w = atoi(res);
+            int h = atoi(x_ptr + 1);
+            if (w < 1 || h < 1)
+            {
+               cerr << "Invalid resolution: " << res << ". Both width and height must be >= 1.\n";
+               args.samples = -1;
+               return args;
+            }
+            args.width = w;
+            args.height = h;
          }
          else
          {
-            cerr << "Invalid resolution height: " << height << "\n";
-            cerr << "Allowed values: 2160, 1080, 720, 360, 180\n";
-            args.samples = -1; // Indicate error
-            return args;
+            // Plain height — accept any positive value (not restricted to presets)
+            int height = atoi(res);
+            if (height < 1)
+            {
+               cerr << "Invalid resolution height: " << res << "\n";
+               args.samples = -1;
+               return args;
+            }
+            args.height = height;
          }
       }
       else if (strcmp(argv[i], "--no-auto-accumulate") == 0)
@@ -183,6 +202,10 @@ ProgramArgs parseInput(int argc, char *argv[])
       {
          args.theme = argv[++i];
       }
+      else if (strcmp(argv[i], "--menu") == 0)
+      {
+         args.show_menu = true;
+      }
       else if (argv[i][0] == '-')
       {
          cerr << "Unknown argument: " << argv[i] << "\n";
@@ -217,7 +240,7 @@ int main(int argc, char *argv[])
 
    // Calculate width maintaining aspect ratio (16:9)
    int image_height = args.height;
-   int image_width = (image_height * 16) / 9;
+   int image_width = (args.width > 0) ? args.width : (image_height * 16) / 9;
    string compiled_config = current_build_configuration();
 
    cout << "\n";
@@ -238,7 +261,7 @@ int main(int argc, char *argv[])
    {
       renderType = args.rendering_method;
    }
-   else
+   else if (args.show_menu)
    {
       // Choose rendering method
       cout << "Choose rendering method:" << "\n";
@@ -260,6 +283,15 @@ int main(int argc, char *argv[])
 
       if (!input.empty())
          renderType = stoi(input);
+   }
+   else
+   {
+      // Default: interactive when SDL2 is available, offline CUDA otherwise
+#ifdef SDL2_FOUND
+      renderType = 3;
+#else
+      renderType = 2;
+#endif
    }
 
    RndGen::set_seed(1984);
