@@ -28,6 +28,8 @@
 
 #include <chrono>
 #include <cmath>
+#include <cstring>
+#include <cstdio>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -83,7 +85,7 @@ class SDLGuiHandler
       }
 
       std::string window_title =
-          "RayON v" + std::string(constants::version) + " - Interactive mode (LMB:Rotate RMB:Pan Wheel:Zoom)";
+          "RayON v" + std::string(constants::version) + "";
       window = SDL_CreateWindow(window_title.c_str(), SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, image_width,
                                 image_height, SDL_WINDOW_SHOWN);
       if (!window)
@@ -198,7 +200,7 @@ class SDLGuiHandler
                       int *visualization_mode = nullptr,
                       bool *show_normal_arrows = nullptr, int *normal_arrow_count = nullptr,
                       float *normal_arrow_scale = nullptr, float *normal_arrow_thickness = nullptr,
-                      int triangle_count = 0)
+                      bool *show_spps_counter = nullptr, int triangle_count = 0)
    {
       SDL_UpdateTexture(texture, nullptr, image.data(), image_width * image_channels);
       SDL_RenderClear(renderer);
@@ -211,7 +213,7 @@ class SDLGuiHandler
 
       if (show_controls)
       {
-         ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
+         ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_Always);
          if (window_collapse_requested)
          {
             window_collapsed = !window_collapsed;
@@ -442,7 +444,7 @@ class SDLGuiHandler
                   ImGui::SetNextItemOpen(!collapse_headers);
                if (ImGui::CollapsingHeader("Scene", ImGuiTreeNodeFlags_DefaultOpen))
                {
-                  ImGui::Combo("Scene", scene_index, scene_names, scene_count);
+                  ImGui::Combo("Scene##selector", scene_index, scene_names, scene_count);
                   if (triangle_count > 0)
                      ImGui::Text("Triangles: %d", triangle_count);
                }
@@ -457,6 +459,12 @@ class SDLGuiHandler
                   current_theme = static_cast<GuiTheme>(theme_idx);
                   applyTheme(current_theme);
                }
+
+               if (show_spps_counter)
+               {
+                  ImGui::Checkbox("Show SPP/s Counter (F)", show_spps_counter);
+               }
+               ImGui::Checkbox("Show Logo (L)", &show_logo);
             }
 
             // --- Help ---
@@ -474,6 +482,8 @@ class SDLGuiHandler
                ImGui::BulletText("N: Toggle Show Normals");
                ImGui::BulletText("Left/Right: Previous/Next Scene");
                ImGui::BulletText("O: Auto orbit");
+               ImGui::BulletText("F / H: Toggle SPP/s Counter");
+               ImGui::BulletText("L: Toggle Logo");
                ImGui::BulletText("Enter: Collapse/Expand Window");
                ImGui::BulletText("H: Hide/Show UI");
                ImGui::BulletText("C: Collapse/Expand All Sections");
@@ -487,6 +497,13 @@ class SDLGuiHandler
          ImGui::End();
       }
 
+      const bool draw_spps_counter = (show_spps_counter == nullptr) ? true : *show_spps_counter;
+      updateLogoLayout();
+      if (draw_spps_counter)
+      {
+         drawSPPSOverlay(sps);
+      }
+
       // Finalize ImGui frame
       ImGui::Render();
       ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), renderer);
@@ -494,7 +511,7 @@ class SDLGuiHandler
 
    void drawLogo()
    {
-      if (logo_texture)
+      if (show_logo && logo_texture)
       {
          SDL_RenderCopy(renderer, logo_texture, nullptr, &logo_rect);
       }
@@ -515,6 +532,8 @@ class SDLGuiHandler
 
    void toggleControls() { show_controls = !show_controls; }
    bool getShowControls() const { return show_controls; }
+   void toggleLogo() { show_logo = !show_logo; }
+   void setLogoVisible(bool visible) { show_logo = visible; }
 
    void toggleWindowCollapse() { window_collapse_requested = true; }
 
@@ -532,6 +551,7 @@ class SDLGuiHandler
    bool reset_headers;
    bool window_collapse_requested;
    bool window_collapsed;
+   bool show_logo = true;
    GuiTheme current_theme;
    bool initialized;
 
@@ -546,6 +566,16 @@ class SDLGuiHandler
    Uint32 last_perf_sample_time_ms;
    Uint32 perf_sample_interval_ms;
    Uint32 perf_time_window_ms;
+
+   // Cached SPP/s overlay metrics — computed once on first draw, never change.
+   bool   spps_metrics_cached = false;
+   float  spps_cell_w   = 0.0f;
+   float  spps_prefix_w = 0.0f;
+   float  spps_gap_w    = 0.0f;
+   float  spps_unit_w   = 0.0f;
+   float  spps_font_h   = 0.0f;
+   float  spps_box_w    = 0.0f;
+   float  spps_box_h    = 0.0f;
 
    static void cleanupSDL() { SDL_Quit(); }
 
@@ -707,6 +737,122 @@ class SDLGuiHandler
 
          delete[] resized_logo;
          stbi_image_free(logo_data);
+      }
+   }
+
+   void updateLogoLayout()
+   {
+      if (!logo_texture)
+         return;
+
+      const int margin = 10;
+      logo_rect.x = image_width - logo_rect.w - margin;
+      logo_rect.y = image_height - logo_rect.h - margin;
+   }
+
+   // Draw a stable SPP/s counter in the bottom-left using the foreground draw list.
+   // GetForegroundDrawList() is unclipped and independent of any ImGui window, so
+   // positioning is exact screen-space with no window padding or clip-rect surprises.
+   void drawSPPSOverlay(float sps)
+   {
+      ImFont      *font = ImGui::GetFont();
+      const float  fs   = ImGui::GetFontSize();
+
+      // Compute metrics only once — font never changes at runtime.
+      if (!spps_metrics_cached)
+      {
+         auto gw = [&](const char *s) { return font->CalcTextSizeA(fs, FLT_MAX, 0.0f, s).x; };
+         for (const char *c = "0123456789."; *c; ++c)
+         {
+            char g[2] = {*c, '\0'};
+            spps_cell_w = std::max(spps_cell_w, gw(g));
+         }
+         spps_prefix_w = gw("SPP/s: ");
+         spps_gap_w    = gw(" ");
+         spps_unit_w   = gw("M");  // M is widest unit
+         spps_font_h   = font->CalcTextSizeA(fs, FLT_MAX, 0.0f, "A").y;
+
+         constexpr int num_digit_chars = 4; // "%4.0f" always produces 4 chars
+         const float   content_w = spps_prefix_w + spps_cell_w * num_digit_chars
+                                    + spps_gap_w + spps_unit_w;
+         spps_box_w = content_w + 8.0f * 2.0f;
+         spps_box_h = spps_font_h + 5.0f * 2.0f;
+         spps_metrics_cached = true;
+      }
+
+      // --- scale value and choose unit; overflow if scaled value exceeds 4 digits ---
+      float scaled = sps;
+      const char *unit = " ";
+      if      (sps >= 1e6f) { scaled = sps * 1e-6f; unit = "M"; }
+      else if (sps >= 1e3f) { scaled = sps * 1e-3f; unit = "k"; }
+
+      // Guard against values that won't fit in 4 integer digits after scaling
+      const bool overflow = (scaled >= 10000.0f);
+
+      // 4-char integer field: "NNNN" (no decimal point)
+      char number_str[8];
+      if (!overflow)
+         std::snprintf(number_str, sizeof(number_str), "%4.0f", static_cast<double>(scaled));
+
+      const float pad_x  = 8.0f;
+      const float pad_y  = 5.0f;
+      const float margin = 10.0f;
+      const float box_w  = spps_box_w;
+      const float box_h  = spps_box_h;
+      const float box_x     = margin;
+      const float box_y     = static_cast<float>(image_height) - box_h - margin;
+
+      // --- hover tooltip: show description when mouse is over the box ---
+      const ImVec2 mouse = ImGui::GetIO().MousePos;
+      if (mouse.x >= box_x && mouse.x <= box_x + box_w &&
+          mouse.y >= box_y && mouse.y <= box_y + box_h)
+      {
+         ImGui::SetTooltip("Samples Per Pixel per second. It measures the rendering throughput.\n"
+                           "Toggle with F.");
+      }
+
+      // --- draw background rect then text directly onto the foreground layer ---
+      ImDrawList *draw = ImGui::GetForegroundDrawList();
+
+      draw->AddRectFilled(ImVec2(box_x, box_y),
+                          ImVec2(box_x + box_w, box_y + box_h),
+                          IM_COL32(0, 0, 0, 89), 4.0f);
+
+      const ImU32  text_col = IM_COL32(220, 220, 220, 220);
+      const float  text_y   = box_y + pad_y;
+      float        cx       = box_x + pad_x;
+
+      // prefix as normal text
+      draw->AddText(font, fs, ImVec2(cx, text_y), text_col, "SPP/s: ");
+      cx += spps_prefix_w;
+
+      // digits in fixed-width cells so varying widths never shift the unit
+      if (overflow)
+      {
+         // Right-align ">= 10G" within the number+gap+unit region
+         constexpr const char *ovf_str = ">= 10G";
+         const float ovf_w   = font->CalcTextSizeA(fs, FLT_MAX, 0.0f, ovf_str).x;
+         const float region_w = spps_cell_w * 4.0f + spps_gap_w + spps_unit_w;
+         const float ovf_x   = cx + region_w - ovf_w;
+         draw->AddText(font, fs, ImVec2(ovf_x, text_y), text_col, ovf_str);
+      }
+      else
+      {
+         const int num_chars = 4; // always render exactly 4 cells
+         for (int i = 0; i < num_chars; ++i)
+         {
+            if (number_str[i] != ' ')
+            {
+               char g[2] = {number_str[i], '\0'};
+               const float gw = font->CalcTextSizeA(fs, FLT_MAX, 0.0f, g).x;
+               draw->AddText(font, fs, ImVec2(cx + (spps_cell_w - gw) * 0.5f, text_y), text_col, g);
+            }
+            cx += spps_cell_w;
+         }
+
+         // fixed-width gap then unit
+         cx += spps_gap_w;
+         draw->AddText(font, fs, ImVec2(cx, text_y), text_col, unit);
       }
    }
 };

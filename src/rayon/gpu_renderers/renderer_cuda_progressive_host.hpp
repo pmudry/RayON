@@ -161,6 +161,7 @@ class RendererCUDAProgressive : public IRenderer
       int normal_arrow_count = 2000;           // Target number of arrows on screen
       float normal_arrow_scale = 0.6f;        // Arrow length multiplier
       float normal_arrow_thickness = 1.2f;    // Arrow thickness in pixels
+      bool show_spps_counter = true;          // SDL overlay throughput counter under logo
 
       // Scene selection: built-ins + all YAML files discovered at runtime.
       struct SceneEntry
@@ -460,6 +461,8 @@ class RendererCUDAProgressive : public IRenderer
                if (event.key.keysym.sym == SDLK_h)
                {
                   gui.toggleControls();
+                  if (show_spps_counter) show_spps_counter = false;
+                  else                  show_spps_counter = true;
                }
                else if (event.key.keysym.sym == SDLK_RETURN)
                {
@@ -483,10 +486,20 @@ class RendererCUDAProgressive : public IRenderer
                   normal_arrow_count = 2000;
                   normal_arrow_scale = 0.6f;
                   normal_arrow_thickness = 1.2f;
+                  show_spps_counter = true;
+                  gui.setLogoVisible(true);
                   samples_per_batch_float = static_cast<float>(settings_.samples_per_batch);
                   camera_control.setAutoOrbit(false);
                   camera_changed = true;
                   applySceneSettings();
+               }
+               else if (event.key.keysym.sym == SDLK_f)
+               {
+                  show_spps_counter = !show_spps_counter;
+               }
+               else if (event.key.keysym.sym == SDLK_l)
+               {
+                  gui.toggleLogo();
                }
                else if (event.key.keysym.sym == SDLK_a)
                {
@@ -739,7 +752,7 @@ class RendererCUDAProgressive : public IRenderer
                            cam_pos, cam_lookat, &cam_fov_ui,
                            &adaptive_sampling_enabled, &adaptive_threshold, convergence_pct, &show_heatmap,
                            &visualization_mode, &show_normal_arrows, &normal_arrow_count,
-                           &normal_arrow_scale, &normal_arrow_thickness, tri_count);
+                           &normal_arrow_scale, &normal_arrow_thickness, &show_spps_counter, tri_count);
 
          if (auto_orbit != camera_control.isAutoOrbitEnabled())
          {
