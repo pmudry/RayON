@@ -32,8 +32,8 @@ lighting effects, and geometric complexity the renderer supports.
         <figcaption><strong>4K Master Render</strong> — full default scene at 4K resolution. Glass, rough mirror, Lambertian, tinted metal, and light-emitting materials share the scene with SDF shapes in the background.</figcaption>
       </figure>
       <figure>
-        <img src="../assets/images/for_project/end_2048s_brushed_ground.png" alt="Default scene with brushed-metal ground at 2048 SPP">
-        <figcaption><strong>Brushed-Metal Ground</strong> — anisotropic reflection on the floor plane from 2048 accumulated samples. Long-exposure look with near-zero noise.</figcaption>
+        <img src="../assets/images/for_project/sampling/aniso_512spp.png" alt="Anisotropic metals scene at 512 SPP — directional highlight streaks fully resolved">
+        <figcaption><strong>Anisotropic Metals — 512 SPP</strong> — directional highlight streaks fully resolved across all roughness and anisotropy levels. Rendered with the CUDA path tracer.</figcaption>
       </figure>
     </div>
 
@@ -92,32 +92,32 @@ lighting effects, and geometric complexity the renderer supports.
 
 === "Progressive Quality"
 
-    <p>Same viewpoint accumulated from 1 to 2048 samples per pixel. Every doubling halves Monte Carlo noise — error
-    decays as \(\mathcal{O}(1/\sqrt{N})\).</p>
+    <p>Anisotropic metals scene rendered at increasing sample counts. Every doubling halves Monte Carlo noise — error
+    decays as \(\mathcal{O}(1/\sqrt{N})\). The anisotropic specular lobes are particularly sensitive to sample count.</p>
 
     <div class="img-grid cols-2">
       <figure>
-        <img src="../assets/images/for_project/begin.png" alt="1 sample per pixel — heavily noisy">
-        <figcaption>1 SPP — pure noise; each pixel stores a single random path.</figcaption>
+        <img src="../assets/images/for_project/sampling/aniso_4spp.png" alt="4 samples per pixel — heavy noise across specular lobes">
+        <figcaption><strong>4 SPP</strong> — specular highlights are buried in noise; anisotropic streaks invisible.</figcaption>
       </figure>
       <figure>
-        <img src="../assets/images/for_project/end_8s.png" alt="8 samples — shapes visible through noise">
-        <figcaption>8 SPP — shapes emerge but reflections are still very noisy.</figcaption>
+        <img src="../assets/images/for_project/sampling/aniso_16spp.png" alt="16 samples per pixel — rough shapes visible">
+        <figcaption><strong>16 SPP</strong> — sphere shapes emerge; directional highlights faintly visible.</figcaption>
       </figure>
       <figure>
-        <img src="../assets/images/for_project/end_128s.png" alt="128 samples — mostly clean">
-        <figcaption>128 SPP — good quality for interactive use.</figcaption>
+        <img src="../assets/images/for_project/sampling/aniso_32spp.png" alt="32 samples per pixel">
+        <figcaption><strong>32 SPP</strong> — anisotropic streaks begin to form; still noticeably noisy.</figcaption>
       </figure>
       <figure>
-        <img src="../assets/images/for_project/end_256s.png" alt="256 samples">
-        <figcaption>256 SPP — sharp shadows, clean glass caustics.</figcaption>
+        <img src="../assets/images/for_project/sampling/aniso_64spp.png" alt="64 samples per pixel">
+        <figcaption><strong>64 SPP</strong> — usable quality; highlight directionality clear on low-roughness spheres.</figcaption>
       </figure>
       <figure>
-        <img src="../assets/images/for_project/end_512s.png" alt="512 samples">
-        <figcaption>512 SPP — wall colour bleeding fully resolved.</figcaption>
+        <img src="../assets/images/for_project/sampling/aniso_128spp.png" alt="128 samples per pixel — clean highlights">
+        <figcaption><strong>128 SPP</strong> — clean for most materials; high-anisotropy spheres still show slight graininess.</figcaption>
       </figure>
       <figure>
-        <img src="../assets/images/for_project/end_2048s.png" alt="2048 samples — near-converged">
-        <figcaption>2048 SPP — near-converged; remaining noise is sub-pixel.</figcaption>
+        <img src="../assets/images/for_project/sampling/aniso_512spp.png" alt="512 samples per pixel — near-converged">
+        <figcaption><strong>512 SPP</strong> — near-converged; anisotropic lobes fully resolved across all roughness levels.</figcaption>
       </figure>
     </div>

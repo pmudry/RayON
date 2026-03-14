@@ -32,7 +32,7 @@ class RendererCUDA : public IRenderer
       void *d_accum_buffer = nullptr;
 
       // Render progressively with accumulative samples to show progress
-      const int samples_per_update = frame.samples_per_pixel / 5; // Update progress every 20% of samples
+      const int samples_per_update = std::max(1, frame.samples_per_pixel / 5); // Update progress every 20% of samples
       int samples_completed = 0;
       unsigned long long total_rays = 0;
       

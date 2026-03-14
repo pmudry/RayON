@@ -15,11 +15,12 @@ def on_pre_build(config, **kwargs):
 
     copies = [
         # (source path relative to repo root, destination path relative to docs/assets/images/)
-        ("images/samples",                    "samples"),
-        ("images/for_project",                "for_project"),
-        ("images/dev",                        "dev"),
-        ("material_gallery/thumbnails",       "thumbnails"),
-        ("explanations/lambert sampling",     "sampling"),
+        ("images/samples",                        "samples"),
+        ("images/for_project",                    "for_project"),
+        ("images/for_project/sampling",           "for_project/sampling"),
+        ("images/dev",                            "dev"),
+        ("material_gallery/thumbnails",           "thumbnails"),
+        ("explanations/lambert sampling",         "sampling"),
     ]
 
     single_files = [
