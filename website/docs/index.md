@@ -5,13 +5,10 @@ hide:
 ---
 
 <div class="hero-banner">
-  <img src="assets/images/samples/rayon_4k_render.png"
-       alt="RayON — path traced scene of reflective and refractive spheres on a brushed-metal floor"
-       loading="eager">
-  <div class="hero-overlay">
-    <h1>RayON</h1>
-    <p>An interactive, high-performance CPU &amp; CUDA path tracer with real-time progressive sampling</p>
-  </div>
+  <img src="assets/rayon_logo_animated.svg"
+       alt="RayON — animated prism logo with light rays dispersing into a spectrum"
+       loading="eager" class="hero-svg">
+  <p class="hero-tagline">A high-performance CPU &amp; CUDA path tracer with real-time progressive sampling</p>
 </div>
 
 ## What is RayON?
@@ -42,7 +39,7 @@ One-shot CUDA kernel with 32×4 thread blocks, warp-friendly memory layout, and 
 <div class="feature-card" markdown>
 **CUDA Interactive**
 
-SDL2 window with progressive accumulation. Orbit, pan, zoom with the mouse. ImGui sliders for live DOF, samples, light intensity, and roughness.
+SDL2 window with progressive accumulation. Orbit, pan, zoom with the mouse. [`Dear ImGui`](https://github.com/ocornut/imgui) sliders for live DOF, samples, light intensity, and roughness.
 </div>
 </div>
 

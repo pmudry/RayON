@@ -85,18 +85,19 @@ running kernel via `cudaMemcpyToSymbol` — no GPU scene rebuild.
 
 ## Display pipeline
 
-```
-GPU kernel → float accum buffer (device)
-           → gamma kernel (device)
-           → uint8 display buffer (device)
-           → cudaMemcpy D2H (3 B/pixel)
-           → SDL_UpdateTexture
-           → SDL_RenderCopy
-           → SDL_GL_SwapWindow
+```mermaid
+flowchart TD
+    A["GPU kernel\n(CUDA)"] -->|accumulates samples| B["Float accum buffer\n(device memory)"]
+    B -->|gamma correction kernel| C["uint8 display buffer\n(device memory)"]
+    C -->|cudaMemcpy D→H\n3 B/pixel| D["uint8 host buffer\n(CPU RAM)"]
+    D -->|SDL_UpdateTexture| E["SDL texture\n(GPU VRAM)"]
+    E -->|SDL_RenderCopy| F["SDL renderer"]
+    F -->|SDL_GL_SwapWindow| G["Display"]
 ```
 
 Only 3 bytes per pixel cross the PCIe bus each frame. At 1920×1080, that is ~6 MB per frame —
-easily handled at 60 fps.
+easily handled at 60 fps. Parameters that update without a full reset (light intensity, exposure)
+are injected via `cudaMemcpyToSymbol` directly into the running kernel — no GPU scene rebuild needed.
 
 ---
 
