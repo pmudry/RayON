@@ -50,6 +50,11 @@
   display: none;
 }
 
+/* Align title left edge with nav tabs content (no logo present) */
+.md-header__title {
+  margin-left: 0.6rem !important;
+}
+
 
 .feature-grid {
   display: grid;
