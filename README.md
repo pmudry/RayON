@@ -3,7 +3,6 @@
 # _RayON_ - An interactive ray-tracer
 
 ---
-Dr Pierre-André Mudry, 2025-2026.
 
 <p align="center">
     <img src="images/real_time_raytrace.png" alt="Interactive path tracer rendering spheres with various materials including reflective metal, glass with refraction, and diffuse surfaces, displayed at 2000 samples per pixel in continuous accumulation mode with depth of field controls and real-time camera manipulation via mouse orbit, pan, and zoom" width="60%">
