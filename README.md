@@ -36,7 +36,7 @@ make -j
 
 In interactive mode, the renderer is real-time on the development machine (DGX Spark) with a 100 Hz monitor. Frame rate varies with scene complexity and sample settings, while progressive accumulation keeps the display responsive as samples converge.
 
-It uses `stb` [single-file public domain (or MIT licensed) libraries for C/C++](https://github.com/nothings/stb/tree/master) for opening and saving images as well as immediate-mode GUI controls using [Dear ImGui](https://github.com/ocornut/imgui).
+It uses [stb single-file public domain (or MIT-licensed) C/C++ libraries](https://github.com/nothings/stb/tree/master) for loading and saving images, [SDL2](https://www.libsdl.org/) for windowing, and immediate-mode GUI controls via [Dear ImGui](https://github.com/ocornut/imgui).
 
 # Sample gallery
 
