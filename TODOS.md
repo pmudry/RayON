@@ -39,6 +39,9 @@
 ## Optimisations
 - [x] Fast maths
 
+## Bugfixing 
+- [ ] Adaptive sampling is not converging correctly in some cases, maybe can be fixed (not sure though)
+
 ## Others things
 - [x] `ImGUI` GUI integration for controls -> reimplement existing controls + add more
 - [x] Implement benchmarks for static renderer on typical scenes (multiple renders + average)

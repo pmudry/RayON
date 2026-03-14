@@ -93,7 +93,7 @@ class RendererCUDAProgressive : public IRenderer
       int current_samples = 0;
       float gamma = 2.0f;
       float light_intensity = 1.0f;
-      float background_intensity = 1.0f;
+      float background_intensity = scene.background_intensity;
       float metal_fuzziness = 1.0f;
       float glass_refraction_index = 1.5f;
       bool dof_enabled = false;
@@ -151,7 +151,7 @@ class RendererCUDAProgressive : public IRenderer
 
       // Adaptive sampling state
       void *d_pixel_sample_counts = nullptr; // Per-pixel sample counts (null = disabled)
-      bool adaptive_sampling_enabled = settings_.adaptive_sampling;
+      bool adaptive_sampling_enabled = scene.adaptive_sampling;
       int min_adaptive_samples = 32;         // Don't check convergence before this many samples
       float adaptive_threshold = 3.16e-5f;   // Relative luminance change threshold (default ~10^-4.5)
       float convergence_pct = 0.0f;          // % of pixels that have converged (for display)
