@@ -1,126 +1,154 @@
 <svg width="100%" viewBox="0 0 900 530" xmlns="http://www.w3.org/2000/svg"><defs><mask id="imagine-text-gaps-tlcfer" maskUnits="userSpaceOnUse"><rect x="0" y="0" width="900" height="530" fill="white"/><rect x="303.63543701171875" y="360" width="292.7291259765625" height="82" fill="black" rx="2"/><rect x="351.79168701171875" y="446" width="207.37498474121094" height="21.999998092651367" fill="black" rx="2"/></mask></defs>
 <style>
 @keyframes kf-ray-in-0 {
-  0%       { stroke-dashoffset: var(--len); }
-  5.00%   { stroke-dashoffset: var(--len); }
-  16.67%   { stroke-dashoffset: 0; }
-  100%     { stroke-dashoffset: 0; }
+  0%    { stroke-dashoffset: var(--len); opacity: 0; }
+  5.00%  { stroke-dashoffset: var(--len); opacity: 0; }
+  16.67%  { stroke-dashoffset: 0;          opacity: 1; }
+  75.00% { stroke-dashoffset: 0;          opacity: 1; }
+  93.33% { stroke-dashoffset: 0;          opacity: 0; }
+  100% { stroke-dashoffset: var(--len); opacity: 0; }
 }
 .ray-in-0 { animation: kf-ray-in-0 6.0s ease-out infinite; }
 
 @keyframes kf-ray-in-1 {
-  0%       { stroke-dashoffset: var(--len); }
-  7.00%   { stroke-dashoffset: var(--len); }
-  18.67%   { stroke-dashoffset: 0; }
-  100%     { stroke-dashoffset: 0; }
+  0%    { stroke-dashoffset: var(--len); opacity: 0; }
+  7.00%  { stroke-dashoffset: var(--len); opacity: 0; }
+  18.67%  { stroke-dashoffset: 0;          opacity: 1; }
+  75.00% { stroke-dashoffset: 0;          opacity: 1; }
+  93.33% { stroke-dashoffset: 0;          opacity: 0; }
+  100% { stroke-dashoffset: var(--len); opacity: 0; }
 }
 .ray-in-1 { animation: kf-ray-in-1 6.0s ease-out infinite; }
 
 @keyframes kf-ray-in-2 {
-  0%       { stroke-dashoffset: var(--len); }
-  9.00%   { stroke-dashoffset: var(--len); }
-  20.67%   { stroke-dashoffset: 0; }
-  100%     { stroke-dashoffset: 0; }
+  0%    { stroke-dashoffset: var(--len); opacity: 0; }
+  9.00%  { stroke-dashoffset: var(--len); opacity: 0; }
+  20.67%  { stroke-dashoffset: 0;          opacity: 1; }
+  75.00% { stroke-dashoffset: 0;          opacity: 1; }
+  93.33% { stroke-dashoffset: 0;          opacity: 0; }
+  100% { stroke-dashoffset: var(--len); opacity: 0; }
 }
 .ray-in-2 { animation: kf-ray-in-2 6.0s ease-out infinite; }
 
 @keyframes kf-ray-in-3 {
-  0%       { stroke-dashoffset: var(--len); }
-  11.00%   { stroke-dashoffset: var(--len); }
-  22.67%   { stroke-dashoffset: 0; }
-  100%     { stroke-dashoffset: 0; }
+  0%    { stroke-dashoffset: var(--len); opacity: 0; }
+  11.00%  { stroke-dashoffset: var(--len); opacity: 0; }
+  22.67%  { stroke-dashoffset: 0;          opacity: 1; }
+  75.00% { stroke-dashoffset: 0;          opacity: 1; }
+  93.33% { stroke-dashoffset: 0;          opacity: 0; }
+  100% { stroke-dashoffset: var(--len); opacity: 0; }
 }
 .ray-in-3 { animation: kf-ray-in-3 6.0s ease-out infinite; }
 
 @keyframes kf-ray-in-4 {
-  0%       { stroke-dashoffset: var(--len); }
-  13.00%   { stroke-dashoffset: var(--len); }
-  24.67%   { stroke-dashoffset: 0; }
-  100%     { stroke-dashoffset: 0; }
+  0%    { stroke-dashoffset: var(--len); opacity: 0; }
+  13.00%  { stroke-dashoffset: var(--len); opacity: 0; }
+  24.67%  { stroke-dashoffset: 0;          opacity: 1; }
+  75.00% { stroke-dashoffset: 0;          opacity: 1; }
+  93.33% { stroke-dashoffset: 0;          opacity: 0; }
+  100% { stroke-dashoffset: var(--len); opacity: 0; }
 }
 .ray-in-4 { animation: kf-ray-in-4 6.0s ease-out infinite; }
 
 @keyframes kf-ray-int-0 {
-  0%       { stroke-dashoffset: var(--len); }
-  17.50%   { stroke-dashoffset: var(--len); }
-  24.17%   { stroke-dashoffset: 0; }
-  100%     { stroke-dashoffset: 0; }
+  0%    { stroke-dashoffset: var(--len); opacity: 0; }
+  17.50%  { stroke-dashoffset: var(--len); opacity: 0; }
+  24.17%  { stroke-dashoffset: 0;          opacity: 1; }
+  75.00% { stroke-dashoffset: 0;          opacity: 1; }
+  93.33% { stroke-dashoffset: 0;          opacity: 0; }
+  100% { stroke-dashoffset: var(--len); opacity: 0; }
 }
 .ray-int-0 { animation: kf-ray-int-0 6.0s ease-out infinite; }
 
 @keyframes kf-ray-int-1 {
-  0%       { stroke-dashoffset: var(--len); }
-  19.17%   { stroke-dashoffset: var(--len); }
-  25.83%   { stroke-dashoffset: 0; }
-  100%     { stroke-dashoffset: 0; }
+  0%    { stroke-dashoffset: var(--len); opacity: 0; }
+  19.17%  { stroke-dashoffset: var(--len); opacity: 0; }
+  25.83%  { stroke-dashoffset: 0;          opacity: 1; }
+  75.00% { stroke-dashoffset: 0;          opacity: 1; }
+  93.33% { stroke-dashoffset: 0;          opacity: 0; }
+  100% { stroke-dashoffset: var(--len); opacity: 0; }
 }
 .ray-int-1 { animation: kf-ray-int-1 6.0s ease-out infinite; }
 
 @keyframes kf-ray-int-2 {
-  0%       { stroke-dashoffset: var(--len); }
-  20.83%   { stroke-dashoffset: var(--len); }
-  27.50%   { stroke-dashoffset: 0; }
-  100%     { stroke-dashoffset: 0; }
+  0%    { stroke-dashoffset: var(--len); opacity: 0; }
+  20.83%  { stroke-dashoffset: var(--len); opacity: 0; }
+  27.50%  { stroke-dashoffset: 0;          opacity: 1; }
+  75.00% { stroke-dashoffset: 0;          opacity: 1; }
+  93.33% { stroke-dashoffset: 0;          opacity: 0; }
+  100% { stroke-dashoffset: var(--len); opacity: 0; }
 }
 .ray-int-2 { animation: kf-ray-int-2 6.0s ease-out infinite; }
 
 @keyframes kf-ray-int-3 {
-  0%       { stroke-dashoffset: var(--len); }
-  22.50%   { stroke-dashoffset: var(--len); }
-  29.17%   { stroke-dashoffset: 0; }
-  100%     { stroke-dashoffset: 0; }
+  0%    { stroke-dashoffset: var(--len); opacity: 0; }
+  22.50%  { stroke-dashoffset: var(--len); opacity: 0; }
+  29.17%  { stroke-dashoffset: 0;          opacity: 1; }
+  75.00% { stroke-dashoffset: 0;          opacity: 1; }
+  93.33% { stroke-dashoffset: 0;          opacity: 0; }
+  100% { stroke-dashoffset: var(--len); opacity: 0; }
 }
 .ray-int-3 { animation: kf-ray-int-3 6.0s ease-out infinite; }
 
 @keyframes kf-ray-int-4 {
-  0%       { stroke-dashoffset: var(--len); }
-  24.17%   { stroke-dashoffset: var(--len); }
-  30.83%   { stroke-dashoffset: 0; }
-  100%     { stroke-dashoffset: 0; }
+  0%    { stroke-dashoffset: var(--len); opacity: 0; }
+  24.17%  { stroke-dashoffset: var(--len); opacity: 0; }
+  30.83%  { stroke-dashoffset: 0;          opacity: 1; }
+  75.00% { stroke-dashoffset: 0;          opacity: 1; }
+  93.33% { stroke-dashoffset: 0;          opacity: 0; }
+  100% { stroke-dashoffset: var(--len); opacity: 0; }
 }
 .ray-int-4 { animation: kf-ray-int-4 6.0s ease-out infinite; }
 
 @keyframes kf-ray-out-0 {
-  0%       { stroke-dashoffset: var(--len); }
-  25.83%   { stroke-dashoffset: var(--len); }
-  37.50%   { stroke-dashoffset: 0; }
-  100%     { stroke-dashoffset: 0; }
+  0%    { stroke-dashoffset: var(--len); opacity: 0; }
+  25.83%  { stroke-dashoffset: var(--len); opacity: 0; }
+  37.50%  { stroke-dashoffset: 0;          opacity: 1; }
+  75.00% { stroke-dashoffset: 0;          opacity: 1; }
+  93.33% { stroke-dashoffset: 0;          opacity: 0; }
+  100% { stroke-dashoffset: var(--len); opacity: 0; }
 }
 .ray-out-0 { animation: kf-ray-out-0 6.0s ease-out infinite; }
 
 @keyframes kf-ray-out-1 {
-  0%       { stroke-dashoffset: var(--len); }
-  27.50%   { stroke-dashoffset: var(--len); }
-  39.17%   { stroke-dashoffset: 0; }
-  100%     { stroke-dashoffset: 0; }
+  0%    { stroke-dashoffset: var(--len); opacity: 0; }
+  27.50%  { stroke-dashoffset: var(--len); opacity: 0; }
+  39.17%  { stroke-dashoffset: 0;          opacity: 1; }
+  75.00% { stroke-dashoffset: 0;          opacity: 1; }
+  93.33% { stroke-dashoffset: 0;          opacity: 0; }
+  100% { stroke-dashoffset: var(--len); opacity: 0; }
 }
 .ray-out-1 { animation: kf-ray-out-1 6.0s ease-out infinite; }
 
 @keyframes kf-ray-out-2 {
-  0%       { stroke-dashoffset: var(--len); }
-  29.17%   { stroke-dashoffset: var(--len); }
-  40.83%   { stroke-dashoffset: 0; }
-  100%     { stroke-dashoffset: 0; }
+  0%    { stroke-dashoffset: var(--len); opacity: 0; }
+  29.17%  { stroke-dashoffset: var(--len); opacity: 0; }
+  40.83%  { stroke-dashoffset: 0;          opacity: 1; }
+  75.00% { stroke-dashoffset: 0;          opacity: 1; }
+  93.33% { stroke-dashoffset: 0;          opacity: 0; }
+  100% { stroke-dashoffset: var(--len); opacity: 0; }
 }
 .ray-out-2 { animation: kf-ray-out-2 6.0s ease-out infinite; }
 
 @keyframes kf-ray-out-3 {
-  0%       { stroke-dashoffset: var(--len); }
-  30.83%   { stroke-dashoffset: var(--len); }
-  42.50%   { stroke-dashoffset: 0; }
-  100%     { stroke-dashoffset: 0; }
+  0%    { stroke-dashoffset: var(--len); opacity: 0; }
+  30.83%  { stroke-dashoffset: var(--len); opacity: 0; }
+  42.50%  { stroke-dashoffset: 0;          opacity: 1; }
+  75.00% { stroke-dashoffset: 0;          opacity: 1; }
+  93.33% { stroke-dashoffset: 0;          opacity: 0; }
+  100% { stroke-dashoffset: var(--len); opacity: 0; }
 }
 .ray-out-3 { animation: kf-ray-out-3 6.0s ease-out infinite; }
 
 @keyframes kf-ray-out-4 {
-  0%       { stroke-dashoffset: var(--len); }
-  32.50%   { stroke-dashoffset: var(--len); }
-  44.17%   { stroke-dashoffset: 0; }
-  100%     { stroke-dashoffset: 0; }
+  0%    { stroke-dashoffset: var(--len); opacity: 0; }
+  32.50%  { stroke-dashoffset: var(--len); opacity: 0; }
+  44.17%  { stroke-dashoffset: 0;          opacity: 1; }
+  75.00% { stroke-dashoffset: 0;          opacity: 1; }
+  93.33% { stroke-dashoffset: 0;          opacity: 0; }
+  100% { stroke-dashoffset: var(--len); opacity: 0; }
 }
 .ray-out-4 { animation: kf-ray-out-4 6.0s ease-out infinite; }
-
-
 
 @keyframes kf-dot-near-0 {
   0%         { opacity: 0; }
