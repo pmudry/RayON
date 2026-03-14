@@ -102,7 +102,7 @@ easily handled at 60 fps.
 
 ## Sample screenshot
 
-<img class="render-img" src="../assets/images/real_time_raytrace.png"
+<img class="render-img" src="../../assets/images/real_time_raytrace.png"
      alt="Interactive SDL2 window showing path-traced scene with Dear ImGui overlay">
 
 *Interactive mode at 2048 SPP after 20 seconds of stillness. The ImGui panel (right) shows

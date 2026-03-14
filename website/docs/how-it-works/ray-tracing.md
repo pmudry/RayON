@@ -128,27 +128,27 @@ The same viewpoint rendered at successive sample counts, illustrating convergenc
 
 <div class="progression-strip">
   <figure>
-    <img src="../assets/images/for_project/begin.png" alt="1 SPP">
+    <img src="../../assets/images/for_project/begin.png" alt="1 SPP">
     <figcaption>1 SPP</figcaption>
   </figure>
   <figure>
-    <img src="../assets/images/for_project/end_8s.png" alt="8 SPP">
+    <img src="../../assets/images/for_project/end_8s.png" alt="8 SPP">
     <figcaption>8 SPP</figcaption>
   </figure>
   <figure>
-    <img src="../assets/images/for_project/end_128s.png" alt="128 SPP">
+    <img src="../../assets/images/for_project/end_128s.png" alt="128 SPP">
     <figcaption>128 SPP</figcaption>
   </figure>
   <figure>
-    <img src="../assets/images/for_project/end_256s.png" alt="256 SPP">
+    <img src="../../assets/images/for_project/end_256s.png" alt="256 SPP">
     <figcaption>256 SPP</figcaption>
   </figure>
   <figure>
-    <img src="../assets/images/for_project/end_512s.png" alt="512 SPP">
+    <img src="../../assets/images/for_project/end_512s.png" alt="512 SPP">
     <figcaption>512 SPP</figcaption>
   </figure>
   <figure>
-    <img src="../assets/images/for_project/end_2048s.png" alt="2048 SPP">
+    <img src="../../assets/images/for_project/end_2048s.png" alt="2048 SPP">
     <figcaption>2048 SPP</figcaption>
   </figure>
 </div>

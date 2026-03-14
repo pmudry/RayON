@@ -43,11 +43,11 @@ materials:
 
 <div class="img-grid cols-2">
   <figure>
-    <img src="../assets/images/dev/old_lambertian.png" alt="Old uniform hemisphere sampling">
+    <img src="../../assets/images/dev/old_lambertian.png" alt="Old uniform hemisphere sampling">
     <figcaption>Old: uniform hemisphere sampling — too much noise at grazing angles.</figcaption>
   </figure>
   <figure>
-    <img src="../assets/images/dev/new_lambertian.png" alt="Improved cosine-weighted sampling">
+    <img src="../../assets/images/dev/new_lambertian.png" alt="Improved cosine-weighted sampling">
     <figcaption>New: cosine-weighted sampling — smoother gradients, same mean.</figcaption>
   </figure>
 </div>
@@ -111,11 +111,11 @@ materials:
 
 <div class="img-grid cols-2">
   <figure>
-    <img src="../assets/images/samples/metals shine.png" alt="Tinted rough mirrors — gold, copper, steel">
+    <img src="../../assets/images/samples/metals shine.png" alt="Tinted rough mirrors — gold, copper, steel">
     <figcaption>Gold, copper, and steel spheres at <code>roughness=0.05</code>. The warm tint is visible in highlights.</figcaption>
   </figure>
   <figure>
-    <img src="../assets/images/dev/output_rough_mirror.png" alt="Roughness gradient from 0 to 0.5">
+    <img src="../../assets/images/dev/output_rough_mirror.png" alt="Roughness gradient from 0 to 0.5">
     <figcaption>Left to right: roughness 0.0 → 0.5. The reflected image progressively blurs.</figcaption>
   </figure>
 </div>
@@ -147,7 +147,7 @@ materials:
     ior: 1.5      # crown glass (water ≈ 1.33, diamond ≈ 2.42)
 ```
 
-<img class="render-img" src="../assets/images/samples/dielectric metsals.png"
+<img class="render-img" src="../../assets/images/samples/dielectric metsals.png"
      alt="Glass spheres alongside metallic surfaces">
 
 *Glass spheres refracting the background. The caustic ring under the sphere is not explicit — it
@@ -177,7 +177,7 @@ geometry:
     v_vec: [0.0, 0.0, 1.5]
 ```
 
-<img class="render-img" src="../assets/images/samples/cornell.png" alt="Cornell box with area light">
+<img class="render-img" src="../../assets/images/samples/cornell.png" alt="Cornell box with area light">
 
 *Cornell box lit by a single rectangular area light on the ceiling.
 The coloured walls produce visible colour bleeding on the floor and white sphere.*
@@ -196,7 +196,7 @@ Red = +X axis, Green = +Y axis, Blue = +Z axis.
 
 **Constant** — emits a fixed solid colour regardless of lighting. Useful for environment backgrounds.
 
-<img class="render-img" src="../assets/images/samples/normals.png" alt="Show normals visualisation">
+<img class="render-img" src="../../assets/images/samples/normals.png" alt="Show normals visualisation">
 
 *All surfaces shown with the `ShowNormals` material. Note how the smooth normal interpolation on
 the imported mesh makes the face boundaries invisible.*

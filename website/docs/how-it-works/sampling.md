@@ -25,12 +25,12 @@ samples to converge.
 
 <div class="img-grid cols-2">
   <figure>
-    <img src="../assets/images/sampling/uniform_sampling_overlay.png"
+    <img src="../../assets/images/sampling/uniform_sampling_overlay.png"
          alt="Uniform hemisphere sampling — directions distributed evenly over the hemisphere">
     <figcaption><strong>Uniform hemisphere sampling</strong> — many samples are wasted on near-horizontal directions that barely contribute.</figcaption>
   </figure>
   <figure>
-    <img src="../assets/images/sampling/cosine_sampling_overlay.png"
+    <img src="../../assets/images/sampling/cosine_sampling_overlay.png"
          alt="Cosine-weighted hemisphere sampling — more samples near the normal">
     <figcaption><strong>Cosine-weighted sampling</strong> — sample density is proportional to the cosine contribution. Same expected value, lower variance.</figcaption>
   </figure>
@@ -124,12 +124,12 @@ cosine-weighted sampling concentrates samples near the normal (\(z \approx 1\)):
 
 <div class="img-grid cols-2">
   <figure>
-    <img src="../assets/images/sampling/uniform_z_hist.png"
+    <img src="../../assets/images/sampling/uniform_z_hist.png"
          alt="Histogram of uniform hemisphere samples — flat distribution">
     <figcaption><strong>Uniform</strong> — flat histogram. Each elevation band is equally likely.</figcaption>
   </figure>
   <figure>
-    <img src="../assets/images/sampling/cosine_z_hist.png"
+    <img src="../../assets/images/sampling/cosine_z_hist.png"
          alt="Histogram of cosine-weighted samples — concentrated near z=1">
     <figcaption><strong>Cosine-weighted</strong> — the histogram matches \(p \propto \cos\theta\). More samples near the top.</figcaption>
   </figure>

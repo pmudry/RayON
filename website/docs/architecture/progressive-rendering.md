@@ -165,7 +165,7 @@ The interactive window overlays a Dear ImGui panel with live controls:
 Changes to any slider trigger `needs_rerender = true`, which resets the accumulation buffer and
 restarts from 8 SPP.
 
-<img class="render-img" src="../assets/images/real_time_raytrace.png"
+<img class="render-img" src="../../assets/images/real_time_raytrace.png"
      alt="Interactive SDL2 window with Dear ImGui overlay showing real-time path traced scene">
 
 *The interactive window at ~100 Hz on the DGX Spark. The ImGui panel is overlaid on the right.*

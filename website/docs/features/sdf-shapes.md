@@ -139,7 +139,7 @@ geometry:
     scale: 0.6
 ```
 
-<img class="render-img" src="../assets/images/samples/golf.png"
+<img class="render-img" src="../../assets/images/samples/golf.png"
      alt="Displaced sphere (golf ball) — procedural SDF displacement">
 
 *The golf ball uses procedural displacement mapping — a variant of SDF evaluated on a

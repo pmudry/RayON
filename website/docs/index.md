@@ -27,12 +27,12 @@ Four rendering back-ends are available at runtime — no recompilation needed:
 <div class="feature-card" markdown>
 **CPU Single-thread**
 
-Reference implementation. Correct output, one pixel at a time. Good for debugging scene geometry and materials.
+Reference implementation on the CPU, one pixel at a time. It was the starting point but is in reality useless
 </div>
 <div class="feature-card" markdown>
 **CPU Multi-thread**
 
-Splits the image into tiles and dispatches them across all available cores using `std::async`. Typical speedup: 8–16×.
+Splits the image into tiles and dispatches them across all available cores using `std::async`. Typical speedup: 8–16×, depending on your CPU.
 </div>
 <div class="feature-card" markdown>
 **CUDA GPU**
@@ -49,21 +49,7 @@ SDL2 window with progressive accumulation. Orbit, pan, zoom with the mouse. ImGu
 
 CPU-built, GPU-traversed Bounding Volume Hierarchy with Surface Area Heuristic (SAH) splitting. 5–50× speedup on scenes with 100+ objects.
 </div>
-<div class="feature-card" markdown>
-**YAML Scenes**
 
-Describe full scenes in plain YAML: materials, geometry, lights, camera, BVH flag. No recompile required. 17 example scenes included.
-</div>
-<div class="feature-card" markdown>
-**OBJ Loading**
-
-Import arbitrary triangle meshes from `.obj` files. Möller–Trumbore intersection with smooth per-vertex normals.
-</div>
-<div class="feature-card" markdown>
-**SDF Shapes**
-
-Ray-marched signed-distance-function primitives: torus, octahedron, death star, pyramid. Combined with analytical geometry in the same scene.
-</div>
 </div>
 
 ---
@@ -89,43 +75,6 @@ Load one of the bundled example scenes:
 
 See [Getting Started](getting-started.md) for the full setup guide, or
 [YAML Scene Format](features/scenes.md) to author your own scenes.
-
----
-
-## Progressive rendering in action
-
-Below is the same viewpoint at increasing sample counts. The image is accumulated on the GPU and
-the display is updated live — no interruption to camera interaction.
-
-<div class="progression-strip">
-  <figure>
-    <img src="assets/images/for_project/begin.png" alt="1 sample">
-    <figcaption>1 SPP</figcaption>
-  </figure>
-  <figure>
-    <img src="assets/images/for_project/end_8s.png" alt="8 samples">
-    <figcaption>8 SPP</figcaption>
-  </figure>
-  <figure>
-    <img src="assets/images/for_project/end_128s.png" alt="128 samples">
-    <figcaption>128 SPP</figcaption>
-  </figure>
-  <figure>
-    <img src="assets/images/for_project/end_256s.png" alt="256 samples">
-    <figcaption>256 SPP</figcaption>
-  </figure>
-  <figure>
-    <img src="assets/images/for_project/end_512s.png" alt="512 samples">
-    <figcaption>512 SPP</figcaption>
-  </figure>
-  <figure>
-    <img src="assets/images/for_project/end_2048s.png" alt="2048 samples">
-    <figcaption>2048 SPP</figcaption>
-  </figure>
-</div>
-
-Each doubling of the sample count halves visible noise — a fundamental property of Monte Carlo
-integration where error decreases as \(\mathcal{O}(1/\sqrt{N})\).
 
 ---
 
