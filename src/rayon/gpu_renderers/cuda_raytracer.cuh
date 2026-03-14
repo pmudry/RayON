@@ -328,6 +328,19 @@ __device__ inline bool hit_triangle(const f3 &v0, const f3 &v1, const f3 &v2,
    }
 
    rec.normal = rec.front_face ? shading_normal : f3(-shading_normal.x, -shading_normal.y, -shading_normal.z);
+
+   // Safety clamp: smooth normals at silhouette edges can deviate enough from the
+   // geometric normal to end up below the incoming ray's horizon.  When that happens
+   // the specular-reflection formula produces a below-surface direction which the
+   // dot-product guard kills, leaving a black pixel.  Fall back to the flat
+   // geometric normal (already oriented toward the ray) in that case.
+   if (has_normals)
+   {
+      const f3 incoming(-r.dir.x, -r.dir.y, -r.dir.z);
+      if (dot(rec.normal, incoming) <= 0.0f)
+         rec.normal = rec.front_face ? geo_normal : f3(-geo_normal.x, -geo_normal.y, -geo_normal.z);
+   }
+
    // Compute tangent for anisotropic materials (along edge v0->v1)
    rec.tangent = normalize(edge1);
    return true;

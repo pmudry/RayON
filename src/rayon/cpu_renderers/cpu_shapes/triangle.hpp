@@ -69,6 +69,15 @@ class TriangleShape : public Hittable
 
       rec.frontFacing = dot(r.direction(), geo_normal) < 0;
       rec.normal = rec.frontFacing ? shading_normal : -shading_normal;
+
+      // Safety clamp: smooth normals at silhouette edges can deviate enough from the
+      // geometric normal to end up below the incoming ray's horizon.  When that
+      // happens specular scatter produces an invalid (below-surface) direction which
+      // the dot-product guard kills, leaving a black pixel.  Revert to the flat
+      // geometric normal (already oriented toward the ray) in that case.
+      if (has_normals && dot(rec.normal, -r.direction()) <= 0.0)
+         rec.normal = rec.frontFacing ? geo_normal : -geo_normal;
+
       return true;
    }
 
