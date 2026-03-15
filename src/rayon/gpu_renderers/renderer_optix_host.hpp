@@ -5,6 +5,7 @@
 #include <chrono>
 #include <iostream>
 #include <vector>
+#include <algorithm>
 
 #include "render/render_utils.hpp"
 #include "render/renderer_interface.hpp"
@@ -55,7 +56,7 @@ class RendererOptiX : public IRenderer
       // Only a small launch-params struct (~200 bytes) is uploaded per batch.
       // Use fewer, larger batches to minimize kernel launch overhead.
       const int num_batches = 2; // 2 batches: minimal overhead while still showing progress
-      const int samples_per_update = frame.samples_per_pixel / num_batches;
+      const int samples_per_update = std::max(1, frame.samples_per_pixel / num_batches);
       int samples_completed = 0;
       unsigned long long total_rays = 0;
 
