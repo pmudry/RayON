@@ -7,7 +7,7 @@
 #include <optix.h>
 #endif
 
-// Material types matching CudaScene::MaterialType
+// Material types matching Scene::MaterialType — keep in sync with scene_description.hpp
 enum class OptixMaterialType : unsigned char
 {
    LAMBERTIAN,
@@ -19,7 +19,10 @@ enum class OptixMaterialType : unsigned char
    LIGHT,
    CONSTANT,
    SHOW_NORMALS,
-   SDF_MATERIAL
+   SDF_MATERIAL,
+   ANISOTROPIC_METAL, // GGX microfacet metal — approximated as rough mirror in OptiX
+   THIN_FILM,         // Thin-film interference — approximated as mirror in OptiX
+   CLEAR_COAT         // Dielectric coat over diffuse base (Schlick Fresnel blend)
 };
 
 // Geometry types for intersection dispatch
@@ -64,6 +67,11 @@ struct OptixMaterialData
    float3 pattern_color;
    float pattern_param1;
    float pattern_param2;
+
+   // Extra material parameters
+   float anisotropy;     // ANISOTROPIC_METAL: anisotropy ratio
+   float film_thickness; // THIN_FILM: thickness in nm
+   float film_ior;       // THIN_FILM: film refractive index
 };
 
 // Launch parameters — passed to all OptiX programs via __constant__ memory

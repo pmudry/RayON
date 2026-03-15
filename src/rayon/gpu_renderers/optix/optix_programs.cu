@@ -295,6 +295,52 @@ extern "C" __global__ void __raygen__rg()
             }
             did_scatter = true;
          }
+         else if (prd.hit_material_type == OptixMaterialType::ANISOTROPIC_METAL)
+         {
+            // Approximation: isotropic rough mirror (ignore anisotropy in OptiX)
+            float3 unit_dir = normalize3(cur_direction);
+            float3 perturbed_n = normalize3(prd.hit_normal + prd.hit_roughness * rand_unit_sphere(seed));
+            scatter_dir = reflect3(unit_dir, perturbed_n);
+            attenuation = prd.hit_color;
+            did_scatter = (dot3(scatter_dir, prd.hit_normal) > 0.0f);
+         }
+         else if (prd.hit_material_type == OptixMaterialType::THIN_FILM)
+         {
+            // Approximation: perfect mirror (thin-film color modulation not implemented)
+            float3 unit_dir = normalize3(cur_direction);
+            scatter_dir = reflect3(unit_dir, prd.hit_normal);
+            attenuation = prd.hit_color;
+            did_scatter = true;
+         }
+         else if (prd.hit_material_type == OptixMaterialType::CLEAR_COAT)
+         {
+            // Two-layer: Schlick Fresnel decides specular coat vs diffuse base
+            float3 unit_dir = normalize3(cur_direction);
+            float cos_theta = fminf(dot3(-unit_dir, prd.hit_normal), 1.0f);
+            float r0 = (1.0f - prd.hit_refractive_index) / (1.0f + prd.hit_refractive_index);
+            r0 = r0 * r0;
+            float cx = 1.0f - cos_theta;
+            float cx2 = cx * cx;
+            float fresnel = r0 + (1.0f - r0) * (cx2 * cx2 * cx);
+
+            if (rand_float(seed) < fresnel)
+            {
+               // Specular reflection through the coat
+               float3 perturbed_n = normalize3(prd.hit_normal + prd.hit_roughness * rand_unit_sphere(seed));
+               scatter_dir = reflect3(unit_dir, perturbed_n);
+               attenuation = make_float3(1.0f, 1.0f, 1.0f); // coat is clear
+               did_scatter = (dot3(scatter_dir, prd.hit_normal) > 0.0f);
+            }
+            else
+            {
+               // Diffuse base color
+               scatter_dir = prd.hit_normal + rand_unit_vector(seed);
+               if (fabsf(scatter_dir.x) < 1e-8f && fabsf(scatter_dir.y) < 1e-8f && fabsf(scatter_dir.z) < 1e-8f)
+                  scatter_dir = prd.hit_normal;
+               attenuation = prd.hit_color;
+               did_scatter = true;
+            }
+         }
 
          if (!did_scatter)
          {

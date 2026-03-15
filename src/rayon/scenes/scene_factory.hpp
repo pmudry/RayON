@@ -22,9 +22,11 @@ class SceneFactory
     * @brief Load scene from file with fallback to default
     *
     * @param filename Path to YAML scene file
+    * @param skip_cpu_bvh If true, skip CPU BVH build even when use_bvh is set in the scene.
+    *                     Use this for GPU-only renderers (e.g. OptiX) that don't need the CPU BVH.
     * @return SceneDescription Loaded scene, or default scene if loading fails
     */
-   static SceneDescription fromYAML(const std::string &filename)
+   static SceneDescription fromYAML(const std::string &filename, bool skip_cpu_bvh = false)
    {      
       std::cout << "Loading scene from: " << filename << std::endl;
 
@@ -34,8 +36,8 @@ class SceneFactory
          SceneDescription scene_desc;
          if (loadSceneFromYAML(filename.c_str(), scene_desc))
          {
-            // Build BVH if enabled in scene
-            if (scene_desc.use_bvh)
+            // Build BVH if enabled in scene and not explicitly skipped by the caller
+            if (scene_desc.use_bvh && !skip_cpu_bvh)
             {
                cout << "Building BVH acceleration structure..." "\n";
                auto bvh_start = std::chrono::high_resolution_clock::now();
@@ -43,6 +45,10 @@ class SceneFactory
                auto bvh_end = std::chrono::high_resolution_clock::now();
                auto bvh_ms = std::chrono::duration_cast<std::chrono::milliseconds>(bvh_end - bvh_start).count();
                cout << "BVH built with " << scene_desc.top_level_bvh.nodes.size() << " nodes in " << bvh_ms << " ms" "\n";
+            }
+            else if (scene_desc.use_bvh && skip_cpu_bvh)
+            {
+               cout << "Skipping CPU BVH build (not needed for this renderer)" "\n";
             }
             return scene_desc; // Successfully loaded
          }

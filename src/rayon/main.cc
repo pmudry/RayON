@@ -342,7 +342,9 @@ int main(int argc, char *argv[])
    }
    else
    {
-      scene_desc = Scene::SceneFactory::fromYAML(args.scene_file);
+      // OptiX renderers (mode 4/5) don't use the CPU BVH — skip it to save time on large scenes.
+      const bool is_optix_mode = (renderType == 4 || renderType == 5);
+      scene_desc = Scene::SceneFactory::fromYAML(args.scene_file, /*skip_cpu_bvh=*/is_optix_mode);
    }
 
    vector<unsigned char> localImage(image_width * image_height * CHANNELS);
@@ -407,14 +409,16 @@ int main(int argc, char *argv[])
    case 5:
    {
       cout << "Using OptiX GPU with interactive SDL display..." << "\n";
-      camera.samples_per_pixel = 2000;
+      camera.samples_per_pixel = INTERACTIVE_MAX_SPP;
       RendererOptiXProgressive renderer;
       RendererOptiXProgressive::Settings settings;
       settings.samples_per_batch = args.samples_per_batch;
       settings.motion_samples = args.motion_samples;
       settings.auto_accumulate = args.auto_accumulate;
-      settings.target_fps = 60.0f;
+      settings.target_fps = 60;
       settings.adaptive_depth = args.adaptive_depth;
+      settings.adaptive_sampling = args.adaptive_sampling;
+      settings.theme = parseThemeName(args.theme);
       renderer.setSettings(settings);
       coordinator.render(renderer, localImage);
       break;

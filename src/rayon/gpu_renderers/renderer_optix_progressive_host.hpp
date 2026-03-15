@@ -59,11 +59,13 @@ class RendererOptiXProgressive : public IRenderer
  public:
    struct Settings
    {
-      int samples_per_batch = 8;
+      int samples_per_batch = constants::INTERACTIVE_SAMPLES_PER_BATCH;
       int motion_samples = constants::INTERACTIVE_MOTION_SAMPLES;
       bool auto_accumulate = true;
       int target_fps = 60;
       bool adaptive_depth = false;
+      bool adaptive_sampling = true; // no-op for OptiX; kept for UI parity
+      GuiTheme theme = GuiTheme::NORD;
    };
 
    RendererOptiXProgressive() = default;
@@ -104,7 +106,7 @@ class RendererOptiXProgressive : public IRenderer
       refreshCameraFrame();
 
       // Initialize GUI
-      SDLGuiHandler gui(target.width, target.height);
+      SDLGuiHandler gui(target.width, target.height, settings_.theme);
       if (!gui.initialize())
          return;
       int max_samples = camera.samples_per_pixel;
@@ -249,7 +251,7 @@ class RendererOptiXProgressive : public IRenderer
          if (current_scene_index == 0)
             active_scene = Scene::SceneFactory::createDefaultScene();
          else
-            active_scene = Scene::SceneFactory::fromYAML(selected.yaml_path);
+            active_scene = Scene::SceneFactory::fromYAML(selected.yaml_path, /*skip_cpu_bvh=*/true);
 
          original_scene = active_scene;
          cpu_scene_for_arrows = Scene::CPUSceneBuilder::buildCPUScene(original_scene);

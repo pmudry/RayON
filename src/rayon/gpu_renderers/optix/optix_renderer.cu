@@ -522,6 +522,9 @@ static void buildGAS(const Scene::SceneDescription &scene)
                                                    static_cast<float>(m.pattern_color.z()));
          materials[i].pattern_param1 = m.pattern_param1;
          materials[i].pattern_param2 = m.pattern_param2;
+         materials[i].anisotropy = m.anisotropy;
+         materials[i].film_thickness = m.film_thickness;
+         materials[i].film_ior = m.film_ior;
       }
       CUDA_CHECK(cudaMalloc(&g_state.d_materials, num_materials * sizeof(OptixMaterialData)));
       CUDA_CHECK(cudaMemcpy(g_state.d_materials, materials.data(), num_materials * sizeof(OptixMaterialData),
