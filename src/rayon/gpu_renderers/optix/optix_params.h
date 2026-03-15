@@ -27,7 +27,8 @@ enum class OptixGeomType : unsigned char
 {
    SPHERE,
    RECTANGLE,
-   DISPLACED_SPHERE
+   DISPLACED_SPHERE,
+   TRIANGLE
 };
 
 // Per-geometry data stored in SBT hit group record
@@ -42,6 +43,11 @@ struct HitGroupData
    float3 u_vec;   // Rectangle edge u
    float3 v_vec;   // Rectangle edge v
    float3 normal;  // Precomputed rectangle normal
+
+   // Triangle vertices and per-vertex normals
+   float3 tri_v0, tri_v1, tri_v2;
+   float3 tri_n0, tri_n1, tri_n2;
+   int    tri_has_normals; // 1 = interpolate per-vertex normals, 0 = use face normal
 };
 
 // Material data (flat struct, uploaded as array)

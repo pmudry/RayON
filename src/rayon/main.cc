@@ -411,6 +411,7 @@ int main(int argc, char *argv[])
       RendererOptiXProgressive renderer;
       RendererOptiXProgressive::Settings settings;
       settings.samples_per_batch = args.samples_per_batch;
+      settings.motion_samples = args.motion_samples;
       settings.auto_accumulate = args.auto_accumulate;
       settings.target_fps = 60.0f;
       settings.adaptive_depth = args.adaptive_depth;

@@ -59,6 +59,7 @@ struct OptixState
    OptixProgramGroup miss_pg = nullptr;
    OptixProgramGroup hitgroup_sphere_pg = nullptr;
    OptixProgramGroup hitgroup_rect_pg = nullptr;
+   OptixProgramGroup hitgroup_triangle_pg = nullptr;
 
    OptixTraversableHandle gas_handle = 0;
    CUdeviceptr d_gas_output = 0;
@@ -199,15 +200,26 @@ static void initializeOptiX()
    OPTIX_CHECK(optixProgramGroupCreate(g_state.context, &hitgroup_rect_desc, 1, &pg_options, optix_log, &optix_log_size,
                                         &g_state.hitgroup_rect_pg));
 
+   // Hit group for triangles (custom intersection — Möller-Trumbore)
+   OptixProgramGroupDesc hitgroup_triangle_desc = {};
+   hitgroup_triangle_desc.kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
+   hitgroup_triangle_desc.hitgroup.moduleCH = g_state.module;
+   hitgroup_triangle_desc.hitgroup.entryFunctionNameCH = "__closesthit__ch";
+   hitgroup_triangle_desc.hitgroup.moduleIS = g_state.module;
+   hitgroup_triangle_desc.hitgroup.entryFunctionNameIS = "__intersection__triangle";
+   optix_log_size = sizeof(optix_log);
+   OPTIX_CHECK(optixProgramGroupCreate(g_state.context, &hitgroup_triangle_desc, 1, &pg_options, optix_log, &optix_log_size,
+                                        &g_state.hitgroup_triangle_pg));
+
    // Create pipeline
    const uint32_t max_trace_depth = 1; // We loop in raygen, single trace per bounce
    OptixProgramGroup program_groups[] = {g_state.raygen_pg, g_state.miss_pg, g_state.hitgroup_sphere_pg,
-                                          g_state.hitgroup_rect_pg};
+                                          g_state.hitgroup_rect_pg, g_state.hitgroup_triangle_pg};
 
    OptixPipelineLinkOptions link_options = {};
    link_options.maxTraceDepth = max_trace_depth;
    optix_log_size = sizeof(optix_log);
-   OPTIX_CHECK(optixPipelineCreate(g_state.context, &pipeline_options, &link_options, program_groups, 4, optix_log,
+   OPTIX_CHECK(optixPipelineCreate(g_state.context, &pipeline_options, &link_options, program_groups, 5, optix_log,
                                     &optix_log_size, &g_state.pipeline));
 
    // Compute stack sizes
@@ -274,6 +286,7 @@ static void buildGAS(const Scene::SceneDescription &scene)
       {
       case Scene::GeometryType::SPHERE:
       case Scene::GeometryType::RECTANGLE:
+      case Scene::GeometryType::TRIANGLE:
          // These are implemented by the OptiX hit programs.
          supported = true;
          break;
@@ -282,8 +295,7 @@ static void buildGAS(const Scene::SceneDescription &scene)
          supported = false;
          break;
       default:
-         // Other geometry types (e.g., CUBE, TRIANGLE, TRIANGLE_MESH/OBJ) are not
-         // implemented for the OptiX backend yet.
+         // Other geometry types (e.g., CUBE) are not yet implemented for OptiX.
          supported = false;
          break;
       }
@@ -395,8 +407,13 @@ static void buildGAS(const Scene::SceneDescription &scene)
       HitGroupRecord &rec = hitgroup_records[i];
 
       // Select program group based on geometry type
-      OptixProgramGroup pg =
-          (g.type == Scene::GeometryType::RECTANGLE) ? g_state.hitgroup_rect_pg : g_state.hitgroup_sphere_pg;
+      OptixProgramGroup pg;
+      if (g.type == Scene::GeometryType::RECTANGLE)
+         pg = g_state.hitgroup_rect_pg;
+      else if (g.type == Scene::GeometryType::TRIANGLE)
+         pg = g_state.hitgroup_triangle_pg;
+      else
+         pg = g_state.hitgroup_sphere_pg;
       OPTIX_CHECK(optixSbtRecordPackHeader(pg, &rec));
 
       rec.data.material_idx = g.material_id;
@@ -437,6 +454,29 @@ static void buildGAS(const Scene::SceneDescription &scene)
          rec.data.normal = (len > 1e-8f) ? make_float3(n.x / len, n.y / len, n.z / len) : make_float3(0, 1, 0);
          break;
       }
+
+      case Scene::GeometryType::TRIANGLE:
+         rec.data.geom_type = OptixGeomType::TRIANGLE;
+         rec.data.tri_v0 = make_float3(static_cast<float>(g.data.triangle.v0.x()),
+                                        static_cast<float>(g.data.triangle.v0.y()),
+                                        static_cast<float>(g.data.triangle.v0.z()));
+         rec.data.tri_v1 = make_float3(static_cast<float>(g.data.triangle.v1.x()),
+                                        static_cast<float>(g.data.triangle.v1.y()),
+                                        static_cast<float>(g.data.triangle.v1.z()));
+         rec.data.tri_v2 = make_float3(static_cast<float>(g.data.triangle.v2.x()),
+                                        static_cast<float>(g.data.triangle.v2.y()),
+                                        static_cast<float>(g.data.triangle.v2.z()));
+         rec.data.tri_n0 = make_float3(static_cast<float>(g.data.triangle.n0.x()),
+                                        static_cast<float>(g.data.triangle.n0.y()),
+                                        static_cast<float>(g.data.triangle.n0.z()));
+         rec.data.tri_n1 = make_float3(static_cast<float>(g.data.triangle.n1.x()),
+                                        static_cast<float>(g.data.triangle.n1.y()),
+                                        static_cast<float>(g.data.triangle.n1.z()));
+         rec.data.tri_n2 = make_float3(static_cast<float>(g.data.triangle.n2.x()),
+                                        static_cast<float>(g.data.triangle.n2.y()),
+                                        static_cast<float>(g.data.triangle.n2.z()));
+         rec.data.tri_has_normals = g.data.triangle.has_normals ? 1 : 0;
+         break;
 
       default:
          // Treat unknown as sphere at origin
@@ -637,6 +677,8 @@ extern "C" void optixRendererCleanup()
       OPTIX_CHECK(optixProgramGroupDestroy(g_state.hitgroup_sphere_pg));
    if (g_state.hitgroup_rect_pg)
       OPTIX_CHECK(optixProgramGroupDestroy(g_state.hitgroup_rect_pg));
+   if (g_state.hitgroup_triangle_pg)
+      OPTIX_CHECK(optixProgramGroupDestroy(g_state.hitgroup_triangle_pg));
    if (g_state.module)
       OPTIX_CHECK(optixModuleDestroy(g_state.module));
    if (g_state.context)

@@ -189,7 +189,7 @@ class SDLGuiHandler
     * All UI controls are drawn here using ImGui. Parameters are passed as pointers
     * so ImGui can modify them directly.
     */
-   void updateDisplay(const vector<unsigned char> &image, int image_channels, float sps, float ms_per_sample, int spp,
+   void updateDisplay(const vector<unsigned char> &image, int image_channels, float sps, float ms_per_sample, float fps, int spp,
                       bool *dof_enabled, float *aperture, float *focus_dist, float *light_intensity,
                       float *background_intensity, float *metal_fuzziness, float *glass_ior,
                       float *samples_per_batch, bool *auto_accumulate, bool *auto_orbit,
@@ -501,7 +501,7 @@ class SDLGuiHandler
       updateLogoLayout();
       if (draw_spps_counter)
       {
-         drawSPPSOverlay(sps);
+         drawSPPSOverlay(sps, fps);
       }
 
       // Finalize ImGui frame
@@ -567,10 +567,11 @@ class SDLGuiHandler
    Uint32 perf_sample_interval_ms;
    Uint32 perf_time_window_ms;
 
-   // Cached SPP/s overlay metrics — computed once on first draw, never change.
+   // Cached SPP/s + FPS overlay metrics — computed once on first draw, never change.
    bool   spps_metrics_cached = false;
    float  spps_cell_w   = 0.0f;
    float  spps_prefix_w = 0.0f;
+   float  fps_prefix_w  = 0.0f;
    float  spps_gap_w    = 0.0f;
    float  spps_unit_w   = 0.0f;
    float  spps_font_h   = 0.0f;
@@ -753,7 +754,7 @@ class SDLGuiHandler
    // Draw a stable SPP/s counter in the bottom-left using the foreground draw list.
    // GetForegroundDrawList() is unclipped and independent of any ImGui window, so
    // positioning is exact screen-space with no window padding or clip-rect surprises.
-   void drawSPPSOverlay(float sps)
+   void drawSPPSOverlay(float sps, float fps)
    {
       ImFont      *font = ImGui::GetFont();
       const float  fs   = ImGui::GetFontSize();
@@ -768,15 +769,17 @@ class SDLGuiHandler
             spps_cell_w = std::max(spps_cell_w, gw(g));
          }
          spps_prefix_w = gw("SPP/s: ");
+         fps_prefix_w  = gw("FPS:  ");
          spps_gap_w    = gw(" ");
          spps_unit_w   = gw("M");  // M is widest unit
          spps_font_h   = font->CalcTextSizeA(fs, FLT_MAX, 0.0f, "A").y;
 
          constexpr int num_digit_chars = 4; // "%4.0f" always produces 4 chars
-         const float   content_w = spps_prefix_w + spps_cell_w * num_digit_chars
-                                    + spps_gap_w + spps_unit_w;
-         spps_box_w = content_w + 8.0f * 2.0f;
-         spps_box_h = spps_font_h + 5.0f * 2.0f;
+         const float   sps_content_w = spps_prefix_w + spps_cell_w * num_digit_chars
+                                        + spps_gap_w + spps_unit_w;
+         const float   fps_content_w = fps_prefix_w + spps_cell_w * num_digit_chars;
+         spps_box_w = std::max(sps_content_w, fps_content_w) + 8.0f * 2.0f;
+         spps_box_h = 2.0f * spps_font_h + 3.0f + 5.0f * 2.0f; // two rows + 3px gap
          spps_metrics_cached = true;
       }
 
@@ -807,7 +810,8 @@ class SDLGuiHandler
       if (mouse.x >= box_x && mouse.x <= box_x + box_w &&
           mouse.y >= box_y && mouse.y <= box_y + box_h)
       {
-         ImGui::SetTooltip("Samples Per Pixel per second. It measures the rendering throughput.\n"
+         ImGui::SetTooltip("SPP/s: Samples Per Pixel per second — rendering throughput.\n"
+                           "FPS: Display frame rate.\n"
                            "Toggle with F.");
       }
 
@@ -822,6 +826,7 @@ class SDLGuiHandler
       const float  text_y   = box_y + pad_y;
       float        cx       = box_x + pad_x;
 
+      // ── SPP/s row ──
       // prefix as normal text
       draw->AddText(font, fs, ImVec2(cx, text_y), text_col, "SPP/s: ");
       cx += spps_prefix_w;
@@ -853,6 +858,38 @@ class SDLGuiHandler
          // fixed-width gap then unit
          cx += spps_gap_w;
          draw->AddText(font, fs, ImVec2(cx, text_y), text_col, unit);
+      }
+
+      // ── FPS row ──
+      const float  text_y2     = text_y + spps_font_h + 3.0f;
+      const bool   fps_overflow = (fps >= 10000.0f);
+      char fps_str[8];
+      if (!fps_overflow)
+         std::snprintf(fps_str, sizeof(fps_str), "%4.0f", static_cast<double>(fps));
+
+      float cx2 = box_x + pad_x;
+      draw->AddText(font, fs, ImVec2(cx2, text_y2), text_col, "FPS:  ");
+      cx2 += fps_prefix_w;
+
+      if (fps_overflow)
+      {
+         constexpr const char *ovf_str = ">9999";
+         const float ovf_w    = font->CalcTextSizeA(fs, FLT_MAX, 0.0f, ovf_str).x;
+         const float region_w = spps_cell_w * 4.0f;
+         draw->AddText(font, fs, ImVec2(cx2 + region_w - ovf_w, text_y2), text_col, ovf_str);
+      }
+      else
+      {
+         for (int i = 0; i < 4; ++i)
+         {
+            if (fps_str[i] != ' ')
+            {
+               char g[2] = {fps_str[i], '\0'};
+               const float gw = font->CalcTextSizeA(fs, FLT_MAX, 0.0f, g).x;
+               draw->AddText(font, fs, ImVec2(cx2 + (spps_cell_w - gw) * 0.5f, text_y2), text_col, g);
+            }
+            cx2 += spps_cell_w;
+         }
       }
    }
 };

@@ -105,6 +105,7 @@ class RendererCUDAProgressive : public IRenderer
       float samples_per_batch_float = static_cast<float>(samples_per_batch);
       float current_sps = 0.0f;
       float current_ms_per_sample = 0.0f;
+      float current_fps = 0.0f;
 
       // Motion detection for adaptive quality
       bool is_camera_moving = false;
@@ -577,6 +578,8 @@ class RendererCUDAProgressive : public IRenderer
          auto current_frame_time = std::chrono::high_resolution_clock::now();
          std::chrono::duration<float> delta = current_frame_time - last_frame_time;
          last_frame_time = current_frame_time;
+         if (delta.count() > 0.0f)
+            current_fps = 1.0f / delta.count();
 
          if (camera_control.updateAutoOrbit(look_from, look_at, delta.count()))
          {
@@ -745,7 +748,7 @@ class RendererCUDAProgressive : public IRenderer
          for (const auto &g : active_scene.geometries)
             if (g.type == Scene::GeometryType::TRIANGLE) ++tri_count;
 
-         gui.updateDisplay(display_image, image_channels, current_sps, current_ms_per_sample, current_samples,
+         gui.updateDisplay(display_image, image_channels, current_sps, current_ms_per_sample, current_fps, current_samples,
                            &dof_enabled, &dof_aperture, &dof_focus_distance, &light_intensity, &background_intensity,
                            &metal_fuzziness, &glass_refraction_index, &samples_per_batch_float, &accumulation_enabled,
                            &auto_orbit, &current_scene_index, scene_names, scene_count,

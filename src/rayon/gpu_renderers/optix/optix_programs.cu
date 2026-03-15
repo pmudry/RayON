@@ -87,6 +87,11 @@ __device__ __forceinline__ float3 operator/(const float3 &a, float s)
 
 __device__ __forceinline__ float dot3(const float3 &a, const float3 &b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
 
+__device__ __forceinline__ float3 cross3(const float3 &a, const float3 &b)
+{
+   return make_float3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
+}
+
 __device__ __forceinline__ float length3(const float3 &a) { return sqrtf(dot3(a, a)); }
 
 // Use rsqrtf (hardware intrinsic) — avoids separate sqrt + division
@@ -429,6 +434,64 @@ extern "C" __global__ void __intersection__sphere()
 //==============================================================================
 // INTERSECTION — rectangle
 //==============================================================================
+
+//==============================================================================
+// INTERSECTION — triangle (Möller–Trumbore)
+//==============================================================================
+
+extern "C" __global__ void __intersection__triangle()
+{
+   const HitGroupData *sbt_data = reinterpret_cast<const HitGroupData *>(optixGetSbtDataPointer());
+
+   const float3 v0 = sbt_data->tri_v0;
+   const float3 v1 = sbt_data->tri_v1;
+   const float3 v2 = sbt_data->tri_v2;
+
+   const float3 ray_orig = optixGetObjectRayOrigin();
+   const float3 ray_dir  = optixGetObjectRayDirection();
+   const float  tmin     = optixGetRayTmin();
+   const float  tmax     = optixGetRayTmax();
+
+   const float3 edge1 = v1 - v0;
+   const float3 edge2 = v2 - v0;
+   const float3 h = cross3(ray_dir, edge2);
+   const float  a = dot3(edge1, h);
+
+   if (fabsf(a) < 1e-8f)
+      return; // Ray parallel to triangle
+
+   const float  inv_a = 1.0f / a;
+   const float3 s = ray_orig - v0;
+   const float  u = inv_a * dot3(s, h);
+   if (u < 0.0f || u > 1.0f)
+      return;
+
+   const float3 q = cross3(s, edge1);
+   const float  v = inv_a * dot3(ray_dir, q);
+   if (v < 0.0f || u + v > 1.0f)
+      return;
+
+   const float t = inv_a * dot3(edge2, q);
+   if (t < tmin || t > tmax)
+      return;
+
+   // Compute normal: interpolate per-vertex normals or use face normal
+   float3 outward_normal;
+   if (sbt_data->tri_has_normals)
+   {
+      const float w = 1.0f - u - v;
+      outward_normal = normalize3(w * sbt_data->tri_n0 + u * sbt_data->tri_n1 + v * sbt_data->tri_n2);
+   }
+   else
+   {
+      outward_normal = normalize3(cross3(edge1, edge2));
+   }
+
+   optixReportIntersection(t, 2, // hit kind = 2 for triangle
+                           __float_as_int(outward_normal.x),
+                           __float_as_int(outward_normal.y),
+                           __float_as_int(outward_normal.z));
+}
 
 extern "C" __global__ void __intersection__rectangle()
 {
