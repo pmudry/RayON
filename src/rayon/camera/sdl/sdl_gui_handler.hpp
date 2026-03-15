@@ -26,7 +26,6 @@
 #define STB_IMAGE_RESIZE_IMPLEMENTATION
 #include "external/stb_image_resize2.h"
 
-#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <cstdio>
