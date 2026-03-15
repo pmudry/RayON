@@ -43,6 +43,11 @@ static CudaScene::Material convertMaterial(const MaterialDesc &desc)
    mat.metallic = desc.metallic;
    mat.refractive_index = desc.refractive_index;
    mat.transmission = desc.transmission;
+   mat.anisotropy = desc.anisotropy;
+   mat.eta = f3(static_cast<float>(desc.eta.x()), static_cast<float>(desc.eta.y()),
+                static_cast<float>(desc.eta.z()));
+   mat.k = f3(static_cast<float>(desc.k.x()), static_cast<float>(desc.k.y()),
+              static_cast<float>(desc.k.z()));
    mat.texture_id = desc.texture_id;
 
    // Copy pattern information
@@ -51,6 +56,10 @@ static CudaScene::Material convertMaterial(const MaterialDesc &desc)
                           static_cast<float>(desc.pattern_color.z()));
    mat.pattern_param1 = desc.pattern_param1;
    mat.pattern_param2 = desc.pattern_param2;
+
+   // Copy thin-film interference parameters
+   mat.film_thickness = desc.film_thickness;
+   mat.film_ior = desc.film_ior;
 
    return mat;
 }
@@ -65,6 +74,7 @@ static CudaScene::Geometry convertGeometry(const GeometryDesc &desc)
    // Convert geometry type
    geom.type = static_cast<CudaScene::GeometryType>(static_cast<uint8_t>(desc.type));
    geom.material_id = desc.material_id;
+   geom.visible = desc.visible;
 
    // Convert bounding box
    geom.bounds_min = f3(static_cast<float>(desc.bounds_min.x()), static_cast<float>(desc.bounds_min.y()),
@@ -103,7 +113,28 @@ static CudaScene::Geometry convertGeometry(const GeometryDesc &desc)
       geom.data.displaced_sphere.pattern_type = desc.data.displaced_sphere.pattern_type;
       break;
 
-   // Other geometry types to be implemented
+   case GeometryType::TRIANGLE:
+      geom.data.triangle.v0 = f3(static_cast<float>(desc.data.triangle.v0.x()),
+                                 static_cast<float>(desc.data.triangle.v0.y()),
+                                 static_cast<float>(desc.data.triangle.v0.z()));
+      geom.data.triangle.v1 = f3(static_cast<float>(desc.data.triangle.v1.x()),
+                                 static_cast<float>(desc.data.triangle.v1.y()),
+                                 static_cast<float>(desc.data.triangle.v1.z()));
+      geom.data.triangle.v2 = f3(static_cast<float>(desc.data.triangle.v2.x()),
+                                 static_cast<float>(desc.data.triangle.v2.y()),
+                                 static_cast<float>(desc.data.triangle.v2.z()));
+      geom.data.triangle.n0 = f3(static_cast<float>(desc.data.triangle.n0.x()),
+                                 static_cast<float>(desc.data.triangle.n0.y()),
+                                 static_cast<float>(desc.data.triangle.n0.z()));
+      geom.data.triangle.n1 = f3(static_cast<float>(desc.data.triangle.n1.x()),
+                                 static_cast<float>(desc.data.triangle.n1.y()),
+                                 static_cast<float>(desc.data.triangle.n1.z()));
+      geom.data.triangle.n2 = f3(static_cast<float>(desc.data.triangle.n2.x()),
+                                 static_cast<float>(desc.data.triangle.n2.y()),
+                                 static_cast<float>(desc.data.triangle.n2.z()));
+      geom.data.triangle.has_normals = desc.data.triangle.has_normals;
+      break;
+
    default:
       break;
    }

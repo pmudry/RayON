@@ -36,7 +36,10 @@ enum class MaterialType : uint8_t {
     LIGHT,
     CONSTANT,
     SHOW_NORMALS,
-    SDF_MATERIAL     // For ray-marched objects
+    SDF_MATERIAL,        // For ray-marched objects
+    ANISOTROPIC_METAL,   // Physically-based anisotropic conductor (GGX)
+    THIN_FILM,           // Thin-film interference (soap bubbles, oil slicks)
+    CLEAR_COAT           // Two-layer: glossy dielectric coat over diffuse base
 };
 
 /**
@@ -61,7 +64,14 @@ struct MaterialDesc {
     float metallic;           // Metallic factor [0-1]
     float refractive_index;   // For glass/dielectric materials
     float transmission;       // Transparency [0-1]
+    float anisotropy;         // Anisotropy ratio [0-1] (0=isotropic, 1=max stretch)
+    Vec3 eta;                 // Complex IOR real part (conductor Fresnel)
+    Vec3 k;                   // Complex IOR imaginary/extinction part (conductor Fresnel)
     int texture_id;           // Texture index (-1 = none, for future use)
+    
+    // Thin-film interference parameters
+    float film_thickness;     // Film thickness in nanometers (200-800 typical)
+    float film_ior;           // Refractive index of the thin film layer
     
     // Procedural pattern support
     ProceduralPattern pattern;    // Pattern type
@@ -78,7 +88,12 @@ struct MaterialDesc {
         , metallic(0.0f)
         , refractive_index(1.0f)
         , transmission(0.0f)
+        , anisotropy(0.0f)
+        , eta(0, 0, 0)
+        , k(0, 0, 0)
         , texture_id(-1)
+        , film_thickness(400.0f)
+        , film_ior(1.33f)
         , pattern(ProceduralPattern::NONE)
         , pattern_color(0, 0, 0)
         , pattern_param1(0.0f)
@@ -160,6 +175,72 @@ struct MaterialDesc {
         mat.pattern_color = dot_color;
         mat.pattern_param1 = static_cast<float>(dot_count);
         mat.pattern_param2 = dot_radius;
+        return mat;
+    }
+    
+    // Factory methods for anisotropic metals (GGX microfacet)
+    static MaterialDesc anisotropicMetal(float roughness, float anisotropy,
+                                         const Vec3& eta, const Vec3& k) {
+        MaterialDesc mat;
+        mat.type = MaterialType::ANISOTROPIC_METAL;
+        mat.albedo = Vec3(1, 1, 1);
+        mat.roughness = roughness;
+        mat.anisotropy = anisotropy;
+        mat.metallic = 1.0f;
+        mat.eta = eta;
+        mat.k = k;
+        return mat;
+    }
+
+    // Named presets with measured IOR values (RGB approximation for visible spectrum)
+    static MaterialDesc anisotropicGold(float roughness, float anisotropy) {
+        return anisotropicMetal(roughness, anisotropy,
+                                Vec3(0.18, 0.42, 1.37), Vec3(3.42, 2.35, 1.77));
+    }
+    static MaterialDesc anisotropicSilver(float roughness, float anisotropy) {
+        return anisotropicMetal(roughness, anisotropy,
+                                Vec3(0.05, 0.06, 0.05), Vec3(4.18, 3.35, 2.58));
+    }
+    static MaterialDesc anisotropicCopper(float roughness, float anisotropy) {
+        return anisotropicMetal(roughness, anisotropy,
+                                Vec3(0.27, 0.68, 1.22), Vec3(3.60, 2.63, 2.29));
+    }
+    static MaterialDesc anisotropicAluminum(float roughness, float anisotropy) {
+        return anisotropicMetal(roughness, anisotropy,
+                                Vec3(1.35, 0.97, 0.53), Vec3(7.47, 6.40, 5.28));
+    }
+    
+    /**
+     * @brief Create a thin-film interference material (soap bubbles, oil slicks)
+     * @param film_thickness Film thickness in nanometers (200-800nm typical)
+     * @param film_ior Refractive index of the thin film (1.33 for soap/water)
+     * @param base_ior Refractive index of the medium behind the film (1.0 for air)
+     */
+    static MaterialDesc thinFilm(float film_thickness, float film_ior = 1.33f, float base_ior = 1.0f) {
+        MaterialDesc mat;
+        mat.type = MaterialType::THIN_FILM;
+        mat.albedo = Vec3(1, 1, 1);
+        mat.film_thickness = film_thickness;
+        mat.film_ior = film_ior;
+        mat.refractive_index = base_ior;
+        mat.transmission = 1.0f;
+        return mat;
+    }
+
+    /**
+     * @brief Two-layer clear-coat material (car paint, lacquered wood, plastic)
+     *
+     * Combines a smooth dielectric coat (Fresnel specular) over a diffuse base.
+     * @param base_color   Diffuse base color seen through the coat
+     * @param coat_roughness  Roughness of the clear coat (0 = mirror, 0.1 = slightly rough)
+     * @param coat_ior     Refractive index of the coat layer (1.5 = typical plastic/lacquer)
+     */
+    static MaterialDesc clearCoat(const Vec3& base_color, float coat_roughness = 0.05f, float coat_ior = 1.5f) {
+        MaterialDesc mat;
+        mat.type = MaterialType::CLEAR_COAT;
+        mat.albedo = base_color;
+        mat.roughness = coat_roughness;
+        mat.refractive_index = coat_ior;
         return mat;
     }
 };
@@ -244,6 +325,7 @@ struct SDFPrimitive {
 struct GeometryDesc {
     GeometryType type;
     int material_id;       // Index into materials array
+    bool visible = true;   // If false, geometry is skipped for direct ray hits (invisible light)
     
     // Geometry-specific data stored in union for memory efficiency
     union GeomData {
@@ -377,17 +459,21 @@ public:
     // Rendering settings
     Vec3 background_color;
     float ambient_light;
+    float background_intensity;               // Sky/background brightness multiplier
     bool use_bvh;                             // Enable scene BVH
-    
+    bool adaptive_sampling;                   // Enable adaptive sampling
+
     // Constructor
-    SceneDescription() 
+    SceneDescription()
         : camera_position(0, 0, 0)
         , camera_look_at(0, 0, -1)
         , camera_up(0, 1, 0)
         , camera_fov(90.0f)
         , background_color(0.5f, 0.7f, 1.0f)
         , ambient_light(0.1f)
+        , background_intensity(1.0f)
         , use_bvh(false)
+        , adaptive_sampling(true)
     {}
     
     //==========================================================================
@@ -498,16 +584,46 @@ public:
         geom.data.triangle.v2 = v2;
         geom.data.triangle.has_normals = false;
         
-        // Compute bounding box
+        // Compute bounding box with epsilon padding to avoid zero-thickness AABBs
+        constexpr double eps = 1e-4;
         geom.bounds_min = Vec3(
-            std::min(std::min(v0.x(), v1.x()), v2.x()),
-            std::min(std::min(v0.y(), v1.y()), v2.y()),
-            std::min(std::min(v0.z(), v1.z()), v2.z())
+            std::min(std::min(v0.x(), v1.x()), v2.x()) - eps,
+            std::min(std::min(v0.y(), v1.y()), v2.y()) - eps,
+            std::min(std::min(v0.z(), v1.z()), v2.z()) - eps
         );
         geom.bounds_max = Vec3(
-            std::max(std::max(v0.x(), v1.x()), v2.x()),
-            std::max(std::max(v0.y(), v1.y()), v2.y()),
-            std::max(std::max(v0.z(), v1.z()), v2.z())
+            std::max(std::max(v0.x(), v1.x()), v2.x()) + eps,
+            std::max(std::max(v0.y(), v1.y()), v2.y()) + eps,
+            std::max(std::max(v0.z(), v1.z()), v2.z()) + eps
+        );
+        
+        geometries.push_back(geom);
+    }
+    
+    void addTriangleWithNormals(const Vec3& v0, const Vec3& v1, const Vec3& v2,
+                                const Vec3& n0, const Vec3& n1, const Vec3& n2, int mat_id) {
+        GeometryDesc geom;
+        geom.type = GeometryType::TRIANGLE;
+        geom.material_id = mat_id;
+        geom.data.triangle.v0 = v0;
+        geom.data.triangle.v1 = v1;
+        geom.data.triangle.v2 = v2;
+        geom.data.triangle.n0 = n0;
+        geom.data.triangle.n1 = n1;
+        geom.data.triangle.n2 = n2;
+        geom.data.triangle.has_normals = true;
+        
+        // Compute bounding box with epsilon padding to avoid zero-thickness AABBs
+        constexpr double eps = 1e-4;
+        geom.bounds_min = Vec3(
+            std::min(std::min(v0.x(), v1.x()), v2.x()) - eps,
+            std::min(std::min(v0.y(), v1.y()), v2.y()) - eps,
+            std::min(std::min(v0.z(), v1.z()), v2.z()) - eps
+        );
+        geom.bounds_max = Vec3(
+            std::max(std::max(v0.x(), v1.x()), v2.x()) + eps,
+            std::max(std::max(v0.y(), v1.y()), v2.y()) + eps,
+            std::max(std::max(v0.z(), v1.z()), v2.z()) + eps
         );
         
         geometries.push_back(geom);
@@ -716,6 +832,10 @@ private:
         Vec3 extent = node.bounds_max - node.bounds_min;
         float parent_area = 2.0f * (extent.x() * extent.y() + extent.y() * extent.z() + extent.z() * extent.x());
         
+        // Prefix/suffix sweep arrays for O(n) SAH evaluation per axis
+        std::vector<Vec3> prefix_min(count), prefix_max(count);
+        std::vector<Vec3> suffix_min(count), suffix_max(count);
+        
         // Try each axis
         for (int axis = 0; axis < 3; ++axis) {
             // Sort geometries along this axis by centroid
@@ -726,35 +846,39 @@ private:
                     return ca[axis] < cb[axis];
                 });
             
-            // Try different split positions using SAH
-            for (int i = start + 1; i < end; ++i) {
-                // Compute left and right bounding boxes
-                Vec3 left_min(1e30, 1e30, 1e30), left_max(-1e30, -1e30, -1e30);
-                Vec3 right_min(1e30, 1e30, 1e30), right_max(-1e30, -1e30, -1e30);
-                
-                for (int j = start; j < i; ++j) {
-                    const GeometryDesc& geom = geometries[geom_indices[j]];
-                    left_min = Vec3(std::min(left_min.x(), geom.bounds_min.x()),
-                                   std::min(left_min.y(), geom.bounds_min.y()),
-                                   std::min(left_min.z(), geom.bounds_min.z()));
-                    left_max = Vec3(std::max(left_max.x(), geom.bounds_max.x()),
-                                   std::max(left_max.y(), geom.bounds_max.y()),
-                                   std::max(left_max.z(), geom.bounds_max.z()));
-                }
-                
-                for (int j = i; j < end; ++j) {
-                    const GeometryDesc& geom = geometries[geom_indices[j]];
-                    right_min = Vec3(std::min(right_min.x(), geom.bounds_min.x()),
-                                    std::min(right_min.y(), geom.bounds_min.y()),
-                                    std::min(right_min.z(), geom.bounds_min.z()));
-                    right_max = Vec3(std::max(right_max.x(), geom.bounds_max.x()),
-                                    std::max(right_max.y(), geom.bounds_max.y()),
-                                    std::max(right_max.z(), geom.bounds_max.z()));
-                }
-                
-                // Compute surface areas
-                Vec3 left_extent = left_max - left_min;
-                Vec3 right_extent = right_max - right_min;
+            // Build prefix bounds (left-to-right sweep)
+            Vec3 running_min(1e30, 1e30, 1e30), running_max(-1e30, -1e30, -1e30);
+            for (int i = 0; i < count; ++i) {
+                const GeometryDesc& geom = geometries[geom_indices[start + i]];
+                running_min = Vec3(std::min(running_min.x(), geom.bounds_min.x()),
+                                   std::min(running_min.y(), geom.bounds_min.y()),
+                                   std::min(running_min.z(), geom.bounds_min.z()));
+                running_max = Vec3(std::max(running_max.x(), geom.bounds_max.x()),
+                                   std::max(running_max.y(), geom.bounds_max.y()),
+                                   std::max(running_max.z(), geom.bounds_max.z()));
+                prefix_min[i] = running_min;
+                prefix_max[i] = running_max;
+            }
+            
+            // Build suffix bounds (right-to-left sweep)
+            running_min = Vec3(1e30, 1e30, 1e30);
+            running_max = Vec3(-1e30, -1e30, -1e30);
+            for (int i = count - 1; i >= 0; --i) {
+                const GeometryDesc& geom = geometries[geom_indices[start + i]];
+                running_min = Vec3(std::min(running_min.x(), geom.bounds_min.x()),
+                                   std::min(running_min.y(), geom.bounds_min.y()),
+                                   std::min(running_min.z(), geom.bounds_min.z()));
+                running_max = Vec3(std::max(running_max.x(), geom.bounds_max.x()),
+                                   std::max(running_max.y(), geom.bounds_max.y()),
+                                   std::max(running_max.z(), geom.bounds_max.z()));
+                suffix_min[i] = running_min;
+                suffix_max[i] = running_max;
+            }
+            
+            // Evaluate SAH at each split position in O(1) using precomputed bounds
+            for (int i = 1; i < count; ++i) {
+                Vec3 left_extent = prefix_max[i - 1] - prefix_min[i - 1];
+                Vec3 right_extent = suffix_max[i] - suffix_min[i];
                 float left_area = 2.0f * (left_extent.x() * left_extent.y() + 
                                          left_extent.y() * left_extent.z() + 
                                          left_extent.z() * left_extent.x());
@@ -763,15 +887,13 @@ private:
                                           right_extent.z() * right_extent.x());
                 
                 // SAH cost: C_traverse + P_left * C_left + P_right * C_right
-                int left_count = i - start;
-                int right_count = end - i;
-                float cost = 1.0f + (left_area / parent_area) * left_count + 
-                                   (right_area / parent_area) * right_count;
+                float cost = 1.0f + (left_area / parent_area) * i + 
+                                   (right_area / parent_area) * (count - i);
                 
                 if (cost < best_cost) {
                     best_cost = cost;
                     best_axis = axis;
-                    best_split_idx = i;
+                    best_split_idx = start + i;
                 }
             }
         }

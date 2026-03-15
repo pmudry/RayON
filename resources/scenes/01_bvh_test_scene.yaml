@@ -1,0 +1,249 @@
+# Large test scene for BVH performance testing
+# 150 spheres in a centered grid with ISC colors, mirror, and glass
+
+camera:
+  position: [-10.7, 5.75, 8.75]
+  look_at: [0.29, -1.62, -0.97]
+  up: [0, 1, 0]
+  fov: 25
+
+settings:
+  background_color: [0.4, 0.6, 0.9]
+  ambient_light: 0.15
+  background_intensity: 0.18
+  use_bvh: true
+
+materials:
+  - name: ground
+    type: lambertian
+    albedo: [0.45, 0.45, 0.45]
+
+  - name: isc_yellow
+    type: lambertian
+    albedo: [0.969, 0.945, 0.624]
+
+  - name: isc_blue
+    type: lambertian
+    albedo: [0.549, 0.776, 0.902]
+
+  - name: isc_violet
+    type: lambertian
+    albedo: [0.659, 0.565, 0.753]
+
+  - name: isc_rose
+    type: lambertian
+    albedo: [0.886, 0.671, 0.729]
+
+  - name: isc_green
+    type: lambertian
+    albedo: [0.596, 0.780, 0.749]
+
+  - name: metal
+    type: metal
+    albedo: [0.95, 0.95, 0.95]
+    roughness: 0.05
+
+  - name: glass
+    type: glass
+    refractive_index: 1.5
+
+  - name: light
+    type: light
+    emission: [4.0, 3.5, 3.0]
+
+geometries:
+  # Ground plane
+  - type: sphere
+    material: ground
+    center: [0, -1000, 0]
+    radius: 1000
+
+  # Area light centered over the grid (invisible - lights scene but not seen)
+  - type: rectangle
+    material: light
+    corner: [-4, 6, -4]
+    u: [8, 0, 0]
+    v: [0, 0, 8]
+    visible: false
+
+  # 15x10 grid centered at origin (x: -9 to +9, z: -7 to +7), radius 0.4
+
+  # Row 1 (z = -7)
+  - { type: sphere, material: isc_yellow, center: [-9, 0.4, -7], radius: 0.4 }
+  - { type: sphere, material: isc_blue, center: [-7, 0.4, -7], radius: 0.4 }
+  - { type: sphere, material: isc_violet, center: [-5, 0.4, -7], radius: 0.4 }
+  - { type: sphere, material: isc_rose, center: [-3, 0.4, -7], radius: 0.4 }
+  - { type: sphere, material: glass, center: [-1, 0.4, -7], radius: 0.4 }
+  - { type: sphere, material: isc_yellow, center: [1, 0.4, -7], radius: 0.4 }
+  - { type: sphere, material: isc_blue, center: [3, 0.4, -7], radius: 0.4 }
+  - { type: sphere, material: isc_violet, center: [5, 0.4, -7], radius: 0.4 }
+  - { type: sphere, material: isc_rose, center: [7, 0.4, -7], radius: 0.4 }
+  - { type: sphere, material: isc_green, center: [9, 0.4, -7], radius: 0.4 }
+
+  # Row 2 (z = -6)
+  - { type: sphere, material: isc_blue, center: [-9, 0.4, -6], radius: 0.4 }
+  - { type: sphere, material: isc_violet, center: [-7, 0.4, -6], radius: 0.4 }
+  - { type: sphere, material: isc_rose, center: [-5, 0.4, -6], radius: 0.4 }
+  - { type: sphere, material: isc_green, center: [-3, 0.4, -6], radius: 0.4 }
+  - { type: sphere, material: isc_yellow, center: [-1, 0.4, -6], radius: 0.4 }
+  - { type: sphere, material: metal, center: [1, 0.4, -6], radius: 0.4 }
+  - { type: sphere, material: isc_violet, center: [3, 0.4, -6], radius: 0.4 }
+  - { type: sphere, material: isc_rose, center: [5, 0.4, -6], radius: 0.4 }
+  - { type: sphere, material: isc_green, center: [7, 0.4, -6], radius: 0.4 }
+  - { type: sphere, material: isc_yellow, center: [9, 0.4, -6], radius: 0.4 }
+
+  # Row 3 (z = -5)
+  - { type: sphere, material: isc_violet, center: [-9, 0.4, -5], radius: 0.4 }
+  - { type: sphere, material: isc_rose, center: [-7, 0.4, -5], radius: 0.4 }
+  - { type: sphere, material: isc_green, center: [-5, 0.4, -5], radius: 0.4 }
+  - { type: sphere, material: isc_yellow, center: [-3, 0.4, -5], radius: 0.4 }
+  - { type: sphere, material: isc_blue, center: [-1, 0.4, -5], radius: 0.4 }
+  - { type: sphere, material: isc_violet, center: [1, 0.4, -5], radius: 0.4 }
+  - { type: sphere, material: isc_rose, center: [3, 0.4, -5], radius: 0.4 }
+  - { type: sphere, material: glass, center: [5, 0.4, -5], radius: 0.4 }
+  - { type: sphere, material: isc_yellow, center: [7, 0.4, -5], radius: 0.4 }
+  - { type: sphere, material: isc_blue, center: [9, 0.4, -5], radius: 0.4 }
+
+  # Row 4 (z = -4)
+  - { type: sphere, material: isc_rose, center: [-9, 0.4, -4], radius: 0.4 }
+  - { type: sphere, material: isc_green, center: [-7, 0.4, -4], radius: 0.4 }
+  - { type: sphere, material: isc_yellow, center: [-5, 0.4, -4], radius: 0.4 }
+  - { type: sphere, material: isc_blue, center: [-3, 0.4, -4], radius: 0.4 }
+  - { type: sphere, material: isc_violet, center: [-1, 0.4, -4], radius: 0.4 }
+  - { type: sphere, material: isc_rose, center: [1, 0.4, -4], radius: 0.4 }
+  - { type: sphere, material: isc_green, center: [3, 0.4, -4], radius: 0.4 }
+  - { type: sphere, material: isc_yellow, center: [5, 0.4, -4], radius: 0.4 }
+  - { type: sphere, material: metal, center: [7, 0.4, -4], radius: 0.4 }
+  - { type: sphere, material: isc_violet, center: [9, 0.4, -4], radius: 0.4 }
+
+  # Row 5 (z = -3)
+  - { type: sphere, material: isc_green, center: [-9, 0.4, -3], radius: 0.4 }
+  - { type: sphere, material: isc_yellow, center: [-7, 0.4, -3], radius: 0.4 }
+  - { type: sphere, material: isc_blue, center: [-5, 0.4, -3], radius: 0.4 }
+  - { type: sphere, material: isc_violet, center: [-3, 0.4, -3], radius: 0.4 }
+  - { type: sphere, material: isc_rose, center: [-1, 0.4, -3], radius: 0.4 }
+  - { type: sphere, material: isc_green, center: [1, 0.4, -3], radius: 0.4 }
+  - { type: sphere, material: glass, center: [3, 0.4, -3], radius: 0.4 }
+  - { type: sphere, material: isc_blue, center: [5, 0.4, -3], radius: 0.4 }
+  - { type: sphere, material: isc_violet, center: [7, 0.4, -3], radius: 0.4 }
+  - { type: sphere, material: isc_rose, center: [9, 0.4, -3], radius: 0.4 }
+
+  # Row 6 (z = -2)
+  - { type: sphere, material: isc_yellow, center: [-9, 0.4, -2], radius: 0.4 }
+  - { type: sphere, material: isc_blue, center: [-7, 0.4, -2], radius: 0.4 }
+  - { type: sphere, material: isc_violet, center: [-5, 0.4, -2], radius: 0.4 }
+  - { type: sphere, material: isc_rose, center: [-3, 0.4, -2], radius: 0.4 }
+  - { type: sphere, material: isc_green, center: [-1, 0.4, -2], radius: 0.4 }
+  - { type: sphere, material: isc_yellow, center: [1, 0.4, -2], radius: 0.4 }
+  - { type: sphere, material: isc_blue, center: [3, 0.4, -2], radius: 0.4 }
+  - { type: sphere, material: isc_violet, center: [5, 0.4, -2], radius: 0.4 }
+  - { type: sphere, material: isc_rose, center: [7, 0.4, -2], radius: 0.4 }
+  - { type: sphere, material: metal, center: [9, 0.4, -2], radius: 0.4 }
+
+  # Row 7 (z = -1)
+  - { type: sphere, material: isc_blue, center: [-9, 0.4, -1], radius: 0.4 }
+  - { type: sphere, material: isc_violet, center: [-7, 0.4, -1], radius: 0.4 }
+  - { type: sphere, material: isc_rose, center: [-5, 0.4, -1], radius: 0.4 }
+  - { type: sphere, material: isc_green, center: [-3, 0.4, -1], radius: 0.4 }
+  - { type: sphere, material: isc_yellow, center: [-1, 0.4, -1], radius: 0.4 }
+  - { type: sphere, material: isc_blue, center: [1, 0.4, -1], radius: 0.4 }
+  - { type: sphere, material: isc_violet, center: [3, 0.4, -1], radius: 0.4 }
+  - { type: sphere, material: isc_rose, center: [5, 0.4, -1], radius: 0.4 }
+  - { type: sphere, material: glass, center: [7, 0.4, -1], radius: 0.4 }
+  - { type: sphere, material: isc_yellow, center: [9, 0.4, -1], radius: 0.4 }
+
+  # Row 8 (z = 0) - center row
+  - { type: sphere, material: isc_violet, center: [-9, 0.4, 0], radius: 0.4 }
+  - { type: sphere, material: glass, center: [-7, 0.4, 0], radius: 0.4 }
+  - { type: sphere, material: isc_green, center: [-5, 0.4, 0], radius: 0.4 }
+  - { type: sphere, material: isc_yellow, center: [-3, 0.4, 0], radius: 0.4 }
+  - { type: sphere, material: metal, center: [-1, 0.4, 0], radius: 0.4 }
+  - { type: sphere, material: isc_violet, center: [1, 0.4, 0], radius: 0.4 }
+  - { type: sphere, material: isc_rose, center: [3, 0.4, 0], radius: 0.4 }
+  - { type: sphere, material: isc_green, center: [5, 0.4, 0], radius: 0.4 }
+  - { type: sphere, material: isc_yellow, center: [7, 0.4, 0], radius: 0.4 }
+  - { type: sphere, material: isc_blue, center: [9, 0.4, 0], radius: 0.4 }
+
+  # Row 9 (z = 1)
+  - { type: sphere, material: isc_rose, center: [-9, 0.4, 1], radius: 0.4 }
+  - { type: sphere, material: isc_green, center: [-7, 0.4, 1], radius: 0.4 }
+  - { type: sphere, material: isc_yellow, center: [-5, 0.4, 1], radius: 0.4 }
+  - { type: sphere, material: isc_blue, center: [-3, 0.4, 1], radius: 0.4 }
+  - { type: sphere, material: isc_violet, center: [-1, 0.4, 1], radius: 0.4 }
+  - { type: sphere, material: isc_rose, center: [1, 0.4, 1], radius: 0.4 }
+  - { type: sphere, material: metal, center: [3, 0.4, 1], radius: 0.4 }
+  - { type: sphere, material: isc_yellow, center: [5, 0.4, 1], radius: 0.4 }
+  - { type: sphere, material: isc_blue, center: [7, 0.4, 1], radius: 0.4 }
+  - { type: sphere, material: isc_violet, center: [9, 0.4, 1], radius: 0.4 }
+
+  # Row 10 (z = 2)
+  - { type: sphere, material: isc_green, center: [-9, 0.4, 2], radius: 0.4 }
+  - { type: sphere, material: isc_yellow, center: [-7, 0.4, 2], radius: 0.4 }
+  - { type: sphere, material: isc_blue, center: [-5, 0.4, 2], radius: 0.4 }
+  - { type: sphere, material: isc_violet, center: [-3, 0.4, 2], radius: 0.4 }
+  - { type: sphere, material: isc_rose, center: [-1, 0.4, 2], radius: 0.4 }
+  - { type: sphere, material: glass, center: [1, 0.4, 2], radius: 0.4 }
+  - { type: sphere, material: isc_yellow, center: [3, 0.4, 2], radius: 0.4 }
+  - { type: sphere, material: isc_blue, center: [5, 0.4, 2], radius: 0.4 }
+  - { type: sphere, material: isc_violet, center: [7, 0.4, 2], radius: 0.4 }
+  - { type: sphere, material: isc_rose, center: [9, 0.4, 2], radius: 0.4 }
+
+  # Row 11 (z = 3)
+  - { type: sphere, material: isc_yellow, center: [-9, 0.4, 3], radius: 0.4 }
+  - { type: sphere, material: isc_blue, center: [-7, 0.4, 3], radius: 0.4 }
+  - { type: sphere, material: isc_violet, center: [-5, 0.4, 3], radius: 0.4 }
+  - { type: sphere, material: isc_rose, center: [-3, 0.4, 3], radius: 0.4 }
+  - { type: sphere, material: isc_green, center: [-1, 0.4, 3], radius: 0.4 }
+  - { type: sphere, material: isc_yellow, center: [1, 0.4, 3], radius: 0.4 }
+  - { type: sphere, material: isc_blue, center: [3, 0.4, 3], radius: 0.4 }
+  - { type: sphere, material: metal, center: [5, 0.4, 3], radius: 0.4 }
+  - { type: sphere, material: isc_green, center: [7, 0.4, 3], radius: 0.4 }
+  - { type: sphere, material: isc_yellow, center: [9, 0.4, 3], radius: 0.4 }
+
+  # Row 12 (z = 4)
+  - { type: sphere, material: isc_blue, center: [-9, 0.4, 4], radius: 0.4 }
+  - { type: sphere, material: isc_violet, center: [-7, 0.4, 4], radius: 0.4 }
+  - { type: sphere, material: glass, center: [-5, 0.4, 4], radius: 0.4 }
+  - { type: sphere, material: isc_green, center: [-3, 0.4, 4], radius: 0.4 }
+  - { type: sphere, material: isc_yellow, center: [-1, 0.4, 4], radius: 0.4 }
+  - { type: sphere, material: isc_blue, center: [1, 0.4, 4], radius: 0.4 }
+  - { type: sphere, material: isc_violet, center: [3, 0.4, 4], radius: 0.4 }
+  - { type: sphere, material: isc_rose, center: [5, 0.4, 4], radius: 0.4 }
+  - { type: sphere, material: isc_green, center: [7, 0.4, 4], radius: 0.4 }
+  - { type: sphere, material: isc_yellow, center: [9, 0.4, 4], radius: 0.4 }
+
+  # Row 13 (z = 5)
+  - { type: sphere, material: isc_violet, center: [-9, 0.4, 5], radius: 0.4 }
+  - { type: sphere, material: isc_rose, center: [-7, 0.4, 5], radius: 0.4 }
+  - { type: sphere, material: isc_green, center: [-5, 0.4, 5], radius: 0.4 }
+  - { type: sphere, material: metal, center: [-3, 0.4, 5], radius: 0.4 }
+  - { type: sphere, material: isc_blue, center: [-1, 0.4, 5], radius: 0.4 }
+  - { type: sphere, material: isc_violet, center: [1, 0.4, 5], radius: 0.4 }
+  - { type: sphere, material: isc_rose, center: [3, 0.4, 5], radius: 0.4 }
+  - { type: sphere, material: isc_green, center: [5, 0.4, 5], radius: 0.4 }
+  - { type: sphere, material: isc_yellow, center: [7, 0.4, 5], radius: 0.4 }
+  - { type: sphere, material: glass, center: [9, 0.4, 5], radius: 0.4 }
+
+  # Row 14 (z = 6)
+  - { type: sphere, material: isc_rose, center: [-9, 0.4, 6], radius: 0.4 }
+  - { type: sphere, material: isc_green, center: [-7, 0.4, 6], radius: 0.4 }
+  - { type: sphere, material: isc_yellow, center: [-5, 0.4, 6], radius: 0.4 }
+  - { type: sphere, material: isc_blue, center: [-3, 0.4, 6], radius: 0.4 }
+  - { type: sphere, material: isc_violet, center: [-1, 0.4, 6], radius: 0.4 }
+  - { type: sphere, material: isc_rose, center: [1, 0.4, 6], radius: 0.4 }
+  - { type: sphere, material: glass, center: [3, 0.4, 6], radius: 0.4 }
+  - { type: sphere, material: isc_yellow, center: [5, 0.4, 6], radius: 0.4 }
+  - { type: sphere, material: isc_blue, center: [7, 0.4, 6], radius: 0.4 }
+  - { type: sphere, material: isc_violet, center: [9, 0.4, 6], radius: 0.4 }
+
+  # Row 15 (z = 7)
+  - { type: sphere, material: isc_green, center: [-9, 0.4, 7], radius: 0.4 }
+  - { type: sphere, material: isc_yellow, center: [-7, 0.4, 7], radius: 0.4 }
+  - { type: sphere, material: metal, center: [-5, 0.4, 7], radius: 0.4 }
+  - { type: sphere, material: isc_violet, center: [-3, 0.4, 7], radius: 0.4 }
+  - { type: sphere, material: isc_rose, center: [-1, 0.4, 7], radius: 0.4 }
+  - { type: sphere, material: isc_green, center: [1, 0.4, 7], radius: 0.4 }
+  - { type: sphere, material: isc_yellow, center: [3, 0.4, 7], radius: 0.4 }
+  - { type: sphere, material: isc_blue, center: [5, 0.4, 7], radius: 0.4 }
+  - { type: sphere, material: isc_violet, center: [7, 0.4, 7], radius: 0.4 }
+  - { type: sphere, material: isc_rose, center: [9, 0.4, 7], radius: 0.4 }

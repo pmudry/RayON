@@ -1,0 +1,46 @@
+camera:
+  position: [0.0, 1.0, 6.8]
+  look_at: [0.0, 0.6, 0.0]
+  up: [0.0, 1.0, 0.0]
+  fov: 40.0
+
+settings:
+  background_color: [0.10, 0.10, 0.12]
+  ambient_light: 0.04
+  background_intensity: 0.15
+  use_bvh: true
+
+materials:
+  - { name: ground, type: lambertian, albedo: [0.42, 0.42, 0.44] }
+  - { name: light, type: light, emission: [11.0, 10.0, 9.0], albedo: [1.0, 1.0, 1.0] }
+  - name: fibo
+    type: lambertian
+    albedo: [0.85, 0.22, 0.20]
+    pattern:
+      type: fibonacci_dots
+      color: [0.05, 0.05, 0.05]
+      dot_count: 20
+      dot_radius: 0.20
+  - name: checker
+    type: lambertian
+    albedo: [0.20, 0.80, 0.86]
+    pattern:
+      type: checkerboard
+      color: [0.04, 0.04, 0.04]
+      dot_count: 8
+      dot_radius: 0.5
+  - name: stripes
+    type: lambertian
+    albedo: [0.90, 0.84, 0.25]
+    pattern:
+      type: stripes
+      color: [0.12, 0.10, 0.03]
+      dot_count: 16
+      dot_radius: 0.5
+
+geometry:
+  - { type: sphere, material: ground, center: [0.0, -1000.0, 0.0], radius: 1000.0 }
+  - { type: rectangle, material: light, corner: [-2.5, 3.2, -1.5], u: [5.0, 0.0, 0.0], v: [0.0, 0.0, 3.0], visible: false }
+  - { type: sphere, material: fibo, center: [-2.2, 0.6, -0.2], radius: 0.6 }
+  - { type: sphere, material: checker, center: [0.0, 0.6, -0.2], radius: 0.6 }
+  - { type: sphere, material: stripes, center: [2.2, 0.6, -0.2], radius: 0.6 }

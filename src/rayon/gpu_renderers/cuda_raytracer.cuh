@@ -3,10 +3,12 @@
 #include "cuda_float3.cuh"
 #include "cuda_scene.cuh"
 #include "cuda_utils.cuh"
+#include "microfacet_ggx.cuh"
 
 #include <cfloat>
 #include <cmath>
 #include <curand_kernel.h>
+#include <math_constants.h>
 
 // Extern declarations for device-side global constants (defined once in renderer_cuda_device.cu)
 extern __constant__ float g_light_intensity;
@@ -46,7 +48,10 @@ enum LegacyMaterialType
    LIGHT = 3,
    ROUGH_MIRROR = 4,
    CONSTANT = 5,
-   SHOW_NORMALS = 6
+   SHOW_NORMALS = 6,
+   ANISOTROPIC_METAL = 7,
+   THIN_FILM = 8,
+   CLEAR_COAT = 9
 };
 
 struct hit_record_simple
@@ -56,12 +61,21 @@ struct hit_record_simple
    bool front_face;
    LegacyMaterialType material;
    f3 color;
-   float refractive_index;
    f3 emission;
    float roughness;
-};
+   float refractive_index;  // GLASS
+   bool visible;
 
-#include "materials/material_dispatcher.cuh"
+   // Anisotropic metal fields (only meaningful when material == ANISOTROPIC_METAL)
+   f3 tangent;
+   float anisotropy;
+   f3 eta;
+   f3 k_extinction;
+
+   // Thin-film interference fields (only meaningful when material == THIN_FILM)
+   float film_thickness;   // Film thickness in nanometers
+   float film_ior;         // Refractive index of the thin film
+};
 
 //==============================================================================
 // OPTICAL PHYSICS FUNCTIONS
@@ -209,6 +223,12 @@ __device__ inline bool hit_sphere(const f3 &center, float radius, const ray_simp
    f3 outward_normal = (rec.p - center) / radius;
    rec.front_face = dot(r.dir, outward_normal) < 0;
    rec.normal = rec.front_face ? outward_normal : f3(-outward_normal.x, -outward_normal.y, -outward_normal.z);
+   // Compute tangent for anisotropic materials (azimuthal direction)
+   f3 up_dir(0.0f, 1.0f, 0.0f);
+   f3 tangent = cross(up_dir, outward_normal);
+   if (tangent.length_squared() < 1e-6f)
+      tangent = f3(1.0f, 0.0f, 0.0f); // Degenerate at poles
+   rec.tangent = normalize(tangent);
    return true;
 }
 
@@ -245,6 +265,84 @@ __device__ inline bool hit_rectangle(const f3 &corner, const f3 &u, const f3 &v,
    rec.p = intersection;
    rec.front_face = dot(r.dir, normal) < 0;
    rec.normal = rec.front_face ? normal : f3(-normal.x, -normal.y, -normal.z);
+   // Compute tangent for anisotropic materials (along u edge)
+   rec.tangent = normalize(u);
+   return true;
+}
+
+//==============================================================================
+// TRIANGLE INTERSECTION (Möller–Trumbore)
+//==============================================================================
+
+__device__ inline bool hit_triangle(const f3 &v0, const f3 &v1, const f3 &v2,
+                                    const f3 &n0, const f3 &n1, const f3 &n2,
+                                    bool has_normals,
+                                    const ray_simple &r, float t_min, float t_max,
+                                    hit_record_simple &rec)
+{
+   const f3 edge1 = v1 - v0;
+   const f3 edge2 = v2 - v0;
+   const f3 h = cross(r.dir, edge2);
+   const float a = dot(edge1, h);
+
+   // Ray parallel to triangle
+   if (fabsf(a) < 1e-8f)
+      return false;
+
+   const float f = 1.0f / a;
+   const f3 s = r.orig - v0;
+   const float u = f * dot(s, h);
+   if (u < 0.0f || u > 1.0f)
+      return false;
+
+   const f3 q = cross(s, edge1);
+   const float v = f * dot(r.dir, q);
+   if (v < 0.0f || u + v > 1.0f)
+      return false;
+
+   const float t = f * dot(edge2, q);
+   if (t < t_min || t > t_max)
+      return false;
+
+   rec.t = t;
+   rec.p = r.at(t);
+
+   // Always use geometric normal for front-face determination
+   const f3 geo_normal = normalize(cross(edge1, edge2));
+   rec.front_face = dot(r.dir, geo_normal) < 0;
+
+   f3 shading_normal;
+   if (has_normals)
+   {
+      // Smooth shading: interpolate vertex normals using barycentric coords
+      const float w = 1.0f - u - v;
+      shading_normal = normalize(w * n0 + u * n1 + v * n2);
+      // Ensure smooth normal is on the same hemisphere as geometric normal
+      if (dot(shading_normal, geo_normal) < 0.0f)
+         shading_normal = f3(-shading_normal.x, -shading_normal.y, -shading_normal.z);
+   }
+   else
+   {
+      // Flat shading: use geometric normal directly
+      shading_normal = geo_normal;
+   }
+
+   rec.normal = rec.front_face ? shading_normal : f3(-shading_normal.x, -shading_normal.y, -shading_normal.z);
+
+   // Safety clamp: smooth normals at silhouette edges can deviate enough from the
+   // geometric normal to end up below the incoming ray's horizon.  When that happens
+   // the specular-reflection formula produces a below-surface direction which the
+   // dot-product guard kills, leaving a black pixel.  Fall back to the flat
+   // geometric normal (already oriented toward the ray) in that case.
+   if (has_normals)
+   {
+      const f3 incoming(-r.dir.x, -r.dir.y, -r.dir.z);
+      if (dot(rec.normal, incoming) <= 0.0f)
+         rec.normal = rec.front_face ? geo_normal : f3(-geo_normal.x, -geo_normal.y, -geo_normal.z);
+   }
+
+   // Compute tangent for anisotropic materials (along edge v0->v1)
+   rec.tangent = normalize(edge1);
    return true;
 }
 
@@ -266,6 +364,11 @@ __device__ __forceinline__ bool intersect_geometry(const CudaScene::Geometry &ge
    case GeometryType::DISPLACED_SPHERE:
       return hit_golf_ball_sphere(geom.data.displaced_sphere.center, geom.data.displaced_sphere.radius, r, t_min, t_max,
                                   rec);
+   case GeometryType::TRIANGLE:
+      return hit_triangle(geom.data.triangle.v0, geom.data.triangle.v1, geom.data.triangle.v2,
+                          geom.data.triangle.n0, geom.data.triangle.n1, geom.data.triangle.n2,
+                          geom.data.triangle.has_normals,
+                          r, t_min, t_max, rec);
    default:
       return false;
    }
@@ -322,15 +425,15 @@ __device__ __forceinline__ void apply_material(const CudaScene::Material &mat, h
       rec.material = LAMBERTIAN;
       rec.color = mat.albedo;
       break;
-   case MaterialType::METAL:
    case MaterialType::MIRROR:
       rec.material = MIRROR;
       rec.color = mat.albedo;
       break;
+   case MaterialType::METAL:
    case MaterialType::ROUGH_MIRROR:
       rec.material = ROUGH_MIRROR;
       rec.color = mat.albedo;
-      rec.roughness = mat.roughness;
+      rec.roughness = mat.roughness > 0.0f ? mat.roughness : 0.3f;
       break;
    case MaterialType::GLASS:
    case MaterialType::DIELECTRIC:
@@ -348,9 +451,30 @@ __device__ __forceinline__ void apply_material(const CudaScene::Material &mat, h
    case MaterialType::SHOW_NORMALS:
       rec.material = SHOW_NORMALS;
       break;
+   case MaterialType::ANISOTROPIC_METAL:
+      rec.material = ANISOTROPIC_METAL;
+      rec.color = mat.albedo;
+      rec.roughness = mat.roughness;
+      rec.anisotropy = mat.anisotropy;
+      rec.eta = mat.eta;
+      rec.k_extinction = mat.k;
+      break;
    case MaterialType::SDF_MATERIAL: // TODO: Implement SDF materials
       rec.material = LAMBERTIAN;
       rec.color = mat.albedo;
+      break;
+   case MaterialType::THIN_FILM:
+      rec.material = THIN_FILM;
+      rec.color = mat.albedo;
+      rec.film_thickness = mat.film_thickness;
+      rec.film_ior = mat.film_ior;
+      rec.refractive_index = mat.refractive_index;
+      break;
+   case MaterialType::CLEAR_COAT:
+      rec.material = CLEAR_COAT;
+      rec.color = mat.albedo;           // base diffuse color
+      rec.roughness = mat.roughness;    // coat roughness
+      rec.refractive_index = mat.refractive_index > 1.0f ? mat.refractive_index : 1.5f; // coat IOR
       break;
    }
    if (mat.pattern != CudaScene::ProceduralPattern::NONE)
@@ -368,6 +492,7 @@ __device__ inline bool hit_scene(const CudaScene::Scene &scene, const ray_simple
    float closest_so_far = t_max;
    int closest_material_id = -1;
    int closest_geom_idx = -1;
+   bool closest_visible = true;
 
    // Use BVH if available, otherwise linear scan
    if (scene.use_bvh && scene.bvh_root_idx >= 0)
@@ -402,40 +527,41 @@ __device__ inline bool hit_scene(const CudaScene::Scene &scene, const ray_simple
                   rec = temp_rec;
                   closest_material_id = geom.material_id;
                   closest_geom_idx = first + i;
+                  closest_visible = geom.visible;
                }
             }
          }
          else
          {
-            // Interior node: push children onto stack
-            // Push farther child first for better traversal order
+            // Interior node: push children, near child last (processed first)
+            // Use split axis + ray direction sign to determine near/far child
+            // This is a single comparison vs. two length_squared() computations
             int left_child = node.data.interior.left_child;
             int right_child = node.data.interior.right_child;
 
-            // Simple heuristic: test which child is closer
-            f3 left_center = (scene.bvh_nodes[left_child].bounds_min + scene.bvh_nodes[left_child].bounds_max) * 0.5f;
-            f3 right_center =
-                (scene.bvh_nodes[right_child].bounds_min + scene.bvh_nodes[right_child].bounds_max) * 0.5f;
-
-            float dist_left = (left_center - r.orig).length_squared();
-            float dist_right = (right_center - r.orig).length_squared();
-
-            if (dist_left < dist_right)
+            // Determine which child is "near" based on ray direction along split axis
+            float dir_component;
+            switch (node.split_axis)
             {
-               // Right is farther, push it first
-               if (stack_ptr < 32)
-                  stack[stack_ptr++] = right_child;
-               if (stack_ptr < 32)
-                  stack[stack_ptr++] = left_child;
+            case 0:
+               dir_component = r.dir.x;
+               break;
+            case 1:
+               dir_component = r.dir.y;
+               break;
+            default:
+               dir_component = r.dir.z;
+               break;
             }
-            else
-            {
-               // Left is farther, push it first
-               if (stack_ptr < 32)
-                  stack[stack_ptr++] = left_child;
-               if (stack_ptr < 32)
-                  stack[stack_ptr++] = right_child;
-            }
+
+            // If ray goes in positive direction along split axis, left child is near
+            int near_child = dir_component >= 0.0f ? left_child : right_child;
+            int far_child = dir_component >= 0.0f ? right_child : left_child;
+
+            if (stack_ptr < 32)
+               stack[stack_ptr++] = far_child;
+            if (stack_ptr < 32)
+               stack[stack_ptr++] = near_child;
          }
       }
    }
@@ -453,6 +579,7 @@ __device__ inline bool hit_scene(const CudaScene::Scene &scene, const ray_simple
             rec = temp_rec;
             closest_material_id = geom.material_id;
             closest_geom_idx = i;
+            closest_visible = geom.visible;
          }
       }
    }
@@ -469,15 +596,264 @@ __device__ inline bool hit_scene(const CudaScene::Scene &scene, const ray_simple
          }
       }
       apply_material(scene.materials[closest_material_id], rec, geom_center);
+      rec.visible = closest_visible;
    }
    return hit_anything;
 }
 
 /**
- * @brief Ray color computation using new material system
+ * @brief Fully inlined material scatter — no object construction, no CRTP.
  *
- * This version uses compile-time material dispatch via CRTP templates.
- * The compiler generates optimized code for each material type with zero overhead.
+ * All scatter logic is directly in the switch cases, giving nvcc full visibility
+ * for register allocation and optimization. This avoids constructing temporary
+ * material objects and eliminates any template instantiation overhead.
+ *
+ * Returns true if the ray was scattered, false if absorbed/emissive.
+ */
+__device__ __forceinline__ bool scatter_material(const hit_record_simple &rec, const ray_simple &current_ray,
+                                                 ray_simple &scattered_ray, f3 &attenuation, f3 &emitted,
+                                                 curandState *state)
+{
+   emitted = f3(0.0f, 0.0f, 0.0f);
+
+   switch (rec.material)
+   {
+   case LAMBERTIAN:
+   {
+      // Cosine-weighted hemisphere sampling (Lambert's law)
+      f3 w = normalize(rec.normal);
+      f3 u_basis, v_basis;
+      build_orthonormal_basis(w, u_basis, v_basis);
+
+      float u1 = rand_float(state);
+      float u2 = rand_float(state);
+      float r = sqrtf(u1);
+      float theta = 2.0f * CUDART_PI_F * u2;
+      f3 local_dir(r * cosf(theta), r * sinf(theta), sqrtf(fmaxf(0.0f, 1.0f - u1)));
+      f3 scatter_dir = local_dir.x * u_basis + local_dir.y * v_basis + local_dir.z * w;
+
+      scattered_ray = ray_simple(rec.p + 0.0001f * rec.normal, scatter_dir);
+      attenuation = rec.color;
+      return true;
+   }
+   case MIRROR:
+   {
+      // Perfect specular reflection
+      f3 reflected = reflect(normalize(current_ray.dir), rec.normal);
+      scattered_ray = ray_simple(rec.p, reflected);
+      attenuation = rec.color;
+      return dot(reflected, rec.normal) > 0.0f;
+   }
+   case ROUGH_MIRROR:
+   {
+      // Reflection with roughness-perturbed normal (microfacet approximation)
+      f3 perturbed_normal = normalize(rec.normal + rec.roughness * g_metal_fuzziness * randOnUnitSphere(state));
+      f3 reflected = reflect(normalize(current_ray.dir), perturbed_normal);
+      scattered_ray = ray_simple(rec.p, reflected);
+      attenuation = rec.color;
+      return dot(reflected, rec.normal) > 0.0f;
+   }
+   case GLASS:
+   {
+      // Refraction/reflection with Fresnel (Schlick's approximation)
+      f3 unit_dir = normalize(current_ray.dir);
+      float ri = g_glass_refraction_index;
+      float ratio = rec.front_face ? (1.0f / ri) : ri;
+
+      float cos_theta = fminf(dot(-unit_dir, rec.normal), 1.0f);
+      float sin_theta = sqrtf(1.0f - cos_theta * cos_theta);
+
+      bool total_internal_reflection = ratio * sin_theta > 1.0f;
+
+      f3 direction;
+      if (total_internal_reflection || reflectance(cos_theta, ratio) > rand_float(state))
+         direction = reflect(unit_dir, rec.normal);
+      else
+         direction = refract(unit_dir, rec.normal, ratio);
+
+      scattered_ray = ray_simple(rec.p, direction);
+      attenuation = f3(1.0f, 1.0f, 1.0f);
+      return true;
+   }
+   case LIGHT:
+   {
+      emitted = rec.emission * g_light_intensity;
+      return false;
+   }
+   case CONSTANT:
+   {
+      emitted = rec.color;
+      return false;
+   }
+   case SHOW_NORMALS:
+   {
+      emitted = 0.5f * (rec.normal + f3(1.0f, 1.0f, 1.0f));
+      return false;
+   }
+   case ANISOTROPIC_METAL:
+   {
+      // Anisotropic GGX microfacet conductor (PBR Book §9.6)
+
+      // Convert roughness + anisotropy to alpha_x/alpha_y (Disney convention)
+      float aspect = sqrtf(fmaxf(1e-4f, 1.0f - 0.9f * rec.anisotropy));
+      float r2 = rec.roughness * rec.roughness;
+      float alpha_x = fmaxf(1e-4f, r2 / aspect);
+      float alpha_y = fmaxf(1e-4f, r2 * aspect);
+
+      // Effectively smooth: fall back to perfect mirror with Fresnel tint
+      if (fmaxf(alpha_x, alpha_y) < 1e-3f)
+      {
+         f3 refl = reflect(normalize(current_ray.dir), rec.normal);
+         scattered_ray = ray_simple(rec.p + 0.0001f * rec.normal, refl);
+         float cos_i = fmaxf(dot(-normalize(current_ray.dir), rec.normal), 0.0f);
+         attenuation = rec.color * FrComplex(cos_i, rec.eta, rec.k_extinction);
+         return dot(refl, rec.normal) > 0.0f;
+      }
+
+      // Build TBN frame (tangent, bitangent, normal)
+      f3 N = normalize(rec.normal);
+      f3 T = normalize(rec.tangent - dot(rec.tangent, N) * N);
+      f3 B = cross(N, T);
+
+      // Transform outgoing direction (toward viewer) to local shading space
+      f3 wo_world = normalize(f3(-current_ray.dir.x, -current_ray.dir.y, -current_ray.dir.z));
+      f3 wo_local(dot(wo_world, T), dot(wo_world, B), dot(wo_world, N));
+
+      // Ensure wo is in upper hemisphere
+      if (wo_local.z <= 0.0f)
+         return false;
+
+      // Sample microfacet normal via VNDF
+      f3 wm = Sample_wm_GGX(wo_local, alpha_x, alpha_y,
+                              rand_float(state), rand_float(state));
+
+      // Reflect wo around wm to get wi
+      f3 wi_local = reflect(f3(-wo_local.x, -wo_local.y, -wo_local.z), wm);
+
+      // Check that reflected direction is in upper hemisphere
+      if (wi_local.z <= 0.0f)
+         return false;
+
+      // Transform wi back to world space
+      f3 wi_world = wi_local.x * T + wi_local.y * B + wi_local.z * N;
+
+      // Compute Fresnel reflectance at microfacet
+      float cos_theta_i = fmaxf(dot(wo_local, wm), 0.0f);
+      f3 F = FrComplex(cos_theta_i, rec.eta, rec.k_extinction);
+
+      // VNDF importance sampling weight: F * G(wo,wi) / G1(wo)
+      float G = G_GGX(wo_local, wi_local, alpha_x, alpha_y);
+      float G1 = G1_GGX(wo_local, alpha_x, alpha_y);
+      f3 weight = F * (G / fmaxf(G1, 1e-6f));
+
+      scattered_ray = ray_simple(rec.p + 0.0001f * rec.normal, wi_world);
+      attenuation = rec.color * weight;
+      return true;
+   }
+   case THIN_FILM:
+   {
+      // Thin-film interference (soap bubbles, oil slicks).
+      // Stochastic reflect/transmit based on the Airy formula evaluated at
+      // three representative wavelengths (R=650nm, G=550nm, B=450nm).
+      f3 unit_dir = normalize(current_ray.dir);
+      float cos_i = fmaxf(fabsf(dot(-unit_dir, rec.normal)), 0.001f);
+
+      float n0 = rec.refractive_index;   // exterior medium (air ≈ 1.0)
+      float n1 = rec.film_ior;           // film (soap/water ≈ 1.33)
+      float d  = rec.film_thickness;     // film thickness in nanometers
+
+      // Snell: refraction angle inside the film
+      float sin_i = sqrtf(fmaxf(0.0f, 1.0f - cos_i * cos_i));
+      float sin_t = (n0 / n1) * sin_i;
+      float cos_t = (sin_t >= 1.0f) ? 0.0f : sqrtf(1.0f - sin_t * sin_t);
+
+      // Schlick reflectance at exterior→film and film→interior interfaces
+      // (interior = exterior for a free-standing bubble)
+      float r01_v = (n0 - n1) / (n0 + n1); r01_v *= r01_v;
+      float x01 = 1.0f - cos_i;
+      float R01 = r01_v + (1.0f - r01_v) * x01 * x01 * x01 * x01 * x01;
+
+      float r12_v = (n1 - n0) / (n1 + n0); r12_v *= r12_v;
+      float x12 = 1.0f - cos_t;
+      float R12 = r12_v + (1.0f - r12_v) * x12 * x12 * x12 * x12 * x12;
+
+      float sqrt_R = sqrtf(R01 * R12);
+
+      // Airy formula for a single wavelength
+      auto airy = [&](float lambda) -> float {
+         float delta = (4.0f * CUDART_PI_F * n1 * d * cos_t) / lambda;
+         float c = cosf(delta);
+         float num = R01 + R12 + 2.0f * sqrt_R * c;
+         float den = 1.0f + R01 * R12 + 2.0f * sqrt_R * c;
+         return num / fmaxf(den, 1e-8f);
+      };
+
+      float Rr = airy(650.0f), Rg = airy(550.0f), Rb = airy(450.0f);
+      float avg_R = (Rr + Rg + Rb) / 3.0f;
+
+      if (rand_float(state) < avg_R)
+      {
+         // Reflect — carry the iridescent color; divide by selection probability
+         f3 reflected = reflect(unit_dir, rec.normal);
+         scattered_ray = ray_simple(rec.p + 0.0001f * rec.normal, reflected);
+         attenuation = f3(Rr, Rg, Rb) * (1.0f / fmaxf(avg_R, 0.001f));
+         return dot(reflected, rec.normal) > 0.0f;
+      }
+      else
+      {
+         // Transmit — pass straight through, complementary energy
+         scattered_ray = ray_simple(rec.p - 0.0001f * rec.normal, unit_dir);
+         attenuation = f3(1.0f - Rr, 1.0f - Rg, 1.0f - Rb) * (1.0f / fmaxf(1.0f - avg_R, 0.001f));
+         return true;
+      }
+   }
+   case CLEAR_COAT:
+   {
+      // Two-lobe model: glossy dielectric coat (Fresnel) over Lambertian base.
+      // Stochastic selection: coat lobe chosen with probability F, base with (1-F).
+      f3 unit_dir = normalize(current_ray.dir);
+      float cos_theta = fminf(dot(-unit_dir, rec.normal), 1.0f);
+      float coat_ior = rec.refractive_index; // e.g. 1.5
+      float F = reflectance(cos_theta, coat_ior);
+
+      if (rand_float(state) < F)
+      {
+         // Coat specular reflection (GGX-like roughness perturbation)
+         f3 perturbed_normal = (rec.roughness > 1e-3f)
+            ? normalize(rec.normal + rec.roughness * randOnUnitSphere(state))
+            : rec.normal;
+         f3 reflected = reflect(unit_dir, perturbed_normal);
+         scattered_ray = ray_simple(rec.p + 0.0001f * rec.normal, reflected);
+         attenuation = f3(1.0f, 1.0f, 1.0f); // clear coat is achromatic
+         return dot(reflected, rec.normal) > 0.0f;
+      }
+      else
+      {
+         // Base diffuse (Lambertian, cosine-weighted hemisphere)
+         f3 w = normalize(rec.normal);
+         f3 u_basis, v_basis;
+         build_orthonormal_basis(w, u_basis, v_basis);
+         float u1 = rand_float(state);
+         float u2 = rand_float(state);
+         float r_s = sqrtf(u1);
+         float theta_s = 2.0f * CUDART_PI_F * u2;
+         f3 local_dir(r_s * cosf(theta_s), r_s * sinf(theta_s), sqrtf(fmaxf(0.0f, 1.0f - u1)));
+         f3 scatter_dir = local_dir.x * u_basis + local_dir.y * v_basis + local_dir.z * w;
+         scattered_ray = ray_simple(rec.p + 0.0001f * rec.normal, scatter_dir);
+         attenuation = rec.color; // base albedo
+         return true;
+      }
+   }
+   default:
+      return false;
+   }
+}
+
+/**
+ * @brief Ray color computation with flattened material dispatch
+ *
+ * Uses a direct switch for material scatter/emission instead of CRTP template
+ * dispatch, reducing register pressure and giving nvcc better optimization control.
  */
 __device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scene, curandState *state, int depth
 #ifdef DIAGS
@@ -486,8 +862,6 @@ __device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scen
 #endif
 )
 {
-   using namespace Materials;
-
    f3 accumulated_color(0.0f, 0.0f, 0.0f);
    f3 accumulated_attenuation(1.0f, 1.0f, 1.0f);
    ray_simple current_ray = r;
@@ -501,68 +875,33 @@ __device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scen
 
       if (hit_scene(scene, current_ray, 0.001f, FLT_MAX, rec))
       {
-         // Create material descriptor from hit record
-         // TODO: This is a temporary adapter - ideally hit_scene would return MaterialDescriptor directly
-         MaterialDescriptor mat_desc;
-
-         switch (rec.material)
+         // Invisible geometry: camera rays pass through, bounced rays interact normally
+         if (!rec.visible && bounce == 0)
          {
-         case LAMBERTIAN:
-            mat_desc = MaterialDescriptor::makeLambertian(rec.color);
-            break;
-         case MIRROR:
-            mat_desc = MaterialDescriptor::makeMirror(rec.color);
-            break;
-         case ROUGH_MIRROR:
-            mat_desc = MaterialDescriptor::makeRoughMirror(rec.color, rec.roughness);
-            break;
-         case GLASS:
-            mat_desc = MaterialDescriptor::makeGlass(rec.refractive_index);
-            break;
-         case LIGHT:
-            mat_desc = MaterialDescriptor::makeLight(rec.emission);
-            break;
-         case CONSTANT:
-            mat_desc = MaterialDescriptor::makeConstant(rec.color);
-            break;
-         case SHOW_NORMALS:
-            mat_desc = MaterialDescriptor::makeShowNormals(rec.normal);
-            break;
+            current_ray = ray_simple(rec.p + current_ray.dir * 0.01f, current_ray.dir);
+            continue;
          }
 
-         // Dispatch to appropriate material using compile-time template magic
-         bool scattered = dispatch_material_bool(
-             mat_desc,
-             [&](auto material) -> bool
-             {
-                // Check if emissive first
-                f3 emitted = material.emission();
-                if (emitted.length_squared() > 0.0f)
-                {
-                   accumulated_color = accumulated_color + f3(accumulated_attenuation.x * emitted.x,
-                                                              accumulated_attenuation.y * emitted.y,
-                                                              accumulated_attenuation.z * emitted.z);
-                   return false; // Light materials don't scatter
-                }
+         f3 attenuation;
+         ray_simple scattered_ray;
+         f3 emitted;
 
-                // Scatter the ray
-                f3 attenuation;
-                ray_simple scattered_ray;
-                if (material.scatter(current_ray, rec, attenuation, scattered_ray, state))
-                {
-                   current_ray = scattered_ray;
-                   accumulated_attenuation =
-                       f3(accumulated_attenuation.x * attenuation.x, accumulated_attenuation.y * attenuation.y,
-                          accumulated_attenuation.z * attenuation.z);
-                   return true;
-                }
-                return false;
-             });
+         bool did_scatter = scatter_material(rec, current_ray, scattered_ray, attenuation, emitted, state);
 
-         if (!scattered)
+         if (emitted.length_squared() > 0.0f)
+         {
+            accumulated_color = accumulated_color + accumulated_attenuation * emitted;
+         }
+
+         if (!did_scatter)
          {
             return accumulated_color;
          }
+
+         current_ray = scattered_ray;
+         accumulated_attenuation =
+             f3(accumulated_attenuation.x * attenuation.x, accumulated_attenuation.y * attenuation.y,
+                accumulated_attenuation.z * attenuation.z);
 
          // Russian Roulette path termination (from bounce 1 for early path culling)
          if (bounce > 0)

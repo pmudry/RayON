@@ -1,0 +1,26 @@
+camera:
+  position: [-4.24, 2.56, 4.05]
+  look_at: [-0.7, 0.33, -0.91]
+  up: [0.0, 1.0, 0.0]
+  fov: 42.0
+
+settings:
+  background_color: [0.08, 0.12, 0.18]
+  ambient_light: 0.05
+  background_intensity: 0.25
+  use_bvh: true
+
+materials:
+  - { name: ground, type: lambertian, albedo: [0.35, 0.38, 0.40] }
+  - { name: matte, type: lambertian, albedo: [0.75, 0.74, 0.72] }
+  - { name: blue_metal, type: rough_mirror, albedo: [0.45, 0.62, 0.95], roughness: 0.15, metallic: 1.0 }
+  - { name: light, type: light, emission: [10.0, 8.0, 6.5], albedo: [1.0, 1.0, 1.0] }
+
+geometry:
+  - { type: sphere, material: ground, center: [0.0, -1000.0, 0.0], radius: 1000.0 }
+  - { type: rectangle, material: light, corner: [-4.0, 4.0, -2.0], u: [8.0, 0.0, 0.0], v: [0.0, 0.0, 3.0], visible: false }
+  - { type: displaced_sphere, material: matte, center: [-3.0, 0.55, -1.0], radius: 0.55, displacement_scale: 0.05, pattern_type: 0 }
+  - { type: displaced_sphere, material: matte, center: [-1.5, 0.55, -0.6], radius: 0.55, displacement_scale: 0.10, pattern_type: 0 }
+  - { type: displaced_sphere, material: blue_metal, center: [0.0, 0.55, -0.2], radius: 0.55, displacement_scale: 0.16, pattern_type: 0 }
+  - { type: displaced_sphere, material: matte, center: [1.5, 0.55, 0.2], radius: 0.55, displacement_scale: 0.24, pattern_type: 0 }
+  - { type: displaced_sphere, material: blue_metal, center: [3.0, 0.55, 0.6], radius: 0.55, displacement_scale: 0.32, pattern_type: 0 }

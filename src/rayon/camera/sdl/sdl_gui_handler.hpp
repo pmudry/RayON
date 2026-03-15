@@ -1,14 +1,14 @@
 /**
  * @class SDLGuiHandler
- * @brief Handles all SDL GUI components for the interactive renderer
+ * @brief Handles SDL window management and ImGui integration
  *
  * This class manages:
  * - SDL window and renderer creation/cleanup
- * - Logo loading and display
- * - Font loading and text rendering
- * - UI controls (sliders, buttons)
- * - Mouse and keyboard event handling
- * - Camera control state
+ * - Main ray-tracing texture display
+ * - Logo loading and overlay
+ * - ImGui context initialization and frame rendering
+ * - Basic SDL event polling
+ * - Color theme selection
  */
 #pragma once
 
@@ -16,15 +16,20 @@
 #ifdef SDL2_FOUND
 
 #include <SDL.h>
-#ifdef SDL2_TTF_FOUND
-#include <SDL_ttf.h>
-#endif
+#include "imgui.h"
+#include "imgui_impl_sdl2.h"
+#include "imgui_impl_sdlrenderer2.h"
+
 #define STB_IMAGE_STATIC
 #define STB_IMAGE_IMPLEMENTATION
 #include "external/stb_image.h"
 #define STB_IMAGE_RESIZE_IMPLEMENTATION
 #include "external/stb_image_resize2.h"
 
+#include <chrono>
+#include <cmath>
+#include <cstring>
+#include <cstdio>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -35,20 +40,37 @@ using std::endl;
 using std::string;
 using std::vector;
 
-// Structure to hold slider interaction bounds
-struct SliderBounds
+enum class GuiTheme : int
 {
-   int x, y, width, height;
-   float min_val, max_val;
-   float *value_ptr;
+   DARK = 0,
+   LIGHT,
+   CLASSIC,
+   NORD,
+   DRACULA,
+   GRUVBOX,
+   CATPPUCCIN,
+   COUNT // must be last
 };
+
+static const char *themeNames[] = {"Dark", "Light", "Classic", "Nord", "Dracula", "Gruvbox", "Catppuccin Mocha"};
+
+enum class VisualizationMode : int
+{
+   NORMAL = 0,
+   SHOW_NORMALS,
+   COUNT // must be last
+};
+
+static const char *visualizationModeNames[] = {"Normal Render", "Show Normals"};
 
 class SDLGuiHandler
 {
  public:
-   SDLGuiHandler(int image_width, int image_height)
-       : image_width(image_width), image_height(image_height), show_controls(true), window(nullptr), renderer(nullptr),
-         texture(nullptr), logo_texture(nullptr), font(nullptr)
+   SDLGuiHandler(int image_width, int image_height, GuiTheme initial_theme = GuiTheme::NORD)
+       : image_width(image_width), image_height(image_height), show_controls(true), collapse_headers(false),
+         reset_headers(false), window_collapse_requested(false), window_collapsed(false), current_theme(initial_theme), initialized(false), window(nullptr), renderer(nullptr),
+         texture(nullptr), logo_texture(nullptr), perf_write_index(0), last_perf_sample_time_ms(0),
+         perf_sample_interval_ms(50), perf_time_window_ms(20000)
    {
    }
 
@@ -62,17 +84,8 @@ class SDLGuiHandler
          return false;
       }
 
-#ifdef SDL2_TTF_FOUND
-      if (TTF_Init() < 0)
-      {
-         cerr << "SDL_ttf initialization failed: " << TTF_GetError() << "\n";
-         SDL_Quit();
-         return false;
-      }
-#endif
-
       std::string window_title =
-          "RayON (mui) v" + std::string(constants::version) + " - Interactive mode (LMB:Rotate RMB:Pan Wheel:Zoom)";
+          "RayON v" + std::string(constants::version) + "";
       window = SDL_CreateWindow(window_title.c_str(), SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, image_width,
                                 image_height, SDL_WINDOW_SHOWN);
       if (!window)
@@ -80,6 +93,24 @@ class SDLGuiHandler
          cerr << "Window creation failed: " << SDL_GetError() << "\n";
          cleanupSDL();
          return false;
+      }
+
+      // Set window icon from ISC logo
+      {
+         int icon_w, icon_h, icon_ch;
+         unsigned char *icon_data = stbi_load("../resources/ISC_logo_rvb.png", &icon_w, &icon_h, &icon_ch, 4);
+         if (icon_data)
+         {
+            SDL_Surface *icon_surface = SDL_CreateRGBSurfaceFrom(
+                icon_data, icon_w, icon_h, 32, icon_w * 4,
+                0x000000FF, 0x0000FF00, 0x00FF0000, 0xFF000000);
+            if (icon_surface)
+            {
+               SDL_SetWindowIcon(window, icon_surface);
+               SDL_FreeSurface(icon_surface);
+            }
+            stbi_image_free(icon_data);
+         }
       }
 
       renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
@@ -103,20 +134,30 @@ class SDLGuiHandler
       }
 
       loadLogo();
-      loadFont();
 
+      // Initialize ImGui
+      IMGUI_CHECKVERSION();
+      ImGui::CreateContext();
+      ImGuiIO &io = ImGui::GetIO();
+      (void)io;
+
+      applyTheme(current_theme);
+
+      ImGui_ImplSDL2_InitForSDLRenderer(window, renderer);
+      ImGui_ImplSDLRenderer2_Init(renderer);
+      initialized = true;
       return true;
    }
 
    void cleanup()
    {
-#ifdef SDL2_TTF_FOUND
-      if (font)
-      {
-         TTF_CloseFont(static_cast<TTF_Font *>(font));
-         font = nullptr;
-      }
-#endif
+      if (!initialized)
+         return;
+      initialized = false;
+
+      ImGui_ImplSDLRenderer2_Shutdown();
+      ImGui_ImplSDL2_Shutdown();
+      ImGui::DestroyContext();
 
       if (logo_texture)
       {
@@ -142,16 +183,335 @@ class SDLGuiHandler
       cleanupSDL();
    }
 
-   void updateDisplay(const vector<unsigned char> &image, int image_channels)
+   /**
+    * @brief Display the raytraced image and render the ImGui overlay
+    *
+    * All UI controls are drawn here using ImGui. Parameters are passed as pointers
+    * so ImGui can modify them directly.
+    */
+   void updateDisplay(const vector<unsigned char> &image, int image_channels, float sps, float ms_per_sample, int spp,
+                      bool *dof_enabled, float *aperture, float *focus_dist, float *light_intensity,
+                      float *background_intensity, float *metal_fuzziness, float *glass_ior,
+                      float *samples_per_batch, bool *auto_accumulate, bool *auto_orbit,
+                      int *scene_index, const char *const *scene_names, int scene_count,
+                      const float *cam_pos = nullptr, const float *cam_lookat = nullptr, float *cam_fov = nullptr,
+                      bool *adaptive_sampling = nullptr, float *adaptive_threshold = nullptr,
+                      float convergence_pct = 0.0f, bool *show_heatmap = nullptr,
+                      int *visualization_mode = nullptr,
+                      bool *show_normal_arrows = nullptr, int *normal_arrow_count = nullptr,
+                      float *normal_arrow_scale = nullptr, float *normal_arrow_thickness = nullptr,
+                      bool *show_spps_counter = nullptr, int triangle_count = 0)
    {
       SDL_UpdateTexture(texture, nullptr, image.data(), image_width * image_channels);
       SDL_RenderClear(renderer);
       SDL_RenderCopy(renderer, texture, nullptr, nullptr);
+
+      // Begin ImGui frame
+      ImGui_ImplSDLRenderer2_NewFrame();
+      ImGui_ImplSDL2_NewFrame();
+      ImGui::NewFrame();
+
+      if (show_controls)
+      {
+         ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_Always);
+         if (window_collapse_requested)
+         {
+            window_collapsed = !window_collapsed;
+            ImGui::SetNextWindowCollapsed(window_collapsed, ImGuiCond_Always);
+            window_collapse_requested = false;
+         }
+         if (ImGui::Begin("RayON - Interactive UI", nullptr,
+                          ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove))
+         {
+            // --- Performance Monitoring ---
+            if (reset_headers)
+               ImGui::SetNextItemOpen(!collapse_headers);
+            if (ImGui::CollapsingHeader("Performance Monitoring"))
+            {
+               ImGui::Text("SPP: %d", spp);
+               if (sps >= 1e9f)
+                  ImGui::Text("Throughput: %.2f GS/s", sps * 1e-9f);
+               else if (sps >= 1e6f)
+                  ImGui::Text("Throughput: %.2f MS/s", sps * 1e-6f);
+               else if (sps >= 1e3f)
+                  ImGui::Text("Throughput: %.1f kS/s", sps * 1e-3f);
+               else
+                  ImGui::Text("Throughput: %.0f S/s", sps);
+               ImGui::Text("Time/Pass: %.3f ms", ms_per_sample);
+
+               ImGui::Text("Graph dt: %u ms", perf_sample_interval_ms);
+               ImGui::SameLine();
+               if (ImGui::SmallButton("-##graph_dt"))
+               {
+                  perf_sample_interval_ms = (perf_sample_interval_ms > 20) ? perf_sample_interval_ms - 20 : 20;
+                  last_perf_sample_time_ms = 0;
+               }
+               ImGui::SameLine();
+               if (ImGui::SmallButton("+##graph_dt"))
+               {
+                  perf_sample_interval_ms = (perf_sample_interval_ms < 1000) ? perf_sample_interval_ms + 20 : 1000;
+                  last_perf_sample_time_ms = 0;
+               }
+
+               if (sps > 0.0f)
+               {
+                  const Uint32 now_ms = SDL_GetTicks();
+                  if (last_perf_sample_time_ms == 0 || now_ms - last_perf_sample_time_ms >= perf_sample_interval_ms)
+                  {
+                     const size_t max_points = std::max<size_t>(10, perf_time_window_ms / perf_sample_interval_ms);
+
+                     // Ensure buffers are sized to max_points (filled with 0)
+                     if (sps_history.size() != max_points)
+                     {
+                        sps_history.assign(max_points, 0.0f);
+                        ms_history.assign(max_points, 0.0f);
+                        perf_write_index = 0;
+                     }
+
+                     sps_history[perf_write_index] = sps;
+                     ms_history[perf_write_index] = ms_per_sample;
+                     perf_write_index = (perf_write_index + 1) % static_cast<int>(max_points);
+                     last_perf_sample_time_ms = now_ms;
+                  }
+               }
+
+               if (!sps_history.empty())
+               {
+                  const int n = static_cast<int>(sps_history.size());
+
+                  float max_sps = 0.0f;
+                  for (float f : sps_history)
+                     max_sps = std::max(max_sps, f);
+
+                  ImGui::PushStyleColor(ImGuiCol_PlotLines, ImVec4(0.0f, 1.0f, 0.0f, 1.0f));
+                  ImGui::PlotLines("Live SPS", sps_history.data(), n, perf_write_index, nullptr,
+                                   0.0f, max_sps * 1.1f, ImVec2(ImGui::CalcItemWidth(), 50));
+                  ImGui::PopStyleColor();
+
+                  float max_ms = 0.0f;
+                  for (float f : ms_history)
+                     max_ms = std::max(max_ms, f);
+
+                  ImGui::PushStyleColor(ImGuiCol_PlotLines, ImVec4(1.0f, 0.7f, 0.0f, 1.0f));
+                  ImGui::PlotLines("Time/Sample", ms_history.data(), n, perf_write_index, nullptr,
+                                   0.0f, max_ms * 1.1f, ImVec2(ImGui::CalcItemWidth(), 50));
+                  ImGui::PopStyleColor();
+               }
+
+            }
+
+            // --- Adaptive Sampling ---
+            if (adaptive_sampling)
+            {
+               if (reset_headers)
+                  ImGui::SetNextItemOpen(!collapse_headers);
+               if (ImGui::CollapsingHeader("Adaptive Sampling"))
+               {
+                  if (auto_accumulate)
+                  {
+                     ImGui::Checkbox("Accumulate", auto_accumulate);
+                     ImGui::SameLine();
+                  }
+
+                  ImGui::Checkbox("Adaptive Sampling##adaptive_toggle", adaptive_sampling);
+
+                  if (*adaptive_sampling)
+                  {
+                     if (adaptive_threshold)
+                     {
+                        // Display threshold as power of 10 for readability
+                        // Slider works in log10 space: -4.0 = 10^-4 = 0.0001, -1.3 = 10^-1.3 = 0.05
+                        float log_val = log10f(*adaptive_threshold);
+                        char label[32];
+                        snprintf(label, sizeof(label), "10^%.1f", log_val);
+                        if (ImGui::SliderFloat("Threshold", &log_val, -6.0f, -1.0f, label))
+                        {
+                           *adaptive_threshold = powf(10.0f, log_val);
+                        }
+                     }
+                     if (show_heatmap)
+                        ImGui::Checkbox("Show Sample Heatmap", show_heatmap);
+
+                     ImGui::Text("Converged: %.1f%%", convergence_pct);
+
+                     // Visual progress bar for convergence
+                     ImGui::ProgressBar(convergence_pct / 100.0f, ImVec2(-1, 0), "");
+                  }
+               }
+            }
+
+            // --- Camera Settings ---
+            if (reset_headers)
+               ImGui::SetNextItemOpen(!collapse_headers);
+            if (ImGui::CollapsingHeader("Camera Settings", ImGuiTreeNodeFlags_DefaultOpen))
+            {
+               if (auto_orbit)
+               {
+                  ImGui::Checkbox("Auto orbit", auto_orbit);
+                  if (dof_enabled && aperture && focus_dist)
+                  {
+                     ImGui::SameLine();
+                     ImGui::Checkbox("Depth of field", dof_enabled);
+                  }
+               }
+               else if (dof_enabled && aperture && focus_dist)
+               {
+                  ImGui::Checkbox("Depth of field", dof_enabled);
+               }
+
+               if (dof_enabled && aperture && focus_dist)
+               {
+                  ImGui::SeparatorText("Lens Controls");
+
+                  if (!(*dof_enabled))
+                     ImGui::BeginDisabled();
+                  ImGui::SliderFloat("Aperture", aperture, 0.0f, 1.0f, "%.2f");
+                  ImGui::SliderFloat("Focus Dist", focus_dist, 0.1f, 100.0f, "%.1f");
+                  if (!(*dof_enabled))
+                     ImGui::EndDisabled();
+               }
+
+               if (cam_fov)
+               {
+                  ImGui::SliderFloat("FOV", cam_fov, 10.0f, 140.0f, "%.1f");
+               }
+
+               if (cam_pos && cam_lookat)
+               {
+                  if (ImGui::CollapsingHeader("Camera Info"))
+                  {
+                     ImGui::Text("Position: %.2f, %.2f, %.2f", cam_pos[0], cam_pos[1], cam_pos[2]);
+                     ImGui::Text("Look At:  %.2f, %.2f, %.2f", cam_lookat[0], cam_lookat[1], cam_lookat[2]);
+                     ImGui::Text("FOV:      %.1f", cam_fov ? *cam_fov : 0.0f);
+                  }
+               }
+            }
+
+            // --- Environment & Materials ---
+            if (reset_headers)
+               ImGui::SetNextItemOpen(!collapse_headers);
+            if (ImGui::CollapsingHeader("Environment & Materials", ImGuiTreeNodeFlags_DefaultOpen))
+            {
+               if (light_intensity && background_intensity && metal_fuzziness && glass_ior)
+               {
+                  ImGui::SliderFloat("Light Intensity", light_intensity, 0.1f, 3.0f, "%.1f");
+                  ImGui::SliderFloat("Ambient Light", background_intensity, 0.0f, 5.0f, "%.2f");
+                  ImGui::SliderFloat("Metal Fuzz", metal_fuzziness, 0.0f, 5.0f, "%.2f");
+                  ImGui::SliderFloat("Glass IOR", glass_ior, 1.0f, 2.5f, "%.2f");
+               }
+               
+               ImGui::Separator();
+
+               if (show_normal_arrows && normal_arrow_count && normal_arrow_scale && normal_arrow_thickness)
+               {
+                  ImGui::Checkbox("Normal Arrows (CPU)", show_normal_arrows);
+
+                  if (visualization_mode)
+                  {
+                     bool show_normals = (*visualization_mode == static_cast<int>(VisualizationMode::SHOW_NORMALS));
+                     ImGui::SameLine();
+                     if (ImGui::Checkbox("Show Normals", &show_normals))
+                     {
+                        *visualization_mode =
+                            show_normals ? static_cast<int>(VisualizationMode::SHOW_NORMALS)
+                                         : static_cast<int>(VisualizationMode::NORMAL);
+                     }
+                  }
+
+                  if (*show_normal_arrows)
+                  {
+                     ImGui::SliderInt("Arrow Count", normal_arrow_count, 40, 2500);
+                     ImGui::SliderFloat("Arrow Scale", normal_arrow_scale, 0.2f, 1.8f, "%.2f");
+                     ImGui::SliderFloat("Arrow Thickness", normal_arrow_thickness, 1.0f, 2.5f, "%.1f");
+                  }
+               }
+               else if (visualization_mode)
+               {
+                  bool show_normals = (*visualization_mode == static_cast<int>(VisualizationMode::SHOW_NORMALS));
+                  if (ImGui::Checkbox("Show Normals", &show_normals))
+                  {
+                     *visualization_mode =
+                         show_normals ? static_cast<int>(VisualizationMode::SHOW_NORMALS)
+                                      : static_cast<int>(VisualizationMode::NORMAL);
+                  }
+               }
+            }
+
+            // --- Scene ---
+            if (scene_index && scene_names && scene_count > 0)
+            {
+               if (reset_headers)
+                  ImGui::SetNextItemOpen(!collapse_headers);
+               if (ImGui::CollapsingHeader("Scene", ImGuiTreeNodeFlags_DefaultOpen))
+               {
+                  ImGui::Combo("Scene##selector", scene_index, scene_names, scene_count);
+                  if (triangle_count > 0)
+                     ImGui::Text("Triangles: %d", triangle_count);
+               }
+            }
+
+            // --- Appearance ---
+            if (ImGui::CollapsingHeader("Appearance"))
+            {
+               int theme_idx = static_cast<int>(current_theme);
+               if (ImGui::Combo("Theme", &theme_idx, themeNames, static_cast<int>(GuiTheme::COUNT)))
+               {
+                  current_theme = static_cast<GuiTheme>(theme_idx);
+                  applyTheme(current_theme);
+               }
+
+               if (show_spps_counter)
+               {
+                  ImGui::Checkbox("Show SPP/s Counter (F)", show_spps_counter);
+               }
+               ImGui::Checkbox("Show Logo (L)", &show_logo);
+            }
+
+            // --- Help ---
+            if (ImGui::CollapsingHeader("Controls & Help"))
+            {
+               ImGui::Text("Mouse:");
+               ImGui::BulletText("LMB: Rotate");
+               ImGui::BulletText("RMB: Pan");
+               ImGui::BulletText("Wheel: Zoom");
+
+               ImGui::Separator();
+               ImGui::Text("Keys:");
+               ImGui::BulletText("SPACE: Toggle Accumulation");
+               ImGui::BulletText("A: Toggle Normal Arrows");
+               ImGui::BulletText("N: Toggle Show Normals");
+               ImGui::BulletText("Left/Right: Previous/Next Scene");
+               ImGui::BulletText("O: Auto orbit");
+               ImGui::BulletText("F / H: Toggle SPP/s Counter");
+               ImGui::BulletText("L: Toggle Logo");
+               ImGui::BulletText("Enter: Collapse/Expand Window");
+               ImGui::BulletText("H: Hide/Show UI");
+               ImGui::BulletText("C: Collapse/Expand All Sections");
+               ImGui::BulletText("R: Reset Defaults");
+               ImGui::BulletText("ESC: Exit");
+            }
+
+            if (reset_headers)
+               reset_headers = false;
+         }
+         ImGui::End();
+      }
+
+      const bool draw_spps_counter = (show_spps_counter == nullptr) ? true : *show_spps_counter;
+      updateLogoLayout();
+      if (draw_spps_counter)
+      {
+         drawSPPSOverlay(sps);
+      }
+
+      // Finalize ImGui frame
+      ImGui::Render();
+      ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), renderer);
    }
 
    void drawLogo()
    {
-      if (logo_texture)
+      if (show_logo && logo_texture)
       {
          SDL_RenderCopy(renderer, logo_texture, nullptr, &logo_rect);
       }
@@ -159,218 +519,192 @@ class SDLGuiHandler
 
    void present() { SDL_RenderPresent(renderer); }
 
-   void drawSampleCountText(int sample_count)
+   // Event handling - routes to ImGui first
+   static bool pollEvent(SDL_Event &event)
    {
-      // Don't draw sample count if controls are hidden
-      if (!show_controls)
-         return;
-
-#ifdef SDL2_TTF_FOUND
-      TTF_Font *ttf_font = static_cast<TTF_Font *>(font);
-      if (!ttf_font)
-         return;
-
-      std::string text = std::to_string(sample_count) + " SPP";
-
-      SDL_Color white = {255, 255, 255, 255};
-      SDL_Surface *text_surface = TTF_RenderText_Blended(ttf_font, text.c_str(), white);
-      if (!text_surface)
-         return;
-
-      SDL_Texture *text_texture = SDL_CreateTextureFromSurface(renderer, text_surface);
-
-      if (text_texture)
+      bool has_event = SDL_PollEvent(&event);
+      if (has_event)
       {
-         int text_width = text_surface->w;
-         int text_height = text_surface->h;
-         int padding = 15;
-         int box_width = 90;
-
-         SDL_Rect bg_rect = {image_width - box_width - padding, padding - 5, box_width, text_height + 10};
-         SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
-         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 200);
-         SDL_RenderFillRect(renderer, &bg_rect);
-
-         SDL_Rect text_rect = {image_width - padding - box_width + (box_width - text_width) / 2, padding, text_width,
-                               text_height};
-         SDL_RenderCopy(renderer, text_texture, nullptr, &text_rect);
-
-         SDL_DestroyTexture(text_texture);
+         ImGui_ImplSDL2_ProcessEvent(&event);
       }
-
-      SDL_FreeSurface(text_surface);
-#endif
+      return has_event;
    }
 
-   void drawUIControls(int samples_per_batch, float light_intensity, float background_intensity, float metal_fuzziness,
-                       float glass_refraction_index, bool accumulation_enabled, bool auto_orbit_enabled,
-                       SliderBounds &samples_slider_bounds, SliderBounds &intensity_slider_bounds,
-                       SliderBounds &background_slider_bounds, SliderBounds &fuzziness_slider_bounds,
-                       SliderBounds &glass_ior_slider_bounds, SDL_Rect &toggle_button_rect, SDL_Rect &orbit_button_rect)
-   {
-      // Don't draw controls if they're hidden
-      if (!show_controls)
-         return;
-
-#ifdef SDL2_TTF_FOUND
-      TTF_Font *ttf_font = static_cast<TTF_Font *>(font);
-      if (!ttf_font)
-         return;
-
-      TTF_Font *small_font = TTF_OpenFont("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 12);
-      if (!small_font)
-         small_font = ttf_font;
-
-      int padding = 15;
-      int control_width = 280;
-      int label_width = 120;
-      int slider_height = 25;
-      int spacing = 8;
-      int button_row_height = slider_height; // Height for row with two buttons
-      int start_y = image_height - (6 * slider_height + button_row_height + 6 * spacing + padding);
-
-      SDL_Color white = {255, 255, 255, 255};
-
-      drawPanelBackground(padding, start_y, control_width, 5 * slider_height + button_row_height + 6 * spacing);
-
-      // Draw two toggle buttons side by side
-      int button_width = (control_width - spacing) / 2;
-      drawToggleButton(small_font, padding, start_y, accumulation_enabled, white, toggle_button_rect, "Auto-Accum",
-                       button_width);
-      drawToggleButton(small_font, padding + button_width + spacing, start_y, auto_orbit_enabled, white,
-                      orbit_button_rect, "Auto-Orbit", button_width);
-
-      drawSamplesSlider(small_font, padding, start_y + button_row_height + spacing, control_width, samples_per_batch,
-                        samples_slider_bounds, label_width);
-      drawLightSlider(small_font, padding, start_y + button_row_height + slider_height + 2 * spacing, control_width,
-                      light_intensity, intensity_slider_bounds, label_width);
-      drawBackgroundSlider(small_font, padding, start_y + button_row_height + 2 * slider_height + 3 * spacing,
-                           control_width, background_intensity, background_slider_bounds, label_width);
-      drawFuzzinessSlider(small_font, padding, start_y + button_row_height + 3 * slider_height + 4 * spacing,
-                          control_width, metal_fuzziness, fuzziness_slider_bounds, label_width);
-      drawGlassIORSlider(small_font, padding, start_y + button_row_height + 4 * slider_height + 5 * spacing,
-                         control_width, glass_refraction_index, glass_ior_slider_bounds, label_width);
-
-      if (small_font != ttf_font)
-      {
-         TTF_CloseFont(small_font);
-      }
-#endif
-   }
-
-   void drawEffectsPanel(bool dof_enabled, float dof_aperture, float dof_focus_distance,
-                         SliderBounds &dof_aperture_slider_bounds, SliderBounds &dof_focus_slider_bounds,
-                         SDL_Rect &dof_button_rect)
-   {
-      // Don't draw effects panel if controls are hidden
-      if (!show_controls)
-         return;
-
-#ifdef SDL2_TTF_FOUND
-      TTF_Font *ttf_font = static_cast<TTF_Font *>(font);
-      if (!ttf_font)
-         return;
-
-      TTF_Font *small_font = TTF_OpenFont("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 12);
-      if (!small_font)
-      {
-         small_font = TTF_OpenFont("/usr/share/fonts/TTF/DejaVuSans.ttf", 12);
-      }
-      if (!small_font)
-      {
-         small_font = ttf_font;
-      }
-
-      int padding = 15;
-      int control_width = 220;
-      int label_width = 130;
-      int slider_height = 25;
-      int spacing = 8;
-      int button_row_height = slider_height;
-
-      // Position at top-right corner
-      int start_x = image_width - control_width - padding;
-      int start_y = padding + 40; // Below the sample count
-
-      SDL_Color white = {255, 255, 255, 255};
-
-      // Background for effects panel
-      drawPanelBackground(start_x, start_y, control_width, button_row_height + 2 * slider_height + 3 * spacing);
-
-      // DOF toggle button (full width)
-      drawToggleButton(small_font, start_x, start_y, dof_enabled, white, dof_button_rect, "Depth of Field",
-                       control_width);
-
-      // DOF sliders
-      drawDOFApertureSlider(small_font, start_x, start_y + button_row_height + spacing, control_width, dof_aperture,
-                            dof_aperture_slider_bounds, label_width);
-      drawDOFFocusSlider(small_font, start_x, start_y + button_row_height + slider_height + 2 * spacing, control_width,
-                         dof_focus_distance, dof_focus_slider_bounds, label_width);
-
-      if (small_font != ttf_font)
-      {
-         TTF_CloseFont(small_font);
-      }
-#endif
-   }
-
-   static void printControls(int samples_per_batch, int max_samples, bool auto_accumulate)
-   {
-      cout << "\n=== Interactive Ray Tracing with Real-time Display ===" << "\n";
-      cout << "Controls:" "\n";
-      cout << "  Left Mouse Button:   Rotate camera (orbit)" "\n";
-      cout << "  Right Mouse Button:  Pan camera" "\n";
-      cout << "  Mouse Wheel:         Zoom in/out" "\n";
-      cout << "  SPACEBAR:            Toggle automatic accumulation" "\n";
-      cout << "  O:                   Toggle auto-orbit camera" "\n";
-      cout << "  H:                   Hide/show GUI controls" "\n";
-      cout << "  Up/Down Arrows:      Adjust samples per batch (1-256)" "\n";
-      cout << "  Left/Right Arrows:   Adjust light intensity (0.1-3.0)" "\n";
-      cout << "  ESC:                 Exit" "\n" "\n";
-      cout << "Sample accumulation: " << samples_per_batch << " samples per batch, up to " << max_samples
-           << " total samples" "\n";
-      cout << "Auto-accumulation: " << (auto_accumulate ? "ON" : "OFF")<<  "\n";
-   }
-
-   // Event handling
-   static bool pollEvent(SDL_Event &event) { return SDL_PollEvent(&event); }
-
-   // Getters
-   SDL_Window *getWindow() { return window; }
-   SDL_Renderer *getRenderer() { return renderer; }
-   SDL_Texture *getTexture() { return texture; }
-   SDL_Texture *getLogoTexture() { return logo_texture; }
-   const SDL_Rect &getLogoRect() const { return logo_rect; }
-   void *getFont() { return font; }
-   bool getShowControls() const { return show_controls; }
-
-   // Control visibility toggle
    void toggleControls() { show_controls = !show_controls; }
+   bool getShowControls() const { return show_controls; }
+   void toggleLogo() { show_logo = !show_logo; }
+   void setLogoVisible(bool visible) { show_logo = visible; }
+
+   void toggleWindowCollapse() { window_collapse_requested = true; }
+
+   void toggleHeaderCollapse()
+   {
+      collapse_headers = !collapse_headers;
+      reset_headers = true;
+   }
 
  private:
    int image_width;
    int image_height;
-   bool show_controls; // Flag to show/hide GUI controls
+   bool show_controls;
+   bool collapse_headers;
+   bool reset_headers;
+   bool window_collapse_requested;
+   bool window_collapsed;
+   bool show_logo = true;
+   GuiTheme current_theme;
+   bool initialized;
 
    SDL_Window *window;
    SDL_Renderer *renderer;
    SDL_Texture *texture;
    SDL_Texture *logo_texture;
    SDL_Rect logo_rect;
-   void *font;
+   std::vector<float> sps_history;
+   std::vector<float> ms_history;
+   int perf_write_index;
+   Uint32 last_perf_sample_time_ms;
+   Uint32 perf_sample_interval_ms;
+   Uint32 perf_time_window_ms;
 
-   static void cleanupSDL()
+   // Cached SPP/s overlay metrics — computed once on first draw, never change.
+   bool   spps_metrics_cached = false;
+   float  spps_cell_w   = 0.0f;
+   float  spps_prefix_w = 0.0f;
+   float  spps_gap_w    = 0.0f;
+   float  spps_unit_w   = 0.0f;
+   float  spps_font_h   = 0.0f;
+   float  spps_box_w    = 0.0f;
+   float  spps_box_h    = 0.0f;
+
+   static void cleanupSDL() { SDL_Quit(); }
+
+   void applyTheme(GuiTheme theme)
    {
-#ifdef SDL2_TTF_FOUND
-      TTF_Quit();
-#endif
-      SDL_Quit();
+      ImGuiStyle &style = ImGui::GetStyle();
+
+      switch (theme)
+      {
+      case GuiTheme::LIGHT:
+         ImGui::StyleColorsLight();
+         style.Colors[ImGuiCol_WindowBg].w = 0.60f;
+         break;
+
+      case GuiTheme::CLASSIC:
+         ImGui::StyleColorsClassic();
+         style.Colors[ImGuiCol_WindowBg].w = 0.45f;
+         break;
+
+      case GuiTheme::NORD:
+      {
+         ImGui::StyleColorsDark();
+         ImVec4 *c = style.Colors;
+         // Nord palette: polar night + snow storm + frost
+         c[ImGuiCol_WindowBg] = ImVec4(0.18f, 0.20f, 0.25f, 0.45f);
+         c[ImGuiCol_Header] = ImVec4(0.26f, 0.30f, 0.37f, 0.80f);
+         c[ImGuiCol_HeaderHovered] = ImVec4(0.33f, 0.37f, 0.44f, 0.80f);
+         c[ImGuiCol_HeaderActive] = ImVec4(0.37f, 0.42f, 0.50f, 0.80f);
+         c[ImGuiCol_FrameBg] = ImVec4(0.22f, 0.25f, 0.31f, 0.70f);
+         c[ImGuiCol_FrameBgHovered] = ImVec4(0.26f, 0.30f, 0.37f, 0.70f);
+         c[ImGuiCol_FrameBgActive] = ImVec4(0.33f, 0.37f, 0.44f, 0.70f);
+         c[ImGuiCol_SliderGrab] = ImVec4(0.53f, 0.75f, 0.82f, 1.00f);
+         c[ImGuiCol_SliderGrabActive] = ImVec4(0.56f, 0.74f, 0.73f, 1.00f);
+         c[ImGuiCol_CheckMark] = ImVec4(0.53f, 0.75f, 0.82f, 1.00f);
+         c[ImGuiCol_Button] = ImVec4(0.26f, 0.30f, 0.37f, 0.80f);
+         c[ImGuiCol_ButtonHovered] = ImVec4(0.33f, 0.37f, 0.44f, 0.80f);
+         c[ImGuiCol_ButtonActive] = ImVec4(0.37f, 0.42f, 0.50f, 0.80f);
+         c[ImGuiCol_TitleBg] = ImVec4(0.18f, 0.20f, 0.25f, 1.00f);
+         c[ImGuiCol_TitleBgActive] = ImVec4(0.22f, 0.25f, 0.31f, 1.00f);
+         c[ImGuiCol_Text] = ImVec4(0.85f, 0.87f, 0.91f, 1.00f);
+         break;
+      }
+
+      case GuiTheme::DRACULA:
+      {
+         ImGui::StyleColorsDark();
+         ImVec4 *c = style.Colors;
+         c[ImGuiCol_WindowBg] = ImVec4(0.16f, 0.16f, 0.21f, 0.45f);
+         c[ImGuiCol_Header] = ImVec4(0.27f, 0.22f, 0.39f, 0.80f);
+         c[ImGuiCol_HeaderHovered] = ImVec4(0.39f, 0.30f, 0.55f, 0.80f);
+         c[ImGuiCol_HeaderActive] = ImVec4(0.44f, 0.35f, 0.60f, 0.80f);
+         c[ImGuiCol_FrameBg] = ImVec4(0.21f, 0.20f, 0.28f, 0.70f);
+         c[ImGuiCol_FrameBgHovered] = ImVec4(0.27f, 0.22f, 0.39f, 0.70f);
+         c[ImGuiCol_FrameBgActive] = ImVec4(0.39f, 0.30f, 0.55f, 0.70f);
+         c[ImGuiCol_SliderGrab] = ImVec4(0.74f, 0.58f, 0.98f, 1.00f);
+         c[ImGuiCol_SliderGrabActive] = ImVec4(1.00f, 0.47f, 0.66f, 1.00f);
+         c[ImGuiCol_CheckMark] = ImVec4(0.74f, 0.58f, 0.98f, 1.00f);
+         c[ImGuiCol_Button] = ImVec4(0.27f, 0.22f, 0.39f, 0.80f);
+         c[ImGuiCol_ButtonHovered] = ImVec4(0.39f, 0.30f, 0.55f, 0.80f);
+         c[ImGuiCol_ButtonActive] = ImVec4(0.44f, 0.35f, 0.60f, 0.80f);
+         c[ImGuiCol_TitleBg] = ImVec4(0.16f, 0.16f, 0.21f, 1.00f);
+         c[ImGuiCol_TitleBgActive] = ImVec4(0.21f, 0.20f, 0.28f, 1.00f);
+         c[ImGuiCol_Text] = ImVec4(0.97f, 0.97f, 0.95f, 1.00f);
+         break;
+      }
+
+      case GuiTheme::GRUVBOX:
+      {
+         ImGui::StyleColorsDark();
+         ImVec4 *c = style.Colors;
+         c[ImGuiCol_WindowBg] = ImVec4(0.16f, 0.15f, 0.13f, 0.45f);
+         c[ImGuiCol_Header] = ImVec4(0.31f, 0.24f, 0.16f, 0.80f);
+         c[ImGuiCol_HeaderHovered] = ImVec4(0.40f, 0.31f, 0.20f, 0.80f);
+         c[ImGuiCol_HeaderActive] = ImVec4(0.50f, 0.38f, 0.24f, 0.80f);
+         c[ImGuiCol_FrameBg] = ImVec4(0.20f, 0.19f, 0.17f, 0.70f);
+         c[ImGuiCol_FrameBgHovered] = ImVec4(0.31f, 0.24f, 0.16f, 0.70f);
+         c[ImGuiCol_FrameBgActive] = ImVec4(0.40f, 0.31f, 0.20f, 0.70f);
+         c[ImGuiCol_SliderGrab] = ImVec4(0.98f, 0.72f, 0.20f, 1.00f);
+         c[ImGuiCol_SliderGrabActive] = ImVec4(0.84f, 0.60f, 0.13f, 1.00f);
+         c[ImGuiCol_CheckMark] = ImVec4(0.72f, 0.84f, 0.15f, 1.00f);
+         c[ImGuiCol_Button] = ImVec4(0.31f, 0.24f, 0.16f, 0.80f);
+         c[ImGuiCol_ButtonHovered] = ImVec4(0.40f, 0.31f, 0.20f, 0.80f);
+         c[ImGuiCol_ButtonActive] = ImVec4(0.50f, 0.38f, 0.24f, 0.80f);
+         c[ImGuiCol_TitleBg] = ImVec4(0.16f, 0.15f, 0.13f, 1.00f);
+         c[ImGuiCol_TitleBgActive] = ImVec4(0.20f, 0.19f, 0.17f, 1.00f);
+         c[ImGuiCol_Text] = ImVec4(0.92f, 0.86f, 0.70f, 1.00f);
+         break;
+      }
+
+      case GuiTheme::CATPPUCCIN:
+      {
+         ImGui::StyleColorsDark();
+         ImVec4 *c = style.Colors;
+         // Catppuccin Mocha palette
+         c[ImGuiCol_WindowBg] = ImVec4(0.12f, 0.12f, 0.18f, 0.45f);
+         c[ImGuiCol_Header] = ImVec4(0.18f, 0.19f, 0.29f, 0.80f);
+         c[ImGuiCol_HeaderHovered] = ImVec4(0.24f, 0.25f, 0.38f, 0.80f);
+         c[ImGuiCol_HeaderActive] = ImVec4(0.29f, 0.30f, 0.45f, 0.80f);
+         c[ImGuiCol_FrameBg] = ImVec4(0.18f, 0.19f, 0.29f, 0.70f);
+         c[ImGuiCol_FrameBgHovered] = ImVec4(0.24f, 0.25f, 0.38f, 0.70f);
+         c[ImGuiCol_FrameBgActive] = ImVec4(0.29f, 0.30f, 0.45f, 0.70f);
+         c[ImGuiCol_SliderGrab] = ImVec4(0.52f, 0.65f, 0.99f, 1.00f);
+         c[ImGuiCol_SliderGrabActive] = ImVec4(0.95f, 0.55f, 0.66f, 1.00f);
+         c[ImGuiCol_CheckMark] = ImVec4(0.65f, 0.89f, 0.63f, 1.00f);
+         c[ImGuiCol_Button] = ImVec4(0.18f, 0.19f, 0.29f, 0.80f);
+         c[ImGuiCol_ButtonHovered] = ImVec4(0.24f, 0.25f, 0.38f, 0.80f);
+         c[ImGuiCol_ButtonActive] = ImVec4(0.29f, 0.30f, 0.45f, 0.80f);
+         c[ImGuiCol_TitleBg] = ImVec4(0.12f, 0.12f, 0.18f, 1.00f);
+         c[ImGuiCol_TitleBgActive] = ImVec4(0.18f, 0.19f, 0.29f, 1.00f);
+         c[ImGuiCol_Text] = ImVec4(0.80f, 0.84f, 0.96f, 1.00f);
+         break;
+      }
+
+      case GuiTheme::DARK:
+      default:
+         ImGui::StyleColorsDark();
+         style.Colors[ImGuiCol_WindowBg].w = 0.35f;
+         break;
+      }
+
+      // Common style tweaks
+      style.WindowRounding = 4.0f;
+      style.FrameRounding = 2.0f;
+      style.GrabRounding = 2.0f;
    }
 
    void loadLogo()
    {
-      const auto relative_width = 0.3F; // Logo width relative to
-      //  image width
+      const auto relative_width = 0.3F;
       int logo_img_width, logo_img_height, logo_img_channels;
       unsigned char *logo_data = stbi_load("../resources/ISC Logo inline white v3 - 1500px.png", &logo_img_width,
                                            &logo_img_height, &logo_img_channels, 4);
@@ -406,164 +740,120 @@ class SDLGuiHandler
       }
    }
 
-   void loadFont()
+   void updateLogoLayout()
    {
-#ifdef SDL2_TTF_FOUND
-      font = TTF_OpenFont("/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf", 16);
-      if (font == nullptr)
-      {
-         font = TTF_OpenFont("/usr/share/fonts/TTF/DejaVuSansMono-Bold.ttf", 16);
-      }
-      if (font == nullptr)
-      {
-         cerr << "Warning: Could not load font: " << TTF_GetError()<<  "\n";
-      }
-#endif
+      if (!logo_texture)
+         return;
+
+      const int margin = 10;
+      logo_rect.x = image_width - logo_rect.w - margin;
+      logo_rect.y = image_height - logo_rect.h - margin;
    }
 
-#ifdef SDL2_TTF_FOUND
-   // Helper function to render text to screen
-   void renderTextToScreen(TTF_Font *ttf_font, const char *text, SDL_Color color, int x, int y)
+   // Draw a stable SPP/s counter in the bottom-left using the foreground draw list.
+   // GetForegroundDrawList() is unclipped and independent of any ImGui window, so
+   // positioning is exact screen-space with no window padding or clip-rect surprises.
+   void drawSPPSOverlay(float sps)
    {
-      SDL_Surface *text_surface = TTF_RenderText_Blended(ttf_font, text, color);
-      if (text_surface != nullptr)
+      ImFont      *font = ImGui::GetFont();
+      const float  fs   = ImGui::GetFontSize();
+
+      // Compute metrics only once — font never changes at runtime.
+      if (!spps_metrics_cached)
       {
-         SDL_Texture *text_texture = SDL_CreateTextureFromSurface(renderer, text_surface);
-         if (text_texture != nullptr)
+         auto gw = [&](const char *s) { return font->CalcTextSizeA(fs, FLT_MAX, 0.0f, s).x; };
+         for (const char *c = "0123456789."; *c; ++c)
          {
-            SDL_Rect text_rect = {x, y, text_surface->w, text_surface->h};
-            SDL_RenderCopy(renderer, text_texture, nullptr, &text_rect);
-            SDL_DestroyTexture(text_texture);
+            char g[2] = {*c, '\0'};
+            spps_cell_w = std::max(spps_cell_w, gw(g));
          }
-         SDL_FreeSurface(text_surface);
+         spps_prefix_w = gw("SPP/s: ");
+         spps_gap_w    = gw(" ");
+         spps_unit_w   = gw("M");  // M is widest unit
+         spps_font_h   = font->CalcTextSizeA(fs, FLT_MAX, 0.0f, "A").y;
+
+         constexpr int num_digit_chars = 4; // "%4.0f" always produces 4 chars
+         const float   content_w = spps_prefix_w + spps_cell_w * num_digit_chars
+                                    + spps_gap_w + spps_unit_w;
+         spps_box_w = content_w + 8.0f * 2.0f;
+         spps_box_h = spps_font_h + 5.0f * 2.0f;
+         spps_metrics_cached = true;
       }
-   }
 
-   // Helper function to draw semi-transparent panel background
-   void drawPanelBackground(int x, int y, int w, int h)
-   {
-      SDL_Rect bg_rect = {x - 5, y - 5, w + 10, h + 10};
-      SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
-      SDL_SetRenderDrawColor(renderer, 0, 0, 0, 200);
-      SDL_RenderFillRect(renderer, &bg_rect);
-   }
+      // --- scale value and choose unit; overflow if scaled value exceeds 4 digits ---
+      float scaled = sps;
+      const char *unit = " ";
+      if      (sps >= 1e6f) { scaled = sps * 1e-6f; unit = "M"; }
+      else if (sps >= 1e3f) { scaled = sps * 1e-3f; unit = "k"; }
 
-   // Helper function to draw a generic slider with customizable appearance
-   void drawGenericSlider(TTF_Font *ttf_font, int padding, int y, int control_width, const char *label_format,
-                          float value, float min_val, float max_val, SDL_Color fill_color,
-                          SliderBounds &slider_bounds, int label_width)
-   {
-      char label[64];
-      snprintf(label, sizeof(label), label_format, value);
+      // Guard against values that won't fit in 4 integer digits after scaling
+      const bool overflow = (scaled >= 10000.0f);
 
-      SDL_Color white = {255, 255, 255, 255};
-      renderTextToScreen(ttf_font, label, white, padding, y);
+      // 4-char integer field: "NNNN" (no decimal point)
+      char number_str[8];
+      if (!overflow)
+         std::snprintf(number_str, sizeof(number_str), "%4.0f", static_cast<double>(scaled));
 
-      int slider_x = padding + label_width;
-      int slider_w = control_width - label_width;
-      SDL_Rect slider_bg = {slider_x, y + 8, slider_w, 8};
-      SDL_SetRenderDrawColor(renderer, 60, 60, 60, 255);
-      SDL_RenderFillRect(renderer, &slider_bg);
+      const float pad_x  = 8.0f;
+      const float pad_y  = 5.0f;
+      const float margin = 10.0f;
+      const float box_w  = spps_box_w;
+      const float box_h  = spps_box_h;
+      const float box_x     = margin;
+      const float box_y     = static_cast<float>(image_height) - box_h - margin;
 
-      slider_bounds.x = slider_x;
-      slider_bounds.y = y + 8;
-      slider_bounds.width = slider_w;
-      slider_bounds.height = 8;
-      slider_bounds.min_val = min_val;
-      slider_bounds.max_val = max_val;
-
-      float ratio = (value - min_val) / (max_val - min_val);
-      int fill_w = static_cast<int>(slider_w * ratio);
-      SDL_Rect slider_fill = {slider_x, y + 8, fill_w, 8};
-      SDL_SetRenderDrawColor(renderer, fill_color.r, fill_color.g, fill_color.b, fill_color.a);
-      SDL_RenderFillRect(renderer, &slider_fill);
-
-      int handle_x = slider_x + fill_w - 3;
-      SDL_Rect handle = {handle_x, y + 4, 6, 16};
-      SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-      SDL_RenderFillRect(renderer, &handle);
-   }
-
-   void drawToggleButton(TTF_Font *ttf_font, int x, int y, bool enabled, SDL_Color white, SDL_Rect &button_rect,
-                         const char *label, int max_width)
-   {
-      int box_size = 14;
-      int box_y = y + 5;
-      SDL_Rect checkbox_bg = {x, box_y, box_size, box_size};
-
-      SDL_SetRenderDrawColor(renderer, 200, 200, 200, 255);
-      SDL_RenderDrawRect(renderer, &checkbox_bg);
-
-      SDL_Rect checkbox_fill = {x + 2, box_y + 2, box_size - 4, box_size - 4};
-      if (enabled)
+      // --- hover tooltip: show description when mouse is over the box ---
+      const ImVec2 mouse = ImGui::GetIO().MousePos;
+      if (mouse.x >= box_x && mouse.x <= box_x + box_w &&
+          mouse.y >= box_y && mouse.y <= box_y + box_h)
       {
-         SDL_SetRenderDrawColor(renderer, 0, 200, 0, 255);
+         ImGui::SetTooltip("Samples Per Pixel per second. It measures the rendering throughput.\n"
+                           "Toggle with F.");
+      }
+
+      // --- draw background rect then text directly onto the foreground layer ---
+      ImDrawList *draw = ImGui::GetForegroundDrawList();
+
+      draw->AddRectFilled(ImVec2(box_x, box_y),
+                          ImVec2(box_x + box_w, box_y + box_h),
+                          IM_COL32(0, 0, 0, 89), 4.0f);
+
+      const ImU32  text_col = IM_COL32(220, 220, 220, 220);
+      const float  text_y   = box_y + pad_y;
+      float        cx       = box_x + pad_x;
+
+      // prefix as normal text
+      draw->AddText(font, fs, ImVec2(cx, text_y), text_col, "SPP/s: ");
+      cx += spps_prefix_w;
+
+      // digits in fixed-width cells so varying widths never shift the unit
+      if (overflow)
+      {
+         // Right-align ">= 10G" within the number+gap+unit region
+         constexpr const char *ovf_str = ">= 10G";
+         const float ovf_w   = font->CalcTextSizeA(fs, FLT_MAX, 0.0f, ovf_str).x;
+         const float region_w = spps_cell_w * 4.0f + spps_gap_w + spps_unit_w;
+         const float ovf_x   = cx + region_w - ovf_w;
+         draw->AddText(font, fs, ImVec2(ovf_x, text_y), text_col, ovf_str);
       }
       else
       {
-         SDL_SetRenderDrawColor(renderer, 200, 0, 0, 255);
+         const int num_chars = 4; // always render exactly 4 cells
+         for (int i = 0; i < num_chars; ++i)
+         {
+            if (number_str[i] != ' ')
+            {
+               char g[2] = {number_str[i], '\0'};
+               const float gw = font->CalcTextSizeA(fs, FLT_MAX, 0.0f, g).x;
+               draw->AddText(font, fs, ImVec2(cx + (spps_cell_w - gw) * 0.5f, text_y), text_col, g);
+            }
+            cx += spps_cell_w;
+         }
+
+         // fixed-width gap then unit
+         cx += spps_gap_w;
+         draw->AddText(font, fs, ImVec2(cx, text_y), text_col, unit);
       }
-      SDL_RenderFillRect(renderer, &checkbox_fill);
-
-      renderTextToScreen(ttf_font, label, white, x + box_size + 8, y + 5);
-
-      button_rect.x = x;
-      button_rect.y = box_y;
-      button_rect.w = std::min(max_width, box_size + 8 + 80);
-      button_rect.h = box_size;
    }
-
-
-
-   void drawSamplesSlider(TTF_Font *ttf_font, int padding, int y, int control_width, int samples_per_batch,
-                          SliderBounds &samples_slider, int label_width)
-   {
-      SDL_Color color = {100, 150, 255, 255};
-      drawGenericSlider(ttf_font, padding, y, control_width, "Samples: %d", static_cast<float>(samples_per_batch), 1.0f, 256.0f, color, samples_slider, label_width);
-   }
-
-   void drawLightSlider(TTF_Font *ttf_font, int padding, int y, int control_width, float light_intensity,
-                        SliderBounds &intensity_slider, int label_width)
-   {
-      SDL_Color color = {255, 200, 100, 255};
-      drawGenericSlider(ttf_font, padding, y, control_width, "Light: %.1f", light_intensity, 0.1f, 3.0f, color, intensity_slider, label_width);
-   }
-
-   void drawBackgroundSlider(TTF_Font *ttf_font, int padding, int y, int control_width, float background_intensity,
-                             SliderBounds &background_slider, int label_width)
-   {
-      SDL_Color color = {150, 100, 255, 255};
-      drawGenericSlider(ttf_font, padding, y, control_width, "Background: %.2f", background_intensity, 0.0f, 3.0f, color, background_slider, label_width);
-   }
-
-   void drawFuzzinessSlider(TTF_Font *ttf_font, int padding, int y, int control_width, float metal_fuzziness,
-                            SliderBounds &fuzziness_slider, int label_width)
-   {
-      SDL_Color color = {200, 200, 100, 255};
-      drawGenericSlider(ttf_font, padding, y, control_width, "Metal fuzz: %.2f", metal_fuzziness, 0.0f, 5.0f, color, fuzziness_slider, label_width);
-   }
-
-   void drawGlassIORSlider(TTF_Font *ttf_font, int padding, int y, int control_width, float glass_ior,
-                           SliderBounds &glass_ior_slider, int label_width)
-   {
-      SDL_Color color = {100, 200, 255, 255};
-      drawGenericSlider(ttf_font, padding, y, control_width, "Glass IOR: %.2f", glass_ior, 1.0f, 2.5f, color, glass_ior_slider, label_width);
-   }
-
-   void drawDOFApertureSlider(TTF_Font *ttf_font, int padding, int y, int control_width, float dof_aperture,
-                              SliderBounds &aperture_slider, int label_width)
-   {
-      SDL_Color color = {100, 200, 255, 255};
-      drawGenericSlider(ttf_font, padding, y, control_width, "DOF Aperture: %.2f", dof_aperture, 0.0f, 1.0f, color, aperture_slider, label_width);
-   }
-
-   void drawDOFFocusSlider(TTF_Font *ttf_font, int padding, int y, int control_width, float dof_focus_distance,
-                           SliderBounds &focus_slider, int label_width)
-   {
-      SDL_Color color = {255, 150, 100, 255};
-      drawGenericSlider(ttf_font, padding, y, control_width, "DOF Focus: %.1f", dof_focus_distance, 1.0f, 50.0f, color, focus_slider, label_width);
-   }
-#endif
 };
-
 #endif // SDL2_FOUND

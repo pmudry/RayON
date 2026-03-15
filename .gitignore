@@ -1,14 +1,32 @@
 # CMake build directories
 build/
-rendered_images/
-out/
-docs/
 .cache/
-docs/
+
 CMakeFiles/
 CMakeCache.txt
 cmake_install.cmake
 Makefile
+
+# Material gallery build outputs
+material_gallery/
+
+# MkDocs — generated outputs only (website/docs/ source is tracked)
+website/site/
+
+# Auto-copied image directories (populated by hooks.py at build time — not source)
+website/docs/assets/images/samples/
+website/docs/assets/images/for_project/
+website/docs/assets/images/dev/
+website/docs/assets/images/thumbnails/
+website/docs/assets/images/sampling/
+website/docs/assets/images/real_time_raytrace.png
+# website/docs/assets/images/renders/ is tracked — manually committed PNGs for docs
+
+# Python cache and virtual environments
+__pycache__/
+*.pyc
+*.pyo
+.venv/
 
 # CUDA build artifacts
 *.cu.o
@@ -41,3 +59,6 @@ Makefile
 *.nvcache
 *.nvlog
 *.ppm
+
+# MkDocs built site output
+site/

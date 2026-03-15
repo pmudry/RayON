@@ -1,5 +1,25 @@
 # 302 Raytracer - AI Coding Agent Instructions
 
+## Documentation Sync Policy
+
+**After every significant code change, update the relevant page(s) in `website/docs/`.**
+
+| Code change | Doc page(s) to update |
+|---|---|
+| New CLI flag in `main.cc` | `website/docs/getting-started.md` — command reference table |
+| New material type / enum | `website/docs/how-it-works/materials.md`, `website/docs/features/scenes.md` |
+| New geometry type | `website/docs/architecture/scene-system.md` |
+| New YAML key / scene format | `website/docs/features/scenes.md` |
+| New SDF shape | `website/docs/features/sdf-shapes.md` |
+| Performance change / benchmark result | `website/docs/performance.md` |
+| BVH changes | `website/docs/how-it-works/bvh.md` |
+| CUDA kernel / architecture change | `website/docs/architecture/cuda-renderer.md` |
+| Interactive / SDL change | `website/docs/features/interactive.md` |
+| OBJ / mesh loading change | `website/docs/features/obj-loading.md` |
+| New render sample worthy of gallery | `website/docs/gallery.md` |
+
+After editing docs, always run `cd website && uv run mkdocs build --strict` to verify no broken references.
+
 ## Project Overview
 High-performance path tracer with CPU, multi-threaded, and CUDA GPU implementations. Educational CS302 HPC project based on "Ray Tracing in One Weekend" series, featuring interactive SDL real-time rendering with progressive sampling.
 

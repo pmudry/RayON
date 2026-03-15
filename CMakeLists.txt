@@ -69,6 +69,13 @@ endif()
 set(EXTERNAL
     src/external/stb_image_write.h
     src/external/stb_image.h
+    src/external/imgui/imgui.cpp
+    src/external/imgui/imgui_demo.cpp
+    src/external/imgui/imgui_draw.cpp
+    src/external/imgui/imgui_tables.cpp
+    src/external/imgui/imgui_widgets.cpp
+    src/external/imgui/imgui_impl_sdl2.cpp
+    src/external/imgui/imgui_impl_sdlrenderer2.cpp
 )
 
 set(SOURCE_RAYON
@@ -200,7 +207,7 @@ if(CUDA_FOUND)
     # CUDA compiler flags for optimization and warning suppression
     target_compile_options(rayon PRIVATE
         $<$<COMPILE_LANGUAGE:CUDA>:
-        -maxrregcount 80               # Limit max registers per thread for better occupancy (TO BE TUNED)
+        -maxrregcount 80               # Profiled: 64 regs gave 67% occupancy but spill hurt at high res
         -Xcompiler=-fno-strict-aliasing -rdynamic -lineinfo # Optimize memory access
         --expt-relaxed-constexpr # Allow relaxed constexpr
         --expt-extended-lambda # Enable extended lambda support

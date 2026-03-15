@@ -4,6 +4,7 @@
  */
 
 #include "yaml_scene_loader.hpp"
+#include "obj_loader.hpp"
 #include <algorithm>
 #include <cctype>
 #include <fstream>
@@ -95,6 +96,12 @@ static MaterialType parseMaterialType(const string &type_str)
       return MaterialType::CONSTANT;
    if (type_str == "show_normals")
       return MaterialType::SHOW_NORMALS;
+   if (type_str == "anisotropic_metal")
+      return MaterialType::ANISOTROPIC_METAL;
+   if (type_str == "thin_film")
+      return MaterialType::THIN_FILM;
+   if (type_str == "clear_coat")
+      return MaterialType::CLEAR_COAT;
    return MaterialType::LAMBERTIAN;
 }
 
@@ -154,14 +161,24 @@ class SimpleYAMLParser
          {
             in_materials = true;
             in_geometry = false;
+            section_stack.clear();
             material_index = 0;
             continue;
          }
-         else if (trimmed == "geometry:")
+         else if (trimmed == "geometry:" || trimmed == "geometries:")
          {
             in_materials = false;
             in_geometry = true;
+            section_stack.clear();
             geometry_index = 0;
+            continue;
+         }
+         else if (trimmed == "camera:" || trimmed == "settings:")
+         {
+            in_materials = false;
+            in_geometry = false;
+            section_stack.clear();
+            section_stack.push_back(trimmed.substr(0, trimmed.size() - 1)); // "camera" or "settings"
             continue;
          }
 
@@ -180,6 +197,50 @@ class SimpleYAMLParser
                section_stack.clear();
                section_stack.push_back("geom" + to_string(geometry_index));
                geometry_index++;
+            }
+
+            // Handle flow-style inline maps: { key: val, key: val, ... }
+            if (!trimmed.empty() && trimmed.front() == '{' && trimmed.back() == '}')
+            {
+               string inner = trimmed.substr(1, trimmed.size() - 2);
+               // Split by comma, but respect brackets for arrays like [1,2,3]
+               vector<string> pairs;
+               int bracket_depth = 0;
+               string current;
+               for (char ch : inner)
+               {
+                  if (ch == '[')
+                     bracket_depth++;
+                  else if (ch == ']')
+                     bracket_depth--;
+                  if (ch == ',' && bracket_depth == 0)
+                  {
+                     pairs.push_back(current);
+                     current.clear();
+                  }
+                  else
+                  {
+                     current += ch;
+                  }
+               }
+               if (!current.empty())
+                  pairs.push_back(current);
+
+               for (const auto &pair : pairs)
+               {
+                  size_t cp = pair.find(':');
+                  if (cp != string::npos)
+                  {
+                     string k = trimWhitespace(pair.substr(0, cp));
+                     string v = trimWhitespace(pair.substr(cp + 1));
+                     string fk = k;
+                     for (const auto &s : section_stack)
+                        fk = s + "." + fk;
+                     if (!v.empty())
+                        values_[fk] = v;
+                  }
+               }
+               continue;
             }
          }
 
@@ -287,11 +348,40 @@ static bool loadMaterials(const SimpleYAMLParser &parser, SceneDescription &scen
       MaterialDesc mat;
       mat.type = parseMaterialType(mat_type);
       mat.albedo = parser.getVec3(prefix + ".albedo", Vec3(0.7, 0.7, 0.7));
-      mat.emission = parser.getVec3(prefix + ".emission", Vec3(0, 0, 0));
+      if (parser.hasKey(prefix + ".color") && parser.hasKey(prefix + ".emission_intensity"))
+      {
+         Vec3 color = parser.getVec3(prefix + ".color", Vec3(1, 1, 1));
+         float intensity = parser.getFloat(prefix + ".emission_intensity", 1.0f);
+         mat.emission = color * intensity;
+      }
+      else
+      {
+         mat.emission = parser.getVec3(prefix + ".emission", Vec3(0, 0, 0));
+      }
       mat.roughness = parser.getFloat(prefix + ".roughness", 0.0f);
       mat.metallic = parser.getFloat(prefix + ".metallic", 0.0f);
       mat.refractive_index = parser.getFloat(prefix + ".refractive_index", 1.0f);
       mat.transmission = parser.getFloat(prefix + ".transmission", 0.0f);
+      mat.anisotropy = parser.getFloat(prefix + ".anisotropy", 0.0f);
+      mat.eta = parser.getVec3(prefix + ".eta", Vec3(0, 0, 0));
+      mat.k = parser.getVec3(prefix + ".k", Vec3(0, 0, 0));
+      mat.film_thickness = parser.getFloat(prefix + ".film_thickness", 400.0f);
+      mat.film_ior = parser.getFloat(prefix + ".film_ior", 1.33f);
+
+      // Support named metal presets for anisotropic_metal
+      if (mat.type == MaterialType::ANISOTROPIC_METAL && parser.hasKey(prefix + ".preset"))
+      {
+         string preset = removeQuotes(parser.getString(prefix + ".preset"));
+         if (preset == "gold") {
+            mat.eta = Vec3(0.18, 0.42, 1.37); mat.k = Vec3(3.42, 2.35, 1.77);
+         } else if (preset == "silver") {
+            mat.eta = Vec3(0.05, 0.06, 0.05); mat.k = Vec3(4.18, 3.35, 2.58);
+         } else if (preset == "copper") {
+            mat.eta = Vec3(0.27, 0.68, 1.22); mat.k = Vec3(3.60, 2.63, 2.29);
+         } else if (preset == "aluminum") {
+            mat.eta = Vec3(1.35, 0.97, 0.53); mat.k = Vec3(7.47, 6.40, 5.28);
+         }
+      }
 
       // Check for procedural pattern
       if (parser.hasKey(prefix + ".pattern.type"))
@@ -314,7 +404,8 @@ static bool loadMaterials(const SimpleYAMLParser &parser, SceneDescription &scen
 }
 
 static bool loadGeometry(const SimpleYAMLParser &parser, SceneDescription &scene,
-                         const map<string, int> &material_name_to_id)
+                         const map<string, int> &material_name_to_id,
+                         const string &scene_dir)
 {
    // Try to load geometry by index
    for (int i = 0; i < 1000; ++i)
@@ -338,6 +429,10 @@ static bool loadGeometry(const SimpleYAMLParser &parser, SceneDescription &scene
       }
       int mat_id = it->second;
 
+      // Check visibility flag (default: true)
+      string vis_str = removeQuotes(parser.getString(prefix + ".visible", "true"));
+      bool visible = (vis_str != "false" && vis_str != "0");
+
       if (geom_type == "sphere")
       {
          Vec3 center = parser.getVec3(prefix + ".center");
@@ -359,8 +454,45 @@ static bool loadGeometry(const SimpleYAMLParser &parser, SceneDescription &scene
          Vec3 v = parser.getVec3(prefix + ".v");
          scene.addRectangle(corner, u, v, mat_id);
       }
+      else if (geom_type == "triangle")
+      {
+         Vec3 v0 = parser.getVec3(prefix + ".v0");
+         Vec3 v1 = parser.getVec3(prefix + ".v1");
+         Vec3 v2 = parser.getVec3(prefix + ".v2");
 
-      cout << "  Loaded " << geom_type << " with material " << mat_name << "\n";
+         if (parser.hasKey(prefix + ".n0"))
+         {
+            Vec3 n0 = parser.getVec3(prefix + ".n0");
+            Vec3 n1 = parser.getVec3(prefix + ".n1");
+            Vec3 n2 = parser.getVec3(prefix + ".n2");
+            scene.addTriangleWithNormals(v0, v1, v2, n0, n1, n2, mat_id);
+         }
+         else
+         {
+            scene.addTriangle(v0, v1, v2, mat_id);
+         }
+      }
+      else if (geom_type == "obj")
+      {
+         string obj_file = removeQuotes(parser.getString(prefix + ".file"));
+         Vec3 obj_position = parser.getVec3(prefix + ".position", Vec3(0, 0, 0));
+         Vec3 obj_scale = parser.getVec3(prefix + ".scale", Vec3(1, 1, 1));
+
+         // Resolve path relative to scene file directory
+         string obj_path = obj_file;
+         if (!obj_file.empty() && obj_file[0] != '/')
+            obj_path = scene_dir + "/" + obj_file;
+
+         int tri_count = OBJLoader::loadOBJ(obj_path, scene, mat_id, obj_position, obj_scale);
+         if (tri_count < 0)
+            cerr << "ERROR: Failed to load OBJ file: " << obj_path << "\n";
+      }
+
+      // Apply visibility flag to the last added geometry
+      if (!scene.geometries.empty())
+         scene.geometries.back().visible = visible;
+
+      cout << "  Loaded " << geom_type << " with material " << mat_name << (visible ? "" : " (invisible)") << "\n";
    }
 
    return !scene.geometries.empty();
@@ -384,6 +516,41 @@ bool loadSceneFromYAML(const char *filename, SceneDescription &scene)
    scene.geometries.clear();
    scene.meshes.clear();
 
+   // Load camera settings (optional)
+   if (parser.hasKey("camera.position"))
+      scene.camera_position = parser.getVec3("camera.position");
+   if (parser.hasKey("camera.look_at"))
+      scene.camera_look_at = parser.getVec3("camera.look_at");
+   if (parser.hasKey("camera.up"))
+      scene.camera_up = parser.getVec3("camera.up");
+   if (parser.hasKey("camera.fov"))
+      scene.camera_fov = parser.getFloat("camera.fov", 90.0f);
+
+   // Load scene settings (optional)
+   if (parser.hasKey("settings.background_color"))
+      scene.background_color = parser.getVec3("settings.background_color");
+   if (parser.hasKey("settings.ambient_light"))
+      scene.ambient_light = parser.getFloat("settings.ambient_light", 0.1f);
+   if (parser.hasKey("settings.background_intensity"))
+      scene.background_intensity = parser.getFloat("settings.background_intensity", 1.0f);
+   if (parser.hasKey("settings.use_bvh"))
+   {
+      string bvh_val = removeQuotes(parser.getString("settings.use_bvh", "false"));
+      scene.use_bvh = (bvh_val == "true" || bvh_val == "1");
+   }
+   if (parser.hasKey("settings.adaptive_sampling"))
+   {
+      string val = removeQuotes(parser.getString("settings.adaptive_sampling", "false"));
+      scene.adaptive_sampling = (val == "true" || val == "1");
+   }
+
+   // Derive scene directory for resolving relative OBJ paths
+   string scene_file(filename);
+   string scene_dir = ".";
+   size_t last_slash = scene_file.find_last_of("/\\");
+   if (last_slash != string::npos)
+      scene_dir = scene_file.substr(0, last_slash);
+
    // Load materials first
    map<string, int> material_name_to_id;
    if (!loadMaterials(parser, scene, material_name_to_id))
@@ -394,7 +561,7 @@ bool loadSceneFromYAML(const char *filename, SceneDescription &scene)
    }
 
    // Then load geometry (which references materials)
-   if (!loadGeometry(parser, scene, material_name_to_id))
+   if (!loadGeometry(parser, scene, material_name_to_id, scene_dir))
    {
       cerr << "ERROR: Failed to load geometry"
               "\n";
@@ -450,6 +617,15 @@ bool saveSceneToYAML(const char *filename, const SceneDescription &scene)
       case MaterialType::LIGHT:
          file << "\"light\"";
          break;
+      case MaterialType::ANISOTROPIC_METAL:
+         file << "\"anisotropic_metal\"";
+         break;
+      case MaterialType::THIN_FILM:
+         file << "\"thin_film\"";
+         break;
+      case MaterialType::CLEAR_COAT:
+         file << "\"clear_coat\"";
+         break;
       default:
          file << "\"lambertian\"";
          break;
@@ -477,6 +653,15 @@ bool saveSceneToYAML(const char *filename, const SceneDescription &scene)
       if (mat.transmission > 0)
       {
          file << "    transmission: " << mat.transmission << "\n";
+      }
+      if (mat.anisotropy > 0)
+      {
+         file << "    anisotropy: " << mat.anisotropy << "\n";
+      }
+      if (mat.eta.x() > 0 || mat.eta.y() > 0 || mat.eta.z() > 0)
+      {
+         file << "    eta: [" << mat.eta.x() << ", " << mat.eta.y() << ", " << mat.eta.z() << "]\n";
+         file << "    k: [" << mat.k.x() << ", " << mat.k.y() << ", " << mat.k.z() << "]\n";
       }
 
       // Pattern

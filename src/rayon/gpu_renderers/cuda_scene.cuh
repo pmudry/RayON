@@ -34,7 +34,10 @@ enum class MaterialType : uint8_t
    LIGHT,
    CONSTANT,
    SHOW_NORMALS,
-   SDF_MATERIAL
+   SDF_MATERIAL,
+   ANISOTROPIC_METAL,
+   THIN_FILM,
+   CLEAR_COAT   // Two-layer: glossy dielectric coat over diffuse base
 };
 
 /**
@@ -60,7 +63,14 @@ struct Material
    float metallic;
    float refractive_index;
    float transmission;
+   float anisotropy;    // Anisotropy ratio [0-1]
+   f3 eta;              // Complex IOR real part
+   f3 k;                // Complex IOR imaginary part
    int texture_id;
+
+   // Thin-film interference parameters
+   float film_thickness;   // Film thickness in nanometers
+   float film_ior;         // Refractive index of the thin film
 
    // Procedural pattern support
    ProceduralPattern pattern;
@@ -70,7 +80,9 @@ struct Material
 
    __host__ __device__ Material()
        : type(MaterialType::LAMBERTIAN), albedo(0, 0, 0), emission(0, 0, 0), roughness(0), metallic(0),
-         refractive_index(1), transmission(0), texture_id(-1), pattern(ProceduralPattern::NONE), pattern_color(0, 0, 0),
+         refractive_index(1), transmission(0), anisotropy(0), eta(0, 0, 0), k(0, 0, 0),
+         texture_id(-1), film_thickness(400.0f), film_ior(1.33f),
+         pattern(ProceduralPattern::NONE), pattern_color(0, 0, 0),
          pattern_param1(0), pattern_param2(0)
    {
    }
@@ -159,6 +171,8 @@ struct Geometry
       __host__ __device__ GeomData() {} // Empty constructor for union
    } data;
 
+   bool visible; // If false, geometry is invisible to rays but still emits light
+
    f3 bounds_min, bounds_max;
 };
 
@@ -166,9 +180,22 @@ struct Geometry
 // BVH STRUCTURES (for Phase 5)
 //==============================================================================
 
-struct BVHNode
+/**
+ * @brief Cache-line-aligned BVH node (64 bytes)
+ *
+ * Packed to exactly one 64-byte cache line so that each node fetch loads
+ * all needed data in a single memory transaction. Layout:
+ *   bytes  0-11: bounds_min (f3)
+ *   bytes 12-23: bounds_max (f3)
+ *   bytes 24-27: left_child / first_geom_idx
+ *   bytes 28-31: right_child / geom_count
+ *   byte  32:    is_leaf
+ *   byte  33:    split_axis
+ *   bytes 34-63: padding (reserved for future use)
+ */
+struct alignas(64) BVHNode
 {
-   f3 bounds_min, bounds_max;
+   f3 bounds_min, bounds_max; // 24 bytes
 
    union NodeData
    {
@@ -185,10 +212,11 @@ struct BVHNode
       } leaf;
 
       __host__ __device__ NodeData() {} // Empty constructor for union
-   } data;
+   } data; // 8 bytes
 
-   bool is_leaf;
-   uint8_t split_axis;
+   bool is_leaf;       // 1 byte
+   uint8_t split_axis; // 1 byte
+   uint8_t _pad[30];   // Pad to 64 bytes
 };
 
 //==============================================================================

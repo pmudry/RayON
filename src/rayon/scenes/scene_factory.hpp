@@ -5,6 +5,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <chrono>
 
 using namespace std;
 
@@ -37,8 +38,11 @@ class SceneFactory
             if (scene_desc.use_bvh)
             {
                cout << "Building BVH acceleration structure..." "\n";
+               auto bvh_start = std::chrono::high_resolution_clock::now();
                scene_desc.buildBVH();
-               cout << "BVH built with " << scene_desc.top_level_bvh.nodes.size() << " nodes" "\n";
+               auto bvh_end = std::chrono::high_resolution_clock::now();
+               auto bvh_ms = std::chrono::duration_cast<std::chrono::milliseconds>(bvh_end - bvh_start).count();
+               cout << "BVH built with " << scene_desc.top_level_bvh.nodes.size() << " nodes in " << bvh_ms << " ms" "\n";
             }
             return scene_desc; // Successfully loaded
          }
@@ -65,6 +69,11 @@ class SceneFactory
       using namespace Scene;
       SceneDescription scene_desc;
 
+      scene_desc.camera_position = Vec3(0, 0.6, 2);
+      scene_desc.camera_look_at = Vec3(0, 0.3, -1);
+      scene_desc.camera_up = Vec3(0, 1, 0);
+      scene_desc.camera_fov = 40.0f;
+
       int mat_red = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(0.9, 0.1, 0.1)));
       int mat_grey = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(0.3, 0.3, 0.3)));
       scene_desc.addSphere(Vec3(0, 0.6, -1), 0.5, mat_red);
@@ -83,6 +92,12 @@ class SceneFactory
       using namespace Scene;
       SceneDescription scene_desc;
 
+      // Camera
+      scene_desc.camera_position = Vec3(-2, 2, 5);
+      scene_desc.camera_look_at = Vec3(-2, -0.5, -1);
+      scene_desc.camera_up = Vec3(0, 1, 0);
+      scene_desc.camera_fov = 35.0f;
+
       // === Default scene - Materials ===
       int mat_ground = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(0.44, 0.7, 0.95)));
       int mat_golden = scene_desc.addMaterial(MaterialDesc::roughMirror(Vec3(1.0, 0.85, 0.47), 0.03));
@@ -98,12 +113,20 @@ class SceneFactory
       int mat_torus_orange = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(1.0, 0.6, 0.2)));
       int mat_normal = scene_desc.addMaterial(MaterialDesc::normal());
 
+      // Anisotropic metal demo materials
+      int mat_aniso_gold = scene_desc.addMaterial(MaterialDesc::anisotropicGold(0.3, 0.8));
+      int mat_aniso_copper = scene_desc.addMaterial(MaterialDesc::anisotropicCopper(0.15, 0.5));
+
       // === Default scene - Geometry ===
       scene_desc.addSphere(Vec3(0, -950.5, -1), 950.0, mat_ground); // Ground "plane"
       scene_desc.addSphere(Vec3(-3.5, 0.45, -1.8), 0.8, mat_golden);
       scene_desc.addDisplacedSphere(Vec3(1.2, 0, -2), 0.5, mat_blue_rough, 0.2f, 0);
       scene_desc.addSphere(Vec3(-1.3, 0.18, -5), 0.7, mat_red_dots);
       scene_desc.addSphere(Vec3(-0.7, 0.2, -0.3), 0.6, mat_glass);
+
+      // Anisotropic metal demo spheres
+      scene_desc.addSphere(Vec3(2.5, 0.3, -1.0), 0.7, mat_aniso_gold);
+      scene_desc.addSphere(Vec3(1.5, 0.0, 0.5), 0.5, mat_aniso_copper);
 
       // ISC spheres
       scene_desc.addSphere(Vec3(-3.5, -0.3, 1.2), 0.2, mat_yellow);

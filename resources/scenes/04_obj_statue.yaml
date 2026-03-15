@@ -1,0 +1,110 @@
+# Test scene: OBJ loading and triangle rendering
+# Tests Feature G (triangle intersection), H (OBJ loading), and I (YAML+OBJ)
+
+camera:
+  position: [1.35, 2.9, 3.75]
+  look_at: [0, 0.67, 0]
+  fov: 40
+
+settings:
+  background_color: [0.1, 0.1, 0.15]
+  background_intensity: 0.3
+  use_bvh: true
+
+materials:
+  - name: "ground"
+    type: "lambertian"
+    albedo: [0.5, 0.5, 0.5]
+
+  - name: "obj_material"
+    type: "rough_mirror"
+    albedo: [0.9, 0.6, 0.2]
+    roughness: 0.15
+
+  - name: "triangle_blue"
+    type: "lambertian"
+    albedo: [0.2, 0.4, 0.9]
+
+  - name: "area_light"
+    type: "light"
+    emission: [15, 15, 15]
+
+  - name: glass
+    type: glass
+    albedo: [1.0, 1.0, 1.0]
+    refractive_index: 1.52
+    transmission: 1.0
+
+  # Some plastics
+  - name: "coat_mirror"
+    type: "clear_coat"
+    albedo: [0.85, 0.10, 0.08]   # red base (classic pokéball red)
+    roughness: 0.00
+    refractive_index: 1.5
+
+  - name: "coat_glossy"
+    type: "clear_coat"
+    albedo: [0.85, 0.10, 0.08]
+    roughness: 0.05
+    refractive_index: 1.5
+
+  - name: "coat_satin"
+    type: "clear_coat"
+    albedo: [0.85, 0.10, 0.08]
+    roughness: 0.15
+    refractive_index: 1.5
+
+  - name: "coat_soft"
+    type: "clear_coat"
+    albedo: [0.85, 0.10, 0.08]
+    roughness: 0.30
+    refractive_index: 1.5
+
+  # Some metals
+  - name: "brushed"
+    type: "anisotropic_metal"
+    roughness: 0.3
+    anisotropy: 0.7
+    preset: "silver"  
+  - name: "worn"
+    type: "anisotropic_metal"
+    roughness: 0.8
+    anisotropy: 0.3
+    preset: "gold"    
+  - name: "machined"
+    type: "anisotropic_metal"
+    roughness: 0.4
+    anisotropy: 0.9
+    preset: "copper"
+      
+
+geometry:
+  # Ground plane
+  - type: "rectangle"
+    material: "ground"
+    corner: [-5000, -1, -5000]
+    u: [10000, 0, 0]
+    v: [0, 0, 10000]
+
+  # Area light
+  - type: "rectangle"
+    material: "area_light"
+    corner: [-1.5, 4, -1.5]
+    u: [3, 0, 0]
+    v: [0, 0, 3]
+
+  # OBJ mesh loaded from file
+  - type: "obj"
+    material: "triangle_blue"
+    # material: "coat_glossy"
+    # material: "worn"
+    file: "../models/victory.obj"
+    position: [0, -1, 0]
+    scale: [1, 1, 1]
+
+  # # Standalone triangle for testing direct triangle geometry
+  # - type: "triangle"
+  #   material: "triangle_blue"
+  #   v0: [-3, -1, -1]
+  #   v1: [-1, -1, -1]
+  #   v2: [-2, 1, -0.5]

@@ -17,6 +17,7 @@
 #include "cpu_shapes/rectangle.hpp"
 #include "cpu_shapes/sdf_shape.hpp"
 #include "cpu_shapes/sphere.hpp"
+#include "cpu_shapes/triangle.hpp"
 #include <memory>
 
 using std::make_shared;
@@ -100,6 +101,9 @@ class CPUSceneBuilder
       case MaterialType::DIELECTRIC:
       case MaterialType::LIGHT:
       case MaterialType::SDF_MATERIAL:
+      case MaterialType::ANISOTROPIC_METAL:
+      case MaterialType::THIN_FILM:
+      case MaterialType::CLEAR_COAT:
       default:
          // Use Lambertian as fallback
          return make_shared<Lambertian>(desc.albedo);
@@ -122,10 +126,16 @@ class CPUSceneBuilder
       case GeometryType::SDF_PRIMITIVE:
          return createSDFShape(desc, mat);
 
+      case GeometryType::TRIANGLE:
+         if (desc.data.triangle.has_normals)
+            return make_shared<TriangleShape>(desc.data.triangle.v0, desc.data.triangle.v1, desc.data.triangle.v2,
+                                             desc.data.triangle.n0, desc.data.triangle.n1, desc.data.triangle.n2, mat);
+         else
+            return make_shared<TriangleShape>(desc.data.triangle.v0, desc.data.triangle.v1, desc.data.triangle.v2, mat);
+
       // Other geometry types not yet supported in CPU renderer
       case GeometryType::CUBE:
       case GeometryType::DISPLACED_SPHERE:
-      case GeometryType::TRIANGLE:
       case GeometryType::TRIANGLE_MESH:
       default:
          // Return null for unsupported types

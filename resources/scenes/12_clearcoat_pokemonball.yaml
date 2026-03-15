@@ -1,0 +1,140 @@
+# Clear-coat material demo — Pokémon ball showcase
+#
+# Demonstrates the CLEAR_COAT shader: a two-lobe model combining a smooth
+# dielectric coat (Fresnel reflective) over a Lambertian base.
+# The coat is glossy and achromatic; the base shows the object's colour.
+#
+# Different coat roughnesses are shown across five balls:
+#   1. Mirror coat    (roughness 0.00) — looks almost like a lacquered sphere
+#   2. Glossy coat    (roughness 0.05) — typical car-paint or plastic toy
+#   3. Satin coat     (roughness 0.15) — matte-ish clear coat
+#   4. Soft coat      (roughness 0.30) — diffuse with subtle sheen
+#   5. Rough coat     (roughness 0.50) — mostly diffuse, very faint specular
+
+camera:
+  position: [0, 3.5, 9]
+  look_at: [0, 1, 0]
+  fov: 42
+
+settings:
+  background_color: [0.05, 0.06, 0.08]
+  background_intensity: 0.4
+  use_bvh: true
+
+materials:
+  # ── Clear-coat variants ────────────────────────────────────────────────────
+  - name: "coat_mirror"
+    type: "clear_coat"
+    albedo: [0.85, 0.10, 0.08]   # red base (classic pokéball red)
+    roughness: 0.00
+    refractive_index: 1.5
+
+  - name: "coat_glossy"
+    type: "clear_coat"
+    albedo: [0.85, 0.10, 0.08]
+    roughness: 0.05
+    refractive_index: 1.5
+
+  - name: "coat_satin"
+    type: "clear_coat"
+    albedo: [0.85, 0.10, 0.08]
+    roughness: 0.15
+    refractive_index: 1.5
+
+  - name: "coat_soft"
+    type: "clear_coat"
+    albedo: [0.85, 0.10, 0.08]
+    roughness: 0.30
+    refractive_index: 1.5
+
+  - name: "coat_rough"
+    type: "clear_coat"
+    albedo: [0.85, 0.10, 0.08]
+    roughness: 0.50
+    refractive_index: 1.5
+
+  # ── Reference ball: plain lambertian (no coat) ───────────────────────────
+  - name: "diffuse_red"
+    type: "lambertian"
+    albedo: [0.85, 0.10, 0.08]
+
+  # ── Scene infrastructure ──────────────────────────────────────────────────
+  - name: "ground"
+    type: "lambertian"
+    albedo: [0.55, 0.55, 0.55]
+
+  - name: "back_wall"
+    type: "lambertian"
+    albedo: [0.30, 0.32, 0.36]
+
+  - name: "area_light"
+    type: "light"
+    emission: [45,45,45]
+
+  - name: "fill_light"
+    type: "light"    
+    emission: [20,20,20]
+
+geometry:
+  # ── Ground plane ──────────────────────────────────────────────────────────
+  - type: "rectangle"
+    material: "ground"
+    corner: [-200, 0, -6]
+    u: [400, 0, 0]
+    v: [0, 0, 400]
+
+  # ── Back wall ─────────────────────────────────────────────────────────────
+  - type: "rectangle"
+    material: "back_wall"
+    corner: [-200, 0, -6]
+    u: [400, 0, 0]
+    v: [0, 400, 0]
+
+  # ── Key light (top-right, warm) ───────────────────────────────────────────
+  - type: "rectangle"
+    material: "area_light"
+    corner: [1.0, 7, -1.5]
+    u: [2.5, 0, 0]
+    v: [0, 0, 2.5]
+
+  # ── Fill light (top-left, cool) ───────────────────────────────────────────
+  - type: "rectangle"
+    material: "fill_light"
+    corner: [-4, 5.5, 2]
+    u: [1.5, 0, 0]
+    v: [0, 0, 1.5]
+
+  # ── PokéBalls: scaled to ~1.8 unit diameter, evenly spaced on X ──────────
+  # Position offsets applied via position + scale (OBJ centered at ~(6,0,14))
+  # Scale 0.0225 → 79*0.0225 ≈ 1.8 units diameter
+
+  # Ball 1 — mirror coat
+  - type: "obj"
+    material: "coat_mirror"
+    file: "../models/suzanne.obj"
+    position: [-5.0, 2, 0]
+    scale: [0.5,0.5,0.5]
+  # Ball 2 — glossy coat (default "car paint" look)
+  - type: "obj"
+    material: "coat_glossy"
+    file: "../models/suzanne.obj"
+    position: [-2.5, 2, 0]
+    scale: [0.5,0.5,0.5]
+  # Ball 3 — satin coat
+  - type: "obj"
+    material: "coat_satin"
+    file: "../models/suzanne.obj"
+    position: [0.0, 2, 0]
+    scale: [0.5,0.5,0.5]
+  # Ball 4 — soft coat
+  - type: "obj"
+    material: "coat_soft"
+    file: "../models/suzanne.obj"
+    position: [2.5, 2, 0]
+    scale: [0.5,0.5,0.5]
+  # Ball 5 — rough coat
+  - type: "obj"
+    material: "coat_rough"
+    file: "../models/suzanne.obj"
+    position: [5.0, 2, 0]
+    scale: [0.5,0.5,0.5]

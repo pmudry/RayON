@@ -1,0 +1,122 @@
+# ISC Neon Lights illuminating the Stanford Bunny
+# Five colored neon strip lights in ISC palette, dispatched horizontally
+
+camera:
+  position: [0, 3, 8]
+  look_at: [0, 1, 0]
+  fov: 45
+
+settings:
+  background_color: [0.02, 0.02, 0.04]
+  background_intensity: 0.05
+  use_bvh: true
+
+materials:
+  # Ground
+  - name: "ground"
+    type: "lambertian"
+    albedo: [0.15, 0.15, 0.18]
+
+  # Back wall to catch colored light
+  - name: "wall"
+    type: "lambertian"
+    albedo: [0.4, 0.4, 0.42]
+
+  # Bunny material - slightly reflective white to pick up neon colors
+  - name: "bunny"
+    type: "rough_mirror"
+    albedo: [0.92, 0.92, 0.92]
+    roughness: 0.35
+    metallic: 0.2
+
+  # ISC neon lights (emissive versions of the ISC palette)
+  # Yellow  : rgb(247, 241, 159)
+  - name: "neon_yellow"
+    type: "light"
+    emission: [12.0, 11.7, 7.8]
+    albedo: [0.969, 0.945, 0.624]
+
+  # Blue    : rgb(140, 198, 230)
+  - name: "neon_blue"
+    type: "light"
+    emission: [6.8, 9.7, 11.3]
+    albedo: [0.549, 0.776, 0.902]
+
+  # Violet  : rgb(168, 144, 192)
+  - name: "neon_violet"
+    type: "light"
+    emission: [8.2, 7.1, 9.4]
+    albedo: [0.659, 0.565, 0.753]
+
+  # Rose    : rgb(226, 171, 186)
+  - name: "neon_rose"
+    type: "light"
+    emission: [11.1, 8.4, 9.1]
+    albedo: [0.886, 0.671, 0.729]
+
+  # Green   : rgb(152, 199, 191)
+  - name: "neon_green"
+    type: "light"
+    emission: [7.4, 9.8, 9.3]
+    albedo: [0.596, 0.780, 0.749]
+
+geometry:
+  # Ground plane
+  - type: "rectangle"
+    material: "ground"
+    corner: [-20, -0.5, -15]
+    u: [40, 0, 0]
+    v: [0, 0, 35]
+
+  # Back wall
+  - type: "rectangle"
+    material: "wall"
+    corner: [-20, -0.5, -1.5]
+    u: [40, 0, 0]
+    v: [0, 15, 0]
+
+  # Stanford Bunny (centered on the ground)
+  - type: "obj"
+    material: "bunny"
+    file: "../models/bunny-3.obj"
+    position: [0, -0.5, 2]
+    scale: [2, 2, 2]
+
+  # === ISC Neon strip lights ===
+  # Five vertical neon rectangles dispatched horizontally above the bunny
+  # Arranged left to right: Yellow, Blue, Violet, Rose, Green
+
+  # Neon 1 - Yellow (far left)
+  - type: "rectangle"
+    material: "neon_yellow"
+    corner: [-4.5, 3.5, -1.0]
+    u: [0.15, 0, 0]
+    v: [0, 1.8, 0]
+
+  # Neon 2 - Blue (left)
+  - type: "rectangle"
+    material: "neon_blue"
+    corner: [-2.2, 3.5, -1.0]
+    u: [0.15, 0, 0]
+    v: [0, 1.8, 0]
+
+  # Neon 3 - Violet (center)
+  - type: "rectangle"
+    material: "neon_violet"
+    corner: [0.0, 3.5, -1.0]
+    u: [0.15, 0, 0]
+    v: [0, 1.8, 0]
+
+  # Neon 4 - Rose (right)
+  - type: "rectangle"
+    material: "neon_rose"
+    corner: [2.2, 3.5, -1.0]
+    u: [0.15, 0, 0]
+    v: [0, 1.8, 0]
+
+  # Neon 5 - Green (far right)
+  - type: "rectangle"
+    material: "neon_green"
+    corner: [4.5, 3.5, -1.0]
+    u: [0.15, 0, 0]
+    v: [0, 1.8, 0]

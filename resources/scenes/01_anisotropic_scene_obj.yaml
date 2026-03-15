@@ -1,0 +1,277 @@
+# Anisotropic gold 4×4 Grid (OBJ version)
+# 16 icosahedra: X = anisotropy (0.0, 0.33, 0.66, 0.95), Y = roughness (0.1, 0.3, 0.5, 0.8)
+# Roughness increases front to back, anisotropy increases left to right.
+
+camera:
+  position: [0, 5.85, 8.42]
+  look_at: [0, 00, -1.5]
+  fov: 42
+
+settings:
+  use_bvh: true
+  background_color: [0.04, 0.04, 0.8]
+  background_intensity: 0.05
+  adaptive_sampling: false
+
+materials:
+  - name: "ground"
+    type: "lambertian"
+    albedo: [0.4, 0.4, 0.4]
+
+  - name: "light_top"
+    type: "light"
+    color: [1.0, 0.875, 0.75]
+    emission_intensity: 8
+
+  - name: "light_side"
+    type: "light"
+    color: [1.0, 0.875, 0.75]
+    emission_intensity: 2
+
+  # Colored walls for visible environment reflections
+  - name: "wall_red"
+    type: "lambertian"
+    albedo: [0.85, 0.12, 0.12]
+
+  - name: "wall_blue"
+    type: "lambertian"
+    albedo: [0.12, 0.12, 0.85]
+
+  # --- 4×4 grid: roughness × anisotropy, gold preset ---
+  # Row 0 (front): roughness 0.1
+  - name: "al_r010_a000"
+    type: "anisotropic_metal"
+    roughness: 0.1
+    anisotropy: 0.0
+    preset: "gold"
+
+  - name: "al_r010_a033"
+    type: "anisotropic_metal"
+    roughness: 0.1
+    anisotropy: 0.33
+    preset: "gold"
+
+  - name: "al_r010_a066"
+    type: "anisotropic_metal"
+    roughness: 0.1
+    anisotropy: 0.66
+    preset: "gold"
+
+  - name: "al_r010_a095"
+    type: "anisotropic_metal"
+    roughness: 0.1
+    anisotropy: 0.95
+    preset: "gold"
+
+  # Row 1: roughness 0.3
+  - name: "al_r030_a000"
+    type: "anisotropic_metal"
+    roughness: 0.3
+    anisotropy: 0.0
+    preset: "gold"
+
+  - name: "al_r030_a033"
+    type: "anisotropic_metal"
+    roughness: 0.3
+    anisotropy: 0.33
+    preset: "gold"
+
+  - name: "al_r030_a066"
+    type: "anisotropic_metal"
+    roughness: 0.3
+    anisotropy: 0.66
+    preset: "gold"
+
+  - name: "al_r030_a095"
+    type: "anisotropic_metal"
+    roughness: 0.3
+    anisotropy: 0.95
+    preset: "gold"
+
+  # Row 2: roughness 0.5
+  - name: "al_r050_a000"
+    type: "anisotropic_metal"
+    roughness: 0.5
+    anisotropy: 0.0
+    preset: "gold"
+
+  - name: "al_r050_a033"
+    type: "anisotropic_metal"
+    roughness: 0.5
+    anisotropy: 0.33
+    preset: "gold"
+
+  - name: "al_r050_a066"
+    type: "anisotropic_metal"
+    roughness: 0.5
+    anisotropy: 0.66
+    preset: "gold"
+
+  - name: "al_r050_a095"
+    type: "anisotropic_metal"
+    roughness: 0.5
+    anisotropy: 0.95
+    preset: "gold"
+
+  # Row 3 (back): roughness 0.8
+  - name: "al_r080_a000"
+    type: "anisotropic_metal"
+    roughness: 0.8
+    anisotropy: 0.0
+    preset: "gold"
+
+  - name: "al_r080_a033"
+    type: "anisotropic_metal"
+    roughness: 0.8
+    anisotropy: 0.33
+    preset: "gold"
+
+  - name: "al_r080_a066"
+    type: "anisotropic_metal"
+    roughness: 0.8
+    anisotropy: 0.66
+    preset: "gold"
+
+  - name: "al_r080_a095"
+    type: "anisotropic_metal"
+    roughness: 0.8
+    anisotropy: 0.95
+    preset: "gold"
+
+geometry:
+  # Ground
+  - type: "sphere"
+    material: "ground"
+    center: [0, -1000, -1]
+    radius: 1000
+
+  # Top area light (narrow strip to show anisotropic stretching)
+  - type: "rectangle"
+    material: "light_top"
+    corner: [-2.0, 6, -5]
+    u: [4.0, 0, 0]
+    v: [0, 0, 6]
+
+  # Side fill light
+  - type: "rectangle"
+    material: "light_side"
+    corner: [19, 1, -8]
+    u: [0, 3, 0]
+    v: [0, 0, 12]
+
+  # Colored side walls (provide reflectable environment)
+  - type: "rectangle"
+    material: "wall_red"
+    corner: [-20, 0, -10]
+    u: [0, 6, 0]
+    v: [0, 0, 16]
+
+  - type: "rectangle"
+    material: "wall_blue"
+    corner: [20, 0, -10]
+    u: [0, 6, 0]
+    v: [0, 0, 16]
+
+  # === 4×4 grid of icosahedra ===
+  # X = anisotropy (left to right: 0.0, 0.33, 0.66, 0.95)
+  # Z = roughness  (front to back: 0.1, 0.3, 0.5, 0.8)
+
+  # Row 0 (front, z=1.5): roughness 0.1
+  - type: "obj"
+    material: "al_r010_a000"
+    file: "../models/cylinder.obj"
+    position: [-3, 0.7, 1.5]
+    scale: [0.7, 0.7, 0.7]
+
+  - type: "obj"
+    material: "al_r010_a033"
+    file: "../models/cylinder.obj"
+    position: [-1, 0.7, 1.5]
+    scale: [0.7, 0.7, 0.7]
+
+  - type: "obj"
+    material: "al_r010_a066"
+    file: "../models/cylinder.obj"
+    position: [1, 0.7, 1.5]
+    scale: [0.7, 0.7, 0.7]
+
+  - type: "obj"
+    material: "al_r010_a095"
+    file: "../models/cylinder.obj"
+    position: [3, 0.7, 1.5]
+    scale: [0.7, 0.7, 0.7]
+
+  # Row 1 (z=-0.5): roughness 0.3
+  - type: "obj"
+    material: "al_r030_a000"
+    file: "../models/cylinder.obj"
+    position: [-3, 0.7, -0.5]
+    scale: [0.7, 0.7, 0.7]
+
+  - type: "obj"
+    material: "al_r030_a033"
+    file: "../models/cylinder.obj"
+    position: [-1, 0.7, -0.5]
+    scale: [0.7, 0.7, 0.7]
+
+  - type: "obj"
+    material: "al_r030_a066"
+    file: "../models/cylinder.obj"
+    position: [1, 0.7, -0.5]
+    scale: [0.7, 0.7, 0.7]
+
+  - type: "obj"
+    material: "al_r030_a095"
+    file: "../models/cylinder.obj"
+    position: [3, 0.7, -0.5]
+    scale: [0.7, 0.7, 0.7]
+
+  # Row 2 (z=-2.5): roughness 0.5
+  - type: "obj"
+    material: "al_r050_a000"
+    file: "../models/cylinder.obj"
+    position: [-3, 0.7, -2.5]
+    scale: [0.7, 0.7, 0.7]
+
+  - type: "obj"
+    material: "al_r050_a033"
+    file: "../models/cylinder.obj"
+    position: [-1, 0.7, -2.5]
+    scale: [0.7, 0.7, 0.7]
+
+  - type: "obj"
+    material: "al_r050_a066"
+    file: "../models/cylinder.obj"
+    position: [1, 0.7, -2.5]
+    scale: [0.7, 0.7, 0.7]
+
+  - type: "obj"
+    material: "al_r050_a095"
+    file: "../models/cylinder.obj"
+    position: [3, 0.7, -2.5]
+    scale: [0.7, 0.7, 0.7]
+
+  # Row 3 (back, z=-4.5): roughness 0.8
+  - type: "obj"
+    material: "al_r080_a000"
+    file: "../models/cylinder.obj"
+    position: [-3, 0.7, -4.5]
+    scale: [0.7, 0.7, 0.7]
+
+  - type: "obj"
+    material: "al_r080_a033"
+    file: "../models/cylinder.obj"
+    position: [-1, 0.7, -4.5]
+    scale: [0.7, 0.7, 0.7]
+
+  - type: "obj"
+    material: "al_r080_a066"
+    file: "../models/cylinder.obj"
+    position: [1, 0.7, -4.5]
+    scale: [0.7, 0.7, 0.7]
+
+  - type: "obj"
+    material: "al_r080_a095"
+    file: "../models/cylinder.obj"
+    position: [3, 0.7, -4.5]
+    scale: [0.7, 0.7, 0.7]
