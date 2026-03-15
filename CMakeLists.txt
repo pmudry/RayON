@@ -89,8 +89,11 @@ set(SOURCE_RAYON
     src/rayon/gpu_renderers/scene_builder_cuda.cu
     src/rayon/gpu_renderers/shaders/render_acc_kernel.cu
     src/rayon/gpu_renderers/shaders/shader_golf.cu
-    src/rayon/gpu_renderers/optix/optix_renderer.cu
 )
+
+if(OptiX_INCLUDE_DIR)
+    list(APPEND SOURCE_RAYON src/rayon/gpu_renderers/optix/optix_renderer.cu)
+endif()
 
 # Enable colored compiler output for Make builds
 if(CMAKE_GENERATOR STREQUAL "Unix Makefiles")
