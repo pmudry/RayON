@@ -56,8 +56,8 @@ Representative renders from different scenes and material setups.
 </p>
 
 <p align="center">
-    <img src="images/samples/metals%20shine.png" alt="Metals shine sample render" width="48%">
-    <img src="images/samples/metals%20shine%202.png" alt="Metals shine alternate sample render" width="48%">
+    <img src="images/samples/plastic_shading.png" alt="Plastic shading sample render" width="48%">
+    <img src="images/samples/dielectric%20metsals.png" alt="Dielectric metals sample render" width="48%">
 </p>
 
 <p align="center">
