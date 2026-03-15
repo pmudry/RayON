@@ -400,9 +400,9 @@ int main(int argc, char *argv[])
       camera.samples_per_pixel = 2000;
       RendererOptiXProgressive renderer;
       RendererOptiXProgressive::Settings settings;
-      settings.samples_per_batch = args.start_samples;
+      settings.samples_per_batch = args.samples_per_batch;
       settings.auto_accumulate = args.auto_accumulate;
-      settings.target_fps = args.target_fps;
+      settings.target_fps = 60.0f;
       settings.adaptive_depth = args.adaptive_depth;
       renderer.setSettings(settings);
       coordinator.render(renderer, localImage);
