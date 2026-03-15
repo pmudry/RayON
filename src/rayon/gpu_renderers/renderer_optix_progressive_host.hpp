@@ -24,6 +24,7 @@
 #include <iostream>
 #include <vector>
 
+#include "imgui.h"
 #include "render/render_utils.hpp"
 #include "render/renderer_interface.hpp"
 #include "sdl_gui_controls.hpp"
@@ -99,8 +100,6 @@ class RendererOptiXProgressive : public IRenderer
          return;
       int max_samples = camera.samples_per_pixel;
 
-      gui.printControls(samples_per_batch, max_samples, auto_accumulate);
-
       // Initialize camera controls
       CameraControlHandler camera_control;
       camera_control.initializeCameraControls(look_from, look_at);
@@ -121,6 +120,9 @@ class RendererOptiXProgressive : public IRenderer
       bool needs_rerender = false;
       bool force_immediate_render = false;
       float samples_per_batch_float = static_cast<float>(samples_per_batch);
+      float current_sps = 0.0f;
+      float current_ms_per_sample = 0.0f;
+      float cam_fov_ui = static_cast<float>(camera.vfov);
 
       // Motion detection
       bool is_camera_moving = false;
@@ -143,20 +145,6 @@ class RendererOptiXProgressive : public IRenderer
             auto_accumulate = accumulation_enabled;
       };
 
-      // UI slider state
-      SliderBounds samples_slider_bounds = {0, 0, 0, 0, 1.0f, 256.0f, &samples_per_batch_float};
-      SliderBounds intensity_slider_bounds = {0, 0, 0, 0, 0.1f, 3.0f, &light_intensity};
-      SliderBounds background_slider_bounds = {0, 0, 0, 0, 0.0f, 3.0f, &background_intensity};
-      SliderBounds fuzziness_slider_bounds = {0, 0, 0, 0, 0.0f, 5.0f, &metal_fuzziness};
-      SliderBounds glass_ior_slider_bounds = {0, 0, 0, 0, 1.0f, 2.5f, &glass_refraction_index};
-      SliderBounds dof_aperture_slider_bounds = {0, 0, 0, 0, 0.0f, 1.0f, &dof_aperture};
-      SliderBounds dof_focus_slider_bounds = {0, 0, 0, 0, 1.0f, 50.0f, &dof_focus_distance};
-      SDL_Rect toggle_button_rect = {0, 0, 0, 0};
-      SDL_Rect orbit_button_rect = {0, 0, 0, 0};
-      SDL_Rect dof_button_rect = {0, 0, 0, 0};
-      bool dragging_slider = false;
-      SliderBounds *active_slider = nullptr;
-
       // Rendering buffers
       SDL_Event event;
       std::vector<unsigned char> display_image(image_width * image_height * image_channels);
@@ -173,17 +161,30 @@ class RendererOptiXProgressive : public IRenderer
       // ─── Main loop ───────────────────────────────────────────────────────────
       while (running)
       {
-         while (gui.pollEvent(event))
+         while (SDLGuiHandler::pollEvent(event))
          {
             if (event.type == SDL_QUIT || (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE))
             {
                running = false;
             }
-            else if (event.type == SDL_KEYDOWN)
+
+            ImGuiIO &io = ImGui::GetIO();
+            if (io.WantCaptureMouse)
+            {
+               if (event.type == SDL_MOUSEBUTTONDOWN || event.type == SDL_MOUSEBUTTONUP ||
+                   event.type == SDL_MOUSEMOTION || event.type == SDL_MOUSEWHEEL)
+                  continue;
+            }
+
+            if (event.type == SDL_KEYDOWN && !io.WantCaptureKeyboard)
             {
                if (event.key.keysym.sym == SDLK_h)
                {
                   gui.toggleControls();
+               }
+               else if (event.key.keysym.sym == SDLK_RETURN)
+               {
+                  gui.toggleWindowCollapse();
                }
                else if (camera_control.handleKeyDown(event, accumulation_enabled, samples_per_batch_float,
                                                      light_intensity, background_intensity, needs_rerender,
@@ -195,33 +196,16 @@ class RendererOptiXProgressive : public IRenderer
             }
             else if (event.type == SDL_MOUSEBUTTONDOWN)
             {
-               syncSamplesFromSlider();
-               if (camera_control.handleMouseButtonDown(
-                       event, dragging_slider, active_slider, samples_slider_bounds, intensity_slider_bounds,
-                       background_slider_bounds, fuzziness_slider_bounds, glass_ior_slider_bounds,
-                       dof_aperture_slider_bounds, dof_focus_slider_bounds, toggle_button_rect, orbit_button_rect,
-                       dof_button_rect, accumulation_enabled, dof_enabled, samples_per_batch_float, light_intensity,
-                       background_intensity, metal_fuzziness, glass_refraction_index, dof_aperture, dof_focus_distance,
-                       needs_rerender, camera_changed, gui.getShowControls()))
-               {
-                  syncSamplesFromSlider();
-                  propagateAccumulationToggle();
-               }
+               camera_control.handleMouseButtonDown(event);
             }
             else if (event.type == SDL_MOUSEBUTTONUP)
             {
-               camera_control.handleMouseButtonUp(event, dragging_slider, active_slider);
+               camera_control.handleMouseButtonUp(event);
             }
             else if (event.type == SDL_MOUSEMOTION)
             {
-               if (camera_control.handleMouseMotion(
-                       event, dragging_slider, active_slider, samples_slider_bounds, intensity_slider_bounds,
-                       background_slider_bounds, fuzziness_slider_bounds, glass_ior_slider_bounds,
-                       dof_aperture_slider_bounds, dof_focus_slider_bounds, samples_per_batch_float, light_intensity,
-                       background_intensity, metal_fuzziness, glass_refraction_index, dof_aperture, dof_focus_distance,
-                       needs_rerender, camera_changed, look_from, look_at, vup, basis_w, gui.getShowControls()))
+               if (camera_control.handleMouseMotion(event, look_from, look_at, vup, basis_w))
                {
-                  syncSamplesFromSlider();
                   camera_changed = true;
                }
             }
@@ -265,13 +249,11 @@ class RendererOptiXProgressive : public IRenderer
          if (needs_rerender && current_samples > 0)
          {
             render::convertAccumBufferToImage(display_view, accum_buffer, current_samples, gamma);
-            displayFrame(gui, display_image, current_samples, adaptive_samples_per_batch, light_intensity,
-                         background_intensity, metal_fuzziness, glass_refraction_index, accumulation_enabled,
-                         camera_control.isAutoOrbitEnabled(), dof_enabled, dof_aperture, dof_focus_distance,
-                         samples_slider_bounds, intensity_slider_bounds, background_slider_bounds,
-                         fuzziness_slider_bounds, glass_ior_slider_bounds, dof_aperture_slider_bounds,
-                         dof_focus_slider_bounds, toggle_button_rect, orbit_button_rect, dof_button_rect,
-                         image_channels);
+            bool auto_orbit = camera_control.isAutoOrbitEnabled();
+            displayFrame(gui, display_image, current_samples, current_sps, current_ms_per_sample,
+                         accumulation_enabled, auto_orbit, dof_enabled, dof_aperture, dof_focus_distance,
+                         light_intensity, background_intensity, metal_fuzziness, glass_refraction_index,
+                         samples_per_batch_float, cam_fov_ui, image_channels);
             if (target.pixels) *target.pixels = display_image;
             needs_rerender = false;
          }
@@ -295,18 +277,22 @@ class RendererOptiXProgressive : public IRenderer
                         num_materials, background_intensity, dof_enabled, dof_aperture, dof_focus_distance);
 
             auto frame_end = std::chrono::high_resolution_clock::now();
-            (void)(frame_end - frame_start); // timing available for future adaptive tuning
+            std::chrono::duration<float, std::milli> frame_time = frame_end - frame_start;
+            if (frame_time.count() > 0.0f)
+            {
+               float total_samples = static_cast<float>(adaptive_samples_per_batch) * image_width * image_height;
+               current_sps = (total_samples * 1000.0f) / frame_time.count();
+               current_ms_per_sample = frame_time.count() / static_cast<float>(adaptive_samples_per_batch);
+            }
 
             if (is_camera_moving)
                adaptive_samples_per_batch = 5;
 
-            displayFrame(gui, display_image, current_samples, adaptive_samples_per_batch, light_intensity,
-                         background_intensity, metal_fuzziness, glass_refraction_index, accumulation_enabled,
-                         camera_control.isAutoOrbitEnabled(), dof_enabled, dof_aperture, dof_focus_distance,
-                         samples_slider_bounds, intensity_slider_bounds, background_slider_bounds,
-                         fuzziness_slider_bounds, glass_ior_slider_bounds, dof_aperture_slider_bounds,
-                         dof_focus_slider_bounds, toggle_button_rect, orbit_button_rect, dof_button_rect,
-                         image_channels);
+            bool auto_orbit = camera_control.isAutoOrbitEnabled();
+            displayFrame(gui, display_image, current_samples, current_sps, current_ms_per_sample,
+                         accumulation_enabled, auto_orbit, dof_enabled, dof_aperture, dof_focus_distance,
+                         light_intensity, background_intensity, metal_fuzziness, glass_refraction_index,
+                         samples_per_batch_float, cam_fov_ui, image_channels);
 
             if (target.pixels) *target.pixels = display_image;
          }
@@ -377,24 +363,22 @@ class RendererOptiXProgressive : public IRenderer
    }
 
    void displayFrame(SDLGuiHandler &gui, const std::vector<unsigned char> &display_image, int current_samples,
-                     int samples_per_batch, float light_intensity, float background_intensity, float metal_fuzziness,
-                     float glass_refraction_index, bool accumulation_enabled, bool auto_orbit_enabled, bool dof_enabled,
-                     float dof_aperture, float dof_focus_distance, SliderBounds &samples_slider_bounds,
-                     SliderBounds &intensity_slider_bounds, SliderBounds &background_slider_bounds,
-                     SliderBounds &fuzziness_slider_bounds, SliderBounds &glass_ior_slider_bounds,
-                     SliderBounds &dof_aperture_slider_bounds, SliderBounds &dof_focus_slider_bounds,
-                     SDL_Rect &toggle_button_rect, SDL_Rect &orbit_button_rect, SDL_Rect &dof_button_rect,
+                     float current_sps, float current_ms_per_sample,
+                     bool &accumulation_enabled, bool &auto_orbit, bool &dof_enabled,
+                     float &dof_aperture, float &dof_focus_distance,
+                     float &light_intensity, float &background_intensity,
+                     float &metal_fuzziness, float &glass_refraction_index,
+                     float &samples_per_batch_float, float &cam_fov_ui,
                      int image_channels)
    {
-      gui.updateDisplay(display_image, image_channels);
+      // OptiX: no scene switching, no adaptive sampling, no visualization modes
+      gui.updateDisplay(display_image, image_channels, current_sps, current_ms_per_sample, current_samples,
+                        &dof_enabled, &dof_aperture, &dof_focus_distance, &light_intensity,
+                        &background_intensity, &metal_fuzziness, &glass_refraction_index,
+                        &samples_per_batch_float, &accumulation_enabled, &auto_orbit,
+                        nullptr, nullptr, 0,
+                        nullptr, nullptr, &cam_fov_ui);
       gui.drawLogo();
-      gui.drawSampleCountText(current_samples);
-      gui.drawUIControls(samples_per_batch, light_intensity, background_intensity, metal_fuzziness,
-                         glass_refraction_index, accumulation_enabled, auto_orbit_enabled, samples_slider_bounds,
-                         intensity_slider_bounds, background_slider_bounds, fuzziness_slider_bounds,
-                         glass_ior_slider_bounds, toggle_button_rect, orbit_button_rect);
-      gui.drawEffectsPanel(dof_enabled, dof_aperture, dof_focus_distance, dof_aperture_slider_bounds,
-                           dof_focus_slider_bounds, dof_button_rect);
       gui.present();
    }
 };
