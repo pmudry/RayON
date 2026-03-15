@@ -259,14 +259,6 @@ Regularly-spaced dots distributed with the Fibonacci / Vogel spiral on the spher
     dot_radius: 0.33            # Angular radius as fraction of hemisphere
 ```
 
-#### `checkerboard` / `stripes`
-
-```yaml
-pattern:
-  type: "checkerboard"
-  color: [0.05, 0.05, 0.05]
-```
-
 ---
 
 ## `geometry`

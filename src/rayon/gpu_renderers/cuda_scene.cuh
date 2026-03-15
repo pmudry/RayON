@@ -47,7 +47,6 @@ enum class ProceduralPattern : uint8_t
 {
    NONE,           // No pattern, use solid color
    FIBONACCI_DOTS, // Regularly spaced dots using Fibonacci grid
-   CHECKERBOARD,   // Checkerboard pattern
    STRIPES         // Striped pattern
 };
 

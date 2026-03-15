@@ -109,8 +109,6 @@ static ProceduralPattern parsePatternType(const string &type_str)
 {
    if (type_str == "fibonacci_dots")
       return ProceduralPattern::FIBONACCI_DOTS;
-   if (type_str == "checkerboard")
-      return ProceduralPattern::CHECKERBOARD;
    if (type_str == "stripes")
       return ProceduralPattern::STRIPES;
    return ProceduralPattern::NONE;
@@ -708,9 +706,6 @@ bool saveSceneToYAML(const char *filename, const SceneDescription &scene)
          {
          case ProceduralPattern::FIBONACCI_DOTS:
             file << "\"fibonacci_dots\"";
-            break;
-         case ProceduralPattern::CHECKERBOARD:
-            file << "\"checkerboard\"";
             break;
          case ProceduralPattern::STRIPES:
             file << "\"stripes\"";

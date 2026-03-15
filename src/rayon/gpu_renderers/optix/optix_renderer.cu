@@ -289,6 +289,7 @@ static void buildGAS(const Scene::SceneDescription &scene)
       case Scene::GeometryType::SPHERE:
       case Scene::GeometryType::RECTANGLE:
       case Scene::GeometryType::TRIANGLE:
+      case Scene::GeometryType::DISPLACED_SPHERE:
          // These are implemented by the OptiX hit programs.
          supported = true;
          break;
