@@ -15,13 +15,13 @@ theme:
   favicon: assets/images/favicon.png
   palette:
     - scheme: slate
-      primary: blue grey
+      primary: black
       accent: light blue
       toggle:
         icon: material/weather-sunny
         name: Switch to light mode
     - scheme: default
-      primary: blue grey
+      primary: white
       accent: light blue
       toggle:
         icon: material/weather-night

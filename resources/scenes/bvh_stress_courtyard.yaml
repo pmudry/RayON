@@ -15,6 +15,7 @@ settings:
 
 materials:
   - { name: ground, type: lambertian, albedo: [0.35, 0.38, 0.42] }
+  - { name: bg_red, type: lambertian, albedo: [0.75, 0.15, 0.10] }
   - { name: light, type: light, emission: [8.0, 7.5, 7.0], albedo: [1.0, 1.0, 1.0] }
   # --- Pyramid metallic materials (grey/blue, matte metals) ---
   - { name: pyr_slate,    type: rough_mirror, albedo: [0.55, 0.56, 0.60], roughness: 0.25, metallic: 1.0 }
@@ -23,7 +24,10 @@ materials:
   - { name: pyr_gunmetal, type: rough_mirror, albedo: [0.45, 0.47, 0.50], roughness: 0.30, metallic: 1.0 }
 
 geometry:
-  - { type: sphere, material: ground, center: [0.0, -1000.0, 0.0], radius: 1000.0 }
+  - type: "obj"
+    material: bg_red
+    file: "../models/scene_background.obj"
+    scale: [10.0, 10.0, 10.0]    
   - { type: rectangle, material: light, corner: [-10.0, 14.0, -10.0], u: [20.0, 0.0, 0.0], v: [0.0, 0.0, 20.0], visible: false }
   # --- Metallic sphere pyramid (10 layers, 385 spheres) ---
   - { type: sphere, material: pyr_slate, center: [-4.73, 0.50, -4.73], radius: 0.5 }

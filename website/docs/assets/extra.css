@@ -55,6 +55,24 @@
   margin-left: 0.6rem !important;
 }
 
+/* Subtle header: near-black on dark, near-white on light */
+[data-md-color-scheme="slate"] .md-header {
+  background-color: #0d0f14;
+}
+[data-md-color-scheme="default"] .md-header {
+  background-color: #f0f0f2;
+  color: #1a1a2e;
+}
+[data-md-color-scheme="default"] .md-header .md-header__title {
+  color: #1a1a2e;
+}
+[data-md-color-scheme="default"] .md-tabs {
+  background-color: #f0f0f2;
+}
+[data-md-color-scheme="default"] .md-tabs__link {
+  color: #1a1a2e;
+}
+
 
 .feature-grid {
   display: grid;
