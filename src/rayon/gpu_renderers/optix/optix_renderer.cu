@@ -590,10 +590,17 @@ extern "C" void optixRendererDownloadAccum(float *host_accum_buffer, int width, 
    if (!g_state.d_accum_buffer)
       return;
 
-   int num_pixels = width * height;
-   size_t accum_size = (size_t)num_pixels * sizeof(float4);
-   float4 *host_f4 = (float4 *)malloc(accum_size);
-   CUDA_CHECK(cudaMemcpy(host_f4, g_state.d_accum_buffer, accum_size, cudaMemcpyDeviceToHost));
+   const int num_pixels = width * height;
+   const size_t accum_size = static_cast<size_t>(num_pixels) * sizeof(float4);
+
+   // Reuse a persistent host buffer to avoid per-call malloc/free overhead.
+   static std::vector<float4> host_f4;
+   if (static_cast<int>(host_f4.size()) < num_pixels)
+   {
+      host_f4.resize(num_pixels);
+   }
+
+   CUDA_CHECK(cudaMemcpy(host_f4.data(), g_state.d_accum_buffer, accum_size, cudaMemcpyDeviceToHost));
 
    for (int i = 0; i < num_pixels; ++i)
    {
@@ -601,7 +608,6 @@ extern "C" void optixRendererDownloadAccum(float *host_accum_buffer, int width, 
       host_accum_buffer[i * 3 + 1] = host_f4[i].y;
       host_accum_buffer[i * 3 + 2] = host_f4[i].z;
    }
-   free(host_f4);
 }
 
 extern "C" void optixRendererCleanup()
