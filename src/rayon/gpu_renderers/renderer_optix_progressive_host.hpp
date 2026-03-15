@@ -341,20 +341,20 @@ class RendererOptiXProgressive : public IRenderer
                     bool is_moving, bool adaptive_depth, RenderContext &context, int num_materials,
                     float background_intensity, bool dof_enabled, float dof_aperture, float dof_focus_distance)
    {
-      current_samples += samples_per_batch;
-      if (current_samples > max_samples) current_samples = max_samples;
+      // If we've already reached or exceeded the maximum, do not render more samples.
+      if (current_samples >= max_samples) return;
 
-      int actual_samples = samples_per_batch;
-      if (current_samples > max_samples)
-         actual_samples = max_samples - (current_samples - samples_per_batch);
+      const int remaining       = max_samples - current_samples;
+      const int actual_samples  = std::min(samples_per_batch, remaining);
+      const int new_total_samples = current_samples + actual_samples;
 
       const int depth = adaptive_depth
-                            ? calculateProgressiveMaxDepth(current_samples, is_moving, frame.max_depth)
+                            ? calculateProgressiveMaxDepth(new_total_samples, is_moving, frame.max_depth)
                             : frame.max_depth;
 
       unsigned long long ray_count = optixRendererLaunch(
           frame.image_width, frame.image_height, num_materials,
-          actual_samples, current_samples, depth,
+          actual_samples, new_total_samples, depth,
           static_cast<float>(frame.camera_center.x()), static_cast<float>(frame.camera_center.y()),
           static_cast<float>(frame.camera_center.z()),
           static_cast<float>(frame.pixel00_loc.x()), static_cast<float>(frame.pixel00_loc.y()),
@@ -372,6 +372,7 @@ class RendererOptiXProgressive : public IRenderer
 
       context.ray_counter.fetch_add(ray_count, std::memory_order_relaxed);
 
+      current_samples = new_total_samples;
       render::convertAccumBufferToImage(display_target, accum_buffer, current_samples, gamma);
    }
 
