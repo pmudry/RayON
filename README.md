@@ -116,4 +116,4 @@ PRs are welcome, please feel free to contribute.
 # Known issues
 
 - Compilation has been tested on DGX Spark, other platforms are untested yet.
-- The code depends on a proper installation of [`libsdl`](https://www.libsdl.org/) for creating the real-time rendering context. It might work without it in non-interactive mode but this has not been tested. Use at you own risks (or create a PR)
+- The code depends on a proper installation of [`libsdl`](https://www.libsdl.org/) for creating the real-time rendering context. It might work without it in non-interactive mode but this has not been tested. Use at your own risk (or create a PR).
