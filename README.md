@@ -51,8 +51,8 @@ Representative renders from different scenes and material setups.
 </p>
 
 <p align="center">
-    <img src="images/samples/indoor%20spheres.png" alt="Indoor spheres sample render" width="48%">
-    <img src="images/samples/isc%20spheres.png" alt="ISC spheres sample render" width="48%">
+    <img src="images/samples/gui_debug/indoor%20spheres.png" alt="Indoor spheres sample render" width="48%">
+    <img src="images/samples/isc_spheres.png" alt="ISC spheres sample render" width="48%">
 </p>
 
 <p align="center">
@@ -61,7 +61,7 @@ Representative renders from different scenes and material setups.
 </p>
 
 <p align="center">
-    <img src="images/samples/normals.png" alt="Normals visualization sample render" width="48%">
+    <img src="images/samples/gui_debug/normals.png" alt="Normals visualization sample render" width="48%">
     <img src="images/samples/Screenshot%20from%202026-03-12%2022-25-58.png" alt="Interactive renderer screenshot" width="48%">
 </p>
 
