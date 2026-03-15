@@ -2,21 +2,18 @@
 # Ground plane, cube and sphere using UV-mapped OBJ models with a grid texture.
 # See resources/models/texture_test.mtl and resources/textures/grid_512.png
 
-scene:
-  name: "Texture Test"
-  description: "Grid-textured plane, cube and sphere loaded from MTL-linked OBJ files"
+camera:
+  position: [0.0, 2.5, 5.5]
+  look_at:  [0.0, 0.5, 0.0]
+  up:       [0.0, 1.0, 0.0]
+  fov: 45.0
 
-  camera:
-    position: [0.0, 2.5, 5.5]
-    look_at:  [0.0, 0.5, 0.0]
-    up:       [0.0, 1.0, 0.0]
-    fov: 45.0
-
+settings:
   background_color: [0.15, 0.2, 0.3]
   ambient_light: 0.05
   use_bvh: true
 
-# Only the area-light material is defined here.
+# The area-light material is defined here.
 # The textured/light_mat materials come from texture_test.mtl embedded in the OBJ files.
 materials:
   - name: "area_light"

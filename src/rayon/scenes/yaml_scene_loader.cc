@@ -563,10 +563,15 @@ bool loadSceneFromYAML(const char *filename, SceneDescription &scene)
       scene.ambient_light = parser.getFloat("settings.ambient_light", 0.1f);
    if (parser.hasKey("settings.background_intensity"))
       scene.background_intensity = parser.getFloat("settings.background_intensity", 1.0f);
-   if (parser.hasKey("settings.use_bvh"))
+   // Accept both "settings.use_bvh" (canonical) and "scene.use_bvh" (legacy)
    {
-      string bvh_val = removeQuotes(parser.getString("settings.use_bvh", "false"));
-      scene.use_bvh = (bvh_val == "true" || bvh_val == "1");
+      string bvh_raw;
+      if (parser.hasKey("settings.use_bvh"))
+         bvh_raw = parser.getString("settings.use_bvh", "false");
+      else if (parser.hasKey("scene.use_bvh"))
+         bvh_raw = parser.getString("scene.use_bvh", "false");
+      if (!bvh_raw.empty())
+         scene.use_bvh = (removeQuotes(bvh_raw) == "true" || removeQuotes(bvh_raw) == "1");
    }
    if (parser.hasKey("settings.adaptive_sampling"))
    {
