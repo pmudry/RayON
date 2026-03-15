@@ -472,19 +472,39 @@ Mar 15 ━━ NVIDIA OptiX — 4× speedup (hardware RT)
 
 ---
 
-## Milestone Explorer (Planned)
+## Milestone Explorer
 
 Each milestone above has a corresponding **commit hash** that can be checked out, compiled, and
-run to experience the renderer at that exact point in its evolution. A set of scripts in
-`scripts/milestones/` is planned that will:
+run to experience the renderer at that exact point in its evolution.
+The script `scripts/milestones/goto_milestone.sh` handles the full lifecycle automatically:
 
-1. `git stash` any in-progress work, then `git checkout <hash>`
-2. Run a clean CMake configure and build (with the correct flags for the feature set of that era)
-3. Launch the renderer — either in **offline mode** (writing a reference PNG) or in
-   **interactive mode** (opening the SDL2 window where available)
-4. Restore the original branch on exit
+1. Stashes any uncommitted work (`git stash`)
+2. Checks out the milestone commit (detached HEAD)
+3. Configures and builds into a dedicated `build_milestone/` directory (never touches your main
+   `build/`)
+4. Launches the renderer in the appropriate mode for that milestone
+5. Restores the original branch and pops the stash on exit (even on Ctrl+C)
 
-The planned milestone checkpoints and their intended demo modes are:
+```bash
+# List all milestones
+./scripts/milestones/goto_milestone.sh --list
+
+# Run a milestone in its default mode (offline or interactive SDL)
+./scripts/milestones/goto_milestone.sh 7
+
+# Force an offline render even for interactive milestones
+./scripts/milestones/goto_milestone.sh 10 --offline
+
+# Leave the repo at the milestone commit after running (for exploration)
+./scripts/milestones/goto_milestone.sh 3 --no-restore
+```
+
+!!! tip "Demo modes"
+    Milestones marked **offline** produce a PNG image written into `build_milestone/` or `res/`.
+    Milestones marked **interactive** open the SDL2 window.
+    Use `--offline` to force a PNG render for any milestone.
+
+The milestone checkpoints and their default demo modes are:
 
 | # | Date | Commit | Demo mode | What to see |
 |---|------|--------|-----------|-------------|
@@ -503,8 +523,3 @@ The planned milestone checkpoints and their intended demo modes are:
 | 13 | 2026-03-13 | `1f7a83d` | interactive | Thin-film / clear-coat materials |
 | 14 | 2026-03-15 | `8ec565e` | offline | First OptiX render |
 | 15 | 2026-03-15 | `d831935` | offline | OptiX 4× speedup on dragon mesh |
-
-!!! info "Coming soon"
-    The `scripts/milestones/` restore scripts are in progress. When available, running
-    `scripts/milestones/goto_milestone.sh <N>` will check out, build, and launch the correct
-    version automatically.
