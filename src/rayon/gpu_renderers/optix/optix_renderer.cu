@@ -464,7 +464,17 @@ static void buildGAS(const Scene::SceneDescription &scene)
 
 extern "C" void optixRendererInit() { initializeOptiX(); }
 
-extern "C" void optixRendererBuildScene(const Scene::SceneDescription &scene) { buildGAS(scene); }
+extern "C" void optixRendererBuildScene(const Scene::SceneDescription &scene)
+{
+   if (!g_state.initialized)
+   {
+      printf("OptiX error: optixRendererBuildScene called before successful initialization; "
+             "scene build skipped.\n");
+      return;
+   }
+
+   buildGAS(scene);
+}
 
 // Reset (zero) the device accumulation buffer. Called once before the render loop.
 // Allocates or resizes if needed, then zeros via cudaMemset — no host↔device transfer.
