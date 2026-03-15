@@ -114,6 +114,11 @@ struct OptixLaunchParams
 
    // Environment
    float background_intensity;
+
+   // Dynamic material multipliers (set per-frame from GUI sliders)
+   float light_intensity;      // Multiplier on emissive materials
+   float metal_fuzziness;      // Multiplier on roughness of metallic materials
+   float glass_ior_multiplier; // Multiplier on refractive index of glass/dielectric
 };
 
 // Per-ray data passed through payload pointer.
@@ -127,6 +132,8 @@ struct PRDRadiance
    float3 hit_emission;
    float hit_roughness;
    float hit_refractive_index;
+   float hit_film_thickness;   // THIN_FILM: film thickness in nm
+   float hit_film_ior;         // THIN_FILM: film refractive index
    OptixMaterialType hit_material_type;
    unsigned int seed;
    bool hit;

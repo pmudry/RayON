@@ -587,7 +587,9 @@ extern "C" unsigned long long optixRendererLaunch(int width, int height, int num
                                                    float duy, float duz, float dvx, float dvy, float dvz,
                                                    float cam_ux, float cam_uy, float cam_uz, float cam_vx,
                                                    float cam_vy, float cam_vz, float bg_intensity, bool dof_enabled,
-                                                   float dof_aperture, float dof_focus_dist)
+                                                   float dof_aperture, float dof_focus_dist,
+                                                   float light_intensity, float metal_fuzziness,
+                                                   float glass_ior_multiplier)
 {
    if (!g_state.initialized)
       return 0;
@@ -614,6 +616,9 @@ extern "C" unsigned long long optixRendererLaunch(int width, int height, int num
    launch_params.dof_enabled = dof_enabled;
    launch_params.dof_aperture = dof_aperture;
    launch_params.dof_focus_distance = dof_focus_dist;
+   launch_params.light_intensity = light_intensity;
+   launch_params.metal_fuzziness = metal_fuzziness;
+   launch_params.glass_ior_multiplier = glass_ior_multiplier;
 
    // Single memcpy to persistent device buffer — no malloc/free per batch
    CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(g_state.d_launch_params), &launch_params, sizeof(OptixLaunchParams),

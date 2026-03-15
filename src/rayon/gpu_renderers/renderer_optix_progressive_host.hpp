@@ -49,7 +49,8 @@ extern "C"
                                           float duz, float dvx, float dvy, float dvz, float cam_ux, float cam_uy,
                                           float cam_uz, float cam_vx, float cam_vy, float cam_vz,
                                           float bg_intensity, bool dof_enabled, float dof_aperture,
-                                          float dof_focus_dist);
+                                          float dof_focus_dist, float light_intensity, float metal_fuzziness,
+                                          float glass_ior_multiplier);
    void optixRendererDownloadAccum(float *host_accum_buffer, int width, int height);
    void optixRendererCleanup();
 }
@@ -537,7 +538,8 @@ class RendererOptiXProgressive : public IRenderer
             const int num_materials_active = static_cast<int>(active_scene.materials.size());
             renderBatch(frame, accum_buffer, display_view, current_samples, max_samples,
                         adaptive_samples_per_batch, gamma, is_camera_moving, adaptive_depth, context,
-                        num_materials_active, background_intensity, dof_enabled, dof_aperture, dof_focus_distance);
+                        num_materials_active, background_intensity, dof_enabled, dof_aperture, dof_focus_distance,
+                        light_intensity, metal_fuzziness, glass_refraction_index);
 
             auto frame_end = std::chrono::high_resolution_clock::now();
             std::chrono::duration<float, std::milli> frame_time = frame_end - frame_start;
@@ -566,9 +568,14 @@ class RendererOptiXProgressive : public IRenderer
          bool old_dof = dof_enabled;
          float old_aperture = dof_aperture;
          float old_focus = dof_focus_distance;
+         float old_light = light_intensity;
          float old_background = background_intensity;
+         float old_fuzz = metal_fuzziness;
+         float old_ior = glass_refraction_index;
          float old_cam_fov = cam_fov_ui;
          int old_scene_index = current_scene_index;
+         bool old_adaptive = adaptive_sampling_enabled;
+         float old_adaptive_thresh = adaptive_threshold;
          int old_visualization_mode = visualization_mode;
          bool old_show_normal_arrows = show_normal_arrows;
          int old_normal_arrow_count = normal_arrow_count;
@@ -613,12 +620,17 @@ class RendererOptiXProgressive : public IRenderer
 
          // Detect if ImGui changed rendering parameters
          if (dof_enabled != old_dof || dof_aperture != old_aperture || dof_focus_distance != old_focus ||
-             background_intensity != old_background || cam_fov_ui != old_cam_fov)
+             light_intensity != old_light || background_intensity != old_background ||
+             metal_fuzziness != old_fuzz || glass_refraction_index != old_ior || cam_fov_ui != old_cam_fov)
          {
             if (cam_fov_ui != old_cam_fov)
                camera.vfov = cam_fov_ui;
             camera_changed = true;
          }
+
+         // Adaptive sampling toggled or threshold changed — restart accumulation
+         if (adaptive_sampling_enabled != old_adaptive || adaptive_threshold != old_adaptive_thresh)
+            camera_changed = true;
 
          // Arrow overlay settings changed — refresh display
          if (show_normal_arrows != old_show_normal_arrows || normal_arrow_count != old_normal_arrow_count ||
@@ -654,7 +666,8 @@ class RendererOptiXProgressive : public IRenderer
    void renderBatch(const CameraFrame &frame, std::vector<float> &accum_buffer, RenderTargetView display_target,
                     int &current_samples, int max_samples, int samples_per_batch, float gamma,
                     bool is_moving, bool adaptive_depth, RenderContext &context, int num_materials,
-                    float background_intensity, bool dof_enabled, float dof_aperture, float dof_focus_distance)
+                    float background_intensity, bool dof_enabled, float dof_aperture, float dof_focus_distance,
+                    float light_intensity, float metal_fuzziness, float glass_ior_multiplier)
    {
       // If we've already reached or exceeded the maximum, do not render more samples.
       if (current_samples >= max_samples) return;
@@ -680,7 +693,8 @@ class RendererOptiXProgressive : public IRenderer
           static_cast<float>(frame.pixel_delta_v.z()),
           static_cast<float>(frame.u.x()), static_cast<float>(frame.u.y()), static_cast<float>(frame.u.z()),
           static_cast<float>(frame.v.x()), static_cast<float>(frame.v.y()), static_cast<float>(frame.v.z()),
-          background_intensity, dof_enabled, dof_aperture, dof_focus_distance);
+          background_intensity, dof_enabled, dof_aperture, dof_focus_distance,
+          light_intensity, metal_fuzziness, glass_ior_multiplier);
 
       // Download GPU accumulation buffer to host for display
       optixRendererDownloadAccum(accum_buffer.data(), frame.image_width, frame.image_height);

@@ -225,7 +225,7 @@ extern "C" __global__ void __raygen__rg()
          // Get material data
          if (prd.hit_material_type == OptixMaterialType::LIGHT)
          {
-            color = color + throughput * prd.hit_emission;
+            color = color + throughput * prd.hit_emission * params.light_intensity;
             break;
          }
 
@@ -269,7 +269,8 @@ extern "C" __global__ void __raygen__rg()
          else if (prd.hit_material_type == OptixMaterialType::ROUGH_MIRROR)
          {
             float3 unit_dir = normalize3(cur_direction);
-            float3 perturbed_n = normalize3(prd.hit_normal + prd.hit_roughness * rand_unit_sphere(seed));
+            float eff_roughness = prd.hit_roughness * params.metal_fuzziness;
+            float3 perturbed_n = normalize3(prd.hit_normal + eff_roughness * rand_unit_sphere(seed));
             scatter_dir = reflect3(unit_dir, perturbed_n);
             attenuation = prd.hit_color;
             did_scatter = (dot3(scatter_dir, prd.hit_normal) > 0.0f);
@@ -278,7 +279,8 @@ extern "C" __global__ void __raygen__rg()
                   prd.hit_material_type == OptixMaterialType::DIELECTRIC)
          {
             attenuation = make_float3(1.0f, 1.0f, 1.0f);
-            float ri = prd.front_face ? (1.0f / prd.hit_refractive_index) : prd.hit_refractive_index;
+            float eff_ior = prd.hit_refractive_index * params.glass_ior_multiplier;
+            float ri = prd.front_face ? (1.0f / eff_ior) : eff_ior;
 
             float3 unit_dir = normalize3(cur_direction);
             float cos_theta = fminf(dot3(-unit_dir, prd.hit_normal), 1.0f);
@@ -299,18 +301,65 @@ extern "C" __global__ void __raygen__rg()
          {
             // Approximation: isotropic rough mirror (ignore anisotropy in OptiX)
             float3 unit_dir = normalize3(cur_direction);
-            float3 perturbed_n = normalize3(prd.hit_normal + prd.hit_roughness * rand_unit_sphere(seed));
+            float eff_roughness = prd.hit_roughness * params.metal_fuzziness;
+            float3 perturbed_n = normalize3(prd.hit_normal + eff_roughness * rand_unit_sphere(seed));
             scatter_dir = reflect3(unit_dir, perturbed_n);
             attenuation = prd.hit_color;
             did_scatter = (dot3(scatter_dir, prd.hit_normal) > 0.0f);
          }
          else if (prd.hit_material_type == OptixMaterialType::THIN_FILM)
          {
-            // Approximation: perfect mirror (thin-film color modulation not implemented)
+            // Full Airy thin-film interference (soap bubbles / oil slicks).
+            // Stochastic reflect/transmit sampled from per-wavelength reflectance.
             float3 unit_dir = normalize3(cur_direction);
-            scatter_dir = reflect3(unit_dir, prd.hit_normal);
-            attenuation = prd.hit_color;
-            did_scatter = true;
+            float cos_i = fmaxf(fabsf(dot3(-unit_dir, prd.hit_normal)), 0.001f);
+
+            float n0 = prd.hit_refractive_index; // exterior medium (air ≈ 1.0)
+            float n1 = prd.hit_film_ior;         // film (soap/water ≈ 1.33)
+            float d  = prd.hit_film_thickness;   // film thickness in nm
+
+            float sin_i = sqrtf(fmaxf(0.0f, 1.0f - cos_i * cos_i));
+            float sin_t_sq = (n0 / n1) * (n0 / n1) * (1.0f - cos_i * cos_i);
+            float cos_t = (sin_t_sq >= 1.0f) ? 0.0f : sqrtf(1.0f - sin_t_sq);
+            (void)sin_i;
+
+            float r01_v = (n0 - n1) / (n0 + n1); r01_v *= r01_v;
+            float x01 = 1.0f - cos_i;
+            float R01 = r01_v + (1.0f - r01_v) * (x01 * x01 * x01 * x01 * x01);
+
+            float r12_v = (n1 - n0) / (n1 + n0); r12_v *= r12_v;
+            float x12 = 1.0f - cos_t;
+            float R12 = r12_v + (1.0f - r12_v) * (x12 * x12 * x12 * x12 * x12);
+
+            float sqrt_R = sqrtf(R01 * R12);
+
+            // Airy formula for a single wavelength lambda (nm)
+            auto airy = [&](float lambda) -> float {
+               float delta = (4.0f * M_PIf * n1 * d * cos_t) / lambda;
+               float c = cosf(delta);
+               float num = R01 + R12 + 2.0f * sqrt_R * c;
+               float den = 1.0f + R01 * R12 + 2.0f * sqrt_R * c;
+               return num / fmaxf(den, 1e-8f);
+            };
+
+            float Rr = airy(650.0f), Rg = airy(550.0f), Rb = airy(450.0f);
+            float avg_R = (Rr + Rg + Rb) / 3.0f;
+
+            if (rand_float(seed) < avg_R)
+            {
+               // Reflect — carry iridescent color
+               scatter_dir = reflect3(unit_dir, prd.hit_normal);
+               attenuation = make_float3(Rr, Rg, Rb) * (1.0f / fmaxf(avg_R, 0.001f));
+               did_scatter = (dot3(scatter_dir, prd.hit_normal) > 0.0f);
+            }
+            else
+            {
+               // Transmit — pass straight through
+               scatter_dir = unit_dir;
+               attenuation = make_float3(1.0f - Rr, 1.0f - Rg, 1.0f - Rb)
+                             * (1.0f / fmaxf(1.0f - avg_R, 0.001f));
+               did_scatter = true;
+            }
          }
          else if (prd.hit_material_type == OptixMaterialType::CLEAR_COAT)
          {
@@ -416,6 +465,8 @@ extern "C" __global__ void __closesthit__ch()
       prd->hit_emission = mat.emission;
       prd->hit_roughness = mat.roughness;
       prd->hit_refractive_index = mat.refractive_index;
+      prd->hit_film_thickness = mat.film_thickness;
+      prd->hit_film_ior = mat.film_ior;
 
       // Apply procedural pattern if present
       if (mat.pattern == 1) // FIBONACCI_DOTS

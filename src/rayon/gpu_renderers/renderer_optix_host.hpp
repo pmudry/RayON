@@ -27,7 +27,8 @@ extern "C"
                                           float duz, float dvx, float dvy, float dvz, float cam_ux, float cam_uy,
                                           float cam_uz, float cam_vx, float cam_vy, float cam_vz,
                                           float bg_intensity, bool dof_enabled, float dof_aperture,
-                                          float dof_focus_dist);
+                                          float dof_focus_dist, float light_intensity, float metal_fuzziness,
+                                          float glass_ior_multiplier);
    void optixRendererDownloadAccum(float *host_accum_buffer, int width, int height);
    void optixRendererCleanup();
 }
@@ -78,7 +79,10 @@ class RendererOptiX : public IRenderer
              1.0f,    // background_intensity
              false,   // dof_enabled
              0.0f,    // dof_aperture
-             10.0f);  // dof_focus_distance
+             10.0f,   // dof_focus_distance
+             1.0f,    // light_intensity
+             1.0f,    // metal_fuzziness
+             1.0f);   // glass_ior_multiplier
 
          total_rays += ray_count;
 
