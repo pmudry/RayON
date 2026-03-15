@@ -95,12 +95,12 @@ geometry:
 
   # OBJ mesh loaded from file
   - type: "obj"
-    # material: "triangle_blue"
-    material: "coat_glossy"
+    material: "triangle_blue"
+    # material: "coat_glossy"
     # material: "worn"
-    file: "../models/xyzrgb_dragon.obj"
-    position: [0, -0.6, 0]
-    scale: [0.01, 0.01, 0.01]
+    file: "../models/testObj.obj"
+    position: [0, 0, 0]
+    scale: [1, 1, 1]
 
   # # Standalone triangle for testing direct triangle geometry
   # - type: "triangle"

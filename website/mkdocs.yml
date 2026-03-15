@@ -1,4 +1,4 @@
-site_name: RayON | Yet another ray-tracer
+site_name: RayON | 🚧 Work in progress
 site_description: An interactive high-performance CPU & CUDA path tracer with progressive sampling.
 site_author: Pierre-André Mudry
 site_url: https://pmudry.github.io/RayON
@@ -139,4 +139,5 @@ nav:
     - OBJ Loading: features/obj-loading.md
   - Gallery: gallery.md
   - Performance: performance.md
+  - Development History: history.md
   - About: about.md

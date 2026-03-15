@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-RayON is a high-performance path tracer (C++17/CUDA) with CPU, multi-threaded, and GPU backends, plus interactive SDL2 real-time rendering. Educational project for ISC 302 HPC course, based on "Ray Tracing in One Weekend." Version 1.2.4, licensed GNU AGPL v3.
+RayON is a high-performance path tracer (C++17/CUDA) with CPU, multi-threaded, and GPU backends, plus interactive SDL2 real-time rendering. Educational project for ISC 302 HPC course, based on "Ray Tracing in One Weekend." Version 1.2.4, licensed GNU GPL v3.
 
 ## Build Commands
 

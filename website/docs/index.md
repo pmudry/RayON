@@ -4,6 +4,8 @@ hide:
   - navigation
 ---
 
+<!-- live reload probe -->
+
 <div class="hero-banner">
   <img src="assets/rayon_logo_animated.svg"
        alt="RayON — animated prism logo with light rays dispersing into a spectrum"
@@ -68,6 +70,38 @@ Load one of the bundled example scenes:
 
 See [Getting Started](getting-started.md) for the full setup guide, or
 [YAML Scene Format](features/scenes.md) to author your own scenes.
+
+---
+
+## Sample renders
+
+<div class="img-grid cols-2">
+  <figure>
+    <img src="assets/images/samples/isc_spheres.png" alt="Lambert & glass shading">
+    <figcaption><strong>Lambert and dielectric glass</strong> — straight from "Raytracing in one weekend".</figcaption>
+  </figure>
+  <figure>
+    <img src="assets/images/samples/plastic_shading.png" alt="OBJ loader with plastic shading">
+    <figcaption><strong>Stanford dragon OBJ loading</strong> — with plastic shading and scene integration.</figcaption>
+  </figure>
+  <figure>
+    <img src="assets/images/samples/golf.png" alt="Golf ball with procedural displacement mapping">
+    <figcaption><strong>Golf Ball</strong> — procedural displacement mapping and specular highlights across the dimpled microstructure.</figcaption>
+  </figure>
+  <figure>
+    <img src="assets/images/samples/dielectric metsals.png" alt="Metallic microfacet anisotropic spheres">
+    <figcaption><strong>Anistropic &amp; Metals</strong> — microfacet anisotropic SDF rendering (from PBR model).</figcaption>
+  </figure>
+  <figure>
+    <img src="assets/images/samples/thin_film_shader.png" alt="Thin film shader">
+    <figcaption><strong>Thin film shading</strong> — oil, soap bubbles... you name it.</figcaption>
+  </figure>
+  <figure>
+    <img src="assets/images/samples/cornell.png" alt="Cornell box with area light and colour bleeding">
+    <figcaption><strong>Cornell Box</strong> — diffuse colour bleeding and soft shadows from a rectangular area light.</figcaption>
+  </figure>
+</div>
+
 
 ---
 

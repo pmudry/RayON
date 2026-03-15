@@ -13,7 +13,7 @@ lighting effects, and geometric complexity the renderer supports.
         <figcaption><strong>Cornell Box</strong> — classic test scene. Coloured diffuse walls create colour bleeding on nearby surfaces. Soft shadow from an area light overhead.</figcaption>
       </figure>
       <figure>
-        <img src="../assets/images/samples/indoor spheres.png" alt="Indoor scene with multiple reflective and diffuse spheres">
+        <img src="../assets/images/samples/gui_debug/indoor spheres.png" alt="Indoor scene with multiple reflective and diffuse spheres">
         <figcaption><strong>Indoor Spheres</strong> — assorted dielectric, metallic, and diffuse spheres in an enclosed room with area lighting.</figcaption>
       </figure>
       <figure>
@@ -21,14 +21,15 @@ lighting effects, and geometric complexity the renderer supports.
         <figcaption><strong>ISC Spheres</strong> — multi-material arrangement with strong inter-reflections between specular surfaces.</figcaption>
       </figure>
       <figure>
+        <img src="../assets/images/samples/bvh_testing.png" alt="Many spheres rendered">
+        <figcaption><strong>Multiple spheres</strong> — scene, using for performance assessment in realtime..</figcaption>
+      </figure>
+      <figure>
         <img src="../assets/images/samples/golf.png" alt="Golf ball displacement mapping — dimpled surface under directional light">
         <figcaption><strong>Golf Ball</strong> — procedural displacement mapping creates the characteristic dimple pattern on a sphere. The BRDF captures specular highlights across the surface microstructure.</figcaption>
       </figure>
-    </div>
-
-    <div class="img-grid cols-2">
       <figure>
-        <img src="../assets/images/samples/rayon_4k_render.png" alt="Wide view of diverse material spheres on a brushed-metal ground plane — 4K master render">
+        <img src="../assets/images/samples/large/rayon_4k_render.png" alt="Wide view of diverse material spheres on a brushed-metal ground plane — 4K master render">
         <figcaption><strong>4K Master Render</strong> — full default scene at 4K resolution. Glass, rough mirror, Lambertian, tinted metal, and light-emitting materials share the scene with SDF shapes in the background.</figcaption>
       </figure>
       <figure>
@@ -41,27 +42,17 @@ lighting effects, and geometric complexity the renderer supports.
 
     <div class="img-grid cols-2">
       <figure>
-        <img src="../assets/images/samples/metals shine.png" alt="High-roughness metallic spheres showing warm specular highlights">
+        <img src="../assets/images/samples/metals shine 2.png" alt="Tinted rough mirrors — gold, copper, and steel preset tints">
         <figcaption><strong>Tinted Rough Mirrors</strong> — gold, copper, and steel preset tints. Roughness controls how blurry the reflections appear (0 = perfect mirror, 1 ≈ diffuse).</figcaption>
-      </figure>
-      <figure>
-        <img src="../assets/images/samples/metals shine 2.png" alt="Alternate metallic render with different lighting angle">
-        <figcaption><strong>Metals — Alternate View</strong> — the same scene relit from a different angle. The highlight shape reveals the roughness distribution on each sphere.</figcaption>
       </figure>
       <figure>
         <img src="../assets/images/samples/dielectric metsals.png" alt="Glass dielectric spheres with refractive caustics next to metallic surfaces">
         <figcaption><strong>Dielectrics &amp; Metals</strong> — glass spheres use Snell's law for refraction and Schlick's approximation for the reflection/transmission ratio at grazing angles.</figcaption>
       </figure>
+      
       <figure>
-        <img src="../assets/images/dev/output_rough_mirror.png" alt="Rough mirror with configurable roughness parameter">
-        <figcaption><strong>Rough Mirror Development Render</strong> — early validation render showing the fuzzy reflection model. The reflected image becomes progressively blurred as roughness increases from left to right.</figcaption>
-      </figure>
-    </div>
-
-    <div class="img-grid cols-2">
-      <figure>
-        <img src="../assets/images/dev/new_lambertian.png" alt="Improved cosine-weighted Lambertian scattering">
-        <figcaption><strong>Cosine-weighted Lambertian</strong> — improved hemisphere sampling (see <a href="how-it-works/sampling.md">Sampling</a>). Noise is concentrated in shadow rather than spread uniformly.</figcaption>
+        <img src="../assets/images/samples/thin_film_shader.png" alt="Soap-bubble like thin film shading">
+        <figcaption><strong>Thin-film rendering</strong> — mimics oil stains or soap bubbles.</figcaption>
       </figure>
       <figure>
         <img src="../assets/images/samples/plastic_shading.png" alt="Plastic shading — diffuse base with specular highlight layer">
@@ -73,8 +64,12 @@ lighting effects, and geometric complexity the renderer supports.
 
     <div class="img-grid cols-2">
       <figure>
-        <img src="../assets/images/samples/normals.png" alt="Normal visualisation mode — surfaces coloured by surface normal direction">
+        <img src="../assets/images/samples/gui_debug/normals.png" alt="Normal visualisation mode — surfaces coloured by surface normal direction">
         <figcaption><strong>Normal Visualisation</strong> — the <code>ShowNormals</code> material maps surface normals directly to RGB: <em>R=X, G=Y, B=Z</em>. Useful for debugging geometry orientation and smooth normals on mesh imports.</figcaption>
+      </figure>
+      <figure>
+        <img src="../assets/images/samples/gui_debug/statue.png" alt="Interactive SDL2 window showing real-time accumulative path tracing at 100 Hz">
+        <figcaption><strong>Interactive Mode</strong> — SDL2 window at ~100 Hz with Dear ImGui overlaid. The sample counter and convergence indicator are visible in the top-right panel.</figcaption>
       </figure>
       <figure>
         <img src="../assets/images/samples/obj_loading.png" alt="OBJ mesh loading test — low-poly model with triangulated faces">
@@ -83,10 +78,6 @@ lighting effects, and geometric complexity the renderer supports.
       <figure>
         <img src="../assets/images/dev/dof.png" alt="Depth of field with bokeh blur">
         <figcaption><strong>Depth of Field</strong> — aperture and focus distance are adjustable at runtime via ImGui sliders in interactive mode. The lens model is a thin lens approximation.</figcaption>
-      </figure>
-      <figure>
-        <img src="../assets/images/real_time_raytrace.png" alt="Interactive SDL2 window showing real-time accumulative path tracing at 100 Hz">
-        <figcaption><strong>Interactive Mode</strong> — SDL2 window at ~100 Hz with Dear ImGui overlaid. The sample counter and convergence indicator are visible in the top-right panel.</figcaption>
       </figure>
     </div>
 

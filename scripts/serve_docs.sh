@@ -20,5 +20,5 @@ if [ "${1:-}" = "--build" ]; then
     uv run mkdocs build --strict
     echo "Static site written to: $WEBSITE_DIR/site/"
 else
-    uv run mkdocs serve
+    uv run mkdocs serve --livereload --watch docs --watch mkdocs.yml
 fi

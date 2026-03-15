@@ -17,7 +17,6 @@ def on_pre_build(config, **kwargs):
         # (source path relative to repo root, destination path relative to docs/assets/images/)
         ("images/samples",                        "samples"),
         ("images/for_project",                    "for_project"),
-        ("images/for_project/sampling",           "for_project/sampling"),
         ("images/dev",                            "dev"),
         ("material_gallery/thumbnails",           "thumbnails"),
         ("explanations/lambert sampling",         "sampling"),
@@ -32,10 +31,13 @@ def on_pre_build(config, **kwargs):
         dst = os.path.join(dest_base, dst_rel)
         if not os.path.isdir(src):
             continue
-        os.makedirs(dst, exist_ok=True)
-        for fname in os.listdir(src):
-            if fname.lower().endswith(".png"):
-                shutil.copy2(os.path.join(src, fname), os.path.join(dst, fname))
+        for dirpath, _dirnames, filenames in os.walk(src):
+            rel = os.path.relpath(dirpath, src)
+            dest_dir = os.path.join(dst, rel) if rel != "." else dst
+            os.makedirs(dest_dir, exist_ok=True)
+            for fname in filenames:
+                if fname.lower().endswith(".png"):
+                    shutil.copy2(os.path.join(dirpath, fname), os.path.join(dest_dir, fname))
 
     for src_rel, dst_rel in single_files:
         src = os.path.join(repo_root, src_rel)

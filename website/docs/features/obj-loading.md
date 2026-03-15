@@ -98,7 +98,7 @@ This makes the mesh appear smooth even at low polygon counts:
     <figcaption><strong>Smooth normals</strong> — interpolated per-vertex normals make the low-poly mesh look smooth.</figcaption>
   </figure>
   <figure>
-    <img src="../../assets/images/samples/normals.png" alt="Normal visualisation of OBJ mesh">
+    <img src="../../assets/images/samples/gui_debug/normals.png" alt="Normal visualisation of OBJ mesh">
     <figcaption><strong>Normal visualisation</strong> — the <code>ShowNormals</code> material reveals the gradient of interpolated normals across every face.</figcaption>
   </figure>
 </div>

@@ -111,7 +111,7 @@ materials:
 
 <div class="img-grid cols-2">
   <figure>
-    <img src="../../assets/images/samples/metals shine.png" alt="Tinted rough mirrors — gold, copper, steel">
+    <img src="../../assets/images/samples/metals shine 2.png" alt="Tinted rough mirrors — gold, copper, steel">
     <figcaption>Gold, copper, and steel spheres at <code>roughness=0.05</code>. The warm tint is visible in highlights.</figcaption>
   </figure>
   <figure>
@@ -196,7 +196,7 @@ Red = +X axis, Green = +Y axis, Blue = +Z axis.
 
 **Constant** — emits a fixed solid colour regardless of lighting. Useful for environment backgrounds.
 
-<img class="render-img" src="../../assets/images/samples/normals.png" alt="Show normals visualisation">
+<img class="render-img" src="../../assets/images/samples/gui_debug/normals.png" alt="Show normals visualisation">
 
 *All surfaces shown with the `ShowNormals` material. Note how the smooth normal interpolation on
 the imported mesh makes the face boundaries invisible.*
