@@ -108,7 +108,7 @@ with the regular CUDA path at this point, reducing memory pressure for larger re
 big refactoring pass also separates the two renderers properly so neither needs to know how the
 other works.
 
-<img class="render-img" src="../assets/images/samples/golf_and_procedural_displacement.png" alt="Golf ball with procedural Fibonacci dot displacement mapping">
+<img class="render-img" src="../assets/images/samples/golf.png" alt="Golf ball with procedural Fibonacci dot displacement mapping">
 
 **What changed:** procedural displacement mapping (Fibonacci dot pattern), tiled CUDA rendering,
 merged CUDA renderer, renderer separation into distinct compilation units.
@@ -310,11 +310,6 @@ technical debt since November. The new GUI has collapsible sections, live perfor
 and proper input capture. SDL2_TTF (font rendering) is dropped as a dependency. The version
 number jumps to 1.5.0.
 
-<figure>
-    <img class="render-img" src="../assets/images/samples/gui_debug/statue.png" alt="Dear ImGui interface in interactive mode, shown on the statue scene">
-    <figcaption><em>Dear <a href="https://github.com/ocornut/imgui">ImGui</a> interface in interactive mode, shown on the statue scene.</em></figcaption>
-</figure>
-
 **What changed:** eliminated D2H round-trip, flattened material arrays, reduced BVH warp
 divergence, Dear ImGui integration with collapsible panels and live SPP/ms graphs, version 1.5.0.
 
@@ -330,14 +325,6 @@ difficult light paths) continue accumulating while already-converged areas freez
 an effective speedup for scenes where some regions converge quickly (flat walls, large lights)
 while others are slow (specular caustics, glass edges).
 
-<div class="img-grid cols-3">
-    <img src="../assets/images/dev/adaptive_sampling0.png" alt="Adaptive sampling — early stage, high variance areas still noisy">
-    <img src="../assets/images/dev/adaptive_sampling1.png" alt="Adaptive sampling — mid convergence">
-    <img src="../assets/images/dev/adaptive_sampling2.png" alt="Adaptive sampling — converged, noisy pixels still accumulating">
-</div>
-
-<p align="center"><em>Legend: Heatmap showing the number of accumulated samples per pixel.</em></p>
-
 The normal arrows overlay arrives in the same few days: a debug visualisation that draws a small
 3D arrow from each surface intersection point in the direction of the shading normal. This makes
 it immediately obvious when a mesh has flipped or missing normals — an invaluable diagnostic for
@@ -345,6 +332,12 @@ the triangle pipeline work about to begin.
 
 Scene switching from within the interactive GUI is added, allowing different YAML scenes to be
 loaded and rendered without restarting the program.
+
+<div class="img-grid cols-3">
+  <img src="../assets/images/dev/adaptive_sampling0.png" alt="Adaptive sampling — early stage, high variance areas still noisy">
+  <img src="../assets/images/dev/adaptive_sampling1.png" alt="Adaptive sampling — mid convergence">
+  <img src="../assets/images/dev/adaptive_sampling2.png" alt="Adaptive sampling — converged, noisy pixels still accumulating">
+</div>
 
 <img class="render-img" src="../assets/images/samples/gui_debug/normals.png" alt="Normal arrows overlay — 3D surface normal visualisation">
 
