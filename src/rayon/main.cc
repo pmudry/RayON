@@ -136,7 +136,17 @@ ProgramArgs parseInput(int argc, char *argv[])
          }
          else
          {
-            cout << "Invalid rendering method specified after -m. Allowed values are 0, 1, 2, or 3.\n";
+            cout << "Invalid rendering method specified after -m. Allowed values are 0, 1, 2"
+#ifdef SDL2_FOUND
+                 ", 3"
+#endif
+#ifdef OPTIX_FOUND
+                 ", 4"
+#endif
+#if defined(SDL2_FOUND) && defined(OPTIX_FOUND)
+                 ", 5"
+#endif
+                 ".\n";
             args.samples = -1; // Indicate error
             return args;
          }
