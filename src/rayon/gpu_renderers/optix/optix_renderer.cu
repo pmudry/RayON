@@ -244,6 +244,9 @@ static void initializeOptiX()
 }
 
 // Build GAS from scene description
+// One-time warning flag for unsupported geometry types in OptiX GAS build
+static bool g_optix_warned_unsupported_geometry = false;
+
 static void buildGAS(const Scene::SceneDescription &scene)
 {
    // Free previous resources
@@ -258,13 +261,43 @@ static void buildGAS(const Scene::SceneDescription &scene)
       g_state.d_sbt_hitgroup = 0;
    }
 
-   // Filter out SDF primitives — OptiX has no intersection program for ray-marched SDFs,
-   // matching CUDA behavior which also skips them (intersect_geometry returns false).
+   // Filter to only geometry types that have OptiX intersection programs.
+   // This avoids adding unsupported primitives whose SBT records fall back
+   // to a dummy sphere, which would produce incorrect intersections.
    std::vector<int> supported_indices;
    for (int i = 0; i < static_cast<int>(scene.geometries.size()); ++i)
    {
-      if (scene.geometries[i].type != Scene::GeometryType::SDF_PRIMITIVE)
+      const auto &geom = scene.geometries[i];
+      bool supported = false;
+
+      switch (geom.type)
+      {
+      case Scene::GeometryType::SPHERE:
+      case Scene::GeometryType::RECTANGLE:
+         // These are implemented by the OptiX hit programs.
+         supported = true;
+         break;
+      case Scene::GeometryType::SDF_PRIMITIVE:
+         // Explicitly unsupported in OptiX — handled by CUDA SDF renderer instead.
+         supported = false;
+         break;
+      default:
+         // Other geometry types (e.g., CUBE, TRIANGLE, TRIANGLE_MESH/OBJ) are not
+         // implemented for the OptiX backend yet.
+         supported = false;
+         break;
+      }
+
+      if (supported)
+      {
          supported_indices.push_back(i);
+      }
+      else if (!g_optix_warned_unsupported_geometry)
+      {
+         std::cerr << "[OptiX] Warning: skipping unsupported geometry type(s) in GAS build. "
+                      "They will not be rendered by the OptiX backend.\n";
+         g_optix_warned_unsupported_geometry = true;
+      }
    }
 
    int num_geoms = static_cast<int>(supported_indices.size());
