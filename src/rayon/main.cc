@@ -15,6 +15,10 @@
 #include "gpu_renderers/renderer_optix_host.hpp"
 #endif
 
+#if defined(SDL2_FOUND) && defined(OPTIX_FOUND)
+#include "gpu_renderers/renderer_optix_progressive_host.hpp"
+#endif
+
 #include "render/render_coordinator.hpp"
 
 #include <chrono>
@@ -51,7 +55,11 @@ void dumpHelp()
    cout << "Options:\n";
    cout << "  -h, --help, /?         Show this help message\n";
    cout << "  -m <rendering method>  Set the rendering method (0: CPU sequential, 1: CPU parallel, 2: CUDA GPU, 3: "
-           "CUDA GPU with SDL interactive display)\n";
+           "CUDA GPU with SDL interactive display, 4: OptiX GPU"
+#if defined(SDL2_FOUND) && defined(OPTIX_FOUND)
+           ", 5: OptiX GPU with SDL interactive display"
+#endif
+           ")\n";
    cout << "  -s <samples>           Set the number of samples per pixel (default: " << SAMPLES_PER_PIXEL << ")\n";
    cout << "  -r <height>            Set vertical resolution (allowed: 2160, 1080, 720, 360, 180, default: "
         << IMAGE_HEIGHT << ")\n";
@@ -88,6 +96,9 @@ ProgramArgs parseInput(int argc, char *argv[])
 #endif
 #ifdef OPTIX_FOUND
              || strcmp(argv[i + 1], "4") == 0
+#endif
+#if defined(SDL2_FOUND) && defined(OPTIX_FOUND)
+             || strcmp(argv[i + 1], "5") == 0
 #endif
          )
          {
@@ -219,12 +230,18 @@ int main(int argc, char *argv[])
 #ifdef OPTIX_FOUND
       cout << "\t4. OptiX GPU (hardware RT cores)" << "\n";
 #endif
+#if defined(SDL2_FOUND) && defined(OPTIX_FOUND)
+      cout << "\t5. OptiX GPU with interactive SDL display" << "\n";
+#endif
       cout << "Enter choice (0, 1, 2"
 #ifdef SDL2_FOUND
            << ", 3"
 #endif
 #ifdef OPTIX_FOUND
            << ", 4"
+#endif
+#if defined(SDL2_FOUND) && defined(OPTIX_FOUND)
+           << ", 5"
 #endif
            << "): ";
       string input;
@@ -297,6 +314,22 @@ int main(int argc, char *argv[])
    {
       cout << "Using OptiX GPU rendering (hardware RT cores)..." << "\n";
       RendererOptiX renderer;
+      coordinator.render(renderer, localImage);
+      break;
+   }
+#endif
+#if defined(SDL2_FOUND) && defined(OPTIX_FOUND)
+   case 5:
+   {
+      cout << "Using OptiX GPU with interactive SDL display..." << "\n";
+      camera.samples_per_pixel = 2000;
+      RendererOptiXProgressive renderer;
+      RendererOptiXProgressive::Settings settings;
+      settings.samples_per_batch = args.start_samples;
+      settings.auto_accumulate = args.auto_accumulate;
+      settings.target_fps = args.target_fps;
+      settings.adaptive_depth = args.adaptive_depth;
+      renderer.setSettings(settings);
       coordinator.render(renderer, localImage);
       break;
    }
