@@ -8,6 +8,13 @@ full NVIDIA OptiX hardware-accelerated renderer the following spring. Each miles
 corresponds to a real commit (or small cluster of commits) and captures both what was built and
 why it mattered at that stage.
 
+!!! info "LLM usage across the project"
+    **Milestones 1–6** were written entirely by hand, with no LLM assistance. LLM tools were
+    first introduced in **Milestone 7** for specific features (SDF shapes, YAML loader, Cornell
+    box). **The last four milestones (12–15) were mainly implemented with LLM assistance**,
+    ranging from full implementation to collaborative design and partial coding. Individual
+    milestones note where and how AI was involved.
+
 ---
 
 ## Milestone 1 — The First Pixel (Sept 7–8, 2025) { #first-pixel }
@@ -27,6 +34,11 @@ that makes it look like a shaded disc.
 
 !!! quote "First commit message"
     *"first commit"* — September 7, 2025
+
+<div class="img-grid cols-2">
+  <img src="../assets/images/dev/m1_first_pixel.png" alt="The very first render — a grey gradient disc, no perspective">
+  <img src="../assets/images/dev/m1_sphere_depth.png" alt="Sphere with depth shading — still no perspective, but clearly a sphere">
+</div>
 
 **What changed:** project scaffolding, CMake, `stb_image`, first ray–sphere intersection, first
 rendered pixel.
@@ -48,6 +60,8 @@ Within the first four days, the renderer gains the key ingredients of a recognis
 
 By September 11, the scene already has multiple spheres with different materials, and the output
 image is recognisably a physically-based render rather than a depth map.
+
+<img class="render-img" src="../assets/images/dev/m2_normals.png" alt="Normal-to-colour shading — the characteristic blue-tinted sphere from RTIOW">
 
 **What changed:** `Vec3` class, ray abstraction, camera class, normal-to-RGB shading, mirror
 reflection, multi-sphere scene, wall-clock timing.
@@ -94,6 +108,8 @@ with the regular CUDA path at this point, reducing memory pressure for larger re
 big refactoring pass also separates the two renderers properly so neither needs to know how the
 other works.
 
+<img class="render-img" src="../assets/images/samples/golf_and_procedural_displacement.png" alt="Golf ball with procedural Fibonacci dot displacement mapping">
+
 **What changed:** procedural displacement mapping (Fibonacci dot pattern), tiled CUDA rendering,
 merged CUDA renderer, renderer separation into distinct compilation units.
 
@@ -110,6 +126,13 @@ colours separately from proper shading.
 
 This is also the point where the CPU path becomes clearly a reference implementation for
 correctness — run slowly, check against it, trust its output.
+
+<div class="img-grid cols-2">
+  <img src="../assets/images/dev/output_circular_spheres.png" alt="Metallic rough surfaces — early GGX-style reflection test">
+  <img src="../assets/images/dev/output_rough_mirror.png" alt="Rough mirror material — first tinted specular reflections">
+</div>
+
+<img class="render-img" src="../assets/images/dev/output0_multicore.png" alt="Multi-threaded CPU test scene — parallel render validation">
 
 **What changed:** proper `Material` base class, Lambertian/Metal subclasses, constant material,
 normal-as-colour diagnostic mode, parallel CPU renderer with progress bar.
@@ -136,6 +159,8 @@ that the GPU accumulation buffer lives on the device and is never unnecessarily 
 until display time; a pattern that contributes directly to the 2× speedup achieved four months
 later.
 
+<img class="render-img" src="../assets/images/dev/interactive.png" alt="First interactive SDL2 window — progressive accumulation from 1 to 1024 samples">
+
 **What changed:** SDL2 window integration, progressive sample-over-time display, interactive
 camera orbit/pan/zoom, accumulation buffer on device, real-time quality/speed tradeoff.
 
@@ -150,6 +175,11 @@ camera orbit/pan/zoom, accumulation buffer on device, real-time quality/speed tr
 [`58b0e34`](https://github.com/pmudry/RayON/commit/58b0e34) Depth-of-field ·
 [`91f0872`](https://github.com/pmudry/RayON/commit/91f0872) YAML scene loader + Cornell box
 
+!!! note "AI-assisted development"
+    Three of the five features in this milestone — the **SDF procedural shapes**, the **YAML scene
+    loader**, and the **Cornell box** reference scene — were fully developed with the help of an
+    LLM coding assistant. The BVH and depth-of-field implementations were written hand-in-hand with an LLM.
+
 November 7 is the project's single densest development day. The BVH acceleration structure
 (Bounding Volume Hierarchy with Surface Area Heuristic), SDF ray-marched procedural shapes,
 depth-of-field with a thin-lens model, and the YAML scene file loader all land within hours of
@@ -159,15 +189,24 @@ The BVH commit alone adds 833 lines across 7 files, including a full SAH impleme
 iterative stack-based GPU traversal. The technical documentation in `explanations/BVH_ACCELERATION.md`
 (189 lines) is written in the same commit.
 
-The SDF shapes (torus, octahedron, death-star) use sphere-tracing ray marching and work on both
-CPU and GPU. The rotation support arrives two commits later the same day.
+The SDF shapes (torus, octahedron, death-star) use sphere-tracing ray marching on the CPU path.
+Note that **SDF shapes are not currently functional on the GPU** — the sphere-tracing loop
+is not yet ported to the CUDA kernels, so SDF objects are silently skipped during GPU rendering.
+The rotation support arrives two commits later the same day.
 
 The YAML loader gives scenes a stable, human-readable format that can be shared and versioned
 alongside the renderer.
 
-**What changed:** BVH with SAH (CPU build, GPU traversal), SDF procedural shapes with rotations,
-depth of field, YAML scene format, Cornell box reference scene, `bvh_test_scene.yaml` with 178
-objects for performance testing.
+<div class="img-grid cols-2">
+  <img src="../assets/images/samples/cornell.png" alt="Cornell box with area light and colour bleeding">
+  <img src="../assets/images/samples/bvh_testing.png" alt="BVH stress test — 178 spheres in the benchmark scene">
+</div>
+
+<img class="render-img" src="../assets/images/dev/dof.png" alt="Depth of field with thin-lens model — defocused background">
+
+**What changed:** BVH with SAH (CPU build, GPU traversal), SDF procedural shapes with rotations
+(CPU only), depth of field, YAML scene format, Cornell box reference scene,
+`bvh_test_scene.yaml` with 178 objects for performance testing.
 
 ---
 
@@ -186,9 +225,19 @@ cosine-weighted version using an orthonormal basis constructed from the surface 
 scrambling — a quasi-random sequence technique — is added to reduce low-frequency noise patterns
 at low sample counts.
 
+The mathematical foundations for the orthonormal basis construction — in particular the
+derivation of a consistent local coordinate frame from a single surface normal — were explained
+by **[Xavier Richard](https://www.linkedin.com/in/xavier-richard-682ab928b/?locale=fr_FR)**, whose notes clarified the geometric reasoning behind the Gram–Schmidt
+approach used here.
+
 This milestone is typical of the educational philosophy behind RayON: not just making it work,
 but understanding *why* it works, and documenting the difference an algorithmic choice makes on
 the output.
+
+<div class="img-grid cols-2">
+  <img src="../assets/images/dev/old_lambertian.png" alt="Naïve uniform hemisphere sampling — visible noise patterns">
+  <img src="../assets/images/dev/new_lambertian.png" alt="Cosine-weighted sampling with orthonormal basis — cleaner result">
+</div>
 
 **What changed:** cosine-weighted hemisphere sampling, orthonormal basis construction,
 Owen scrambling for stratified quasi-random sampling, two-implementation comparison.
@@ -242,6 +291,12 @@ for cross-platform debugging, JSON render statistics with timestamps.
 > *"CUDA renderer optimizations: 2.24x speedup (6.08s → 2.71s)"*  
 > *"Replace hand-made SDL GUI with Dear ImGui for interactive renderer"*
 
+!!! note "AI-assisted development"
+    The **Dear ImGui** integration was implemented entirely by Claude. The **CUDA optimisation
+    strategy** was worked out collaboratively with Claude — the bottlenecks were identified and
+    the possible improvements discussed together, then some optimisations were implemented by
+    Claude and others by hand.
+
 After a three-month pause, development resumes with an intense performance sprint.
 
 **CUDA optimisations** (two commits): the D2H (device-to-host) round-trip that was being performed
@@ -254,6 +309,11 @@ change to output quality.
 technical debt since November. The new GUI has collapsible sections, live performance graphs,
 and proper input capture. SDL2_TTF (font rendering) is dropped as a dependency. The version
 number jumps to 1.5.0.
+
+<figure>
+    <img class="render-img" src="../assets/images/samples/gui_debug/statue.png" alt="Dear ImGui interface in interactive mode, shown on the statue scene">
+    <figcaption><em>Dear <a href="https://github.com/ocornut/imgui">ImGui</a> interface in interactive mode, shown on the statue scene.</em></figcaption>
+</figure>
 
 **What changed:** eliminated D2H round-trip, flattened material arrays, reduced BVH warp
 divergence, Dear ImGui integration with collapsible panels and live SPP/ms graphs, version 1.5.0.
@@ -270,6 +330,14 @@ difficult light paths) continue accumulating while already-converged areas freez
 an effective speedup for scenes where some regions converge quickly (flat walls, large lights)
 while others are slow (specular caustics, glass edges).
 
+<div class="img-grid cols-3">
+    <img src="../assets/images/dev/adaptive_sampling0.png" alt="Adaptive sampling — early stage, high variance areas still noisy">
+    <img src="../assets/images/dev/adaptive_sampling1.png" alt="Adaptive sampling — mid convergence">
+    <img src="../assets/images/dev/adaptive_sampling2.png" alt="Adaptive sampling — converged, noisy pixels still accumulating">
+</div>
+
+<p align="center"><em>Legend: Heatmap showing the number of accumulated samples per pixel.</em></p>
+
 The normal arrows overlay arrives in the same few days: a debug visualisation that draws a small
 3D arrow from each surface intersection point in the direction of the shading normal. This makes
 it immediately obvious when a mesh has flipped or missing normals — an invaluable diagnostic for
@@ -277,6 +345,8 @@ the triangle pipeline work about to begin.
 
 Scene switching from within the interactive GUI is added, allowing different YAML scenes to be
 loaded and rendered without restarting the program.
+
+<img class="render-img" src="../assets/images/samples/gui_debug/normals.png" alt="Normal arrows overlay — 3D surface normal visualisation">
 
 **What changed:** per-pixel adaptive convergence sampling, normal arrows 3D overlay, in-GUI
 scene switching, scene selection controls in interactive mode.
@@ -298,6 +368,17 @@ different material.
 A Python script (`generate_platonic_solids.py`) generates the `.obj` files procedurally, and
 the accompanying YAML scene file wires them together with the new OBJ loader. The project's
 `resources/models/` directory starts filling up.
+
+<div class="img-grid cols-3">
+  <img src="../assets/images/dev/first_triangle_step_0.png" alt="First triangle intersection — step 0">
+  <img src="../assets/images/dev/first_triangle_step_2.png" alt="Triangle pipeline — step 2, normals working">
+  <img src="../assets/images/dev/first_triangle_step_3.png" alt="Triangle pipeline — step 3, full mesh render">
+</div>
+
+<div class="img-grid cols-2">
+  <img src="../assets/images/samples/obj_loading.png" alt="Smooth OBJ mesh import with interpolated normals">
+  <img src="../assets/images/samples/plastic_shading.png" alt="Platonic solids rendered with plastic shading">
+</div>
 
 **What changed:** `triangle.hpp` intersection, `obj_loader.hpp` mesh parser, smooth normal
 interpolation, five Platonic solid scene files, `generate_platonic_solids.py` generator.
@@ -329,6 +410,11 @@ overlap kernel execution and memory transfers.
 automotive paint model. A Shelby Cobra `.obj` model and a PokéBall are added to the resources
 for demonstration.
 
+<div class="img-grid cols-2">
+  <img src="../assets/images/samples/thin_film_shader.png" alt="Thin-film interference — iridescent soap-bubble colour shift">
+  <img src="../assets/images/samples/dielectric metsals.png" alt="GGX anisotropic microfacet metals with varying roughness">
+</div>
+
 **What changed:** GGX anisotropic BRDF, thin-film interference shader, clear-coat multi-layer
 material, CUDA streams, Shelby Cobra and PokéBall OBJ models, dedicated demo scenes for each
 material.
@@ -354,6 +440,11 @@ common `.cuh` headers.
 
 The OptiX renderer is an optional build target — the renderer detects whether the OptiX SDK is
 present at CMake time and falls back to CUDA gracefully if it is not.
+
+<div class="img-grid cols-2">
+  <img src="../assets/images/samples/Screenshot from 2026-03-15 00-33-03.png" alt="First OptiX render">
+  <img src="../assets/images/samples/Screenshot from 2026-03-15 00-54-56.png" alt="OptiX rendering — dragon scene with hardware RT cores">
+</div>
 
 **What changed:** full NVIDIA OptiX integration (`.ptx` programs, `OptixPipeline`,
 `OptixShaderBindingTable`), hardware BVH traversal via RT cores, optional CMake build path,

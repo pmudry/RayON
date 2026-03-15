@@ -49,30 +49,6 @@ It also features **BVH Acceleration**, CPU-built, with GPU-traversed Bounding Vo
 
 ---
 
-## Quick start
-
-```bash
-# Build (requires CMake ≥ 3.20, a C++17 compiler, and optionally CUDA + SDL2)
-mkdir -p build && cd build
-cmake .. --fresh
-make -j$(nproc)
-
-# Run
-./rayon
-# > Choose renderer: 0=CPU  1=CPU-parallel  2=CUDA  3=CUDA interactive
-```
-
-Load one of the bundled example scenes:
-
-```bash
-./rayon --scene ../resources/scenes/09_color_bleed_box.yaml -s 512 -r 1080
-```
-
-See [Getting Started](getting-started.md) for the full setup guide, or
-[YAML Scene Format](features/scenes.md) to author your own scenes.
-
----
-
 ## Sample renders
 
 <div class="img-grid cols-2">
@@ -101,6 +77,30 @@ See [Getting Started](getting-started.md) for the full setup guide, or
     <figcaption><strong>Cornell Box</strong> — diffuse colour bleeding and soft shadows from a rectangular area light.</figcaption>
   </figure>
 </div>
+
+---
+
+## Quick start
+
+```bash
+# Build (requires CMake ≥ 3.20, a C++17 compiler, and optionally CUDA + SDL2)
+mkdir -p build && cd build
+cmake .. --fresh
+make -j$(nproc)
+
+# Run
+./rayon
+# > Choose renderer: 0=CPU  1=CPU-parallel  2=CUDA  3=CUDA interactive
+```
+
+Load one of the bundled example scenes:
+
+```bash
+./rayon --scene ../resources/scenes/09_color_bleed_box.yaml -s 512 -r 1080
+```
+
+See [Getting Started](getting-started.md) for the full setup guide, or
+[YAML Scene Format](features/scenes.md) to author your own scenes.
 
 
 ---
