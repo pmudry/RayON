@@ -1,11 +1,13 @@
 #!/bin/bash
-# Benchmark script for RayON CUDA renderer
-# Usage: ./bench.sh [runs] [label]
+# Benchmark script for RayON renderer
+# Usage: ./bench.sh [runs] [label] [mode]
 #   runs:  number of iterations (default: 5)
 #   label: descriptive label for this benchmark run
+#   mode:  rendering mode (default: 2 = CUDA, 4 = OptiX)
 
 RUNS=${1:-5}
 LABEL=${2:-"unlabeled"}
+MODE=${3:-2}
 RESULTS_FILE="bench_results.csv"
 
 # Create results file with header if it doesn't exist
@@ -13,14 +15,14 @@ if [ ! -f "$RESULTS_FILE" ]; then
     echo "timestamp,label,run,time_s,rays_traced,rays_per_sec" > "$RESULTS_FILE"
 fi
 
-echo "=== Benchmark: $LABEL ($RUNS runs) ==="
+echo "=== Benchmark: $LABEL ($RUNS runs, mode $MODE) ==="
 
 times=()
 rays_arr=()
 rps_arr=()
 
 for i in $(seq 1 $RUNS); do
-    output=$(./rayon -m 2 -s 1024 -r 1080 2>&1)
+    output=$(./rayon -m $MODE -s 1024 -r 1080 2>&1)
     time_s=$(echo "$output" | grep -oP 'completed in \K[0-9.]+')
     rays=$(echo "$output" | grep -oP 'Rays traced: \K[0-9,]+' | tr -d ',')
     rps=$(echo "$output" | grep -oP 'Rays/sec: \K[0-9,]+' | tr -d ',')
