@@ -19,8 +19,9 @@ make -C build -j
 cd build && cmake .. -DCMAKE_BUILD_TYPE=Debug && make -j && cd ..
 
 # Run (from build/)
-./rayon -m <0-3> -s <samples> -r <resolution> --scene <yaml_file>
-#   -m 0: CPU sequential, 1: CPU parallel, 2: CUDA, 3: CUDA+SDL interactive
+./rayon -m <0-5> -s <samples> -r <resolution> --scene <yaml_file>
+#   -m 0: CPU sequential, 1: CPU parallel, 2: CUDA, 3: CUDA+SDL interactive,
+#       4: OptiX offline (if built with OPTIX), 5: OptiX+SDL interactive (if built with OPTIX)
 ```
 
 After adding new files/directories under `src/`, re-run `cmake .. --fresh` to update includes and `.clangd`.
