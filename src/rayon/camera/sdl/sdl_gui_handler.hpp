@@ -199,7 +199,8 @@ class SDLGuiHandler
                       int *visualization_mode = nullptr,
                       bool *show_normal_arrows = nullptr, int *normal_arrow_count = nullptr,
                       float *normal_arrow_scale = nullptr, float *normal_arrow_thickness = nullptr,
-                      bool *show_spps_counter = nullptr, int triangle_count = 0)
+                      bool *show_spps_counter = nullptr, int triangle_count = 0,
+                      int *target_fps_ptr = nullptr)
    {
       SDL_UpdateTexture(texture, nullptr, image.data(), image_width * image_channels);
       SDL_RenderClear(renderer);
@@ -238,7 +239,17 @@ class SDLGuiHandler
                   ImGui::Text("Throughput: %.0f S/s", sps);
                ImGui::Text("Time/Pass: %.3f ms", ms_per_sample);
 
-               ImGui::Text("Graph dt: %u ms", perf_sample_interval_ms);
+               // Batch size quality ceiling and FPS target
+               if (samples_per_batch)
+               {
+                  ImGui::SliderFloat("Max Samples/Batch", samples_per_batch, 4.0f, 500.0f, "%.0f");
+                  ImGui::SetItemTooltip("Quality ceiling for the adaptive scheduler.\nThe batch size auto-scales down to hit the FPS target.");
+               }
+               if (target_fps_ptr)
+               {
+                  ImGui::SliderInt("Target FPS", target_fps_ptr, 5, 240);
+                  ImGui::SetItemTooltip("Minimum frame rate to maintain.\nThe batch size adapts every frame to stay at or above this.");
+               }
                ImGui::SameLine();
                if (ImGui::SmallButton("-##graph_dt"))
                {

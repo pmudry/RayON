@@ -77,11 +77,9 @@ class RendererOptiXProgressive : public IRenderer
    void render(const RenderRequest &request, RenderContext &context) override
    {
       int samples_per_batch = settings_.samples_per_batch;
-      int motion_samples = settings_.motion_samples;
       bool auto_accumulate = settings_.auto_accumulate;
       int target_fps = settings_.target_fps;
       bool adaptive_depth = settings_.adaptive_depth;
-      (void)target_fps;
 
       auto &camera = request.camera;
       auto &scene = request.scene;
@@ -504,6 +502,8 @@ class RendererOptiXProgressive : public IRenderer
             camera_changed = false;
             current_samples = 0;
             force_immediate_render = true;
+            // Cap batch size so the first motion frame is responsive
+            adaptive_samples_per_batch = std::clamp(adaptive_samples_per_batch, 4, 8);
             std::fill(accum_buffer.begin(), accum_buffer.end(), 0.0f);
             last_camera_change_time = now;
             is_camera_moving = true;
@@ -530,8 +530,7 @@ class RendererOptiXProgressive : public IRenderer
             force_immediate_render = false;
             syncSamplesFromSlider();
             user_samples_per_batch = samples_per_batch;
-
-            adaptive_samples_per_batch = is_camera_moving ? motion_samples : user_samples_per_batch;
+            adaptive_samples_per_batch = std::min(adaptive_samples_per_batch, user_samples_per_batch);
 
             auto frame_start = std::chrono::high_resolution_clock::now();
 
@@ -548,10 +547,12 @@ class RendererOptiXProgressive : public IRenderer
                float total_samples = static_cast<float>(adaptive_samples_per_batch) * image_width * image_height;
                current_sps = (total_samples * 1000.0f) / frame_time.count();
                current_ms_per_sample = frame_time.count() / static_cast<float>(adaptive_samples_per_batch);
+               // Adaptive controller: scale batch size each frame to maintain target_fps
+               const float target_ms = 1000.0f / static_cast<float>(target_fps);
+               const float scale = std::clamp(target_ms / frame_time.count(), 0.5f, 2.0f);
+               int new_batch = std::max(4, static_cast<int>(std::lround(static_cast<float>(adaptive_samples_per_batch) * scale)));
+               adaptive_samples_per_batch = std::min(new_batch, user_samples_per_batch);
             }
-
-            if (is_camera_moving)
-               adaptive_samples_per_batch = motion_samples;
 
             base_display_image = display_image;
             display_image = base_display_image;
@@ -598,7 +599,8 @@ class RendererOptiXProgressive : public IRenderer
                            cam_pos, cam_lookat, &cam_fov_ui,
                            &adaptive_sampling_enabled, &adaptive_threshold, convergence_pct, &show_heatmap,
                            &visualization_mode, &show_normal_arrows, &normal_arrow_count,
-                           &normal_arrow_scale, &normal_arrow_thickness, &show_spps_counter, tri_count);
+                           &normal_arrow_scale, &normal_arrow_thickness, &show_spps_counter, tri_count,
+                           &target_fps);
 
          if (auto_orbit != camera_control.isAutoOrbitEnabled())
             camera_control.setAutoOrbit(auto_orbit);

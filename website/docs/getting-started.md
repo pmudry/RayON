@@ -95,7 +95,8 @@ Rendered images are saved automatically to `build/rendered_images/` as timestamp
 | `-s <n>` | 64 | Samples per pixel (offline modes) |
 | `-r <h>` | 720 | Image height in pixels (2160/1080/720/360/180) |
 | `--start-samples <n>` | 32 | Initial SPP in interactive mode |
-| `--target-fps <n>` | 60 | Target frame rate for interactive mode |
+| `--samples-per-batch <n>` | 50 | Quality ceiling for the adaptive batch scheduler (interactive mode) |
+| `--target-fps <n>` | 60 | Target frame rate; batch size auto-scales every frame to meet this budget |
 | `--adaptive-depth` | off | Progressively increase max ray bounce depth |
 | `--no-auto-accumulate` | off | Disable automatic sample accumulation when stationary |
 | `--help` | — | Print help and exit |

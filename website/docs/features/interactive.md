@@ -45,7 +45,8 @@ SPP and accumulates from there.
 | Flag | Default | Effect |
 |---|---|---|
 | `--start-samples <n>` | 32 | SPP when starting or after any camera movement |
-| `--target-fps <fps>` | 60 | Frame rate budget — controls time between sample stages |
+| `--samples-per-batch <n>` | 50 | Quality ceiling: the auto-scheduler will never exceed this many samples per batch |
+| `--target-fps <fps>` | 60 | Minimum frame rate target — the batch size auto-scales every frame to stay at or above this |
 | `--adaptive-depth` | off | Progressively increase max bounce depth per stage |
 | `--no-auto-accumulate` | off | Disable automatic sample increase when stationary |
 
@@ -70,7 +71,7 @@ While the scene is rendering, a panel in the top-right corner of the window prov
 
 | Control | Effect | Notes |
 |---|---|---|
-| **Samples** slider | Base SPP per kernel pass | Triggers reset if changed |
+| **Samples** slider | Quality ceiling for the adaptive batch scheduler (`--samples-per-batch`) | Does **not** trigger a full reset; auto-scheduler immediately respects the new ceiling |
 | **Max samples** slider | Upper limit for auto-accumulate | — |
 | **Light intensity** | Scales area light emission | **No reset required** — updates via `cudaMemcpyToSymbol` |
 | **Roughness** | Material roughness | Triggers reset |

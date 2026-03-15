@@ -34,7 +34,8 @@ class RendererCUDAProgressive : public IRenderer
    struct Settings
    {
       int samples_per_batch = constants::INTERACTIVE_SAMPLES_PER_BATCH;
-      int motion_samples = constants::INTERACTIVE_MOTION_SAMPLES;
+      int motion_samples = constants::INTERACTIVE_MOTION_SAMPLES; // kept for CLI compat; not used for scheduling
+      int target_fps = 60;
       bool auto_accumulate = true;
       bool adaptive_depth = false;
       bool adaptive_sampling = true;
@@ -49,7 +50,7 @@ class RendererCUDAProgressive : public IRenderer
    void render(const RenderRequest &request, RenderContext &context) override
    {
       int samples_per_batch = settings_.samples_per_batch;
-      int motion_samples = settings_.motion_samples;
+      int target_fps = settings_.target_fps;
       bool auto_accumulate = settings_.auto_accumulate;
       bool adaptive_depth = settings_.adaptive_depth;
 
@@ -598,6 +599,9 @@ class RendererCUDAProgressive : public IRenderer
             current_samples = 0;
             force_immediate_render = true;
 
+            // Cap batch size so the first motion frame is responsive
+            adaptive_samples_per_batch = std::clamp(adaptive_samples_per_batch, 4, 8);
+
             last_camera_change_time = now;
             is_camera_moving = true;
 
@@ -649,15 +653,7 @@ class RendererCUDAProgressive : public IRenderer
 
             syncSamplesFromSlider();
             user_samples_per_batch = samples_per_batch;
-
-            if (is_camera_moving)
-            {
-               adaptive_samples_per_batch = motion_samples;
-            }
-            else
-            {
-               adaptive_samples_per_batch = user_samples_per_batch;
-            }
+            adaptive_samples_per_batch = std::min(adaptive_samples_per_batch, user_samples_per_batch);
 
             auto frame_start = std::chrono::high_resolution_clock::now();
 
@@ -682,11 +678,11 @@ class RendererCUDAProgressive : public IRenderer
                current_sps = (total_samples * 1000.0f) / frame_time.count();
                // ms per sample-pass (one pass = all pixels get one more sample)
                current_ms_per_sample = frame_time.count() / static_cast<float>(adaptive_samples_per_batch);
-            }
-
-            if (is_camera_moving)
-            {
-               adaptive_samples_per_batch = motion_samples;
+               // Adaptive controller: scale batch size each frame to maintain target_fps
+               const float target_ms = 1000.0f / static_cast<float>(target_fps);
+               const float scale = std::clamp(target_ms / frame_time.count(), 0.5f, 2.0f);
+               int new_batch = std::max(4, static_cast<int>(std::lround(static_cast<float>(adaptive_samples_per_batch) * scale)));
+               adaptive_samples_per_batch = std::min(new_batch, user_samples_per_batch);
             }
 
             // Update convergence percentage for GUI display (every 10th frame to avoid overhead)
@@ -755,7 +751,8 @@ class RendererCUDAProgressive : public IRenderer
                            cam_pos, cam_lookat, &cam_fov_ui,
                            &adaptive_sampling_enabled, &adaptive_threshold, convergence_pct, &show_heatmap,
                            &visualization_mode, &show_normal_arrows, &normal_arrow_count,
-                           &normal_arrow_scale, &normal_arrow_thickness, &show_spps_counter, tri_count);
+                           &normal_arrow_scale, &normal_arrow_thickness, &show_spps_counter, tri_count,
+                           &target_fps);
 
          if (auto_orbit != camera_control.isAutoOrbitEnabled())
          {
