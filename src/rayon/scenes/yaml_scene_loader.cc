@@ -392,6 +392,20 @@ static bool loadMaterials(const SimpleYAMLParser &parser, SceneDescription &scen
          mat.pattern_param2 = parser.getFloat(prefix + ".pattern.dot_radius", 0.0f);
       }
 
+      // Check for diffuse texture
+      if (parser.hasKey(prefix + ".texture"))
+      {
+         string tex_path = removeQuotes(parser.getString(prefix + ".texture"));
+         if (!tex_path.empty())
+         {
+            // Resolve relative to YAML directory — we don't have it here, but the
+            // caller (loadSceneFromYAML) already cd'd into scene_dir implicitly.
+            // Pass the raw path; absolute paths work as-is.
+            int tex_id = scene.addTexture(tex_path);
+            mat.texture_id = tex_id;
+         }
+      }
+
       int mat_id = scene.addMaterial(mat);
       material_name_to_id[mat_name] = mat_id;
 
@@ -420,14 +434,28 @@ static bool loadGeometry(const SimpleYAMLParser &parser, SceneDescription &scene
       string geom_type = removeQuotes(parser.getString(prefix + ".type"));
       string mat_name = removeQuotes(parser.getString(prefix + ".material"));
 
-      // Look up material ID
-      auto it = material_name_to_id.find(mat_name);
-      if (it == material_name_to_id.end())
+      // Look up material ID — optional for OBJ entries (MTL file provides materials)
+      int mat_id = -1;
+      if (!mat_name.empty())
       {
-         cerr << "ERROR: Unknown material: " << mat_name << "\n";
+         auto it = material_name_to_id.find(mat_name);
+         if (it != material_name_to_id.end())
+         {
+            mat_id = it->second;
+         }
+         else
+         {
+            cerr << "ERROR: Unknown material: " << mat_name << "\n";
+            if (geom_type != "obj")
+               continue;
+            // OBJ: fallback to -1 (MTL-only mode)
+         }
+      }
+      else if (geom_type != "obj")
+      {
+         cerr << "ERROR: Missing 'material' key for " << geom_type << " geometry[" << i << "]\n";
          continue;
       }
-      int mat_id = it->second;
 
       // Check visibility flag (default: true)
       string vis_str = removeQuotes(parser.getString(prefix + ".visible", "true"));
@@ -492,7 +520,9 @@ static bool loadGeometry(const SimpleYAMLParser &parser, SceneDescription &scene
       if (!scene.geometries.empty())
          scene.geometries.back().visible = visible;
 
-      cout << "  Loaded " << geom_type << " with material " << mat_name << (visible ? "" : " (invisible)") << "\n";
+      cout << "  Loaded " << geom_type << " with material "
+           << (mat_name.empty() ? "(from MTL)" : mat_name)
+           << (visible ? "" : " (invisible)") << "\n";
    }
 
    return !scene.geometries.empty();

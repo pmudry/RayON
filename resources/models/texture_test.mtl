@@ -1,0 +1,14 @@
+# MTL file for texture test scene
+
+newmtl textured
+illum 1
+Kd 1.0 1.0 1.0
+Ka 0.0 0.0 0.0
+Ks 0.0 0.0 0.0
+map_Kd ../textures/grid_512.png
+
+newmtl light_mat
+illum 0
+Ke 4.0 4.0 4.0
+Kd 0.0 0.0 0.0
+

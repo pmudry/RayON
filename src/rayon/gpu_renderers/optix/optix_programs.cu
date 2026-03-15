@@ -444,6 +444,12 @@ extern "C" __global__ void __closesthit__ch()
    prd->hit_normal = make_float3(__int_as_float(optixGetAttribute_0()), __int_as_float(optixGetAttribute_1()),
                                   __int_as_float(optixGetAttribute_2()));
 
+   // Get UV from attributes 3 and 4 (only valid for triangles, hit kind == 2)
+   if (optixGetHitKind() == 2)
+      prd->hit_uv = make_float2(__int_as_float(optixGetAttribute_3()), __int_as_float(optixGetAttribute_4()));
+   else
+      prd->hit_uv = make_float2(0.0f, 0.0f);
+
    // Front face test
    float3 ray_dir = optixGetWorldRayDirection();
    prd->front_face = dot3(ray_dir, prd->hit_normal) < 0.0f;
@@ -467,6 +473,13 @@ extern "C" __global__ void __closesthit__ch()
       prd->hit_refractive_index = mat.refractive_index;
       prd->hit_film_thickness = mat.film_thickness;
       prd->hit_film_ior = mat.film_ior;
+
+      // Texture sampling: override diffuse color with texel if texture is bound
+      if (mat.texture_id >= 0 && mat.texture_id < params.num_textures && params.d_textures)
+      {
+         float4 texel = tex2D<float4>(params.d_textures[mat.texture_id], prd->hit_uv.x, 1.0f - prd->hit_uv.y);
+         prd->hit_color = make_float3(texel.x, texel.y, texel.z);
+      }
 
       // Apply procedural pattern if present
       if (mat.pattern == 1) // FIBONACCI_DOTS
@@ -584,10 +597,21 @@ extern "C" __global__ void __intersection__triangle()
       outward_normal = normalize3(cross3(edge1, edge2));
    }
 
+   // Compute UV: interpolate per-vertex UV coords using barycentric coordinates
+   float2 hit_uv = make_float2(0.0f, 0.0f);
+   if (sbt_data->tri_has_uvs)
+   {
+      const float w = 1.0f - u - v;
+      hit_uv.x = w * sbt_data->tri_uv0.x + u * sbt_data->tri_uv1.x + v * sbt_data->tri_uv2.x;
+      hit_uv.y = w * sbt_data->tri_uv0.y + u * sbt_data->tri_uv1.y + v * sbt_data->tri_uv2.y;
+   }
+
    optixReportIntersection(t, 2, // hit kind = 2 for triangle
                            __float_as_int(outward_normal.x),
                            __float_as_int(outward_normal.y),
-                           __float_as_int(outward_normal.z));
+                           __float_as_int(outward_normal.z),
+                           __float_as_int(hit_uv.x),
+                           __float_as_int(hit_uv.y));
 }
 
 extern "C" __global__ void __intersection__rectangle()

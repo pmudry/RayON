@@ -51,6 +51,10 @@ struct HitGroupData
    float3 tri_v0, tri_v1, tri_v2;
    float3 tri_n0, tri_n1, tri_n2;
    int    tri_has_normals; // 1 = interpolate per-vertex normals, 0 = use face normal
+
+   // Triangle per-vertex UV coordinates
+   float2 tri_uv0, tri_uv1, tri_uv2;
+   int    tri_has_uvs; // 1 = has UV coords, 0 = no UV
 };
 
 // Material data (flat struct, uploaded as array)
@@ -72,6 +76,8 @@ struct OptixMaterialData
    float anisotropy;     // ANISOTROPIC_METAL: anisotropy ratio
    float film_thickness; // THIN_FILM: thickness in nm
    float film_ior;       // THIN_FILM: film refractive index
+
+   int texture_id; // Diffuse texture index (-1 = none)
 };
 
 // Launch parameters — passed to all OptiX programs via __constant__ memory
@@ -119,6 +125,10 @@ struct OptixLaunchParams
    float light_intensity;      // Multiplier on emissive materials
    float metal_fuzziness;      // Multiplier on roughness of metallic materials
    float glass_ior_multiplier; // Multiplier on refractive index of glass/dielectric
+
+   // Textures
+   cudaTextureObject_t *d_textures; // Device array of CUDA texture objects
+   int num_textures;
 };
 
 // Per-ray data passed through payload pointer.
@@ -134,6 +144,7 @@ struct PRDRadiance
    float hit_refractive_index;
    float hit_film_thickness;   // THIN_FILM: film thickness in nm
    float hit_film_ior;         // THIN_FILM: film refractive index
+   float2 hit_uv;              // Interpolated UV at hit point (for texture sampling)
    OptixMaterialType hit_material_type;
    unsigned int seed;
    bool hit;

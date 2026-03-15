@@ -83,6 +83,7 @@ set(SOURCE_RAYON
     src/rayon/main.cc
     src/rayon/render/render_coordinator.cpp
     src/rayon/scenes/yaml_scene_loader.cc
+    src/rayon/scenes/texture_loader.cc
     src/rayon/gpu_renderers/renderer_cuda_device.cu
     src/rayon/gpu_renderers/cuda_raytracer.cu
     src/rayon/gpu_renderers/cuda_utils.cu
@@ -91,9 +92,7 @@ set(SOURCE_RAYON
     src/rayon/gpu_renderers/shaders/shader_golf.cu
 )
 
-if(OptiX_INCLUDE_DIR)
-    list(APPEND SOURCE_RAYON src/rayon/gpu_renderers/optix/optix_renderer.cu)
-endif()
+# Note: optix_renderer.cu is added via target_sources() below, after find_path(OptiX_INCLUDE_DIR)
 
 # Enable colored compiler output for Make builds
 if(CMAKE_GENERATOR STREQUAL "Unix Makefiles")
@@ -241,6 +240,7 @@ if(CUDA_FOUND)
         message(STATUS "OptiX SDK found: ${OptiX_INCLUDE_DIR}")
         target_include_directories(rayon PRIVATE ${OptiX_INCLUDE_DIR})
         add_definitions(-DOPTIX_FOUND)
+        target_sources(rayon PRIVATE src/rayon/gpu_renderers/optix/optix_renderer.cu)
 
         # Compile OptiX device programs (.cu → .ptx)
         # These are NOT compiled as regular CUDA — they produce PTX loaded at runtime by OptiX

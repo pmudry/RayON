@@ -1,0 +1,52 @@
+# Texture Test Scene
+# Ground plane, cube and sphere using UV-mapped OBJ models with a grid texture.
+# See resources/models/texture_test.mtl and resources/textures/grid_512.png
+
+scene:
+  name: "Texture Test"
+  description: "Grid-textured plane, cube and sphere loaded from MTL-linked OBJ files"
+
+  camera:
+    position: [0.0, 2.5, 5.5]
+    look_at:  [0.0, 0.5, 0.0]
+    up:       [0.0, 1.0, 0.0]
+    fov: 45.0
+
+  background_color: [0.15, 0.2, 0.3]
+  ambient_light: 0.05
+  use_bvh: true
+
+# Only the area-light material is defined here.
+# The textured/light_mat materials come from texture_test.mtl embedded in the OBJ files.
+materials:
+  - name: "area_light"
+    type: "light"
+    emission: [5.0, 5.0, 5.0]
+    albedo:   [1.0, 1.0, 1.0]
+
+geometry:
+  # --- Ground plane ----------------------------------------------------------
+  - type: "obj"
+    file: "../models/plane_uv.obj"
+    position: [0.0, 0.0, 0.0]
+    scale:    [1.0, 1.0, 1.0]
+    # No material: key — MTL in the OBJ picks "textured" for all faces
+
+  # --- Cube -----------------------------------------------------------------
+  - type: "obj"
+    file: "../models/cube_uv.obj"
+    position: [-1.0, 0.6, -0.5]
+    scale:    [1.0, 1.0, 1.0]
+
+  # --- Sphere ---------------------------------------------------------------
+  - type: "obj"
+    file: "../models/sphere_uv.obj"
+    position: [1.0, 0.6, 0.5]
+    scale:    [1.0, 1.0, 1.0]
+
+  # --- Area light (rectangle above the scene) -------------------------------
+  - type: "rectangle"
+    material: "area_light"
+    corner:   [-1.5, 3.5, -1.5]
+    u:        [3.0,  0.0,  0.0]
+    v:        [0.0,  0.0,  3.0]
