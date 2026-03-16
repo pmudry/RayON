@@ -45,7 +45,6 @@ size. The batch size is then auto-scaled each frame to meet the `--target-fps` b
 | `--adaptive-depth` | off | Progressively increase max bounce depth per stage |
 | `--no-adaptive-sampling` | off | Disable converged-pixel skipping (adaptive sampling) |
 | `--no-auto-accumulate` | off | Disable automatic sample increase when stationary |
-| `--theme <name>` | `nord` | ImGui colour theme: `light`, `classic`, `nord`, `dracula`, `gruvbox`, `catppuccin` |
 
 **Example: maximum quality accumulation:**
 
@@ -58,12 +57,6 @@ size. The batch size is then auto-scaled each frame to meet the `--target-fps` b
 
 ```bash
 ./rayon --samples-per-batch 4 --target-fps 120 --no-auto-accumulate
-```
-
-**Example: dark theme, no converged-pixel skipping:**
-
-```bash
-./rayon --theme dracula --no-adaptive-sampling
 ```
 
 ---

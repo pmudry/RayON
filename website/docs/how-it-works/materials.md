@@ -313,19 +313,28 @@ the imported mesh makes the face boundaries invisible.*
 Both CPU and GPU renderers share the same material logic. On the CPU, standard
 C++ virtual functions are used. On the GPU, virtual dispatch is not allowed, so RayON stores all
 material parameters in a **flat POD union** and selects the correct code path at runtime via a
-`switch` statement:
+`switch` statement.
+
+A **Plain Old Data (POD) union** is a C/C++ union whose members contain only simple data fields
+(no constructors, destructors, or virtual functions). All members of a union occupy the **same
+memory location** — only one member is valid at a time, selected by a separate tag field. Because
+a POD union has no hidden pointers and no vtable, it can be passed directly to a GPU kernel like
+any other value type. The GPU cannot allocate heap memory or call virtual methods, so every
+polymorphic CPU class (Lambertian, Glass, AnisotropicMetal…) maps to one named member of this
+union:
 
 ```cpp
 // MaterialParamsUnion — POD struct, GPU safe
+// All members share the same storage; 'type' (below) tells us which one is live.
 union MaterialParamsUnion {
-    LambertianParams     lambertian;
-    MirrorParams         mirror;
-    RoughMirrorParams    rough_mirror;
-    GlassParams          glass;
-    LightParams          light;
-    AnisotropicParams    anisotropic_metal;
-    ThinFilmParams       thin_film;
-    ClearCoatParams      clear_coat;
+    LambertianParams     lambertian;     // albedo only
+    MirrorParams         mirror;         // (empty)
+    RoughMirrorParams    rough_mirror;   // albedo + roughness
+    GlassParams          glass;          // refractive_index
+    LightParams          light;          // emission RGB
+    AnisotropicParams    anisotropic_metal; // roughness, anisotropy, eta, k
+    ThinFilmParams       thin_film;      // film_thickness, film_ior
+    ClearCoatParams      clear_coat;     // albedo, roughness, coat IOR
     // ...
 };
 ```
@@ -335,10 +344,10 @@ At runtime the `MaterialType` enum tag selects the correct branch:
 ```cpp
 __device__ void scatter_material(const Material& mat, ...) {
     switch (mat.type) {
-        case MaterialType::LAMBERTIAN:       scatter_lambertian(...);       break;
-        case MaterialType::ROUGH_MIRROR:     scatter_rough_mirror(...);     break;
-        case MaterialType::GLASS:            scatter_glass(...);            break;
-        case MaterialType::ANISOTROPIC_METAL: scatter_anisotropic(...);    break;
+        case MaterialType::LAMBERTIAN:        scatter_lambertian(...);       break;
+        case MaterialType::ROUGH_MIRROR:      scatter_rough_mirror(...);     break;
+        case MaterialType::GLASS:             scatter_glass(...);            break;
+        case MaterialType::ANISOTROPIC_METAL: scatter_anisotropic(...);      break;
         // ...
     }
 }
