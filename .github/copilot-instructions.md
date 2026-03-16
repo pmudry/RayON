@@ -1,4 +1,4 @@
-# 302 Raytracer - AI Coding Agent Instructions
+# RayON - AI Coding Agent Instructions
 
 ## Documentation Sync Policy
 
@@ -21,22 +21,22 @@
 After editing docs, always run `cd website && uv run mkdocs build --strict` to verify no broken references.
 
 ## Project Overview
-High-performance path tracer with CPU, multi-threaded, and CUDA GPU implementations. Educational CS302 HPC project based on "Ray Tracing in One Weekend" series, featuring interactive SDL real-time rendering with progressive sampling.
+High-performance path tracer (C++17/CUDA) with CPU, multi-threaded, and GPU backends, plus interactive SDL2 real-time rendering. Educational ISC 302 HPC project based on "Ray Tracing in One Weekend." Version 1.5.5, licensed GNU GPL v3.
 
 ## Architecture: The Unified Scene System
 
-**Critical Concept**: The project uses a "build once, render anywhere" architecture centered around `Scene::SceneDescription` (`src/302_raytracer/scene_description.h`).
+**Critical Concept**: The project uses a "build once, render anywhere" architecture centered around `Scene::SceneDescription` (`src/rayon/scenes/scene_description.hpp`).
 
 ### Scene Flow
-1. **Host-side construction**: `Scene::SceneDescription` built on CPU (from YAML or programmatically in `main.cc::create_scene_description()`)
+1. **Host-side construction**: `Scene::SceneDescription` built on CPU (from YAML or programmatically in `main.cc`)
 2. **CPU rendering**: Converted to polymorphic `Hittable_list` via `CPUSceneBuilder::buildCPUScene()`
-3. **GPU rendering**: Converted to flat `CudaScene::Scene` structure via `CUDASceneBuilder::buildGPUScene()` in `scene_builder_cuda.cu`
+3. **GPU rendering**: Converted to flat `CudaScene::Scene` structure via `CudaSceneBuilder::buildGPUScene()` in `scene_builder_cuda.cu`
 
 **Why**: GPU cannot use virtual functions or polymorphism, so CPU uses classes (Sphere, Rectangle, Material) while GPU uses flat structs with enum-based type discrimination.
 
 ### BVH Acceleration
 - **Built on CPU**: `SceneDescription::buildBVH()` uses Surface Area Heuristic (SAH) for optimal partitioning
-- **Traversed on GPU**: Iterative stack-based traversal in `shader_common.cuh::trace_ray_scene_bvh()`
+- **Traversed on GPU**: Iterative stack-based traversal in `cuda_raytracer.cuh`
 - **Enable with**: `scene_desc.use_bvh = true` or `use_bvh: true` in YAML scenes
 - See `explanations/BVH_ACCELERATION.md` for implementation details
 
@@ -65,7 +65,7 @@ Use predefined tasks (Ctrl+Shift+P → Run Task):
 - **SDL2 optional**: Real-time display disabled without `SDL2_FOUND` define
 - **Compiler choice**: Set `USE_CLANG=OFF` for GCC instead of default Clang
 - **CUDA architectures**: `all-major` for broad GPU compatibility
-- **Include directories**: Flat includes (`#include "camera.h"` not `#include "../camera/camera.h"`)
+- **Include directories**: Flat includes (`#include "camera.hpp"` not `#include "../camera/camera.hpp"`)
 
 ## CUDA Programming Patterns
 
@@ -86,19 +86,19 @@ CudaScene::Scene* allocateAndTransferScene(const Scene::SceneDescription& desc) 
 ```
 
 ### Kernel Launch Configuration
-- **Standard grid**: `dim3 block_size(32, 4)` (128 threads) - rectangular for memory coalescing
+- **Standard grid**: `dim3 block_size(32, 8)` (256 threads) - rectangular for memory coalescing
 - **Separable compilation**: Required for device functions across files (`CUDA_SEPARABLE_COMPILATION ON`)
 - **Random states**: Persistent device memory for `curand` states across accumulative renders
 
 ## Interactive SDL Rendering
 
 ### Progressive Accumulation Mode
-Enabled with option 3 in runtime menu (requires `SDL2_FOUND`):
+Enabled with `-m 3` (CUDA+SDL) or `-m 5` (OptiX+SDL, if built with OPTIX):
 ```bash
-./302_raytracer --target-fps 60 --start-samples 32 --adaptive-depth
+./rayon -m 3 --target-fps 60 --samples-per-batch 50 --adaptive-depth
 ```
 
-**Controls** (implemented in `sdl_gui_handler.h` / `sdl_gui_controls.h`):
+**Controls** (implemented in `camera/sdl/sdl_gui_handler.hpp` / `sdl_gui_controls.hpp`):
 - **Left mouse**: Orbit camera (rotate around look-at)
 - **Right mouse**: Pan (translate look-at point)
 - **Mouse wheel**: Zoom (distance from look-at)
@@ -106,22 +106,36 @@ Enabled with option 3 in runtime menu (requires `SDL2_FOUND`):
 - **GUI sliders**: Adjust samples, light intensity, DOF, etc.
 
 **Accumulation logic** (`renderer_cuda_progressive_host.hpp`):
-- Low samples during camera motion (e.g., 8 samples)
-- Automatic accumulation when stationary (up to `max_samples`)
+- Low samples during camera motion (auto-scaled to hit `--target-fps`)
+- Automatic accumulation when stationary (up to `INTERACTIVE_MAX_SPP`)
 - Adaptive depth increases ray bounce limit progressively
 
 ## Scene Definition
 
 ### YAML Scene Files
-Load custom scenes: `./302_raytracer --scene resources/cornell_box.yaml`
+Scene files live in `resources/scenes/`. The format is documented in `resources/scenes/SCENE_FORMAT.md`.
 
-**Structure** (see `resources/default_scene.yaml`):
+```bash
+./rayon --scene resources/scenes/default_scene.yaml
+```
+
+**Structure** (abbreviated):
 ```yaml
+camera:
+  position: [0, 1, 5]
+  look_at: [0, 0, 0]
+  fov: 60
+
+settings:
+  use_bvh: true
+  background_color: [0.05, 0.05, 0.08]
+
 materials:
   - name: "mat_name"
-    type: "lambertian"  # rough_mirror, glass, light, etc.
+    type: "lambertian"  # mirror, rough_mirror, metal, glass, dielectric, light,
+                        # anisotropic_metal, thin_film, clear_coat, show_normals
     albedo: [r, g, b]
-    roughness: 0.3  # for rough_mirror
+    roughness: 0.3  # for rough_mirror / metal
 
 geometry:
   - type: "sphere"
@@ -130,10 +144,10 @@ geometry:
     radius: r
 ```
 
-**Loader**: `yaml_scene_loader.cc` - lightweight custom parser (no external deps)
+**Loader**: `src/rayon/scenes/yaml_scene_loader.cc` - lightweight custom parser (no external deps)
 
 ### Programmatic Scene Building
-Add geometry in `main.cc::create_scene_description()`:
+Scenes can also be built in code via `SceneDescription` API:
 ```cpp
 int mat = scene_desc.addMaterial(MaterialDesc::roughMirror(Vec3(1,0.85,0.47), 0.03));
 scene_desc.addSphere(Vec3(-3.5, 0.45, -1.8), 0.8, mat);
@@ -148,41 +162,52 @@ Most classes are header-only for template/device code compatibility. Implementat
 ### Virtual Inheritance Pattern
 `Camera` class uses virtual inheritance to combine rendering backends:
 ```cpp
-class Camera : public RendererCPU, public RendererCPUParallel, 
+class Camera : public RendererCPUSingleThread, public RendererCPUParallel,
                public RendererCUDA, public RendererCUDAProgressive
 ```
 All inherit virtually from `CameraBase` to avoid diamond problem.
 
 ### Renderer Separation
-- `camera_base.h`: Core camera parameters (look_from, look_at, FOV, pixel_delta_u/v)
-- `renderer_cpu.h`: Single-threaded `renderPixels()`
-- `renderer_cpu_parallel.h`: Thread pool with `std::async`
-- `renderer_cuda.h`: One-shot CUDA render
-- `renderer_cuda_progressive_host.hpp`: Interactive SDL + accumulation
+- `camera/camera_base.hpp`: Core camera parameters (look_from, look_at, FOV, pixel_delta_u/v)
+- `cpu_renderers/renderer_cpu_single_thread.hpp`: Single-threaded `renderPixels()`
+- `cpu_renderers/renderer_cpu_parallel.hpp`: Thread pool with `std::async`
+- `gpu_renderers/renderer_cuda_host.hpp`: One-shot CUDA render
+- `gpu_renderers/renderer_cuda_progressive_host.hpp`: Interactive SDL + accumulation
 
-### Shader Organization
-CUDA device code split into modules:
-- `shader_common.cuh`: Material evaluation, ray-geometry intersection
-- `render_scene_kernel.cu`: Main ray tracing kernel
-- `render_acc_kernel.cu`: Accumulative progressive kernel
-- `shader_golf.cu`: SDF ray marching for procedural shapes
+### Shader / GPU Code Organization
+CUDA device code split into modules under `src/rayon/gpu_renderers/`:
+- `cuda_raytracer.cuh`: Core ray tracing logic — ray-geometry intersection, BVH traversal, material dispatch
+- `cuda_raytracer.cu`: Main CUDA kernel entry points
+- `materials/material_dispatcher.cuh`: Material evaluation dispatcher
+- `materials/legacy/`: Individual material implementations (lambertian, glass, rough_mirror, etc.)
+- `shaders/render_acc_kernel.cu`: Accumulative progressive kernel
+- `shaders/shader_golf.cu`: SDF ray marching for procedural shapes
 
 ## Material & Geometry System
 
-### Material Types (enum in `scene_description.h`)
+### Material Types (enum `MaterialType` in `src/rayon/scenes/scene_description.hpp`)
 - **LAMBERTIAN**: Diffuse (cosine-weighted hemisphere sampling)
+- **METAL**: Metallic with fuzziness
+- **MIRROR**: Perfect specular reflection
 - **ROUGH_MIRROR**: Microfacet with roughness parameter
-- **GLASS**: Refraction with Schlick's approximation
+- **GLASS / DIELECTRIC**: Refraction with Schlick's approximation
 - **LIGHT**: Emissive (importance sampled in area lights)
-- **Procedural patterns**: FIBONACCI_DOTS, CHECKERBOARD (stored in `MaterialDesc`)
+- **CONSTANT / SHOW_NORMALS**: Debug/diagnostic materials
+- **ANISOTROPIC_METAL**: Physically-based anisotropic conductor (GGX)
+- **THIN_FILM**: Thin-film interference (soap bubbles, oil slicks)
+- **CLEAR_COAT**: Two-layer: glossy dielectric coat over diffuse base
+- **SDF_MATERIAL**: Used for ray-marched SDF objects
 
-### Geometry Types
-- **Primitives**: SPHERE, RECTANGLE, CUBE, DISPLACED_SPHERE (golf ball)
-- **Ray marched**: SDF_PRIMITIVE (torus, octahedron, pyramid) - see `sdf_shape.h`
-- **TODO**: TRIANGLE_MESH (structure exists, not fully implemented)
+Procedural patterns (`ProceduralPattern` enum): FIBONACCI_DOTS, CHECKERBOARD, STRIPES
+
+### Geometry Types (enum `GeometryType` in `src/rayon/scenes/scene_description.hpp`)
+- **Primitives**: SPHERE, DISPLACED_SPHERE (golf ball), RECTANGLE, CUBE, TRIANGLE
+- **Mesh**: OBJ_MESH — loaded via `src/rayon/scenes/obj_loader.hpp`
+- **Ray marched**: SDF_PRIMITIVE (torus, octahedron, pyramid) — see `cpu_renderers/cpu_shapes/sdf_shape.hpp`
+- **Acceleration**: BVHNODE (internal, not added by users)
 
 ### SDF Shapes
-Ray marched using sphere tracing in `shader_golf.cu`. Rotation support via Euler angles. Examples: `addSDFTorus()`, `addSDFDeathStar()`, `addSDFOctahedron()`.
+Ray marched using sphere tracing in `shaders/shader_golf.cu`. Rotation support via Euler angles. Examples: `addSDFTorus()`, `addSDFOctahedron()`.
 
 ## Performance Characteristics
 
@@ -199,17 +224,17 @@ Ray marched using sphere tracing in `shader_golf.cu`. Rotation support via Euler
 ## Common Development Patterns
 
 ### Adding New Geometry
-1. Add enum to `GeometryType` in `scene_description.h`
+1. Add enum to `GeometryType` in `src/rayon/scenes/scene_description.hpp`
 2. Add struct to `GeometryDesc` union
-3. Implement CPU intersection in `hittable.h` subclass
-4. Implement GPU intersection in `shader_common.cuh::intersect_geometry()`
+3. Implement CPU intersection as `Hittable` subclass in `cpu_renderers/cpu_shapes/`
+4. Implement GPU intersection in `gpu_renderers/cuda_raytracer.cuh::intersect_geometry()`
 5. Add factory method `SceneDescription::addMyShape()`
 
 ### Adding New Material
-1. Add enum to `MaterialType`
+1. Add enum to `MaterialType` in `src/rayon/scenes/scene_description.hpp`
 2. Add parameters to `MaterialDesc` struct
-3. Implement CPU scattering in `material.h` subclass
-4. Implement GPU evaluation in `shader_common.cuh::evaluate_material()`
+3. Implement CPU scattering in `data_structures/material.hpp`
+4. Add GPU evaluation in `gpu_renderers/materials/material_dispatcher.cuh`
 
 ### Debugging CUDA Kernels
 - **Compile Debug**: `-DCMAKE_BUILD_TYPE=Debug` enables `-lineinfo` for cuda-gdb
@@ -218,30 +243,38 @@ Ray marched using sphere tracing in `shader_golf.cu`. Rotation support via Euler
 
 ## Command Line Arguments
 ```bash
--s <samples>           # Samples per pixel (default: constants.h::SAMPLES_PER_PIXEL)
--r <height>            # Resolution (2160/1080/720/360/180)
---scene <yaml_file>    # Load scene from YAML
---start-samples <n>    # Initial samples for interactive mode (default: 32)
---target-fps <fps>     # Interactive mode target FPS (default: 60)
---adaptive-depth       # Progressive max_depth increase
---no-auto-accumulate   # Disable auto sample accumulation when stationary
+-m <method>              # 0=CPU, 1=CPU parallel, 2=CUDA, 3=CUDA+SDL,
+                         #   4=OptiX offline (if built with OPTIX), 5=OptiX+SDL (if built with OPTIX)
+-s <samples>             # Samples per pixel (default: SAMPLES_PER_PIXEL)
+-r <WxH>|<height>        # Resolution: e.g. 1920x1080 or 720 (16:9)
+--scene <yaml_file>      # Load scene from YAML (files in resources/scenes/)
+--samples-per-batch <n>  # Max samples per interactive batch (auto-scales to hit --target-fps)
+--target-fps <fps>       # Interactive mode target FPS (default: 60)
+--adaptive-depth         # Progressive max_depth increase
+--no-adaptive-sampling   # Disable converged-pixel skipping
+--no-auto-accumulate     # Disable automatic sample accumulation when stationary
+--theme <name>           # GUI theme: light, classic, nord, dracula, gruvbox, catppuccin
+--menu                   # Show interactive method selection menu
 ```
 
 ## Testing Scenes
-Provided in `resources/`:
-- `default_scene.yaml`: Full featured (11 materials, SDFs, area lights)
-- `cornell_box.yaml`: Classic validation scene
-- `simple_scene.yaml`: Minimal 3-sphere test
-- `bvh_test_scene.yaml`: Performance testing with many objects
+Provided in `resources/scenes/`:
+- `default_scene.yaml`: Full-featured default scene
+- `01_bvh_test_scene.yaml`: BVH acceleration testing with many objects
+- `05_material_laboratory.yaml`: All material types showcase
+- `11_soap_bubbles.yaml`: Thin-film interference (iridescent bubbles)
+- `12_clearcoat_pokemonball.yaml`: Clear-coat material demo
+- `bvh_stress_courtyard.yaml`: High-triangle-count BVH stress test
 
 ## Key Files Reference
-- **Main entry**: `src/302_raytracer/main.cc`
-- **Scene hub**: `src/302_raytracer/scene_description.h` (857 lines - read this first!)
-- **Scene factory**: `src/302_raytracer/scene_factory.h` - Functions to create scenes (from YAML or programmatically)
-- **GPU scene**: `src/302_raytracer/gpu_renderers/cuda_scene.cuh`
-- **CUDA kernels**: `src/302_raytracer/gpu_renderers/shaders/render_scene_kernel.cu`
-- **BVH builder**: `scene_description.h::buildBVH()` and `buildBVHRecursive()`
-- **YAML parser**: `src/302_raytracer/yaml_scene_loader.cc`
+- **Main entry**: `src/rayon/main.cc`
+- **Scene hub**: `src/rayon/scenes/scene_description.hpp` — unified CPU/GPU scene format (read this first!)
+- **Scene factory**: `src/rayon/scenes/scene_factory.hpp` — functions to create scenes (from YAML or programmatically)
+- **GPU scene**: `src/rayon/gpu_renderers/cuda_scene.cuh` — flat GPU-friendly scene structs
+- **CUDA ray tracer**: `src/rayon/gpu_renderers/cuda_raytracer.cuh` — intersection, BVH traversal, shading
+- **Material dispatcher**: `src/rayon/gpu_renderers/materials/material_dispatcher.cuh`
+- **YAML parser**: `src/rayon/scenes/yaml_scene_loader.cc`
+- **Scene YAML format**: `resources/scenes/SCENE_FORMAT.md`
 
 ## Common Gotchas
 - **Device code restrictions**: No exceptions, no STL containers, no virtual functions in GPU kernels
