@@ -153,7 +153,7 @@ def gen_sphere(filepath, radius=0.5, stacks=32, slices=64, mtl_name='textured'):
             z = r * math.sin(theta)
             nx, ny, nz = x / radius, y / radius, z / radius
             verts.append((x, y, z))
-            uvs_list.append((u, 1.0 - v))  # flip V: 0 at top
+            uvs_list.append((u, v))  # standard OBJ: V=0 at bottom; shader handles the flip
             norms.append((nx, ny, nz))
 
     # Triangles
@@ -186,7 +186,7 @@ def gen_mtl(filepath):
         f.write("Kd 1.0 1.0 1.0\n")  # White base (modulated by texture)
         f.write("Ka 0.0 0.0 0.0\n")
         f.write("Ks 0.0 0.0 0.0\n")
-        f.write("map_Kd ../textures/grid_512.png\n\n")
+        f.write("map_Kd ../textures/grid_4k.png\n\n")
 
         f.write("newmtl light_mat\n")
         f.write("illum 0\n")
