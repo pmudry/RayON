@@ -8,20 +8,16 @@ mouse-driven camera controls and an ImGui control panel.
 ## Starting interactive mode
 
 ```bash
-./rayon --scene ../resources/scenes/default_scene.yaml --start-samples 32 --target-fps 60
-# > Choose renderer: 3
-```
+# Interactive mode is the default when SDL2 is present:
+./rayon --scene ../resources/scenes/default_scene.yaml --target-fps 60
 
-Or with the default built-in scene:
-
-```bash
-./rayon --start-samples 8 --adaptive-depth
-# > 3
+# With adaptive depth for progressive quality:
+./rayon --adaptive-depth
 ```
 
 !!! note "SDL2 required"
-    Mode 3 is only available when SDL2 is found at CMake configure time. If the menu does not
-    show option 3, rebuild with SDL2 installed.
+    Mode 3 is only available when SDL2 is found at CMake configure time. If mode 3 is not
+    available, rebuild with SDL2 installed (`-m 3` will be silently rejected without it).
 
 ---
 
@@ -32,11 +28,11 @@ Or with the default built-in scene:
 | **Left mouse** + drag | **Orbit** — rotate the camera around the look-at point |
 | **Right mouse** + drag | **Pan** — translate both camera and look-at laterally |
 | **Scroll wheel** | **Zoom** — change distance from look-at point |
-| **Space** | Force re-render (reset accumulation, restart at `--start-samples`) |
+| **Space** | Force re-render (reset accumulation buffer) |
 | **ESC** | Quit |
 
-Any camera change immediately resets sample accumulation. The image restarts at `--start-samples`
-SPP and accumulates from there.
+Any camera change immediately resets sample accumulation and restarts at a low initial batch
+size. The batch size is then auto-scaled each frame to meet the `--target-fps` budget.
 
 ---
 
@@ -44,23 +40,30 @@ SPP and accumulates from there.
 
 | Flag | Default | Effect |
 |---|---|---|
-| `--start-samples <n>` | 32 | SPP when starting or after any camera movement |
 | `--samples-per-batch <n>` | 50 | Quality ceiling: the auto-scheduler will never exceed this many samples per batch |
 | `--target-fps <fps>` | 60 | Minimum frame rate target — the batch size auto-scales every frame to stay at or above this |
 | `--adaptive-depth` | off | Progressively increase max bounce depth per stage |
+| `--no-adaptive-sampling` | off | Disable converged-pixel skipping (adaptive sampling) |
 | `--no-auto-accumulate` | off | Disable automatic sample increase when stationary |
+| `--theme <name>` | `nord` | ImGui colour theme: `light`, `classic`, `nord`, `dracula`, `gruvbox`, `catppuccin` |
 
 **Example: maximum quality accumulation:**
 
 ```bash
 ./rayon --scene ../resources/scenes/09_color_bleed_box.yaml \
-        --start-samples 8 --target-fps 30 --adaptive-depth
+        --target-fps 30 --adaptive-depth
 ```
 
 **Example: very responsive orbit for scene exploration:**
 
 ```bash
-./rayon --start-samples 4 --target-fps 120 --no-auto-accumulate
+./rayon --samples-per-batch 4 --target-fps 120 --no-auto-accumulate
+```
+
+**Example: dark theme, no converged-pixel skipping:**
+
+```bash
+./rayon --theme dracula --no-adaptive-sampling
 ```
 
 ---

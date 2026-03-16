@@ -11,10 +11,16 @@ scattered ray direction and an attenuation factor).
 | Type | Enum | Scatters | Emits | Key parameter |
 |---|---|---|---|---|
 | **Lambertian** | `LAMBERTIAN` | ✓ | — | `albedo` (RGB) |
+| **Metal** | `METAL` | ✓ | — | `albedo`, `roughness` [0–1] |
 | **Mirror** | `MIRROR` | ✓ | — | — |
-| **Rough Mirror** | `ROUGH_MIRROR` | ✓ | — | `roughness` [0–1], `tint` (RGB) |
+| **Rough Mirror** | `ROUGH_MIRROR` | ✓ | — | `roughness` [0–1], `albedo` (tint RGB) |
 | **Glass** | `GLASS` | ✓ | — | `ior` (index of refraction) |
+| **Dielectric** | `DIELECTRIC` | ✓ | — | `refractive_index` |
+| **Anisotropic Metal** | `ANISOTROPIC_METAL` | ✓ | — | `roughness`, `anisotropy`, `eta`/`k` (complex IOR) |
+| **Thin Film** | `THIN_FILM` | ✓ | — | `film_thickness` (nm), `film_ior` |
+| **Clear Coat** | `CLEAR_COAT` | ✓ | — | `albedo`, `roughness`, `refractive_index` |
 | **Area Light** | `LIGHT` | — | ✓ | `emission` (RGB) |
+| **SDF Material** | `SDF_MATERIAL` | ✓ | — | For ray-marched SDF objects |
 | **Show Normals** | `SHOW_NORMALS` | — | — | debug: normal → RGB |
 | **Constant** | `CONSTANT` | — | — | debug: solid colour |
 
@@ -122,6 +128,105 @@ materials:
 
 ---
 
+## Anisotropic Metal (GGX microfacet)
+
+A physically-based conductor material using the **GGX microfacet distribution** with a full
+complex index of refraction (η + ik) for accurate spectral Fresnel. Unlike rough mirror, it models
+the anisotropic highlight patterns seen on brushed metal, vinyl records, and machined surfaces.
+
+\[
+f_r = \frac{D_\text{GGX}(\mathbf{m})\, G(\mathbf{l},\mathbf{v})\, F(\mathbf{v},\mathbf{m})}
+           {4\,(\mathbf{n}\cdot\mathbf{l})\,(\mathbf{n}\cdot\mathbf{v})}
+\]
+
+The `anisotropy` parameter [0–1] stretches the highlight tangentially (0 = isotropic sphere,
+1 = line highlight). Named presets use measured IOR values:
+
+| Preset | η (RGB) | k (RGB) |
+|---|---|---|
+| `gold` | (0.18, 0.42, 1.37) | (3.42, 2.35, 1.77) |
+| `silver` | (0.05, 0.06, 0.05) | (4.18, 3.35, 2.58) |
+| `copper` | (0.27, 0.68, 1.22) | (3.60, 2.63, 2.29) |
+| `aluminum` | (1.35, 0.97, 0.53) | (7.47, 6.40, 5.28) |
+
+```yaml
+materials:
+  - name: brushed_gold
+    type: anisotropic_metal
+    preset: gold             # uses measured IOR values
+    roughness: 0.08
+    anisotropy: 0.7
+
+  - name: custom_metal
+    type: anisotropic_metal
+    roughness: 0.1
+    anisotropy: 0.3
+    eta: [0.18, 0.42, 1.37]
+    k:   [3.42, 2.35, 1.77]
+```
+
+<img class="render-img" src="../../assets/images/samples/dielectric metsals.png"
+     alt="Anisotropic metal spheres with brushed highlight patterns">
+
+*Anisotropic metal spheres. The stretched highlight pattern is controlled by the `anisotropy` parameter.*
+
+---
+
+## Thin Film (interference)
+
+Simulates the iridescent colour shifts seen on soap bubbles, oil slicks, and butterfly wings.
+Thin-film interference arises when the optical path difference between reflections from the
+top and bottom of a thin layer produces wavelength-dependent constructive/destructive interference:
+
+\[
+\Delta\phi = \frac{4\pi\, n_f\, d\, \cos\theta_t}{\lambda}
+\]
+
+The `film_thickness` parameter controls which wavelengths are amplified — smaller values produce
+blue/violet; larger values shift toward red.
+
+```yaml
+materials:
+  - name: soap_bubble
+    type: thin_film
+    film_thickness: 400      # nanometers — shifts highlight colour
+    film_ior: 1.33           # refractive index of the film (water/soap ≈ 1.33)
+```
+
+<img class="render-img" src="../../assets/images/samples/thin_film_shader.png"
+     alt="Thin-film iridescent soap bubbles">
+
+*Thin-film material at various film thicknesses. Varying `film_thickness` sweeps through the visible spectrum.*
+
+---
+
+## Clear Coat
+
+A two-layer material combining a smooth **dielectric coat** (Fresnel specular) over a **diffuse
+base**. Physically it models car paint, lacquered wood, and hard-plastic objects.
+
+At each ray hit, a Fresnel-weighted coin flip decides:
+
+- **Coat layer** (probability proportional to Fresnel reflectance) → sharp specular reflection.
+- **Base layer** (remaining probability) → Lambertian diffuse scatter using `albedo`.
+
+```yaml
+materials:
+  - name: red_car_paint
+    type: clear_coat
+    albedo: [0.8, 0.05, 0.05]   # diffuse base colour
+    roughness: 0.04              # coat roughness (0 = mirror coat)
+    refractive_index: 1.5        # coat IOR (1.5 = typical lacquer/plastic)
+```
+
+<img class="render-img" src="../../assets/images/samples/plastic_shading.png"
+     alt="Clear-coat material on a Stanford dragon">
+
+*The Stanford dragon with a red clear-coat material. The highlight is the dielectric coat; the
+colour is the diffuse base beneath.*
+
+---
+
 ## Glass (dielectric)
 
 Glass both reflects and refracts light. The ratio of reflected to transmitted energy is governed
@@ -203,23 +308,42 @@ the imported mesh makes the face boundaries invisible.*
 
 ---
 
-## The CRTP material system
+## The material dispatch system
 
-Both CPU and GPU renderers share the same material dispatch logic. On the CPU, standard
-C++ virtual functions are used. On the GPU, virtual dispatch is not allowed, so RayON uses a
-**Curiously Recurring Template Pattern (CRTP)** with a flat union:
+Both CPU and GPU renderers share the same material logic. On the CPU, standard
+C++ virtual functions are used. On the GPU, virtual dispatch is not allowed, so RayON stores all
+material parameters in a **flat POD union** and selects the correct code path at runtime via a
+`switch` statement:
 
 ```cpp
 // MaterialParamsUnion — POD struct, GPU safe
 union MaterialParamsUnion {
-    LambertianParams  lambertian;
-    MirrorParams      mirror;
-    RoughMirrorParams rough_mirror;
-    GlassParams       glass;
-    LightParams       light;
+    LambertianParams     lambertian;
+    MirrorParams         mirror;
+    RoughMirrorParams    rough_mirror;
+    GlassParams          glass;
+    LightParams          light;
+    AnisotropicParams    anisotropic_metal;
+    ThinFilmParams       thin_film;
+    ClearCoatParams      clear_coat;
+    // ...
 };
 ```
 
-At runtime the enum tag selects the correct branch — the compiler inlines each case completely,
-zero virtual-function overhead. See [Architecture → Scene System](../architecture/scene-system.md)
-for details about how materials are transferred to the GPU.
+At runtime the `MaterialType` enum tag selects the correct branch:
+
+```cpp
+__device__ void scatter_material(const Material& mat, ...) {
+    switch (mat.type) {
+        case MaterialType::LAMBERTIAN:       scatter_lambertian(...);       break;
+        case MaterialType::ROUGH_MIRROR:     scatter_rough_mirror(...);     break;
+        case MaterialType::GLASS:            scatter_glass(...);            break;
+        case MaterialType::ANISOTROPIC_METAL: scatter_anisotropic(...);    break;
+        // ...
+    }
+}
+```
+
+The compiler inlines each case completely — zero virtual-function overhead on the GPU.
+See [Architecture → Scene System](../architecture/scene-system.md) for details about how
+materials are transferred to the GPU.

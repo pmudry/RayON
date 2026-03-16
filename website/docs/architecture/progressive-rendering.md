@@ -48,8 +48,8 @@ After each stage completes, the renderer pauses **500 ms** before starting the n
 for user input. This keeps the UI responsive — a mouse drag will immediately interrupt the
 accumulation and reset to 8 SPP.
 
-During camera motion, only the **lowest SPP** (e.g., `--start-samples 8`) is used to maintain
-frame rate. Once the camera is stationary, each subsequent frame adds another stage.
+During camera motion, the batch size is automatically reduced to the minimum needed to hit
+`--target-fps`. Once the camera is stationary, each subsequent frame adds another stage.
 
 ---
 

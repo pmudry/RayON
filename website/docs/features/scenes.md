@@ -99,17 +99,67 @@ materials:
     emission: [5.0, 4.5, 3.5]    # RGB emission; values > 1 are valid (HDR)
 ```
 
+### Anisotropic metal (GGX microfacet)
+
+```yaml
+  - name: brushed_gold
+    type: anisotropic_metal
+    preset: gold            # gold | silver | copper | aluminum
+    roughness: 0.08
+    anisotropy: 0.7         # 0.0 = isotropic, 1.0 = maximum anisotropy
+
+  - name: custom_conductor
+    type: anisotropic_metal
+    roughness: 0.05
+    anisotropy: 0.5
+    eta: [0.18, 0.42, 1.37]   # complex IOR real part (RGB)
+    k:   [3.42, 2.35, 1.77]   # complex IOR imaginary part (RGB)
+```
+
+### Thin film (iridescent)
+
+```yaml
+  - name: soap_bubble
+    type: thin_film
+    film_thickness: 400    # nanometers — controls highlight colour
+    film_ior: 1.33         # refractive index of the film (water ≈ 1.33)
+```
+
+### Clear coat
+
+```yaml
+  - name: car_paint_red
+    type: clear_coat
+    albedo: [0.8, 0.05, 0.05]  # diffuse base colour
+    roughness: 0.04             # coat roughness (0 = mirror coat)
+    refractive_index: 1.5       # coat IOR (typical lacquer/plastic)
+```
+
 ### Procedural patterns
 
 ```yaml
   - name: checkerboard_floor
-    type: checker
-    albedo_even: [0.9, 0.9, 0.9]
-    albedo_odd:  [0.1, 0.1, 0.1]
+    type: lambertian
+    albedo: [0.9, 0.9, 0.9]
+    pattern:
+      type: checkerboard
+      color: [0.1, 0.1, 0.1]
 
   - name: fibonacci_dots
-    type: fibonacci_dots
+    type: lambertian
     albedo: [0.8, 0.8, 0.8]
+    pattern:
+      type: fibonacci_dots
+      color: [0.1, 0.1, 0.1]
+      dot_count: 12
+      dot_radius: 0.33
+
+  - name: striped
+    type: lambertian
+    albedo: [0.9, 0.9, 0.9]
+    pattern:
+      type: stripes
+      color: [0.1, 0.1, 0.1]
 ```
 
 ---

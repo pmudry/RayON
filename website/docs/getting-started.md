@@ -68,14 +68,27 @@ cd build
 ./rayon
 ```
 
-You will be prompted to choose a renderer:
+When SDL2 is available, RayON defaults directly to **interactive mode (mode 3)** — no prompt.
+When only CUDA is available, it defaults to the one-shot CUDA renderer (mode 2).
 
+To pick a renderer explicitly, use `-m`:
+
+```bash
+./rayon -m 0          # CPU single-thread
+./rayon -m 1          # CPU parallel
+./rayon -m 2          # CUDA one-shot
+./rayon -m 3          # CUDA interactive (SDL2 required)
 ```
-Choose renderer:
-  0 - CPU single-threaded
-  1 - CPU multi-threaded
-  2 - CUDA GPU (one-shot)
-  3 - CUDA GPU interactive (requires SDL2)
+
+Or add `--menu` to see the interactive selection prompt:
+
+```bash
+./rayon --menu
+# Choose rendering method:
+#   0. CPU sequential
+#   1. CPU parallel
+#   2. CUDA GPU (default)
+#   3. CUDA GPU with interactive SDL display
 ```
 
 Rendered images are saved automatically to `build/rendered_images/` as timestamped
@@ -91,28 +104,35 @@ Rendered images are saved automatically to `build/rendered_images/` as timestamp
 
 | Flag | Default | Description |
 |---|---|---|
+| `-m <method>` | 3 (or 2) | Renderer: `0`=CPU seq, `1`=CPU par, `2`=CUDA, `3`=CUDA interactive, `4`=OptiX, `5`=OptiX interactive |
+| `--menu` | — | Show interactive renderer-selection menu instead of using the default |
 | `--scene <yaml>` | built-in | Load a scene from a YAML file |
-| `-s <n>` | 64 | Samples per pixel (offline modes) |
-| `-r <h>` | 720 | Image height in pixels (2160/1080/720/360/180) |
-| `--start-samples <n>` | 32 | Initial SPP in interactive mode |
+| `-s <n>` | 64 | Samples per pixel (offline modes 0–2, 4) |
+| `-r <h>` | 720 | Image height; aspect ratio 16:9 auto-applied (`-r 1080`) |
+| `-r <WxH>` | — | Arbitrary resolution (`-r 1920x1080`, `-r 800x600`) |
 | `--samples-per-batch <n>` | 50 | Quality ceiling for the adaptive batch scheduler (interactive mode) |
 | `--target-fps <n>` | 60 | Target frame rate; batch size auto-scales every frame to meet this budget |
 | `--adaptive-depth` | off | Progressively increase max ray bounce depth |
+| `--no-adaptive-sampling` | off | Disable converged-pixel skipping (adaptive sampling) |
 | `--no-auto-accumulate` | off | Disable automatic sample accumulation when stationary |
-| `--help` | — | Print help and exit |
+| `--theme <name>` | `nord` | ImGui colour theme: `light`, `classic`, `nord`, `dracula`, `gruvbox`, `catppuccin` |
+| `-h`, `--help` | — | Print help and exit |
 
 ### Examples
 
 ```bash
 # High-quality offline render to PNG
-./rayon --scene ../resources/scenes/09_color_bleed_box.yaml -s 2048 -r 1080
+./rayon -m 2 --scene ../resources/scenes/09_color_bleed_box.yaml -s 2048 -r 1080
 
-# Fast preview
-./rayon --scene ../resources/scenes/default_scene.yaml -s 8 -r 360
+# Fast preview (offline)
+./rayon -m 2 --scene ../resources/scenes/default_scene.yaml -s 8 -r 360
 
-# Interactive session, starting at 32 SPP, 30 fps budget
-./rayon --scene ../resources/scenes/default_scene.yaml --start-samples 32 --target-fps 30
-# > choose mode 3
+# Interactive session, 30 fps budget, adaptive depth
+./rayon --scene ../resources/scenes/default_scene.yaml --target-fps 30 --adaptive-depth
+# > interactive window opens directly (mode 3)
+
+# Interactive with custom theme and no adaptive sampling
+./rayon --theme dracula --no-adaptive-sampling
 ```
 
 ---
