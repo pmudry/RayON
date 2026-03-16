@@ -88,9 +88,12 @@ mkdir -p build && cd build
 cmake .. --fresh
 make -j$(nproc)
 
-# Run
+# Run — defaults to interactive mode when SDL2 is present, offline CUDA otherwise
 ./rayon
-# > Choose renderer: 0=CPU  1=CPU-parallel  2=CUDA  3=CUDA interactive
+
+# Or pick an explicit renderer with -m:
+./rayon -m 2   # CUDA one-shot
+./rayon -m 3   # CUDA interactive (SDL2 required)
 ```
 
 Load one of the bundled example scenes:
