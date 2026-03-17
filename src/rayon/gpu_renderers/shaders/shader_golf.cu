@@ -36,7 +36,9 @@ __device__ float hexagonalDimplePattern(f3 p)
    if (ang < dimple_radius)
    {
       float t = ang / dimple_radius;
-      float depth = dimple_depth * cosf(t * M_PI * 0.5f);
+      // Full half-period cosine (Hann profile): ensures C1 continuity at the boundary
+      // (zero slope at t=1), eliminating the normal discontinuity that caused "jump" artifacts.
+      float depth = dimple_depth * 0.5f * (1.0f + cosf(t * (float)M_PI));
       return -depth;
    }
    return 0.0f;

@@ -511,7 +511,15 @@ class SDLGuiHandler
       updateLogoLayout();
       if (draw_spps_counter)
       {
-         drawSPPSOverlay(sps, fps);
+         // Refresh the displayed values at most 10 times per second (every 100 ms).
+         const Uint32 now_ms = SDL_GetTicks();
+         if (now_ms - last_spps_refresh_time_ms >= 100u)
+         {
+            display_sps               = sps;
+            display_fps               = fps;
+            last_spps_refresh_time_ms = now_ms;
+         }
+         drawSPPSOverlay(display_sps, display_fps);
       }
 
       // Finalize ImGui frame
@@ -577,6 +585,11 @@ class SDLGuiHandler
    Uint32 last_perf_sample_time_ms;
    Uint32 perf_sample_interval_ms;
    Uint32 perf_time_window_ms;
+
+   // Throttled display values for SPP/s and FPS — updated at most 10×/s.
+   float  display_sps               = 0.0f;
+   float  display_fps               = 0.0f;
+   Uint32 last_spps_refresh_time_ms = 0;
 
    // Cached SPP/s + FPS overlay metrics — computed once on first draw, never change.
    bool   spps_metrics_cached = false;
