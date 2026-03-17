@@ -66,6 +66,9 @@ struct hit_record_simple
    float refractive_index;  // GLASS
    bool visible;
 
+   // Interpolated texture coordinate (set by triangle intersection)
+   f2 uv;
+
    // Anisotropic metal fields (only meaningful when material == ANISOTROPIC_METAL)
    f3 tangent;
    float anisotropy;
@@ -276,7 +279,8 @@ __device__ inline bool hit_rectangle(const f3 &corner, const f3 &u, const f3 &v,
 
 __device__ inline bool hit_triangle(const f3 &v0, const f3 &v1, const f3 &v2,
                                     const f3 &n0, const f3 &n1, const f3 &n2,
-                                    bool has_normals,
+                                    const f2 &uv0, const f2 &uv1, const f2 &uv2,
+                                    bool has_normals, bool has_uvs,
                                     const ray_simple &r, float t_min, float t_max,
                                     hit_record_simple &rec)
 {
@@ -306,6 +310,18 @@ __device__ inline bool hit_triangle(const f3 &v0, const f3 &v1, const f3 &v2,
 
    rec.t = t;
    rec.p = r.at(t);
+
+   // Interpolate UV coordinates using barycentric coords
+   const float w_bary = 1.0f - u - v;
+   if (has_uvs)
+   {
+      rec.uv.x = w_bary * uv0.x + u * uv1.x + v * uv2.x;
+      rec.uv.y = w_bary * uv0.y + u * uv1.y + v * uv2.y;
+   }
+   else
+   {
+      rec.uv.x = rec.uv.y = 0.0f;
+   }
 
    // Always use geometric normal for front-face determination
    const f3 geo_normal = normalize(cross(edge1, edge2));
@@ -367,7 +383,8 @@ __device__ __forceinline__ bool intersect_geometry(const CudaScene::Geometry &ge
    case GeometryType::TRIANGLE:
       return hit_triangle(geom.data.triangle.v0, geom.data.triangle.v1, geom.data.triangle.v2,
                           geom.data.triangle.n0, geom.data.triangle.n1, geom.data.triangle.n2,
-                          geom.data.triangle.has_normals,
+                          geom.data.triangle.uv0, geom.data.triangle.uv1, geom.data.triangle.uv2,
+                          geom.data.triangle.has_normals, geom.data.triangle.has_uvs,
                           r, t_min, t_max, rec);
    default:
       return false;
@@ -416,7 +433,8 @@ __device__ inline f3 apply_procedural_pattern(CudaScene::ProceduralPattern patte
 }
 
 __device__ __forceinline__ void apply_material(const CudaScene::Material &mat, hit_record_simple &rec,
-                                               const f3 &geometry_center)
+                                               const f3 &geometry_center,
+                                               const cudaTextureObject_t *d_textures, int num_textures)
 {
    using namespace CudaScene;
    switch (mat.type)
@@ -481,6 +499,15 @@ __device__ __forceinline__ void apply_material(const CudaScene::Material &mat, h
    {
       rec.color = apply_procedural_pattern(mat.pattern, rec.color, mat.pattern_color, mat.pattern_param1,
                                            mat.pattern_param2, rec.p, geometry_center);
+   }
+
+   // Texture sampling: overrides the solid albedo set above. The pattern was
+   // applied first, so the texture then overwrites it (texture takes precedence).
+   if (mat.texture_id >= 0 && mat.texture_id < num_textures && d_textures != nullptr &&
+       d_textures[mat.texture_id] != 0)
+   {
+      float4 texel = tex2D<float4>(d_textures[mat.texture_id], rec.uv.x, 1.0f - rec.uv.y);
+      rec.color = f3(texel.x, texel.y, texel.z);
    }
 }
 
@@ -595,7 +622,7 @@ __device__ inline bool hit_scene(const CudaScene::Scene &scene, const ray_simple
             geom_center = geom.data.sphere.center;
          }
       }
-      apply_material(scene.materials[closest_material_id], rec, geom_center);
+      apply_material(scene.materials[closest_material_id], rec, geom_center, scene.d_textures, scene.num_textures);
       rec.visible = closest_visible;
    }
    return hit_anything;

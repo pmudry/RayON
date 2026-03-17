@@ -133,6 +133,23 @@ static CudaScene::Geometry convertGeometry(const GeometryDesc &desc)
                                  static_cast<float>(desc.data.triangle.n2.y()),
                                  static_cast<float>(desc.data.triangle.n2.z()));
       geom.data.triangle.has_normals = desc.data.triangle.has_normals;
+      // UV coordinates — only copy valid data; zero-initialize when UVs are absent
+      if (desc.data.triangle.has_uvs)
+      {
+         geom.data.triangle.uv0 = f2(static_cast<float>(desc.data.triangle.uv0.x()),
+                                     static_cast<float>(desc.data.triangle.uv0.y()));
+         geom.data.triangle.uv1 = f2(static_cast<float>(desc.data.triangle.uv1.x()),
+                                     static_cast<float>(desc.data.triangle.uv1.y()));
+         geom.data.triangle.uv2 = f2(static_cast<float>(desc.data.triangle.uv2.x()),
+                                     static_cast<float>(desc.data.triangle.uv2.y()));
+      }
+      else
+      {
+         geom.data.triangle.uv0 = f2(0.0f, 0.0f);
+         geom.data.triangle.uv1 = f2(0.0f, 0.0f);
+         geom.data.triangle.uv2 = f2(0.0f, 0.0f);
+      }
+      geom.data.triangle.has_uvs = desc.data.triangle.has_uvs;
       break;
 
    default:
@@ -269,6 +286,70 @@ CudaScene::Scene *CudaSceneBuilder::buildGPUScene(const SceneDescription &desc)
    delete[] host_materials;
    delete[] host_geometries;
 
+   // Build CUDA texture objects from TextureDesc array
+   {
+      int num_textures = static_cast<int>(desc.textures.size());
+      host_scene.num_textures = num_textures;
+      if (num_textures > 0)
+      {
+         // Host-side array of texture object handles
+         std::vector<cudaTextureObject_t> host_tex_objs(num_textures, 0);
+
+         for (int ti = 0; ti < num_textures; ++ti)
+         {
+            const TextureDesc &td = desc.textures[ti];
+            if (td.data.empty() || td.width <= 0 || td.height <= 0)
+               continue;
+
+            // Allocate a 2D CUDA array (RGBA float4)
+            cudaChannelFormatDesc fmt = cudaCreateChannelDesc<float4>();
+            cudaArray_t cu_array = nullptr;
+            CUDA_CHECK(cudaMallocArray(&cu_array, &fmt, static_cast<size_t>(td.width), static_cast<size_t>(td.height)));
+
+            // Convert uint8 RGBA → float4 row by row
+            std::vector<float4> float_pixels(static_cast<size_t>(td.width) * static_cast<size_t>(td.height));
+            for (int p = 0; p < td.width * td.height; ++p)
+            {
+               const uint8_t *px = td.data.data() + p * 4;
+               float_pixels[p] = make_float4(px[0] / 255.0f, px[1] / 255.0f, px[2] / 255.0f, px[3] / 255.0f);
+            }
+
+            CUDA_CHECK(cudaMemcpy2DToArray(cu_array, 0, 0, float_pixels.data(),
+                                static_cast<size_t>(td.width) * sizeof(float4),
+                                static_cast<size_t>(td.width) * sizeof(float4),
+                                static_cast<size_t>(td.height),
+                                cudaMemcpyHostToDevice));
+
+            // Create texture object with bilinear filtering and clamp addressing
+            cudaResourceDesc res_desc = {};
+            res_desc.resType = cudaResourceTypeArray;
+            res_desc.res.array.array = cu_array;
+
+            cudaTextureDesc tex_desc = {};
+            tex_desc.addressMode[0] = cudaAddressModeClamp;
+            tex_desc.addressMode[1] = cudaAddressModeClamp;
+            tex_desc.filterMode = cudaFilterModeLinear;
+            tex_desc.readMode = cudaReadModeElementType;
+            tex_desc.normalizedCoords = 1;
+
+            cudaTextureObject_t tex_obj = 0;
+            CUDA_CHECK(cudaCreateTextureObject(&tex_obj, &res_desc, &tex_desc, nullptr));
+            host_tex_objs[ti] = tex_obj;
+
+            printf("GPU Texture[%d]: '%s' (%dx%d)\n", ti, td.path.c_str(), td.width, td.height);
+         }
+
+         // Upload the array of handles to device memory
+         CUDA_CHECK(cudaMalloc(&host_scene.d_textures, num_textures * sizeof(cudaTextureObject_t)));
+         CUDA_CHECK(cudaMemcpy(host_scene.d_textures, host_tex_objs.data(),
+                    num_textures * sizeof(cudaTextureObject_t), cudaMemcpyHostToDevice));
+      }
+      else
+      {
+         host_scene.d_textures = nullptr;
+      }
+   }
+
 // Diagnostic: Print scene transfer summary
 #ifdef DIAGS
    printf("\n- GPU Scene Transfer Summary:\n");
@@ -326,6 +407,27 @@ void CudaSceneBuilder::freeGPUScene(CudaScene::Scene *d_scene)
    if (host_scene.bvh_nodes)
    {
       cudaFree(host_scene.bvh_nodes);
+   }
+
+   // Destroy texture objects and free the handle array
+   if (host_scene.d_textures && host_scene.num_textures > 0)
+   {
+      std::vector<cudaTextureObject_t> host_tex(static_cast<size_t>(host_scene.num_textures));
+      CUDA_CHECK(cudaMemcpy(host_tex.data(), host_scene.d_textures,
+                            host_scene.num_textures * sizeof(cudaTextureObject_t),
+                            cudaMemcpyDeviceToHost));
+      for (int i = 0; i < host_scene.num_textures; ++i)
+      {
+         if (host_tex[i])
+         {
+            cudaResourceDesc rd = {};
+            CUDA_CHECK(cudaGetTextureObjectResourceDesc(&rd, host_tex[i]));
+            CUDA_CHECK(cudaDestroyTextureObject(host_tex[i]));
+            if (rd.resType == cudaResourceTypeArray && rd.res.array.array)
+               CUDA_CHECK(cudaFreeArray(rd.res.array.array));
+         }
+      }
+      CUDA_CHECK(cudaFree(host_scene.d_textures));
    }
 
    // Free the scene struct itself (now on device)

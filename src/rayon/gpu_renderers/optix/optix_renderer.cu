@@ -69,6 +69,8 @@ struct OptixState
    CUdeviceptr d_sbt_miss = 0;
    CUdeviceptr d_sbt_hitgroup = 0;
    OptixMaterialData *d_materials = nullptr;
+   cudaTextureObject_t *d_textures = nullptr;
+   int num_textures = 0;
 
    // Persistent device accumulation buffer — stays on GPU across batches
    // to avoid costly per-batch host↔device float3↔float4 round-trips
@@ -149,7 +151,7 @@ static void initializeOptiX()
    pipeline_options.usesMotionBlur = false;
    pipeline_options.traversableGraphFlags = OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_GAS;
    pipeline_options.numPayloadValues = 2; // PRD pointer (2 x uint32)
-   pipeline_options.numAttributeValues = 3; // Normal (3 x float)
+   pipeline_options.numAttributeValues = 5; // Normal (3 x float) + UV (2 x float)
    pipeline_options.exceptionFlags = OPTIX_EXCEPTION_FLAG_NONE;
    pipeline_options.pipelineLaunchParamsVariableName = "params";
 
@@ -287,6 +289,7 @@ static void buildGAS(const Scene::SceneDescription &scene)
       case Scene::GeometryType::SPHERE:
       case Scene::GeometryType::RECTANGLE:
       case Scene::GeometryType::TRIANGLE:
+      case Scene::GeometryType::DISPLACED_SPHERE:
          // These are implemented by the OptiX hit programs.
          supported = true;
          break;
@@ -476,6 +479,22 @@ static void buildGAS(const Scene::SceneDescription &scene)
                                         static_cast<float>(g.data.triangle.n2.y()),
                                         static_cast<float>(g.data.triangle.n2.z()));
          rec.data.tri_has_normals = g.data.triangle.has_normals ? 1 : 0;
+         rec.data.tri_has_uvs = g.data.triangle.has_uvs ? 1 : 0;
+         if (g.data.triangle.has_uvs)
+         {
+            rec.data.tri_uv0 = make_float2(static_cast<float>(g.data.triangle.uv0.x()),
+                                            static_cast<float>(g.data.triangle.uv0.y()));
+            rec.data.tri_uv1 = make_float2(static_cast<float>(g.data.triangle.uv1.x()),
+                                            static_cast<float>(g.data.triangle.uv1.y()));
+            rec.data.tri_uv2 = make_float2(static_cast<float>(g.data.triangle.uv2.x()),
+                                            static_cast<float>(g.data.triangle.uv2.y()));
+         }
+         else
+         {
+            rec.data.tri_uv0 = make_float2(0.0f, 0.0f);
+            rec.data.tri_uv1 = make_float2(0.0f, 0.0f);
+            rec.data.tri_uv2 = make_float2(0.0f, 0.0f);
+         }
          break;
 
       default:
@@ -525,6 +544,7 @@ static void buildGAS(const Scene::SceneDescription &scene)
          materials[i].anisotropy = m.anisotropy;
          materials[i].film_thickness = m.film_thickness;
          materials[i].film_ior = m.film_ior;
+         materials[i].texture_id = m.texture_id;
       }
       CUDA_CHECK(cudaMalloc(&g_state.d_materials, num_materials * sizeof(OptixMaterialData)));
       CUDA_CHECK(cudaMemcpy(g_state.d_materials, materials.data(), num_materials * sizeof(OptixMaterialData),
@@ -532,7 +552,68 @@ static void buildGAS(const Scene::SceneDescription &scene)
    }
 
    printf("OptiX GAS built: %d geometries, %d materials\n", num_geoms, num_materials);
-}
+
+   // Build CUDA texture objects from SceneDescription textures
+   if (g_state.d_textures)
+   {
+      std::vector<cudaTextureObject_t> old_texs(static_cast<size_t>(g_state.num_textures));
+      CUDA_CHECK(cudaMemcpy(old_texs.data(), g_state.d_textures,
+                             g_state.num_textures * sizeof(cudaTextureObject_t), cudaMemcpyDeviceToHost));
+      for (int i = 0; i < g_state.num_textures; ++i)
+      {
+         if (old_texs[i])
+         {
+            cudaResourceDesc rd = {};
+            cudaGetTextureObjectResourceDesc(&rd, old_texs[i]);
+            cudaDestroyTextureObject(old_texs[i]);
+            if (rd.resType == cudaResourceTypeArray && rd.res.array.array)
+               cudaFreeArray(rd.res.array.array);
+         }
+      }
+      CUDA_CHECK(cudaFree(g_state.d_textures));
+      g_state.d_textures = nullptr;
+      g_state.num_textures = 0;
+   }
+
+   g_state.num_textures = static_cast<int>(scene.textures.size());
+   if (g_state.num_textures > 0)
+   {
+      std::vector<cudaTextureObject_t> host_tex_objs(static_cast<size_t>(g_state.num_textures), 0);
+      for (int ti = 0; ti < g_state.num_textures; ++ti)
+      {
+         const Scene::TextureDesc &td = scene.textures[ti];
+         if (td.data.empty() || td.width <= 0 || td.height <= 0)
+            continue;
+         cudaChannelFormatDesc fmt = cudaCreateChannelDesc<float4>();
+         cudaArray_t cu_array = nullptr;
+         CUDA_CHECK(cudaMallocArray(&cu_array, &fmt, static_cast<size_t>(td.width), static_cast<size_t>(td.height)));
+         std::vector<float4> float_pixels(static_cast<size_t>(td.width) * static_cast<size_t>(td.height));
+         for (int p = 0; p < td.width * td.height; ++p)
+         {
+            const uint8_t *px = td.data.data() + p * 4;
+            float_pixels[p] = make_float4(px[0] / 255.0f, px[1] / 255.0f, px[2] / 255.0f, px[3] / 255.0f);
+         }
+         CUDA_CHECK(cudaMemcpy2DToArray(cu_array, 0, 0, float_pixels.data(),
+                                         static_cast<size_t>(td.width) * sizeof(float4),
+                                         static_cast<size_t>(td.width) * sizeof(float4),
+                                         static_cast<size_t>(td.height), cudaMemcpyHostToDevice));
+         cudaResourceDesc res_desc = {};
+         res_desc.resType = cudaResourceTypeArray;
+         res_desc.res.array.array = cu_array;
+         cudaTextureDesc tex_desc = {};
+         tex_desc.addressMode[0] = cudaAddressModeClamp;
+         tex_desc.addressMode[1] = cudaAddressModeClamp;
+         tex_desc.filterMode = cudaFilterModeLinear;
+         tex_desc.readMode = cudaReadModeElementType;
+         tex_desc.normalizedCoords = 1;
+         CUDA_CHECK(cudaCreateTextureObject(&host_tex_objs[ti], &res_desc, &tex_desc, nullptr));
+         printf("OptiX Texture[%d]: '%s' (%dx%d)\n", ti, td.path.c_str(), td.width, td.height);
+      }
+      CUDA_CHECK(cudaMalloc(&g_state.d_textures, g_state.num_textures * sizeof(cudaTextureObject_t)));
+      CUDA_CHECK(cudaMemcpy(g_state.d_textures, host_tex_objs.data(),
+                             g_state.num_textures * sizeof(cudaTextureObject_t), cudaMemcpyHostToDevice));
+   }
+} // end buildGAS()
 
 //==============================================================================
 // PUBLIC INTERFACE (extern "C" for host renderer)
@@ -611,6 +692,8 @@ extern "C" unsigned long long optixRendererLaunch(int width, int height, int num
    launch_params.frame_seed = total_samples_so_far + 42;
    launch_params.materials = g_state.d_materials;
    launch_params.num_materials = num_materials;
+   launch_params.d_textures = g_state.d_textures;
+   launch_params.num_textures = g_state.num_textures;
    launch_params.traversable = g_state.gas_handle;
    launch_params.background_intensity = bg_intensity;
    launch_params.dof_enabled = dof_enabled;
@@ -666,6 +749,23 @@ extern "C" void optixRendererCleanup()
       CUDA_CHECK(cudaFree(reinterpret_cast<void *>(g_state.d_launch_params)));
    if (g_state.d_materials)
       CUDA_CHECK(cudaFree(g_state.d_materials));
+   if (g_state.d_textures)
+   {
+      std::vector<cudaTextureObject_t> texs(static_cast<size_t>(g_state.num_textures));
+      cudaMemcpy(texs.data(), g_state.d_textures, g_state.num_textures * sizeof(cudaTextureObject_t), cudaMemcpyDeviceToHost);
+      for (int i = 0; i < g_state.num_textures; ++i)
+      {
+         if (texs[i])
+         {
+            cudaResourceDesc rd = {};
+            cudaGetTextureObjectResourceDesc(&rd, texs[i]);
+            cudaDestroyTextureObject(texs[i]);
+            if (rd.resType == cudaResourceTypeArray && rd.res.array.array)
+               cudaFreeArray(rd.res.array.array);
+         }
+      }
+      CUDA_CHECK(cudaFree(g_state.d_textures));
+   }
    if (g_state.d_sbt_raygen)
       CUDA_CHECK(cudaFree(reinterpret_cast<void *>(g_state.d_sbt_raygen)));
    if (g_state.d_sbt_miss)

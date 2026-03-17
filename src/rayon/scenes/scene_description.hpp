@@ -48,7 +48,6 @@ enum class MaterialType : uint8_t {
 enum class ProceduralPattern : uint8_t {
     NONE,                    // No pattern, use solid color
     FIBONACCI_DOTS,          // Regularly spaced dots using Fibonacci grid
-    CHECKERBOARD,           // Checkerboard pattern
     STRIPES                 // Striped pattern
 };
 
@@ -360,7 +359,9 @@ struct GeometryDesc {
         struct {
             Vec3 v0, v1, v2;
             Vec3 n0, n1, n2;
+            Vec3 uv0, uv1, uv2;    // Texture coordinates (u in x, v in y)
             bool has_normals;
+            bool has_uvs;
         } triangle;
         
         // Mesh instance
@@ -436,6 +437,21 @@ struct BVHTree {
 };
 
 //==============================================================================
+// TEXTURE DATA
+//==============================================================================
+
+/**
+ * @brief Texture description - stores pixel data loaded from disk
+ */
+struct TextureDesc {
+    std::string path;              // Filesystem path (for deduplication)
+    int width = 0;
+    int height = 0;
+    int channels = 0;              // Always 4 (RGBA) after loading
+    std::vector<uint8_t> data;     // Raw RGBA pixel data, row-major
+};
+
+//==============================================================================
 // COMPLETE SCENE DESCRIPTION
 //==============================================================================
 
@@ -447,6 +463,7 @@ public:
     std::vector<MaterialDesc> materials;
     std::vector<GeometryDesc> geometries;
     std::vector<TriangleMesh> meshes;
+    std::vector<TextureDesc> textures;         // Loaded texture images
     std::vector<BVHTree> bvh_trees;            // Per-mesh BVH
     BVHTree top_level_bvh;                    // Scene-level BVH
     
@@ -504,6 +521,12 @@ public:
         meshes.push_back(mesh);
         return static_cast<int>(meshes.size() - 1);
     }
+
+    /**
+     * @brief Load a texture from disk and add it to the scene (deduplicates by path)
+     * @return Texture ID (index in textures array), or -1 on failure
+     */
+    int addTexture(const std::string& path);
     
     //==========================================================================
     // HIGH-LEVEL API - Convenience methods
@@ -583,6 +606,10 @@ public:
         geom.data.triangle.v1 = v1;
         geom.data.triangle.v2 = v2;
         geom.data.triangle.has_normals = false;
+        geom.data.triangle.has_uvs = false;
+        geom.data.triangle.uv0 = Vec3(0, 0, 0);
+        geom.data.triangle.uv1 = Vec3(0, 0, 0);
+        geom.data.triangle.uv2 = Vec3(0, 0, 0);
         
         // Compute bounding box with epsilon padding to avoid zero-thickness AABBs
         constexpr double eps = 1e-4;
@@ -612,6 +639,10 @@ public:
         geom.data.triangle.n1 = n1;
         geom.data.triangle.n2 = n2;
         geom.data.triangle.has_normals = true;
+        geom.data.triangle.has_uvs = false;
+        geom.data.triangle.uv0 = Vec3(0, 0, 0);
+        geom.data.triangle.uv1 = Vec3(0, 0, 0);
+        geom.data.triangle.uv2 = Vec3(0, 0, 0);
         
         // Compute bounding box with epsilon padding to avoid zero-thickness AABBs
         constexpr double eps = 1e-4;
@@ -629,6 +660,68 @@ public:
         geometries.push_back(geom);
     }
     
+    void addTriangleWithUVs(const Vec3& v0, const Vec3& v1, const Vec3& v2,
+                             const Vec3& uv0, const Vec3& uv1, const Vec3& uv2, int mat_id) {
+        GeometryDesc geom;
+        geom.type = GeometryType::TRIANGLE;
+        geom.material_id = mat_id;
+        geom.data.triangle.v0 = v0;
+        geom.data.triangle.v1 = v1;
+        geom.data.triangle.v2 = v2;
+        geom.data.triangle.uv0 = uv0;
+        geom.data.triangle.uv1 = uv1;
+        geom.data.triangle.uv2 = uv2;
+        geom.data.triangle.has_normals = false;
+        geom.data.triangle.has_uvs = true;
+
+        constexpr double eps = 1e-4;
+        geom.bounds_min = Vec3(
+            std::min(std::min(v0.x(), v1.x()), v2.x()) - eps,
+            std::min(std::min(v0.y(), v1.y()), v2.y()) - eps,
+            std::min(std::min(v0.z(), v1.z()), v2.z()) - eps
+        );
+        geom.bounds_max = Vec3(
+            std::max(std::max(v0.x(), v1.x()), v2.x()) + eps,
+            std::max(std::max(v0.y(), v1.y()), v2.y()) + eps,
+            std::max(std::max(v0.z(), v1.z()), v2.z()) + eps
+        );
+
+        geometries.push_back(geom);
+    }
+
+    void addTriangleWithNormalsAndUVs(const Vec3& v0, const Vec3& v1, const Vec3& v2,
+                                      const Vec3& n0, const Vec3& n1, const Vec3& n2,
+                                      const Vec3& uv0, const Vec3& uv1, const Vec3& uv2, int mat_id) {
+        GeometryDesc geom;
+        geom.type = GeometryType::TRIANGLE;
+        geom.material_id = mat_id;
+        geom.data.triangle.v0 = v0;
+        geom.data.triangle.v1 = v1;
+        geom.data.triangle.v2 = v2;
+        geom.data.triangle.n0 = n0;
+        geom.data.triangle.n1 = n1;
+        geom.data.triangle.n2 = n2;
+        geom.data.triangle.uv0 = uv0;
+        geom.data.triangle.uv1 = uv1;
+        geom.data.triangle.uv2 = uv2;
+        geom.data.triangle.has_normals = true;
+        geom.data.triangle.has_uvs = true;
+
+        constexpr double eps = 1e-4;
+        geom.bounds_min = Vec3(
+            std::min(std::min(v0.x(), v1.x()), v2.x()) - eps,
+            std::min(std::min(v0.y(), v1.y()), v2.y()) - eps,
+            std::min(std::min(v0.z(), v1.z()), v2.z()) - eps
+        );
+        geom.bounds_max = Vec3(
+            std::max(std::max(v0.x(), v1.x()), v2.x()) + eps,
+            std::max(std::max(v0.y(), v1.y()), v2.y()) + eps,
+            std::max(std::max(v0.z(), v1.z()), v2.z()) + eps
+        );
+
+        geometries.push_back(geom);
+    }
+
     void addMeshInstance(int mesh_id, const Vec3& pos, const Vec3& rot, const Vec3& scale, int mat_id) {
         GeometryDesc geom;
         geom.type = GeometryType::TRIANGLE_MESH;

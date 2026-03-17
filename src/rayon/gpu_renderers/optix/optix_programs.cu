@@ -430,6 +430,49 @@ extern "C" __global__ void __miss__ms()
 }
 
 //==============================================================================
+// GOLF BALL DISPLACEMENT HELPERS (ported from shader_golf.cu)
+//==============================================================================
+
+__device__ __forceinline__ float3 fibonacci_point_optix(int i, int n)
+{
+   const float ga = 2.39996323f;
+   float k = (float)i + 0.5f;
+   float phi = acosf(1.0f - 2.0f * k / (float)n);
+   float theta = ga * k;
+   float s = sinf(phi);
+   return make_float3(cosf(theta) * s, sinf(theta) * s, cosf(phi));
+}
+
+__device__ __forceinline__ float distanceToNearestDimple_optix(float3 p)
+{
+   float3 q = normalize3(p);
+   const int N = 150;
+   float max_dot = -1.0f;
+   for (int i = 0; i < N; ++i)
+   {
+      float3 c = fibonacci_point_optix(i, N);
+      float d = dot3(q, c);
+      if (d > max_dot)
+         max_dot = d;
+   }
+   max_dot = fmaxf(fminf(max_dot, 1.0f), -1.0f);
+   return acosf(max_dot);
+}
+
+__device__ __forceinline__ float hexagonalDimplePattern_optix(float3 p)
+{
+   float ang = distanceToNearestDimple_optix(normalize3(p));
+   const float dimple_radius = 0.24f;
+   const float dimple_depth  = 0.35f;
+   if (ang < dimple_radius)
+   {
+      float t = ang / dimple_radius;
+      return -dimple_depth * cosf(t * M_PIf * 0.5f);
+   }
+   return 0.0f;
+}
+
+//==============================================================================
 // CLOSEST HIT — fill PRD with material/geometry info
 //==============================================================================
 
@@ -444,6 +487,12 @@ extern "C" __global__ void __closesthit__ch()
    prd->hit_normal = make_float3(__int_as_float(optixGetAttribute_0()), __int_as_float(optixGetAttribute_1()),
                                   __int_as_float(optixGetAttribute_2()));
 
+   // Get UV from attributes 3 and 4 (only valid for triangles, hit kind == 2)
+   if (optixGetHitKind() == 2)
+      prd->hit_uv = make_float2(__int_as_float(optixGetAttribute_3()), __int_as_float(optixGetAttribute_4()));
+   else
+      prd->hit_uv = make_float2(0.0f, 0.0f);
+
    // Front face test
    float3 ray_dir = optixGetWorldRayDirection();
    prd->front_face = dot3(ray_dir, prd->hit_normal) < 0.0f;
@@ -454,6 +503,77 @@ extern "C" __global__ void __closesthit__ch()
    float t_hit = optixGetRayTmax();
    float3 ray_origin = optixGetWorldRayOrigin();
    prd->hit_point = ray_origin + t_hit * ray_dir;
+
+   // --- Displaced sphere: post-intersection position and normal correction ---
+   if (sbt_data->geom_type == OptixGeomType::DISPLACED_SPHERE)
+   {
+      float3 surface_point = prd->hit_point;
+      float3 center        = sbt_data->center;
+
+      float3 local          = surface_point - center;
+      float3 normalized_loc = normalize3(local);
+      float  base_disp      = hexagonalDimplePattern_optix(normalized_loc);
+
+      const float displacement_scale = 0.2f;
+      const float dimple_depth_param = 0.35f;
+      const float geo_strength       = 0.35f;
+
+      float  d_norm       = fminf(1.0f, fmaxf(0.0f, -base_disp / dimple_depth_param));
+      float  outward_push = sbt_data->radius * geo_strength * (1.0f - d_norm);
+      float3 displaced_pt = surface_point + outward_push * normalized_loc;
+
+      float3 base_normal = normalize3(displaced_pt - center);
+      float3 final_normal;
+
+      if (base_disp < -0.001f)
+      {
+         float3 helper = fabsf(base_normal.x) > 0.8f ? make_float3(0, 1, 0) : make_float3(1, 0, 0);
+         float3 t1     = normalize3(cross3(helper, base_normal));
+         float3 t2     = cross3(base_normal, t1);
+
+         const float h = 0.015f;
+         float3 p_hat  = base_normal;
+         float  d0     = hexagonalDimplePattern_optix(p_hat);
+         float  d1     = hexagonalDimplePattern_optix(normalize3(p_hat + h * t1));
+         float  d2     = hexagonalDimplePattern_optix(normalize3(p_hat + h * t2));
+
+         float  dd1      = (d1 - d0) / h;
+         float  dd2      = (d2 - d0) / h;
+         float3 grad_tan = dd1 * t1 + dd2 * t2;
+         float3 delta_n  = (-displacement_scale) * grad_tan;
+
+         float3 view_dir  = normalize3(-ray_dir);
+         float  ndv       = fmaxf(0.0f, dot3(base_normal, view_dir));
+         float  atten_t   = fmaxf(0.0f, fminf(1.0f, (ndv - 0.1f) / 0.3f));
+         float  atten     = atten_t * atten_t * (3.0f - 2.0f * atten_t); // smoothstep
+         delta_n = atten * delta_n;
+
+         float max_len = 0.4f;
+         float len     = length3(delta_n);
+         if (len > max_len && len > 1e-6f)
+            delta_n = (max_len / len) * delta_n;
+
+         float3 perturbed = normalize3(base_normal + delta_n);
+         if (dot3(perturbed, base_normal) < 0.0f)
+            perturbed = -perturbed;
+         if (!(perturbed.x == perturbed.x) || !(perturbed.y == perturbed.y) || !(perturbed.z == perturbed.z))
+            perturbed = base_normal;
+         final_normal = perturbed;
+      }
+      else
+      {
+         final_normal = base_normal;
+      }
+
+      // Re-determine front face with the perturbed normal and push off surface
+      prd->front_face = dot3(ray_dir, final_normal) < 0.0f;
+      if (!prd->front_face)
+         final_normal = -final_normal;
+      prd->hit_normal = final_normal;
+
+      const float surface_epsilon = 1e-3f;
+      prd->hit_point = displaced_pt + surface_epsilon * final_normal;
+   }
 
    // Look up material from params array
    int mat_idx = sbt_data->material_idx;
@@ -468,12 +588,32 @@ extern "C" __global__ void __closesthit__ch()
       prd->hit_film_thickness = mat.film_thickness;
       prd->hit_film_ior = mat.film_ior;
 
+      // Texture sampling: override diffuse color with texel if texture is bound
+      if (mat.texture_id >= 0 && mat.texture_id < params.num_textures && params.d_textures)
+      {
+         float4 texel = tex2D<float4>(params.d_textures[mat.texture_id], prd->hit_uv.x, 1.0f - prd->hit_uv.y);
+         prd->hit_color = make_float3(texel.x, texel.y, texel.z);
+      }
+
       // Apply procedural pattern if present
       if (mat.pattern == 1) // FIBONACCI_DOTS
       {
-         // Simplified pattern: use solid color for now
-         // Full fibonacci dot pattern requires porting the angular distance function
-         prd->hit_color = mat.albedo;
+         float3 local  = prd->hit_point - sbt_data->center;
+         float3 dir    = normalize3(local);
+         int    N      = (int)mat.pattern_param1;
+         float  dot_rad = mat.pattern_param2;
+         float  max_dp  = -1.0f;
+         for (int i = 0; i < N; ++i)
+         {
+            float3 c = fibonacci_point_optix(i, N);
+            float  d = dot3(dir, c);
+            if (d > max_dp)
+               max_dp = d;
+         }
+         max_dp = fmaxf(fminf(max_dp, 1.0f), -1.0f);
+         float ang  = acosf(max_dp);
+         float mask = ang < dot_rad ? 0.0f : 1.0f;
+         prd->hit_color = mask * mat.albedo + (1.0f - mask) * mat.pattern_color;
       }
    }
    else
@@ -584,10 +724,21 @@ extern "C" __global__ void __intersection__triangle()
       outward_normal = normalize3(cross3(edge1, edge2));
    }
 
+   // Compute UV: interpolate per-vertex UV coords using barycentric coordinates
+   float2 hit_uv = make_float2(0.0f, 0.0f);
+   if (sbt_data->tri_has_uvs)
+   {
+      const float w = 1.0f - u - v;
+      hit_uv.x = w * sbt_data->tri_uv0.x + u * sbt_data->tri_uv1.x + v * sbt_data->tri_uv2.x;
+      hit_uv.y = w * sbt_data->tri_uv0.y + u * sbt_data->tri_uv1.y + v * sbt_data->tri_uv2.y;
+   }
+
    optixReportIntersection(t, 2, // hit kind = 2 for triangle
                            __float_as_int(outward_normal.x),
                            __float_as_int(outward_normal.y),
-                           __float_as_int(outward_normal.z));
+                           __float_as_int(outward_normal.z),
+                           __float_as_int(hit_uv.x),
+                           __float_as_int(hit_uv.y));
 }
 
 extern "C" __global__ void __intersection__rectangle()

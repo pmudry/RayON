@@ -445,6 +445,57 @@ present at CMake time and falls back to CUDA gracefully if it is not.
 
 ---
 
+## Milestone 16 — MTL Materials & Image Texture Mapping (March 15–17, 2026) { #textures }
+
+**Commits:** [`ff0a128`](https://github.com/pmudry/RayON/commit/ff0a128) · [`79793cc`](https://github.com/pmudry/RayON/commit/79793cc) · [`76be1cf`](https://github.com/pmudry/RayON/commit/76be1cf)
+
+> *"Add MTL material loading and diffuse texture support for OBJ meshes"*  
+> *"fix BVH not activating in texture_test scene (20x CUDA speedup)"*
+
+!!! note "AI-assisted development"
+    This milestone was developed with the extensive assistance of an LLM coding agent. The MTL
+    parser, UV propagation pipeline, CUDA/OptiX texture object management were written collaboratively with an AI pair programmer.
+
+The renderer gains the ability to load real image textures and apply them to triangle meshes
+using UV coordinates from `.obj` files. Two complementary features land together:
+
+**Wavefront MTL support** — `.obj` files can now reference a companion `.mtl` file that assigns
+named materials to face groups. The MTL parser (`mtl_loader.hpp`) reads `Kd` (diffuse colour),
+`Ke` (emission), `Ns`/`Ni` (shininess/IOR), and `map_Kd` (diffuse texture map). A heuristic
+maps these parameters to the renderer's own material types: dark emitters become `LIGHT`,
+high-shininess surfaces become `ROUGH_MIRROR` or `MIRROR`, IOR > 1 becomes `GLASS`, and
+everything else is `LAMBERTIAN`.
+
+**Image texture mapping** — A new `texture_loader.cc` loads PNG/JPG images via `stb_image`.
+The OBJ parser is rewritten to parse `vt` UV coordinates and propagate them through `usemtl`
+groups to individual triangles. On the GPU side, UV values are interpolated across the triangle
+in `hit_triangle()` and the resulting (u, v) pair is used to sample a `cudaTextureObject_t`
+(CUDA path) or a `CUtexObject` via OptiX intersection attributes (OptiX path). Texture handles
+are uploaded to the device once at scene build time and freed on cleanup.
+
+!!! warning "GPU only"
+    Texture mapping is currently implemented for the **CUDA and OptiX renderers only**. The CPU
+    path renders textured surfaces as flat Lambertian with the material's base colour.
+
+A BVH activation bug in the texture test scene was found and fixed; enabling it produced a
+**20× CUDA speedup** on that scene and is a good reminder that BVH must be explicitly enabled
+in YAML with `use_bvh: true`.
+
+New UV-mapped assets shipped with the release: `plane_uv.obj`, `cube_uv.obj`, `sphere_uv.obj`,
+a checker-grid texture (`grid_512.png`), and a ready-to-run `texture_test.yaml` scene.
+
+<div class="img-grid cols-2">
+  <img src="../assets/images/samples/textures/uv_mapping.png" alt="UV texture mapping — cube, sphere and plane with checker-grid texture">
+  <img src="../assets/images/samples/textures/texture_orig.png" alt="MTL-driven multi-material OBJ scene — diffuse colours from .mtl file">
+</div>
+
+**What changed:** `mtl_loader.hpp` MTL parser, `texture_loader.cc` stb_image loader,
+`obj_loader.hpp` UV + usemtl rewrite, `TextureDesc` in `scene_description.hpp`,
+UV interpolation in CUDA and OptiX backends, `cudaTextureObject_t` upload/cleanup,
+UV-mapped OBJ assets, `texture_test.yaml` scene, `generate_uv_models.py` script.
+
+---
+
 ## The Timeline at a Glance
 
 ```
@@ -468,6 +519,7 @@ Mar 12 ━━ Adaptive sampling, normal arrows
 Mar 13 ━━ Triangle/OBJ pipeline, Platonic solids
 Mar 13 ━━ Anisotropic metals, thin-film, clear-coat
 Mar 15 ━━ NVIDIA OptiX — 4× speedup (hardware RT)
+Mar 15 ━━ MTL materials & image texture mapping (GPU)
 ```
 
 ---
@@ -523,3 +575,4 @@ The milestone checkpoints and their default demo modes are:
 | 13 | 2026-03-13 | `1f7a83d` | interactive | Thin-film / clear-coat materials |
 | 14 | 2026-03-15 | `8ec565e` | offline | First OptiX render |
 | 15 | 2026-03-15 | `d831935` | offline | OptiX 4× speedup on dragon mesh |
+| 16 | 2026-03-15 | `ff0a128` | interactive | MTL materials & image textures on OBJ meshes |

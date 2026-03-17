@@ -25,10 +25,10 @@ materials:
     type: lambertian
     albedo: [0.20, 0.80, 0.86]
     pattern:
-      type: checkerboard
+      type: fibonacci_dots
       color: [0.04, 0.04, 0.04]
       dot_count: 8
-      dot_radius: 0.5
+      dot_radius: 0.45
   - name: stripes
     type: lambertian
     albedo: [0.90, 0.84, 0.25]

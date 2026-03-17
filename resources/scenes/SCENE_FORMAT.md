@@ -259,12 +259,17 @@ Regularly-spaced dots distributed with the Fibonacci / Vogel spiral on the spher
     dot_radius: 0.33            # Angular radius as fraction of hemisphere
 ```
 
-#### `checkerboard` / `stripes`
+#### `stripes`
+
+Alternating stripes along the Y axis of the sphere's local coordinate.
 
 ```yaml
-pattern:
-  type: "checkerboard"
-  color: [0.05, 0.05, 0.05]
+- name: "striped_ball"
+  type: "lambertian"
+  albedo: [0.8, 0.2, 0.2]
+  pattern:
+    type: "stripes"
+    color: [0.9, 0.9, 0.9]   # Stripe colour (alternates with albedo)
 ```
 
 ---

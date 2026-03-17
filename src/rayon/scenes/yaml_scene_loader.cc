@@ -7,6 +7,7 @@
 #include "obj_loader.hpp"
 #include <algorithm>
 #include <cctype>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <map>
@@ -109,8 +110,6 @@ static ProceduralPattern parsePatternType(const string &type_str)
 {
    if (type_str == "fibonacci_dots")
       return ProceduralPattern::FIBONACCI_DOTS;
-   if (type_str == "checkerboard")
-      return ProceduralPattern::CHECKERBOARD;
    if (type_str == "stripes")
       return ProceduralPattern::STRIPES;
    return ProceduralPattern::NONE;
@@ -330,7 +329,7 @@ class SimpleYAMLParser
 };
 
 static bool loadMaterials(const SimpleYAMLParser &parser, SceneDescription &scene,
-                          map<string, int> &material_name_to_id)
+                          map<string, int> &material_name_to_id, const string &scene_dir)
 {
    // Try to load materials by index
    for (int i = 0; i < 100; ++i)
@@ -392,6 +391,21 @@ static bool loadMaterials(const SimpleYAMLParser &parser, SceneDescription &scen
          mat.pattern_param2 = parser.getFloat(prefix + ".pattern.dot_radius", 0.0f);
       }
 
+      // Check for diffuse texture
+      if (parser.hasKey(prefix + ".texture"))
+      {
+         string tex_path = removeQuotes(parser.getString(prefix + ".texture"));
+         if (!tex_path.empty())
+         {
+            // Resolve relative paths against the YAML file's directory
+            if (!tex_path.empty() && !scene_dir.empty() &&
+                !std::filesystem::path(tex_path).is_absolute())
+               tex_path = scene_dir + "/" + tex_path;
+            int tex_id = scene.addTexture(tex_path);
+            mat.texture_id = tex_id;
+         }
+      }
+
       int mat_id = scene.addMaterial(mat);
       material_name_to_id[mat_name] = mat_id;
 
@@ -420,14 +434,28 @@ static bool loadGeometry(const SimpleYAMLParser &parser, SceneDescription &scene
       string geom_type = removeQuotes(parser.getString(prefix + ".type"));
       string mat_name = removeQuotes(parser.getString(prefix + ".material"));
 
-      // Look up material ID
-      auto it = material_name_to_id.find(mat_name);
-      if (it == material_name_to_id.end())
+      // Look up material ID — optional for OBJ entries (MTL file provides materials)
+      int mat_id = -1;
+      if (!mat_name.empty())
       {
-         cerr << "ERROR: Unknown material: " << mat_name << "\n";
+         auto it = material_name_to_id.find(mat_name);
+         if (it != material_name_to_id.end())
+         {
+            mat_id = it->second;
+         }
+         else
+         {
+            cerr << "ERROR: Unknown material: " << mat_name << "\n";
+            if (geom_type != "obj")
+               continue;
+            // OBJ: fallback to -1 (MTL-only mode)
+         }
+      }
+      else if (geom_type != "obj")
+      {
+         cerr << "ERROR: Missing 'material' key for " << geom_type << " geometry[" << i << "]\n";
          continue;
       }
-      int mat_id = it->second;
 
       // Check visibility flag (default: true)
       string vis_str = removeQuotes(parser.getString(prefix + ".visible", "true"));
@@ -483,16 +511,34 @@ static bool loadGeometry(const SimpleYAMLParser &parser, SceneDescription &scene
          if (!obj_file.empty() && obj_file[0] != '/')
             obj_path = scene_dir + "/" + obj_file;
 
+         // Record the start index so we can apply visibility to the whole range
+         int geom_start = static_cast<int>(scene.geometries.size());
          int tri_count = OBJLoader::loadOBJ(obj_path, scene, mat_id, obj_position, obj_scale);
          if (tri_count < 0)
+         {
             cerr << "ERROR: Failed to load OBJ file: " << obj_path << "\n";
+            continue; // Skip success log and generic visibility assignment
+         }
+         if (!visible)
+         {
+            // Apply visibility to all triangles added by this OBJ
+            for (int gi = geom_start; gi < static_cast<int>(scene.geometries.size()); ++gi)
+               scene.geometries[gi].visible = false;
+         }
+         // Skip the generic visibility assignment below (already handled)
+         cout << "  Loaded " << geom_type << " with material "
+              << (mat_name.empty() ? "(from MTL)" : mat_name)
+              << (visible ? "" : " (invisible)") << "\n";
+         continue;
       }
 
       // Apply visibility flag to the last added geometry
       if (!scene.geometries.empty())
          scene.geometries.back().visible = visible;
 
-      cout << "  Loaded " << geom_type << " with material " << mat_name << (visible ? "" : " (invisible)") << "\n";
+      cout << "  Loaded " << geom_type << " with material "
+           << (mat_name.empty() ? "(from MTL)" : mat_name)
+           << (visible ? "" : " (invisible)") << "\n";
    }
 
    return !scene.geometries.empty();
@@ -533,10 +579,15 @@ bool loadSceneFromYAML(const char *filename, SceneDescription &scene)
       scene.ambient_light = parser.getFloat("settings.ambient_light", 0.1f);
    if (parser.hasKey("settings.background_intensity"))
       scene.background_intensity = parser.getFloat("settings.background_intensity", 1.0f);
-   if (parser.hasKey("settings.use_bvh"))
+   // Accept both "settings.use_bvh" (canonical) and "scene.use_bvh" (legacy)
    {
-      string bvh_val = removeQuotes(parser.getString("settings.use_bvh", "false"));
-      scene.use_bvh = (bvh_val == "true" || bvh_val == "1");
+      string bvh_raw;
+      if (parser.hasKey("settings.use_bvh"))
+         bvh_raw = parser.getString("settings.use_bvh", "false");
+      else if (parser.hasKey("scene.use_bvh"))
+         bvh_raw = parser.getString("scene.use_bvh", "false");
+      if (!bvh_raw.empty())
+         scene.use_bvh = (removeQuotes(bvh_raw) == "true" || removeQuotes(bvh_raw) == "1");
    }
    if (parser.hasKey("settings.adaptive_sampling"))
    {
@@ -553,7 +604,7 @@ bool loadSceneFromYAML(const char *filename, SceneDescription &scene)
 
    // Load materials first
    map<string, int> material_name_to_id;
-   if (!loadMaterials(parser, scene, material_name_to_id))
+   if (!loadMaterials(parser, scene, material_name_to_id, scene_dir))
    {
       cerr << "ERROR: Failed to load materials"
               "\n";
@@ -673,9 +724,6 @@ bool saveSceneToYAML(const char *filename, const SceneDescription &scene)
          {
          case ProceduralPattern::FIBONACCI_DOTS:
             file << "\"fibonacci_dots\"";
-            break;
-         case ProceduralPattern::CHECKERBOARD:
-            file << "\"checkerboard\"";
             break;
          case ProceduralPattern::STRIPES:
             file << "\"stripes\"";

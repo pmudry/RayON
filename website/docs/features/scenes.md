@@ -137,6 +137,9 @@ materials:
 
 ### Procedural patterns
 
+Procedural patterns can be added to any Lambertian or rough-mirror material via a `pattern`
+block. The pattern modulates the base albedo.
+
 ```yaml
   - name: checkerboard_floor
     type: lambertian
@@ -161,6 +164,10 @@ materials:
       type: stripes
       color: [0.1, 0.1, 0.1]
 ```
+
+The texture path is resolved relative to the YAML file's directory. Textures are loaded once
+and deduplicated by path.
+See [OBJ Loading](obj-loading.md) for applying textures via MTL files.
 
 ---
 
@@ -204,15 +211,18 @@ The surface normal is `cross(u_vec, v_vec)`. Flip `u_vec` or `v_vec` to reverse 
 ### OBJ mesh
 
 ```yaml
-  - type: obj_mesh
-    material: plastic
+  - type: obj
+    material: plastic          # optional — overridden by MTL per-group materials
     file: "../resources/models/bunny.obj"
-    scale: [1.0, 1.0, 1.0]
-    offset: [0.0, 0.0, 0.0]
+    scale:    [1.0, 1.0, 1.0]
+    position: [0.0, 0.0, 0.0]
 ```
 
+The `material` key is optional when the OBJ has a `mtllib` — each `usemtl` group in the OBJ
+will use the material defined in the `.mtl` file.
+
 The path is relative to the scene YAML file's directory.
-See [OBJ Loading](obj-loading.md) for mesh format requirements.
+See [OBJ Loading](obj-loading.md) for MTL materials, UV textures, and mesh format requirements.
 
 ### SDF primitive
 
@@ -283,5 +293,7 @@ geometry:
 | `10_isc_neons_bunny.yaml` | Emissive neon lights + bunny mesh |
 | `11_soap_bubbles.yaml` | Thin-film iridescence |
 | `12_clearcoat_pokemonball.yaml` | Clearcoat over diffuse base |
+| `13_texture_test1.yaml` | UV-mapped OBJ with grid texture (MTL-driven) |
+| `14_texture_test2.yaml` | Multi-material OBJ scene with Blender-exported MTL |
 | `bvh_stress_courtyard.yaml` | 300+ objects, BVH stress test |
-| `pattern_gallery.yaml` | Checkerboard, Fibonacci, Voronoi textures |
+| `pattern_gallery.yaml` | Fibonacci dots, stripes patterns |

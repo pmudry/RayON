@@ -47,7 +47,6 @@ enum class ProceduralPattern : uint8_t
 {
    NONE,           // No pattern, use solid color
    FIBONACCI_DOTS, // Regularly spaced dots using Fibonacci grid
-   CHECKERBOARD,   // Checkerboard pattern
    STRIPES         // Striped pattern
 };
 
@@ -147,7 +146,9 @@ struct Geometry
       {
          f3 v0, v1, v2;
          f3 n0, n1, n2;
+         f2 uv0, uv1, uv2;   // Texture coordinates
          bool has_normals;
+         bool has_uvs;
       } triangle;
 
       struct
@@ -233,6 +234,10 @@ struct alignas(128) Scene
    Material *materials;
    Geometry *geometries;
    BVHNode *bvh_nodes;
+
+   // Texture objects (one per loaded image)
+   cudaTextureObject_t *d_textures;
+   int num_textures;
 
    // Counts
    int num_materials;
