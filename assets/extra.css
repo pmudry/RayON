@@ -238,14 +238,16 @@
   background: rgba(25, 25, 28, 0.2) !important;  
 }
 
-/* Fully transparent content area on the homepage */
+/* Glassmorphism content area on the homepage */
 .rayon-homepage .md-content {
-  background: rgba(35, 35, 42, 0.9) !important;  
+  background: rgba(35, 35, 42, 0.2) !important;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(6px);
   border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   padding-left: 1rem;
   padding-right: 1rem;
   margin-left: 1rem;
-  /* background: transparent !important; */
 }
 
 /* Add spacing between sidebar and content */
