@@ -290,7 +290,7 @@
          ctx.fill();
          ctx.beginPath(); ctx.arc(ex, ey, tipR, 0, Math.PI * 2);
          // Dark theme: white core; Light theme: dark core so it's visible
-         var tipCore = themeOpacityFactor < 1 ? `rgba(30,20,60,${tipA})` : `rgba(255,255,255,${tipA})`;
+         var tipCore = themeOpacityFactor < 1 ? `rgba(255,255,255,${tipA})` : `rgba(255,255,255,${tipA})`;
          ctx.fillStyle = tipCore;
          ctx.fill();
 

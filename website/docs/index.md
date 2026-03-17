@@ -1,4 +1,5 @@
 ---
+title: "RayON | \U0001F6A7 Work in progress"
 hide:
   - toc
   - navigation

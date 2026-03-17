@@ -10,9 +10,9 @@
   {% endif %}
 {% endblock %}
 
-{% block htmltitle %}
+{% block extrahead %}
+  {{ super() }}
   {% if page and page.is_homepage %}
     <script>document.documentElement.classList.add('rayon-homepage')</script>
   {% endif %}
-  {{ super() }}
 {% endblock %}

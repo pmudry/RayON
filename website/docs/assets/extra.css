@@ -44,6 +44,10 @@
   font-size: 1.1rem;
   font-weight: 600;
 }
+.md-header__title .md-header__topic {
+  font-size: 1.1rem;
+  font-weight: 600;
+}
 
 /* Hide the logo/home icon in the header */
 .md-header__button.md-logo {
@@ -248,6 +252,18 @@
 .rayon-homepage .md-main__inner,
 .rayon-homepage .md-content__inner {
   background: transparent !important;
+}
+
+/* Keep header and tabs opaque on the homepage (same as other pages) */
+.rayon-homepage [data-md-color-scheme="slate"] .md-header {
+  background-color: #0d0f14 !important;
+}
+.rayon-homepage [data-md-color-scheme="default"] .md-header {
+  background-color: #f0f0f2 !important;
+  color: #1a1a2e;
+}
+.rayon-homepage [data-md-color-scheme="default"] .md-tabs {
+  background-color: #f0f0f2 !important;
 }
 
 /* Glassmorphism content area on the homepage — dark theme
