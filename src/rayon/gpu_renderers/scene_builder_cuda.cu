@@ -133,13 +133,22 @@ static CudaScene::Geometry convertGeometry(const GeometryDesc &desc)
                                  static_cast<float>(desc.data.triangle.n2.y()),
                                  static_cast<float>(desc.data.triangle.n2.z()));
       geom.data.triangle.has_normals = desc.data.triangle.has_normals;
-      // UV coordinates
-      geom.data.triangle.uv0 = f2(static_cast<float>(desc.data.triangle.uv0.x()),
-                                  static_cast<float>(desc.data.triangle.uv0.y()));
-      geom.data.triangle.uv1 = f2(static_cast<float>(desc.data.triangle.uv1.x()),
-                                  static_cast<float>(desc.data.triangle.uv1.y()));
-      geom.data.triangle.uv2 = f2(static_cast<float>(desc.data.triangle.uv2.x()),
-                                  static_cast<float>(desc.data.triangle.uv2.y()));
+      // UV coordinates — only copy valid data; zero-initialize when UVs are absent
+      if (desc.data.triangle.has_uvs)
+      {
+         geom.data.triangle.uv0 = f2(static_cast<float>(desc.data.triangle.uv0.x()),
+                                     static_cast<float>(desc.data.triangle.uv0.y()));
+         geom.data.triangle.uv1 = f2(static_cast<float>(desc.data.triangle.uv1.x()),
+                                     static_cast<float>(desc.data.triangle.uv1.y()));
+         geom.data.triangle.uv2 = f2(static_cast<float>(desc.data.triangle.uv2.x()),
+                                     static_cast<float>(desc.data.triangle.uv2.y()));
+      }
+      else
+      {
+         geom.data.triangle.uv0 = f2(0.0f, 0.0f);
+         geom.data.triangle.uv1 = f2(0.0f, 0.0f);
+         geom.data.triangle.uv2 = f2(0.0f, 0.0f);
+      }
       geom.data.triangle.has_uvs = desc.data.triangle.has_uvs;
       break;
 
@@ -404,21 +413,21 @@ void CudaSceneBuilder::freeGPUScene(CudaScene::Scene *d_scene)
    if (host_scene.d_textures && host_scene.num_textures > 0)
    {
       std::vector<cudaTextureObject_t> host_tex(static_cast<size_t>(host_scene.num_textures));
-      cudaMemcpy(host_tex.data(), host_scene.d_textures,
-                 host_scene.num_textures * sizeof(cudaTextureObject_t),
-                 cudaMemcpyDeviceToHost);
+      CUDA_CHECK(cudaMemcpy(host_tex.data(), host_scene.d_textures,
+                            host_scene.num_textures * sizeof(cudaTextureObject_t),
+                            cudaMemcpyDeviceToHost));
       for (int i = 0; i < host_scene.num_textures; ++i)
       {
          if (host_tex[i])
          {
             cudaResourceDesc rd = {};
-            cudaGetTextureObjectResourceDesc(&rd, host_tex[i]);
-            cudaDestroyTextureObject(host_tex[i]);
+            CUDA_CHECK(cudaGetTextureObjectResourceDesc(&rd, host_tex[i]));
+            CUDA_CHECK(cudaDestroyTextureObject(host_tex[i]));
             if (rd.resType == cudaResourceTypeArray && rd.res.array.array)
-               cudaFreeArray(rd.res.array.array);
+               CUDA_CHECK(cudaFreeArray(rd.res.array.array));
          }
       }
-      cudaFree(host_scene.d_textures);
+      CUDA_CHECK(cudaFree(host_scene.d_textures));
    }
 
    // Free the scene struct itself (now on device)

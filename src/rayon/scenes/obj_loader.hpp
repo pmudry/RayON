@@ -34,7 +34,7 @@ class OBJLoader
     * The caller-supplied @p fallback_mat_id is used only for faces that
     * belong to a group with no usemtl directive (or when no .mtl is found).
     * Pass -1 for @p fallback_mat_id to require all materials to come from
-    * the .mtl file (faces without usemtl are then skipped with a warning).
+    * the .mtl file (faces without usemtl are then skipped with a one-time warning).
     *
     * @param filename         Path to .obj file
     * @param scene            Scene to add triangles to
@@ -70,6 +70,7 @@ class OBJLoader
       std::map<std::string, int> mtl_name_to_scene_id;
 
       int active_mat_id = fallback_mat_id; // Current material for faces
+      bool face_skip_warned = false;       // One-time warning when faces are skipped without a material
 
       auto resolveMtlMaterial = [&](const std::string &name) -> int {
          auto cached = mtl_name_to_scene_id.find(name);
@@ -167,7 +168,12 @@ class OBJLoader
          {
             if (active_mat_id < 0)
             {
-               // No material yet and no fallback — skip
+               // No material yet and no fallback — skip with a one-time warning per file
+               if (!face_skip_warned)
+               {
+                  std::cerr << "OBJ Loader: face(s) skipped — no 'usemtl' encountered and no fallback material provided\n";
+                  face_skip_warned = true;
+               }
                continue;
             }
 

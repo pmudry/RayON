@@ -51,7 +51,7 @@ def write_obj(path, name, vertices, uvs, normals, faces, mtl_lib, mtl_name):
 
 def gen_plane(filepath, size=4.0, subdivs=5, mtl_name='textured'):
     verts, uvs, norms, faces = [], [], [], []
-    N = normal = (0, 1, 0)
+    normal = (0, 1, 0)
 
     # Grid of (subdivs+1) x (subdivs+1) vertices
     def idx(ix, iz):
@@ -63,7 +63,7 @@ def gen_plane(filepath, size=4.0, subdivs=5, mtl_name='textured'):
             z = -size / 2 + iz * size / subdivs
             verts.append((x, 0.0, z))
             uvs.append((ix / subdivs, iz / subdivs))
-            norms.append(N)
+            norms.append(normal)
 
     # Two triangles per cell
     for ix in range(subdivs):
