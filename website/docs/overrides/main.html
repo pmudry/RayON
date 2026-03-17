@@ -2,8 +2,17 @@
 
 {% block scripts %}
   {{ super() }}
-  <canvas id="rayon-bg-canvas"></canvas>
-  <button id="rayon-bg-toggle" title="Ray animation controls">&#9881;</button>
-  <div id="rayon-bg-sidebar"></div>
-  <script src="{{ 'assets/rayon-bg.js' | url }}"></script>
+  {% if page and page.is_homepage %}
+    <canvas id="rayon-bg-canvas"></canvas>
+    <button id="rayon-bg-toggle" title="Ray animation controls">&#9881;</button>
+    <div id="rayon-bg-sidebar"></div>
+    <script src="{{ 'assets/rayon-bg.js' | url }}"></script>
+  {% endif %}
+{% endblock %}
+
+{% block htmltitle %}
+  {% if page and page.is_homepage %}
+    <script>document.documentElement.classList.add('rayon-homepage')</script>
+  {% endif %}
+  {{ super() }}
 {% endblock %}
