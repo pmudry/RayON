@@ -607,6 +607,9 @@ public:
         geom.data.triangle.v2 = v2;
         geom.data.triangle.has_normals = false;
         geom.data.triangle.has_uvs = false;
+        geom.data.triangle.uv0 = Vec3(0, 0, 0);
+        geom.data.triangle.uv1 = Vec3(0, 0, 0);
+        geom.data.triangle.uv2 = Vec3(0, 0, 0);
         
         // Compute bounding box with epsilon padding to avoid zero-thickness AABBs
         constexpr double eps = 1e-4;
@@ -637,6 +640,9 @@ public:
         geom.data.triangle.n2 = n2;
         geom.data.triangle.has_normals = true;
         geom.data.triangle.has_uvs = false;
+        geom.data.triangle.uv0 = Vec3(0, 0, 0);
+        geom.data.triangle.uv1 = Vec3(0, 0, 0);
+        geom.data.triangle.uv2 = Vec3(0, 0, 0);
         
         // Compute bounding box with epsilon padding to avoid zero-thickness AABBs
         constexpr double eps = 1e-4;
