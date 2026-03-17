@@ -10,7 +10,7 @@ hide:
 <div class="hero-banner">
   <img src="assets/rayon_logo_animated.svg"
        alt="RayON — animated prism logo with light rays dispersing into a spectrum"
-       loading="eager" class="hero-svg">
+       loading="eager" class="hero-svg off-glb">
   <p class="hero-tagline">A high-performance CPU &amp; CUDA path tracer with real-time progressive sampling</p>
 </div>
 

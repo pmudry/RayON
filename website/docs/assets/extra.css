@@ -278,6 +278,7 @@
   padding-left: 1rem;
   padding-right: 1rem;
   margin-left: 1rem;
+  margin-right: 1rem;
 }
 
 /* Glassmorphism content area on the homepage — light theme */
@@ -290,17 +291,19 @@
   padding-left: 1rem;
   padding-right: 1rem;
   margin-left: 1rem;
+  margin-right: 1rem;
 }
 
 /* Add spacing between sidebar and content */
 .md-content {
-  margin-left: 1.5rem;
+  margin-left: 1rem;
+  margin-right: 1rem;
 }
 
 /* Navigation sidebar — strip inner-layer backgrounds on homepage */
-.rayon-homepage .md-sidebar,
+/* .rayon-homepage .md-sidebar,
 .rayon-homepage .md-sidebar__scrollwrap,
-.rayon-homepage .md-sidebar__inner,
+.rayon-homepage .md-sidebar__inner, */
 .rayon-homepage .md-nav--primary,
 .rayon-homepage .md-nav--primary .md-nav,
 .rayon-homepage .md-nav--primary .md-nav__title ~ .md-nav__list,
