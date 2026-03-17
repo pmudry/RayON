@@ -213,38 +213,64 @@
 
 /* ─── Ray background (homepage only) ─── */
 
-/* Canvas sits at z-index 0; Material containers are lifted above it. */
+/* Canvas at z-index 0, painted behind lifted content */
 #rayon-bg-canvas {
   position: fixed;
   top: 0;
   left: 0;
-  width: 100%;
-  height: 100%;
+  width: 100vw;
+  height: 100vh;
   z-index: 0;
   pointer-events: none;
 }
 
-/* Lift content above the canvas on the homepage */
+/* Lift page content above the canvas */
 .rayon-homepage .md-container {
   position: relative;
   z-index: 1;
 }
 
-/* Strip opaque backgrounds so the canvas shows through (homepage only) */
-.rayon-homepage,
+/* Make html + body fully transparent so canvas is visible.
+   body[data-md-color-scheme] overrides Material's own background. */
+.rayon-homepage {
+  background: transparent !important;
+}
 .rayon-homepage body,
-.rayon-homepage .md-main,
-.rayon-homepage .md-main__inner {
-  background: rgba(25, 25, 28, 0.2) !important;  
+.rayon-homepage body[data-md-color-scheme="slate"],
+.rayon-homepage body[data-md-color-scheme="default"] {
+  background: transparent !important;
+  background-color: transparent !important;
 }
 
-/* Glassmorphism content area on the homepage */
-.rayon-homepage .md-content {
+/* Strip all intermediate opaque backgrounds */
+.rayon-homepage .md-container,
+.rayon-homepage .md-main,
+.rayon-homepage .md-main__inner,
+.rayon-homepage .md-content__inner {
+  background: transparent !important;
+}
+
+/* Glassmorphism content area on the homepage — dark theme
+   Note: data-md-color-scheme is on body, rayon-homepage is on html,
+   so we need a descendant selector (space) between them. */
+.rayon-homepage [data-md-color-scheme="slate"] .md-content {
   background: rgba(35, 35, 42, 0.2) !important;
-  backdrop-filter: blur(18px);
+  backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.08);
+  padding-left: 1rem;
+  padding-right: 1rem;
+  margin-left: 1rem;
+}
+
+/* Glassmorphism content area on the homepage — light theme */
+.rayon-homepage [data-md-color-scheme="default"] .md-content {
+  background: rgba(220, 220, 225, 0.2) !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-radius: 12px;
+  border: 1px solid rgba(139, 139, 139, 0.06);
   padding-left: 1rem;
   padding-right: 1rem;
   margin-left: 1rem;
