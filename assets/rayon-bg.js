@@ -238,9 +238,7 @@
    }
 
    function tick() {
-      // Fill with theme base colour (canvas is z-index: 0, html/body are transparent)
-      ctx.fillStyle = canvasBgColor;
-      ctx.fillRect(0, 0, W, H);
+      ctx.clearRect(0, 0, W, H);
 
       while (rays.length < cfg.count)
          rays.push(createRay(W, H, Math.floor(rand(RESPAWN_DELAY_MIN, RESPAWN_DELAY_MAX))));

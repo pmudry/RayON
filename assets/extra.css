@@ -211,11 +211,9 @@
 .badge-wip   { background: #1a2a3a; color: #90caf9; }
 .badge-plan  { background: #1a237e; color: #90caf9; }
 
-/* ─── Ray background ─── */
+/* ─── Ray background (homepage only) ─── */
 
-/* Canvas sits at z-index 0; Material containers are lifted above it.
-   Using z-index: -1 would put the canvas behind <html>'s background
-   paint, making it invisible in light theme. */
+/* Canvas sits at z-index 0; Material containers are lifted above it. */
 #rayon-bg-canvas {
   position: fixed;
   top: 0;
@@ -226,21 +224,28 @@
   pointer-events: none;
 }
 
-/* Everything above the canvas needs a stacking context so it paints
-   on top of z-index: 0.  The header/tabs already have their own
-   stacking context from Material; we just need the main wrapper. */
-.md-container {
+/* Lift content above the canvas on the homepage */
+.rayon-homepage .md-container {
   position: relative;
   z-index: 1;
 }
 
-/* Strip opaque backgrounds from html, body, and Material wrappers
-   so the canvas is visible behind the semi-transparent content. */
-html,
-body,
-.md-main,
-.md-main__inner {
-  background: transparent !important;
+/* Strip opaque backgrounds so the canvas shows through (homepage only) */
+.rayon-homepage,
+.rayon-homepage body,
+.rayon-homepage .md-main,
+.rayon-homepage .md-main__inner {
+  background: rgba(25, 25, 28, 0.2) !important;  
+}
+
+/* Fully transparent content area on the homepage */
+.rayon-homepage .md-content {
+  background: rgba(35, 35, 42, 0.9) !important;  
+  border-radius: 12px;
+  padding-left: 1rem;
+  padding-right: 1rem;
+  margin-left: 1rem;
+  /* background: transparent !important; */
 }
 
 /* Add spacing between sidebar and content */
@@ -248,25 +253,16 @@ body,
   margin-left: 1.5rem;
 }
 
-/* Semi-transparent content area — readable but shows rays behind */
-[data-md-color-scheme="slate"] .md-content {
-  background: rgba(29, 31, 37, 0.9);
-}
-[data-md-color-scheme="default"] .md-content {
-  background: rgba(240, 240, 245, 0.9);
-}
-
-/* Navigation sidebar — strip all inner-layer backgrounds so the
-   semi-transparent .md-sidebar background is the only opaque layer */
-.md-sidebar,
-.md-sidebar__scrollwrap,
-.md-sidebar__inner,
-.md-nav--primary,
-.md-nav--primary .md-nav,
-.md-nav--primary .md-nav__title ~ .md-nav__list,
-.md-nav--secondary,
-.md-nav--secondary .md-nav {
-  background: transparent !important;
+/* Navigation sidebar — strip inner-layer backgrounds on homepage */
+.rayon-homepage .md-sidebar,
+.rayon-homepage .md-sidebar__scrollwrap,
+.rayon-homepage .md-sidebar__inner,
+.rayon-homepage .md-nav--primary,
+.rayon-homepage .md-nav--primary .md-nav,
+.rayon-homepage .md-nav--primary .md-nav__title ~ .md-nav__list,
+.rayon-homepage .md-nav--secondary,
+.rayon-homepage .md-nav--secondary .md-nav {
+  background: transparent !important;  
 }
 
 /* ─── Ray control panel toggle (bottom-right, appears on hover) ─── */
