@@ -410,7 +410,13 @@ void CudaSceneBuilder::freeGPUScene(CudaScene::Scene *d_scene)
       for (int i = 0; i < host_scene.num_textures; ++i)
       {
          if (host_tex[i])
+         {
+            cudaResourceDesc rd = {};
+            cudaGetTextureObjectResourceDesc(&rd, host_tex[i]);
             cudaDestroyTextureObject(host_tex[i]);
+            if (rd.resType == cudaResourceTypeArray && rd.res.array.array)
+               cudaFreeArray(rd.res.array.array);
+         }
       }
       cudaFree(host_scene.d_textures);
    }

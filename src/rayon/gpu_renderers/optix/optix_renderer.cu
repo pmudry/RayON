@@ -560,7 +560,16 @@ static void buildGAS(const Scene::SceneDescription &scene)
       CUDA_CHECK(cudaMemcpy(old_texs.data(), g_state.d_textures,
                              g_state.num_textures * sizeof(cudaTextureObject_t), cudaMemcpyDeviceToHost));
       for (int i = 0; i < g_state.num_textures; ++i)
-         if (old_texs[i]) cudaDestroyTextureObject(old_texs[i]);
+      {
+         if (old_texs[i])
+         {
+            cudaResourceDesc rd = {};
+            cudaGetTextureObjectResourceDesc(&rd, old_texs[i]);
+            cudaDestroyTextureObject(old_texs[i]);
+            if (rd.resType == cudaResourceTypeArray && rd.res.array.array)
+               cudaFreeArray(rd.res.array.array);
+         }
+      }
       CUDA_CHECK(cudaFree(g_state.d_textures));
       g_state.d_textures = nullptr;
       g_state.num_textures = 0;
@@ -745,7 +754,16 @@ extern "C" void optixRendererCleanup()
       std::vector<cudaTextureObject_t> texs(static_cast<size_t>(g_state.num_textures));
       cudaMemcpy(texs.data(), g_state.d_textures, g_state.num_textures * sizeof(cudaTextureObject_t), cudaMemcpyDeviceToHost);
       for (int i = 0; i < g_state.num_textures; ++i)
-         if (texs[i]) cudaDestroyTextureObject(texs[i]);
+      {
+         if (texs[i])
+         {
+            cudaResourceDesc rd = {};
+            cudaGetTextureObjectResourceDesc(&rd, texs[i]);
+            cudaDestroyTextureObject(texs[i]);
+            if (rd.resType == cudaResourceTypeArray && rd.res.array.array)
+               cudaFreeArray(rd.res.array.array);
+         }
+      }
       CUDA_CHECK(cudaFree(g_state.d_textures));
    }
    if (g_state.d_sbt_raygen)

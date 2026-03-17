@@ -141,7 +141,14 @@ class OBJLoader
             if (!obj_dir.empty() && !mtl_file.empty() && mtl_file[0] != '/')
                mtl_path = obj_dir + "/" + mtl_file;
 
-            mtl_materials = MTLLoader::load(mtl_path, obj_dir);
+            // Compute the directory containing the .mtl file itself (may differ
+            // from obj_dir when mtllib has a subdirectory prefix, e.g. "mtl/foo.mtl").
+            std::string mtl_dir = obj_dir;
+            auto mtl_slash = mtl_path.find_last_of("/\\");
+            if (mtl_slash != std::string::npos)
+               mtl_dir = mtl_path.substr(0, mtl_slash);
+
+            mtl_materials = MTLLoader::load(mtl_path, mtl_dir);
          }
          else if (prefix == "usemtl")
          {

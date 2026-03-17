@@ -328,7 +328,7 @@ class SimpleYAMLParser
 };
 
 static bool loadMaterials(const SimpleYAMLParser &parser, SceneDescription &scene,
-                          map<string, int> &material_name_to_id)
+                          map<string, int> &material_name_to_id, const string &scene_dir)
 {
    // Try to load materials by index
    for (int i = 0; i < 100; ++i)
@@ -396,9 +396,9 @@ static bool loadMaterials(const SimpleYAMLParser &parser, SceneDescription &scen
          string tex_path = removeQuotes(parser.getString(prefix + ".texture"));
          if (!tex_path.empty())
          {
-            // Resolve relative to YAML directory — we don't have it here, but the
-            // caller (loadSceneFromYAML) already cd'd into scene_dir implicitly.
-            // Pass the raw path; absolute paths work as-is.
+            // Resolve relative paths against the YAML file's directory
+            if (!tex_path.empty() && tex_path[0] != '/' && !scene_dir.empty())
+               tex_path = scene_dir + "/" + tex_path;
             int tex_id = scene.addTexture(tex_path);
             mat.texture_id = tex_id;
          }
@@ -509,9 +509,22 @@ static bool loadGeometry(const SimpleYAMLParser &parser, SceneDescription &scene
          if (!obj_file.empty() && obj_file[0] != '/')
             obj_path = scene_dir + "/" + obj_file;
 
+         // Record the start index so we can apply visibility to the whole range
+         int geom_start = static_cast<int>(scene.geometries.size());
          int tri_count = OBJLoader::loadOBJ(obj_path, scene, mat_id, obj_position, obj_scale);
          if (tri_count < 0)
             cerr << "ERROR: Failed to load OBJ file: " << obj_path << "\n";
+         else if (!visible)
+         {
+            // Apply visibility to all triangles added by this OBJ
+            for (int gi = geom_start; gi < static_cast<int>(scene.geometries.size()); ++gi)
+               scene.geometries[gi].visible = false;
+         }
+         // Skip the generic visibility assignment below (already handled)
+         cout << "  Loaded " << geom_type << " with material "
+              << (mat_name.empty() ? "(from MTL)" : mat_name)
+              << (visible ? "" : " (invisible)") << "\n";
+         continue;
       }
 
       // Apply visibility flag to the last added geometry
@@ -586,7 +599,7 @@ bool loadSceneFromYAML(const char *filename, SceneDescription &scene)
 
    // Load materials first
    map<string, int> material_name_to_id;
-   if (!loadMaterials(parser, scene, material_name_to_id))
+   if (!loadMaterials(parser, scene, material_name_to_id, scene_dir))
    {
       cerr << "ERROR: Failed to load materials"
               "\n";

@@ -11,6 +11,8 @@
 
 #include "scene_description.hpp"
 #include <algorithm>
+#include <cctype>
+#include <cmath>
 #include <fstream>
 #include <iostream>
 #include <map>
@@ -126,7 +128,8 @@ class MTLLoader
          std::string keyword;
          iss >> keyword;
          // normalise keyword to lowercase
-         std::transform(keyword.begin(), keyword.end(), keyword.begin(), ::tolower);
+         std::transform(keyword.begin(), keyword.end(), keyword.begin(),
+                        [](unsigned char c) { return std::tolower(c); });
 
          if (keyword == "newmtl")
          {

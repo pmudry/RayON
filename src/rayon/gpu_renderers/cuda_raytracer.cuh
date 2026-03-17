@@ -501,8 +501,8 @@ __device__ __forceinline__ void apply_material(const CudaScene::Material &mat, h
                                            mat.pattern_param2, rec.p, geometry_center);
    }
 
-   // Texture sampling: overrides solid albedo (applied before pattern so pattern
-   // can still modulate the textured color — rare but keeps the chain consistent).
+   // Texture sampling: overrides the solid albedo set above. The pattern was
+   // applied first, so the texture then overwrites it (texture takes precedence).
    if (mat.texture_id >= 0 && d_textures != nullptr)
    {
       float4 texel = tex2D<float4>(d_textures[mat.texture_id], rec.uv.x, 1.0f - rec.uv.y);
