@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RayON Background Effect</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0C0E14; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+
+  #app { display: flex; width: 100vw; height: 100vh; }
+
+  #preview { position: relative; flex: 1; min-width: 0; overflow: hidden; }
+  #cv { position: absolute; inset: 0; pointer-events: none; }
+
+  #center-content {
+    position: relative; z-index: 1;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    height: 100%; padding: 2rem;
+  }
+  #center-content h1 {
+    font-size: clamp(2.5rem, 6vw, 5rem); font-weight: 500;
+    letter-spacing: 0.2em; color: #E8E6F0; line-height: 1.2;
+  }
+  #center-content h1 span { color: #AFA9EC; }
+  #center-content p {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 0.85rem; letter-spacing: 0.5em; color: #888780; margin-top: 0.5rem;
+  }
+  .divider { width: 160px; height: 1px; background: rgba(83,74,183,0.4); margin-top: 1rem; }
+
+  #sidebar {
+    width: 280px; flex-shrink: 0;
+    background: rgba(12, 14, 20, 0.95);
+    border-left: 1px solid rgba(175, 169, 236, 0.1);
+    padding: 1.5rem 1.2rem;
+    overflow-y: auto; max-height: 100vh;
+  }
+  .panel-title {
+    color: #AFA9EC; font-size: 0.72rem; letter-spacing: 0.18em;
+    text-transform: uppercase; margin-bottom: 1.2rem; font-weight: 500;
+  }
+  .section-label {
+    color: #888780; font-size: 0.62rem; letter-spacing: 0.15em;
+    text-transform: uppercase; margin-bottom: 0.6rem;
+  }
+  #presets { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 1rem; }
+  .preset-btn {
+    border-radius: 6px; padding: 5px 10px; font-size: 0.65rem;
+    letter-spacing: 0.06em; cursor: pointer; transition: all 0.2s;
+    border: 1px solid rgba(255,255,255,0.06);
+    background: rgba(255,255,255,0.03); color: #888780;
+  }
+  .preset-btn.active {
+    background: rgba(175, 169, 236, 0.15);
+    border-color: rgba(175, 169, 236, 0.4);
+    color: #AFA9EC;
+  }
+  .sep { height: 1px; background: rgba(175,169,236,0.08); margin: 1rem 0; }
+  .slider-row { margin-bottom: 12px; }
+  .slider-head { display: flex; justify-content: space-between; margin-bottom: 2px; }
+  .slider-label { color: #B4B2A9; font-size: 0.7rem; }
+  .slider-val { color: #AFA9EC; font-size: 0.7rem; font-family: 'SF Mono', 'Fira Code', monospace; }
+  input[type="range"] {
+    width: 100%; accent-color: #AFA9EC; height: 3px;
+    -webkit-appearance: none; appearance: none; background: rgba(175,169,236,0.15);
+    border-radius: 2px; outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 12px; height: 12px;
+    border-radius: 50%; background: #AFA9EC; cursor: pointer;
+  }
+  .footer-text { color: #5F5E5A; font-size: 0.62rem; line-height: 1.6; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="preview">
+    <canvas id="cv"></canvas>
+    <div id="center-content">
+      <h1>RAY<span>ON</span></h1>
+      <p>CUDA TRACER</p>
+      <div class="divider"></div>
+    </div>
+  </div>
+  <div id="sidebar">
+    <div class="panel-title">Ray controls</div>
+    <div class="section-label">Presets</div>
+    <div id="presets"></div>
+    <div class="sep"></div>
+    <div id="sliders"></div>
+    <div class="sep"></div>
+    <p class="footer-text">
+      Rays enter from outside the viewport tip-first, travel straight
+      across, and exit the other side. A pulsing white circle marks each
+      leading tip. Dots drift from tip to tail.
+    </p>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════════
+// CONFIGURABLE CONSTANTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const RAY_COLORS = [
+  { r: 133, g: 183, b: 235 },  // blue
+  { r: 175, g: 169, b: 236 },  // purple
+  { r: 237, g: 147, b: 177 },  // pink
+  { r: 239, g: 159, b: 39 },   // amber
+  { r: 93,  g: 202, b: 165 },  // teal
+];
+
+// How far outside the viewport the TIP spawns (px).
+// The tail will be even further out (tip + rayLength behind it).
+const SPAWN_PAD = 20;
+
+// How far off-screen before a ray is despawned
+const DESPAWN_MARGIN = 900;
+
+// Angle spread from perpendicular when entering each edge (radians)
+const ANGLE_SPREAD = 0.35;
+
+// Ray line width range
+const WIDTH_MIN = 0.8;
+const WIDTH_MAX = 2.5;
+
+// Fraction of the ray's tail that fades to transparent (0.0–1.0)
+const RAY_TAIL_FADE = 0.2;
+
+// Dots per ray
+const DOTS_MIN = 3;
+const DOTS_MAX = 7;
+
+// Dot appearance
+const DOT_RADIUS_MIN = 1.2;
+const DOT_RADIUS_MAX = 3.5;
+const DOT_PULSE_SPEED_MIN = 0.02;
+const DOT_PULSE_SPEED_MAX = 0.06;
+const DOT_SCATTER = 3;
+
+// Dot travel speed (fraction of ray length per frame, tip → tail)
+const DOT_TRAVEL_SPEED_MIN = 0.0004;
+const DOT_TRAVEL_SPEED_MAX = 0.0015;
+
+// Initial stagger: rays trickle in over this many frames
+const INIT_STAGGER_MAX_FRAMES = 1200;
+
+// Respawn delay after a ray exits (frames)
+const RESPAWN_DELAY_MIN = 30;
+const RESPAWN_DELAY_MAX = 250;
+
+// Tip pulsing circle — always visible, never zero
+const TIP_CIRCLE_RADIUS_MIN = 3;     // minimum radius (always visible)
+const TIP_CIRCLE_RADIUS_MAX = 6;     // maximum radius at peak pulse
+const TIP_CIRCLE_PULSE_SPEED = 0.025; // radians per frame
+const TIP_CIRCLE_GLOW_SIZE = 10;     // glow halo extra radius
+const TIP_CIRCLE_MIN_OPACITY = 0.4;  // opacity at dimmest pulse
+const TIP_CIRCLE_MAX_OPACITY = 1.0;  // opacity at brightest pulse
+
+// Presets
+const PRESETS = {
+  subtle:   { count: 12, masterOpacity: 0.6,  speedMin: 0.1,  speedMax: 0.3,  opacityMin: 0.06, opacityMax: 0.18, glow: 0.2, dotBrightness: 0.8, rayLength: 400, fadeZone: 120 },
+  balanced: { count: 20, masterOpacity: 1.0,  speedMin: 0.2,  speedMax: 0.5,  opacityMin: 0.10, opacityMax: 0.30, glow: 0.5, dotBrightness: 1.2, rayLength: 500, fadeZone: 150 },
+  vivid:    { count: 30, masterOpacity: 1.4,  speedMin: 0.3,  speedMax: 0.7,  opacityMin: 0.15, opacityMax: 0.45, glow: 0.8, dotBrightness: 1.6, rayLength: 550, fadeZone: 150 },
+  intense:  { count: 40, masterOpacity: 1.8,  speedMin: 0.5,  speedMax: 1.0,  opacityMin: 0.20, opacityMax: 0.55, glow: 1.0, dotBrightness: 2.0, rayLength: 600, fadeZone: 180 },
+};
+
+// Sliders that require rays to be recreated when changed
+const REINIT_KEYS = new Set(["speedMin", "speedMax", "rayLength", "count"]);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ENGINE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const rand = (a, b) => Math.random() * (b - a) + a;
+const lerp = (a, b, t) => a + (b - a) * t;
+
+let cfg = { ...PRESETS.balanced };
+let rays = [];
+let activePreset = "balanced";
+let W = 0, H = 0;
+
+function edgeFade(x, y, ex, ey, w, h, zone) {
+  if (zone <= 0) return 1;
+  const cx = (x + ex) / 2, cy = (y + ey) / 2;
+  const d = Math.min(cx, w - cx, cy, h - cy);
+  if (d >= zone) return 1;
+  if (d <= 0) return 0;
+  return d / zone;
+}
+
+// Create a ray whose TIP starts just outside the viewport.
+// The tail is further outside (tip minus ray direction * length).
+// This guarantees the entire ray is off-screen when it spawns.
+function createRay(w, h, delay) {
+  const color = RAY_COLORS[Math.floor(Math.random() * RAY_COLORS.length)];
+  const side = Math.floor(Math.random() * 4);
+  let tipX, tipY, angle;
+
+  if (side === 0) {
+    // Enter from left — tip starts just left of viewport
+    tipX = -SPAWN_PAD;
+    tipY = rand(0, h);
+    angle = rand(-ANGLE_SPREAD, ANGLE_SPREAD);
+  } else if (side === 1) {
+    // Enter from right
+    tipX = w + SPAWN_PAD;
+    tipY = rand(0, h);
+    angle = rand(Math.PI - ANGLE_SPREAD, Math.PI + ANGLE_SPREAD);
+  } else if (side === 2) {
+    // Enter from top
+    tipX = rand(0, w);
+    tipY = -SPAWN_PAD;
+    angle = rand(ANGLE_SPREAD, Math.PI - ANGLE_SPREAD);
+  } else {
+    // Enter from bottom
+    tipX = rand(0, w);
+    tipY = h + SPAWN_PAD;
+    angle = rand(-Math.PI + ANGLE_SPREAD, -ANGLE_SPREAD);
+  }
+
+  const speed = rand(cfg.speedMin, cfg.speedMax);
+  const length = rand(cfg.rayLength * 0.6, cfg.rayLength * 1.2);
+
+  // Direction vector (unit) — points from tail toward tip (direction of travel)
+  const dirX = Math.cos(angle);
+  const dirY = Math.sin(angle);
+
+  // Tail = tip minus direction * length (further outside the viewport)
+  const tailX = tipX - dirX * length;
+  const tailY = tipY - dirY * length;
+
+  const numDots = Math.floor(rand(DOTS_MIN, DOTS_MAX + 1));
+
+  return {
+    // Store tail as origin; tip = (x + dx, y + dy)
+    x: tailX,
+    y: tailY,
+    vx: dirX * speed,
+    vy: dirY * speed,
+    dx: dirX * length,
+    dy: dirY * length,
+    length,
+    baseOpacity: rand(cfg.opacityMin, cfg.opacityMax),
+    width: rand(WIDTH_MIN, WIDTH_MAX),
+    color,
+    delay: delay || 0,
+    tipPhase: rand(0, Math.PI * 2),
+    dots: Array.from({ length: numDots }, () => ({
+      t: rand(0, 1),
+      speed: rand(DOT_TRAVEL_SPEED_MIN, DOT_TRAVEL_SPEED_MAX),
+      radius: rand(DOT_RADIUS_MIN, DOT_RADIUS_MAX),
+      phase: rand(0, Math.PI * 2),
+      pulseSpeed: rand(DOT_PULSE_SPEED_MIN, DOT_PULSE_SPEED_MAX),
+      ox: rand(-DOT_SCATTER, DOT_SCATTER),
+      oy: rand(-DOT_SCATTER, DOT_SCATTER),
+    })),
+  };
+}
+
+// For initial population only: create a ray already mid-screen
+function createInitRay(w, h) {
+  const r = createRay(w, h, 0);
+  // Advance it a random amount so it's already on screen
+  const steps = rand(200, 1200);
+  r.x += r.vx * steps;
+  r.y += r.vy * steps;
+  return r;
+}
+
+function makeRayGradient(r, ex, ey, fo, forGlow) {
+  const grad = ctx.createLinearGradient(r.x, r.y, ex, ey);
+  const c = r.color;
+  const alpha = forGlow ? fo * cfg.glow * 0.3 : fo;
+  grad.addColorStop(0,             `rgba(${c.r},${c.g},${c.b},0)`);
+  grad.addColorStop(RAY_TAIL_FADE, `rgba(${c.r},${c.g},${c.b},${alpha})`);
+  grad.addColorStop(1,             `rgba(${c.r},${c.g},${c.b},${alpha})`);
+  return grad;
+}
+
+const cv = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+
+function resize() {
+  const dpr = window.devicePixelRatio || 1;
+  const wrap = document.getElementById("preview");
+  W = wrap.clientWidth;
+  H = wrap.clientHeight;
+  cv.width = W * dpr;
+  cv.height = H * dpr;
+  cv.style.width = W + "px";
+  cv.style.height = H + "px";
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+function initRays() {
+  rays = [];
+  // First few rays start mid-screen so it's not empty
+  const prePopCount = Math.min(Math.floor(cfg.count * 0.4), 8);
+  for (let i = 0; i < prePopCount; i++) {
+    rays.push(createInitRay(W, H));
+  }
+  // Rest trickle in from edges with staggered delays
+  for (let i = prePopCount; i < cfg.count; i++) {
+    const baseDelay = ((i - prePopCount) / (cfg.count - prePopCount)) * INIT_STAGGER_MAX_FRAMES;
+    const jitter = rand(-50, 50);
+    rays.push(createRay(W, H, Math.max(0, Math.floor(baseDelay + jitter))));
+  }
+}
+
+function reinitRays() {
+  const old = rays.slice();
+  rays = [];
+  for (let i = 0; i < cfg.count; i++) {
+    if (i < old.length && old[i].delay <= 0) {
+      const o = old[i];
+      const speed = rand(cfg.speedMin, cfg.speedMax);
+      const length = rand(cfg.rayLength * 0.6, cfg.rayLength * 1.2);
+      const mag = Math.sqrt(o.vx * o.vx + o.vy * o.vy);
+      const dirX = mag > 0 ? o.vx / mag : 1;
+      const dirY = mag > 0 ? o.vy / mag : 0;
+      o.vx = dirX * speed;
+      o.vy = dirY * speed;
+      o.dx = dirX * length;
+      o.dy = dirY * length;
+      o.length = length;
+      rays.push(o);
+    } else {
+      rays.push(createRay(W, H, Math.floor(rand(0, 60))));
+    }
+  }
+}
+
+function tick() {
+  ctx.clearRect(0, 0, W, H);
+
+  while (rays.length < cfg.count) {
+    rays.push(createRay(W, H, Math.floor(rand(RESPAWN_DELAY_MIN, RESPAWN_DELAY_MAX))));
+  }
+  if (rays.length > cfg.count) rays.length = cfg.count;
+
+  for (let i = 0; i < rays.length; i++) {
+    const r = rays[i];
+
+    if (r.delay > 0) { r.delay--; continue; }
+
+    r.x += r.vx;
+    r.y += r.vy;
+
+    // Tip (leading end) and tail (trailing end)
+    const ex = r.x + r.dx, ey = r.y + r.dy;
+
+    // Despawn when entire ray is far off-screen
+    const xMin = Math.min(r.x, ex), xMax = Math.max(r.x, ex);
+    const yMin = Math.min(r.y, ey), yMax = Math.max(r.y, ey);
+    if (xMax < -DESPAWN_MARGIN || xMin > W + DESPAWN_MARGIN ||
+        yMax < -DESPAWN_MARGIN || yMin > H + DESPAWN_MARGIN) {
+      rays[i] = createRay(W, H, Math.floor(rand(RESPAWN_DELAY_MIN, RESPAWN_DELAY_MAX)));
+      continue;
+    }
+
+    // No fade-in: ray is at full opacity from the moment it exists.
+    // Edge fade handles smooth appearance near viewport borders.
+    const ef = edgeFade(r.x, r.y, ex, ey, W, H, cfg.fadeZone);
+    const fo = r.baseOpacity * ef * cfg.masterOpacity;
+    if (fo < 0.003) continue;
+
+    // Glow with tail fade
+    if (cfg.glow > 0) {
+      ctx.beginPath(); ctx.moveTo(r.x, r.y); ctx.lineTo(ex, ey);
+      ctx.strokeStyle = makeRayGradient(r, ex, ey, fo, true);
+      ctx.lineWidth = r.width + 6; ctx.lineCap = "round"; ctx.stroke();
+    }
+
+    // Main ray with tail fade
+    ctx.beginPath(); ctx.moveTo(r.x, r.y); ctx.lineTo(ex, ey);
+    ctx.strokeStyle = makeRayGradient(r, ex, ey, fo, false);
+    ctx.lineWidth = r.width; ctx.lineCap = "round"; ctx.stroke();
+
+    // Tip pulsing circle — always visible, never zero radius
+    r.tipPhase += TIP_CIRCLE_PULSE_SPEED;
+    const pulse = 0.5 + 0.5 * Math.sin(r.tipPhase);
+    const tipR = lerp(TIP_CIRCLE_RADIUS_MIN, TIP_CIRCLE_RADIUS_MAX, pulse);
+    const tipAlpha = lerp(TIP_CIRCLE_MIN_OPACITY, TIP_CIRCLE_MAX_OPACITY, pulse) * fo;
+
+    // Outer glow halo (ray color)
+    ctx.beginPath(); ctx.arc(ex, ey, tipR + TIP_CIRCLE_GLOW_SIZE, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${r.color.r},${r.color.g},${r.color.b},${tipAlpha * 0.12})`;
+    ctx.fill();
+    // Mid glow (ray color, brighter)
+    ctx.beginPath(); ctx.arc(ex, ey, tipR + TIP_CIRCLE_GLOW_SIZE * 0.4, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${r.color.r},${r.color.g},${r.color.b},${tipAlpha * 0.25})`;
+    ctx.fill();
+    // Bright white core
+    ctx.beginPath(); ctx.arc(ex, ey, tipR, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,255,255,${tipAlpha})`;
+    ctx.fill();
+
+    // Dots: travel tip → tail
+    for (const d of r.dots) {
+      d.t -= d.speed;
+      if (d.t < 0) d.t += 1;
+
+      const dotFade = d.t < RAY_TAIL_FADE ? d.t / RAY_TAIL_FADE : 1;
+      const px = lerp(r.x, ex, d.t) + d.ox;
+      const py = lerp(r.y, ey, d.t) + d.oy;
+      d.phase += d.pulseSpeed;
+      const dpulse = 0.5 + 0.5 * Math.sin(d.phase);
+      const dop = fo * (0.5 + 0.5 * dpulse) * cfg.dotBrightness * dotFade;
+      const dr = d.radius * (0.6 + 0.4 * dpulse);
+
+      if (cfg.glow > 0 && dop > 0.01) {
+        ctx.beginPath(); ctx.arc(px, py, dr + 3, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${r.color.r},${r.color.g},${r.color.b},${dop * cfg.glow * 0.25})`;
+        ctx.fill();
+      }
+      if (dop > 0.005) {
+        ctx.beginPath(); ctx.arc(px, py, dr, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${r.color.r},${r.color.g},${r.color.b},${dop})`;
+        ctx.fill();
+      }
+    }
+  }
+
+  requestAnimationFrame(tick);
+}
+
+resize();
+initRays();
+requestAnimationFrame(tick);
+window.addEventListener("resize", resize);
+
+// ─── UI ──────────────────────────────────────────────────────────────────────
+
+const SLIDER_DEFS = [
+  { key: "count",         label: "Ray count",      min: 4,    max: 60,  step: 1,    unit: "" },
+  { key: "masterOpacity", label: "Intensity",       min: 0.1,  max: 2.5, step: 0.05, unit: "" },
+  { key: "opacityMin",    label: "Min opacity",     min: 0.02, max: 0.4, step: 0.01, unit: "" },
+  { key: "opacityMax",    label: "Max opacity",     min: 0.1,  max: 0.8, step: 0.01, unit: "" },
+  { key: "speedMin",      label: "Min speed",       min: 0.05, max: 1.0, step: 0.05, unit: " px/f" },
+  { key: "speedMax",      label: "Max speed",       min: 0.1,  max: 2.0, step: 0.05, unit: " px/f" },
+  { key: "rayLength",     label: "Ray length",      min: 100,  max: 800, step: 10,   unit: " px" },
+  { key: "glow",          label: "Glow",            min: 0,    max: 1.5, step: 0.05, unit: "" },
+  { key: "dotBrightness", label: "Dot brightness",  min: 0,    max: 3.0, step: 0.1,  unit: "" },
+  { key: "fadeZone",      label: "Edge fade zone",  min: 0,    max: 300, step: 10,   unit: " px" },
+];
+
+const slidersDiv = document.getElementById("sliders");
+const valSpans = {};
+
+SLIDER_DEFS.forEach(s => {
+  const row = document.createElement("div"); row.className = "slider-row";
+  const head = document.createElement("div"); head.className = "slider-head";
+  const lbl = document.createElement("span"); lbl.className = "slider-label"; lbl.textContent = s.label;
+  const val = document.createElement("span"); val.className = "slider-val";
+  val.textContent = (s.step < 1 ? cfg[s.key].toFixed(2) : cfg[s.key]) + s.unit;
+  valSpans[s.key] = { span: val, unit: s.unit, step: s.step };
+  head.append(lbl, val);
+
+  const inp = document.createElement("input");
+  inp.type = "range"; inp.min = s.min; inp.max = s.max; inp.step = s.step; inp.value = cfg[s.key];
+  inp.id = "sl_" + s.key;
+  inp.addEventListener("input", () => {
+    cfg[s.key] = Number(inp.value);
+    val.textContent = (s.step < 1 ? cfg[s.key].toFixed(2) : cfg[s.key]) + s.unit;
+    activePreset = null;
+    updatePresetButtons();
+    if (REINIT_KEYS.has(s.key)) reinitRays();
+  });
+
+  row.append(head, inp);
+  slidersDiv.append(row);
+});
+
+const presetsDiv = document.getElementById("presets");
+const presetBtns = {};
+
+function updatePresetButtons() {
+  Object.entries(presetBtns).forEach(([n, b]) => {
+    b.className = "preset-btn" + (n === activePreset ? " active" : "");
+  });
+}
+
+function applyPreset(name) {
+  cfg = { ...PRESETS[name] };
+  activePreset = name;
+  SLIDER_DEFS.forEach(s => {
+    document.getElementById("sl_" + s.key).value = cfg[s.key];
+    const v = valSpans[s.key];
+    v.span.textContent = (v.step < 1 ? cfg[s.key].toFixed(2) : cfg[s.key]) + v.unit;
+  });
+  updatePresetButtons();
+  reinitRays();
+}
+
+Object.keys(PRESETS).forEach(name => {
+  const btn = document.createElement("button");
+  btn.textContent = name;
+  btn.className = "preset-btn";
+  btn.addEventListener("click", () => applyPreset(name));
+  presetBtns[name] = btn;
+  presetsDiv.append(btn);
+});
+updatePresetButtons();
+</script>
+</body>
+</html>
