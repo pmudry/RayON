@@ -585,7 +585,8 @@ __device__ __forceinline__ float hexagonalDimplePattern_optix(float3 p)
    if (ang < dimple_radius)
    {
       float t = ang / dimple_radius;
-      return -dimple_depth * cosf(t * M_PIf * 0.5f);
+      // Full half-period cosine (Hann profile): C1-continuous at boundary, eliminating jump artifacts.
+      return -dimple_depth * 0.5f * (1.0f + cosf(t * M_PIf));
    }
    return 0.0f;
 }
@@ -645,9 +646,17 @@ extern "C" __global__ void __closesthit__ch()
 
       if (base_disp < -0.001f)
       {
-         float3 helper = fabsf(base_normal.x) > 0.8f ? make_float3(0, 1, 0) : make_float3(1, 0, 0);
-         float3 t1     = normalize3(cross3(helper, base_normal));
-         float3 t2     = cross3(base_normal, t1);
+         // Duff et al. 2017 "Building an Orthonormal Basis, Revisited":
+         // continuously varying basis — no seam from a sudden helper-vector switch.
+         float  nz_sign = copysignf(1.0f, base_normal.z);
+         float  nz_a    = -1.0f / (nz_sign + base_normal.z);
+         float  nz_b    = base_normal.x * base_normal.y * nz_a;
+         float3 t1      = make_float3(1.0f + nz_sign * base_normal.x * base_normal.x * nz_a,
+                                      nz_sign * nz_b,
+                                      -nz_sign * base_normal.x);
+         float3 t2      = make_float3(nz_b,
+                                      nz_sign + base_normal.y * base_normal.y * nz_a,
+                                      -base_normal.y);
 
          const float h = 0.015f;
          float3 p_hat  = base_normal;
@@ -659,12 +668,6 @@ extern "C" __global__ void __closesthit__ch()
          float  dd2      = (d2 - d0) / h;
          float3 grad_tan = dd1 * t1 + dd2 * t2;
          float3 delta_n  = (-displacement_scale) * grad_tan;
-
-         float3 view_dir  = normalize3(-ray_dir);
-         float  ndv       = fmaxf(0.0f, dot3(base_normal, view_dir));
-         float  atten_t   = fmaxf(0.0f, fminf(1.0f, (ndv - 0.1f) / 0.3f));
-         float  atten     = atten_t * atten_t * (3.0f - 2.0f * atten_t); // smoothstep
-         delta_n = atten * delta_n;
 
          float max_len = 0.4f;
          float len     = length3(delta_n);

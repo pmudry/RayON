@@ -78,9 +78,17 @@ __device__ bool hit_golf_ball_sphere(f3 center, float radius, const ray_simple &
 
    if (base_displacement < -0.001f)
    {
-      f3 helper = fabsf(base_normal.x) > 0.8f ? f3(0, 1, 0) : f3(1, 0, 0);
-      f3 t1 = normalize(cross(helper, base_normal));
-      f3 t2 = cross(base_normal, t1);
+      // Duff et al. 2017 "Building an Orthonormal Basis, Revisited":
+      // continuously varying basis — no seam from a sudden helper-vector switch.
+      float nz_sign = copysignf(1.0f, base_normal.z);
+      float nz_a    = -1.0f / (nz_sign + base_normal.z);
+      float nz_b    = base_normal.x * base_normal.y * nz_a;
+      f3 t1 = f3(1.0f + nz_sign * base_normal.x * base_normal.x * nz_a,
+                 nz_sign * nz_b,
+                 -nz_sign * base_normal.x);
+      f3 t2 = f3(nz_b,
+                 nz_sign + base_normal.y * base_normal.y * nz_a,
+                 -base_normal.y);
 
       const float h = 0.015f;
       f3 p_hat = base_normal;
@@ -94,11 +102,6 @@ __device__ bool hit_golf_ball_sphere(f3 center, float radius, const ray_simple &
 
       f3 delta_n =
           f3(-displacement_scale * grad_tan.x, -displacement_scale * grad_tan.y, -displacement_scale * grad_tan.z);
-
-      f3 view_dir = normalize(f3(-r.dir.x, -r.dir.y, -r.dir.z));
-      float ndv = fmaxf(0.0f, dot(base_normal, view_dir));
-      float atten = smoothstep(0.1f, 0.4f, ndv);
-      delta_n = f3(delta_n.x * atten, delta_n.y * atten, delta_n.z * atten);
 
       float max_len = 0.4f;
       float len = delta_n.length();
