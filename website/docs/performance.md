@@ -117,7 +117,8 @@ timestamp,commit,branch,gpu,resolution,samples,run,time_s
 ## Tuning tips
 
 - **Enable BVH** for any scene with more than ~15 objects: `use_bvh: true` in YAML.
-- **Start with low SPP** in interactive mode (`--start-samples 8`) for responsive orbit/pan.
+- **Start with a high target-fps** in interactive mode (`--target-fps 120`) for a very responsive
+  orbit/pan experience — the batch size auto-scales down to keep up.
 - **Adaptive depth** (`--adaptive-depth`) starts at 4 bounces and increments after each sample
   stage — gives a good balance between responsiveness and physically accurate caustics.
 - **Block size** — the default 32×4 is tuned for warp alignment. Changing it often regresses performance.

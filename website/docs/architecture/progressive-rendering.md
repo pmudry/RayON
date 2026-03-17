@@ -18,19 +18,19 @@ The progressive renderer operates in a loop:
 sequenceDiagram
     actor User
     participant SDL
-    participant Host (C++)
-    participant GPU Kernel
+    participant Host as "Host (C++)"
+    participant GPU as "GPU Kernel"
 
     User->>SDL: move mouse
-    SDL-->>Host (C++): SDL_MOUSEMOTION event
-    Host (C++)->>GPU Kernel: reset accum buffer (clear float array)
+    SDL-->>Host: SDL_MOUSEMOTION event
+    Host->>GPU: reset accum buffer (clear float array)
     loop accumulation stages
-        Host (C++)->>GPU Kernel: renderPixelsKernelAccum(spp=8)
-        GPU Kernel-->>Host (C++): uint8 display buffer (D2H)
-        Host (C++)->>SDL: SDL_UpdateTexture + SDL_RenderCopy
+        Host->>GPU: renderPixelsKernelAccum(spp=8)
+        GPU-->>Host: uint8 display buffer (D2H)
+        Host->>SDL: SDL_UpdateTexture + SDL_RenderCopy
         SDL-->>User: frame displayed
-        Note over Host (C++): wait 500 ms if stationary
-        Host (C++)->>GPU Kernel: renderPixelsKernelAccum(spp=+8)
+        Note over Host: wait 500 ms if stationary
+        Host->>GPU: renderPixelsKernelAccum(spp=+8)
     end
 ```
 
@@ -48,8 +48,8 @@ After each stage completes, the renderer pauses **500 ms** before starting the n
 for user input. This keeps the UI responsive — a mouse drag will immediately interrupt the
 accumulation and reset to 8 SPP.
 
-During camera motion, only the **lowest SPP** (e.g., `--start-samples 8`) is used to maintain
-frame rate. Once the camera is stationary, each subsequent frame adds another stage.
+During camera motion, the batch size is automatically reduced to the minimum needed to hit
+`--target-fps`. Once the camera is stationary, each subsequent frame adds another stage.
 
 ---
 

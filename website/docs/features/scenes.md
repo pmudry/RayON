@@ -99,38 +99,70 @@ materials:
     emission: [5.0, 4.5, 3.5]    # RGB emission; values > 1 are valid (HDR)
 ```
 
+### Anisotropic metal (GGX microfacet)
+
+```yaml
+  - name: brushed_gold
+    type: anisotropic_metal
+    preset: gold            # gold | silver | copper | aluminum
+    roughness: 0.08
+    anisotropy: 0.7         # 0.0 = isotropic, 1.0 = maximum anisotropy
+
+  - name: custom_conductor
+    type: anisotropic_metal
+    roughness: 0.05
+    anisotropy: 0.5
+    eta: [0.18, 0.42, 1.37]   # complex IOR real part (RGB)
+    k:   [3.42, 2.35, 1.77]   # complex IOR imaginary part (RGB)
+```
+
+### Thin film (iridescent)
+
+```yaml
+  - name: soap_bubble
+    type: thin_film
+    film_thickness: 400    # nanometers — controls highlight colour
+    film_ior: 1.33         # refractive index of the film (water ≈ 1.33)
+```
+
+### Clear coat
+
+```yaml
+  - name: car_paint_red
+    type: clear_coat
+    albedo: [0.8, 0.05, 0.05]  # diffuse base colour
+    roughness: 0.04             # coat roughness (0 = mirror coat)
+    refractive_index: 1.5       # coat IOR (typical lacquer/plastic)
+```
+
 ### Procedural patterns
 
 Procedural patterns can be added to any Lambertian or rough-mirror material via a `pattern`
 block. The pattern modulates the base albedo.
 
 ```yaml
-  - name: fibonacci_ball
+  - name: checkerboard_floor
     type: lambertian
-    albedo: [0.2, 0.8, 0.86]
+    albedo: [0.9, 0.9, 0.9]
+    pattern:
+      type: checkerboard
+      color: [0.1, 0.1, 0.1]
+
+  - name: fibonacci_dots
+    type: lambertian
+    albedo: [0.8, 0.8, 0.8]
     pattern:
       type: fibonacci_dots
-      color: [0.04, 0.04, 0.04]   # dot colour
-      dot_count: 8
-      dot_radius: 0.45
+      color: [0.1, 0.1, 0.1]
+      dot_count: 12
+      dot_radius: 0.33
 
-  - name: striped_ball
+  - name: striped
     type: lambertian
-    albedo: [0.8, 0.2, 0.2]
+    albedo: [0.9, 0.9, 0.9]
     pattern:
       type: stripes
-      color: [0.9, 0.9, 0.9]      # stripe colour (alternates with albedo)
-```
-
-### Image texture
-
-Any material can reference an image file for its diffuse albedo (GPU backends only):
-
-```yaml
-  - name: textured_floor
-    type: lambertian
-    albedo: [1.0, 1.0, 1.0]   # base tint — overridden at hit points by the texture
-    texture: "../resources/textures/grid_512.png"
+      color: [0.1, 0.1, 0.1]
 ```
 
 The texture path is resolved relative to the YAML file's directory. Textures are loaded once

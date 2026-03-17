@@ -15,7 +15,7 @@
   text-align: center;
   margin: 0 -1.2rem 2rem;
   overflow: hidden;
-  border-radius: 0 0 8px 8px;
+  border-radius: 0 0 2px 2px;
 }
 
 .hero-banner .hero-svg {
@@ -23,7 +23,7 @@
   max-width: 900px;
   display: block;
   margin: 0 auto;
-  border-radius: 12px;
+  border-radius: 6px;
 }
 
 .hero-tagline {
@@ -36,11 +36,15 @@
 }
 
 [data-md-color-scheme="default"] .hero-tagline {
-  color: #1a1a2e;
+  color: #1c1c2d;
 }
 
 /* Larger site title in the top nav bar */
 .md-header__title .md-header__topic:first-child {
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+.md-header__title .md-header__topic {
   font-size: 1.1rem;
   font-weight: 600;
 }
@@ -210,6 +214,277 @@
 .badge-done  { background: #1b3a2d; color: #80cbc4; }
 .badge-wip   { background: #1a2a3a; color: #90caf9; }
 .badge-plan  { background: #1a237e; color: #90caf9; }
+
+/* ─── Ray background (homepage only) ─── */
+
+/* Canvas at z-index 0, painted behind lifted content */
+#rayon-bg-canvas {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* Lift page content above the canvas */
+.rayon-homepage .md-container {
+  position: relative;
+  z-index: 1;
+}
+
+/* Make html + body fully transparent so canvas is visible.
+   body[data-md-color-scheme] overrides Material's own background. */
+.rayon-homepage {
+  background: transparent !important;
+}
+.rayon-homepage body,
+.rayon-homepage body[data-md-color-scheme="slate"],
+.rayon-homepage body[data-md-color-scheme="default"] {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+/* Strip all intermediate opaque backgrounds */
+.rayon-homepage .md-container,
+.rayon-homepage .md-main,
+.rayon-homepage .md-main__inner,
+.rayon-homepage .md-content__inner {
+  background: transparent !important;
+}
+
+/* Keep header and tabs opaque on the homepage (same as other pages) */
+.rayon-homepage [data-md-color-scheme="slate"] .md-header {
+  background-color: #0d0f14 !important;
+}
+.rayon-homepage [data-md-color-scheme="default"] .md-header {
+  background-color: #f0f0f2 !important;
+  color: #1a1a2e;
+}
+.rayon-homepage [data-md-color-scheme="default"] .md-tabs {
+  background-color: #f0f0f2 !important;
+}
+
+/* Glassmorphism content area on the homepage — dark theme
+   Note: data-md-color-scheme is on body, rayon-homepage is on html,
+   so we need a descendant selector (space) between them. */
+.rayon-homepage [data-md-color-scheme="slate"] .md-content {
+  background: rgba(35, 35, 42, 0.2) !important;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding-left: 1rem;
+  padding-right: 1rem;
+  margin-left: 1rem;
+  margin-right: 1rem;
+}
+
+/* Glassmorphism content area on the homepage — light theme */
+.rayon-homepage [data-md-color-scheme="default"] .md-content {
+  background: rgba(220, 220, 225, 0.2) !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-radius: 12px;
+  border: 1px solid rgba(139, 139, 139, 0.06);
+  padding-left: 1rem;
+  padding-right: 1rem;
+  margin-left: 1rem;
+  margin-right: 1rem;
+}
+
+/* Add spacing between sidebar and content */
+.md-content {
+  margin-left: 1rem;
+  margin-right: 1rem;
+}
+
+/* Navigation sidebar — strip inner-layer backgrounds on homepage */
+/* .rayon-homepage .md-sidebar,
+.rayon-homepage .md-sidebar__scrollwrap,
+.rayon-homepage .md-sidebar__inner, */
+.rayon-homepage .md-nav--primary,
+.rayon-homepage .md-nav--primary .md-nav,
+.rayon-homepage .md-nav--primary .md-nav__title ~ .md-nav__list,
+.rayon-homepage .md-nav--secondary,
+.rayon-homepage .md-nav--secondary .md-nav {
+  background: transparent !important;  
+}
+
+/* ─── Ray control panel toggle (bottom-right, appears on hover) ─── */
+
+#rayon-bg-toggle {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 300;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid rgba(175, 169, 236, 0.3);
+  background: rgba(12, 14, 20, 0.8);
+  color: #AFA9EC;
+  cursor: pointer;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+#rayon-bg-toggle:hover,
+#rayon-bg-toggle:focus-visible {
+  opacity: 1;
+}
+
+[data-md-color-scheme="default"] #rayon-bg-toggle {
+  background: rgba(240, 240, 242, 0.9);
+  border-color: rgba(120, 100, 200, 0.3);
+  color: #6a5acd;
+}
+
+/* ─── Ray control sidebar panel ─── */
+
+#rayon-bg-sidebar {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 280px;
+  height: 100vh;
+  z-index: 299;
+  background: rgba(12, 14, 20, 0.95);
+  border-left: 1px solid rgba(175, 169, 236, 0.1);
+  padding: 1.5rem 1.2rem;
+  overflow-y: auto;
+  transform: translateX(100%);
+  transition: transform 0.3s ease;
+  pointer-events: auto;
+}
+#rayon-bg-sidebar.open {
+  transform: translateX(0);
+}
+
+[data-md-color-scheme="default"] #rayon-bg-sidebar {
+  background: rgba(245, 245, 248, 0.97);
+  border-left-color: rgba(120, 100, 200, 0.15);
+}
+
+/* Panel inner elements */
+.rayon-panel-title {
+  color: #AFA9EC;
+  font-size: 0.72rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  margin-bottom: 1.2rem;
+  font-weight: 500;
+}
+[data-md-color-scheme="default"] .rayon-panel-title { color: #6a5acd; }
+
+.rayon-section-label {
+  color: #888780;
+  font-size: 0.62rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  margin-bottom: 0.6rem;
+}
+
+.rayon-presets {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.rayon-preset-btn {
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 0.65rem;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.03);
+  color: #888780;
+}
+.rayon-preset-btn.active {
+  background: rgba(175, 169, 236, 0.15);
+  border-color: rgba(175, 169, 236, 0.4);
+  color: #AFA9EC;
+}
+[data-md-color-scheme="default"] .rayon-preset-btn {
+  border-color: rgba(0, 0, 0, 0.08);
+  background: rgba(0, 0, 0, 0.03);
+  color: #666;
+}
+[data-md-color-scheme="default"] .rayon-preset-btn.active {
+  background: rgba(106, 90, 205, 0.12);
+  border-color: rgba(106, 90, 205, 0.4);
+  color: #6a5acd;
+}
+
+.rayon-sep {
+  height: 1px;
+  background: rgba(175, 169, 236, 0.08);
+  margin: 1rem 0;
+}
+[data-md-color-scheme="default"] .rayon-sep {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.rayon-slider-row { margin-bottom: 12px; }
+.rayon-slider-head { display: flex; justify-content: space-between; margin-bottom: 2px; }
+.rayon-slider-label { color: #B4B2A9; font-size: 0.7rem; }
+.rayon-slider-val { color: #AFA9EC; font-size: 0.7rem; font-family: 'JetBrains Mono', 'Fira Code', monospace; }
+
+[data-md-color-scheme="default"] .rayon-slider-label { color: #555; }
+[data-md-color-scheme="default"] .rayon-slider-val { color: #6a5acd; }
+
+#rayon-bg-sidebar input[type="range"] {
+  width: 100%;
+  accent-color: #AFA9EC;
+  height: 3px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(175, 169, 236, 0.15);
+  border-radius: 2px;
+  outline: none;
+}
+#rayon-bg-sidebar input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #AFA9EC;
+  cursor: pointer;
+}
+[data-md-color-scheme="default"] #rayon-bg-sidebar input[type="range"] {
+  accent-color: #6a5acd;
+  background: rgba(106, 90, 205, 0.15);
+}
+[data-md-color-scheme="default"] #rayon-bg-sidebar input[type="range"]::-webkit-slider-thumb {
+  background: #6a5acd;
+}
+
+.rayon-footer-text {
+  color: #5F5E5A;
+  font-size: 0.62rem;
+  line-height: 1.6;
+}
+[data-md-color-scheme="default"] .rayon-footer-text { color: #999; }
+
+/* ─── Print: hide animation ─── */
+@media print {
+  #rayon-bg-canvas,
+  #rayon-bg-toggle,
+  #rayon-bg-sidebar {
+    display: none !important;
+  }
+  .md-content,
+  .md-sidebar {
+    background: transparent !important;
+  }
+}
 
 /* Responsive: stack image grids on mobile */
 @media (max-width: 640px) {

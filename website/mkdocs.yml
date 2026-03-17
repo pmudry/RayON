@@ -126,6 +126,7 @@ nav:
     - Materials: how-it-works/materials.md
     - BVH Acceleration: how-it-works/bvh.md
     - Hemisphere Sampling: how-it-works/sampling.md
+    - Performance Optimisations: how-it-works/optimizations.md
   - Architecture:
     - architecture/index.md
     - Scene System: architecture/scene-system.md

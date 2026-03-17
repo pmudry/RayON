@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-RayON is a high-performance path tracer (C++17/CUDA) with CPU, multi-threaded, and GPU backends, plus interactive SDL2 real-time rendering. Educational project for ISC 302 HPC course, based on "Ray Tracing in One Weekend." Version 1.2.4, licensed GNU GPL v3.
+RayON is a high-performance path tracer (C++17/CUDA) with CPU, multi-threaded, and GPU backends, plus interactive SDL2 real-time rendering. Educational project for ISC 302 HPC course, based on "Ray Tracing in One Weekend." Version 1.5.5, licensed GNU GPL v3.
 
 ## Build Commands
 
@@ -55,6 +55,8 @@ All unified through `Camera` class (virtual inheritance from all renderer bases 
 | CPU Parallel | `cpu_renderers/renderer_cpu_parallel.hpp` | `std::async` |
 | CUDA | `gpu_renderers/renderer_cuda_host.hpp` | Batch |
 | CUDA Progressive | `gpu_renderers/renderer_cuda_progressive_host.hpp` | Interactive SDL2 |
+| OptiX | `gpu_renderers/renderer_optix_host.hpp` | Batch (if built with OPTIX) |
+| OptiX Progressive | `gpu_renderers/renderer_optix_progressive_host.hpp` | Interactive SDL2 (if built with OPTIX) |
 
 ### Key Source Layout
 
@@ -65,8 +67,11 @@ src/rayon/
 ├── camera/                    # Camera + SDL interactive controls
 ├── data_structures/           # vec3, ray, hittable, material, color, interval
 ├── cpu_renderers/             # CPU backends + cpu_shapes/
-├── gpu_renderers/             # CUDA backends + shaders/
-│   └── shaders/               # Kernels: render_scene_kernel.cu, render_acc_kernel.cu, shader_golf.cu
+├── gpu_renderers/             # CUDA backends + materials/ + shaders/ + optix/
+│   ├── cuda_raytracer.cu      # Main CUDA ray tracing kernel + intersection/shading logic
+│   ├── materials/             # GPU material system (material_dispatcher.cuh, legacy/)
+│   ├── shaders/               # Additional kernels: render_acc_kernel.cu, shader_golf.cu
+│   └── optix/                 # OptiX programs and renderer (if built with OPTIX)
 ├── render/                    # RenderCoordinator, IRenderer interface, RenderTarget
 └── scenes/                    # SceneDescription, SceneBuilder, SceneFactory, YAML loader
 ```
@@ -74,7 +79,7 @@ src/rayon/
 ### BVH Acceleration
 
 - Built on CPU with Surface Area Heuristic: `SceneDescription::buildBVH()`
-- Traversed on GPU with iterative stack in `shader_common.cuh`
+- Traversed on GPU with iterative stack in `cuda_raytracer.cuh`
 - Enable: `scene_desc.use_bvh = true` or `use_bvh: true` in YAML
 
 ### Precision Split
@@ -83,9 +88,9 @@ CPU uses `double` (Vec3), GPU uses `float` — conversion at kernel boundary.
 
 ## Adding New Geometry or Materials
 
-**Geometry**: Add enum to `GeometryType` in `scene_description.hpp` → add to `GeometryDesc` → implement CPU intersection as `Hittable` subclass → implement GPU intersection in `shader_common.cuh::intersect_geometry()` → add factory method to `SceneDescription`.
+**Geometry**: Add enum to `GeometryType` in `scene_description.hpp` → add to `GeometryDesc` → implement CPU intersection as `Hittable` subclass → implement GPU intersection in `cuda_raytracer.cuh::intersect_geometry()` → add factory method to `SceneDescription`.
 
-**Material**: Add enum to `MaterialType` → add params to `MaterialDesc` → implement CPU scattering in `material.hpp` → implement GPU evaluation in `shader_common.cuh::evaluate_material()`.
+**Material**: Add enum to `MaterialType` → add params to `MaterialDesc` → implement CPU scattering in `material.hpp` → implement GPU evaluation in `gpu_renderers/materials/material_dispatcher.cuh`.
 
 ## CUDA Patterns
 
@@ -102,3 +107,37 @@ CPU uses `double` (Vec3), GPU uses `float` — conversion at kernel boundary.
 - After adding files to `src/`, must `cmake .. --fresh` to regenerate includes and compile_commands.json
 - Random states must persist across frames for progressive rendering
 - Gamma correction differs between interactive display and saved images
+
+## Command Line Arguments
+
+```bash
+-m <method>              # Rendering method: 0=CPU, 1=CPU parallel, 2=CUDA, 3=CUDA+SDL,
+                         #   4=OptiX offline (if built with OPTIX), 5=OptiX+SDL (if built with OPTIX)
+-s <samples>             # Samples per pixel for offline modes (default: SAMPLES_PER_PIXEL)
+-r <WxH>|<height>        # Resolution: WxH (e.g. 1920x1080) or height for 16:9 (e.g. 720)
+--scene <yaml_file>      # Load scene from YAML (files live under resources/scenes/)
+--samples-per-batch <n>  # Max samples per interactive batch (auto-scales to hit --target-fps)
+--target-fps <fps>       # Interactive mode target FPS (default: 60)
+--adaptive-depth         # Progressively increase max ray bounce depth
+--no-adaptive-sampling   # Disable converged-pixel skipping
+--no-auto-accumulate     # Disable automatic sample accumulation when stationary
+--theme <name>           # GUI theme: light, classic, nord, dracula, gruvbox, catppuccin
+--menu                   # Show interactive method selection menu
+```
+
+## Material & Geometry Types
+
+### Material Types (enum `MaterialType` in `scene_description.hpp`)
+LAMBERTIAN, METAL, MIRROR, ROUGH_MIRROR, GLASS, DIELECTRIC, LIGHT, CONSTANT, SHOW_NORMALS,
+SDF_MATERIAL, ANISOTROPIC_METAL, THIN_FILM, CLEAR_COAT
+
+Procedural patterns (stored in `MaterialDesc`): FIBONACCI_DOTS, CHECKERBOARD, STRIPES
+
+### Geometry Types (enum `GeometryType` in `scene_description.hpp`)
+SPHERE, DISPLACED_SPHERE, RECTANGLE, TRIANGLE, OBJ_MESH, CUBE, BVHNODE, SDF_PRIMITIVE
+
+## Scene Files
+
+YAML scene files live in `resources/scenes/`. The format is documented in `resources/scenes/SCENE_FORMAT.md`.
+Notable scenes: `default_scene.yaml`, `01_bvh_test_scene.yaml`, `05_material_laboratory.yaml`,
+`11_soap_bubbles.yaml` (thin-film), `12_clearcoat_pokemonball.yaml` (clear-coat).

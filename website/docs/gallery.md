@@ -17,7 +17,7 @@ lighting effects, and geometric complexity the renderer supports.
         <figcaption><strong>Indoor Spheres</strong> — assorted dielectric, metallic, and diffuse spheres in an enclosed room with area lighting.</figcaption>
       </figure>
       <figure>
-        <img src="../assets/images/samples/isc spheres.png" alt="Scene with spheres arranged on a reflective floor">
+        <img src="../assets/images/samples/isc_spheres.png" alt="Scene with spheres arranged on a reflective floor">
         <figcaption><strong>ISC Spheres</strong> — multi-material arrangement with strong inter-reflections between specular surfaces.</figcaption>
       </figure>
       <figure>

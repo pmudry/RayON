@@ -1,4 +1,5 @@
 ---
+title: "RayON | \U0001F6A7 Work in progress"
 hide:
   - toc
   - navigation
@@ -9,7 +10,7 @@ hide:
 <div class="hero-banner">
   <img src="assets/rayon_logo_animated.svg"
        alt="RayON — animated prism logo with light rays dispersing into a spectrum"
-       loading="eager" class="hero-svg">
+       loading="eager" class="hero-svg off-glb">
   <p class="hero-tagline">A high-performance CPU &amp; CUDA path tracer with real-time progressive sampling</p>
 </div>
 
@@ -88,9 +89,12 @@ mkdir -p build && cd build
 cmake .. --fresh
 make -j$(nproc)
 
-# Run
+# Run — defaults to interactive mode when SDL2 is present, offline CUDA otherwise
 ./rayon
-# > Choose renderer: 0=CPU  1=CPU-parallel  2=CUDA  3=CUDA interactive
+
+# Or pick an explicit renderer with -m:
+./rayon -m 2   # CUDA one-shot
+./rayon -m 3   # CUDA interactive (SDL2 required)
 ```
 
 Load one of the bundled example scenes:
