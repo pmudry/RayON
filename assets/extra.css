@@ -213,70 +213,61 @@
 
 /* ─── Ray background ─── */
 
-/* Set the base page color behind the canvas for each theme */
-[data-md-color-scheme="slate"] {
-  background-color: #0d0f1400 !important;
-}
-[data-md-color-scheme="default"] {
-  background-color: #f0f0f56d !important;
-}
-
+/* Canvas sits at z-index 0; Material containers are lifted above it.
+   Using z-index: -1 would put the canvas behind <html>'s background
+   paint, making it invisible in light theme. */
 #rayon-bg-canvas {
   position: fixed;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
-  z-index: -1;
+  z-index: 0;
   pointer-events: none;
 }
 
-/* Make Material containers transparent so rays show through */
+/* Everything above the canvas needs a stacking context so it paints
+   on top of z-index: 0.  The header/tabs already have their own
+   stacking context from Material; we just need the main wrapper. */
+.md-container {
+  position: relative;
+  z-index: 1;
+}
+
+/* Strip opaque backgrounds from html, body, and Material wrappers
+   so the canvas is visible behind the semi-transparent content. */
+html,
 body,
-.md-container,
 .md-main,
 .md-main__inner {
   background: transparent !important;
 }
 
-/*Semi-transparent content area — readable but shows rays behind */
+/* Add spacing between sidebar and content */
+.md-content {
+  margin-left: 1.5rem;
+}
+
+/* Semi-transparent content area — readable but shows rays behind */
 [data-md-color-scheme="slate"] .md-content {
   background: rgba(29, 31, 37, 0.9);
-  /* border-radius: 6px; */
 }
 [data-md-color-scheme="default"] .md-content {
   background: rgba(240, 240, 245, 0.9);
-  /* border-radius: 6px; */
 }
 
-/* Navigation sidebar — make all inner layers transparent so the
+/* Navigation sidebar — strip all inner-layer backgrounds so the
    semi-transparent .md-sidebar background is the only opaque layer */
-/* [data-md-color-scheme="slate"] .md-sidebar {
-  background-color: rgba(29, 31, 37, 0.353);
-} */
-/* [data-md-color-scheme="default"] .md-sidebar {
-  background: rgba(240, 240, 245, 0.72);
-} */
+.md-sidebar,
 .md-sidebar__scrollwrap,
 .md-sidebar__inner,
 .md-nav--primary,
 .md-nav--primary .md-nav,
 .md-nav--primary .md-nav__title ~ .md-nav__list,
 .md-nav--secondary,
-.md-nav--secondary .md-nav {  
+.md-nav--secondary .md-nav {
   background: transparent !important;
 }
-
-/* Footer transparent so canvas shows through */
-/* .md-footer {
-  background: transparent !important;
-}
-[data-md-color-scheme="slate"] .md-footer {
-  background: rgba(15, 17, 23, 0.75) !important;
-}
-[data-md-color-scheme="default"] .md-footer {
-  background: rgba(240, 240, 245, 0.85) !important;
-} */
 
 /* ─── Ray control panel toggle (bottom-right, appears on hover) ─── */
 

@@ -94,6 +94,7 @@
    let animId = null;
    let rayColors = RAY_COLORS_DARK;
    let themeOpacityFactor = 1.0;
+   let canvasBgColor = "#0d0f14";  // painted each frame as the base
 
    // ── Theme detection ───────────────────────────────────────────────────────
 
@@ -105,6 +106,7 @@
       const isLight = getScheme() === "default";
       rayColors = isLight ? RAY_COLORS_LIGHT : RAY_COLORS_DARK;
       themeOpacityFactor = isLight ? LIGHT_THEME_OPACITY_FACTOR : 1.0;
+      canvasBgColor = isLight ? "#f0f0f5" : "#0d0f14";
       // Re-colour existing rays
       for (const r of rays) {
          r.color = rayColors[Math.floor(Math.random() * rayColors.length)];
@@ -236,7 +238,9 @@
    }
 
    function tick() {
-      ctx.clearRect(0, 0, W, H);
+      // Fill with theme base colour (canvas is z-index: 0, html/body are transparent)
+      ctx.fillStyle = canvasBgColor;
+      ctx.fillRect(0, 0, W, H);
 
       while (rays.length < cfg.count)
          rays.push(createRay(W, H, Math.floor(rand(RESPAWN_DELAY_MIN, RESPAWN_DELAY_MAX))));
