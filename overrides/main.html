@@ -1,1 +1,9 @@
 {% extends "base.html" %}
+
+{% block scripts %}
+  {{ super() }}
+  <canvas id="rayon-bg-canvas"></canvas>
+  <button id="rayon-bg-toggle" title="Ray animation controls">&#9881;</button>
+  <div id="rayon-bg-sidebar"></div>
+  <script src="{{ 'assets/rayon-bg.js' | url }}"></script>
+{% endblock %}
