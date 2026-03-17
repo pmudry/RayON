@@ -25,7 +25,7 @@ def write_obj(path, name, vertices, uvs, normals, faces, mtl_lib, mtl_name):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, 'w') as f:
         f.write(f"# {name}\n")
-        f.write(f"mtllib texture_test.mtl\n\n")
+        f.write(f"mtllib {mtl_lib}\n\n")
         f.write(f"o {name}\n\n")
         for v in vertices:
             f.write("v {:.6f} {:.6f} {:.6f}\n".format(*v))
