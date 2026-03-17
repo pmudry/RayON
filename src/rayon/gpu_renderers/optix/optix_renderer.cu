@@ -542,6 +542,10 @@ static void buildGAS(const Scene::SceneDescription &scene)
          materials[i].pattern_param1 = m.pattern_param1;
          materials[i].pattern_param2 = m.pattern_param2;
          materials[i].anisotropy = m.anisotropy;
+         materials[i].eta = make_float3(static_cast<float>(m.eta.x()), static_cast<float>(m.eta.y()),
+                                         static_cast<float>(m.eta.z()));
+         materials[i].k = make_float3(static_cast<float>(m.k.x()), static_cast<float>(m.k.y()),
+                                       static_cast<float>(m.k.z()));
          materials[i].film_thickness = m.film_thickness;
          materials[i].film_ior = m.film_ior;
          materials[i].texture_id = m.texture_id;

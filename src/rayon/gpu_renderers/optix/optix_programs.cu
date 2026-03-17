@@ -125,6 +125,79 @@ __device__ __forceinline__ float reflectance(float cosine, float ref_idx)
 }
 
 //==============================================================================
+// ANISOTROPIC GGX MICROFACET — ported from microfacet_ggx.cuh (PBR Book §9.6)
+//==============================================================================
+
+__device__ __forceinline__ float Lambda_GGX_opt(const float3 &w, float alpha_x, float alpha_y)
+{
+   float wz2 = w.z * w.z;
+   if (wz2 < 1e-16f)
+      return 0.0f;
+   float a2 = (alpha_x * w.x) * (alpha_x * w.x) + (alpha_y * w.y) * (alpha_y * w.y);
+   return (sqrtf(1.0f + a2 / wz2) - 1.0f) * 0.5f;
+}
+
+__device__ __forceinline__ float G1_GGX_opt(const float3 &w, float alpha_x, float alpha_y)
+{
+   return 1.0f / (1.0f + Lambda_GGX_opt(w, alpha_x, alpha_y));
+}
+
+__device__ __forceinline__ float G_GGX_opt(const float3 &wo, const float3 &wi, float alpha_x, float alpha_y)
+{
+   return 1.0f / (1.0f + Lambda_GGX_opt(wo, alpha_x, alpha_y) + Lambda_GGX_opt(wi, alpha_x, alpha_y));
+}
+
+__device__ __forceinline__ float3 Sample_wm_GGX_opt(const float3 &wo, float alpha_x, float alpha_y,
+                                                     float u1, float u2)
+{
+   float3 wh = normalize3(make_float3(alpha_x * wo.x, alpha_y * wo.y, wo.z));
+   if (wh.z < 0.0f)
+      wh = -wh;
+   float3 T1 = (wh.z < 0.99999f) ? normalize3(cross3(make_float3(0.0f, 0.0f, 1.0f), wh))
+                                  : make_float3(1.0f, 0.0f, 0.0f);
+   float3 T2 = cross3(wh, T1);
+   float r = sqrtf(u1);
+   float phi = 6.283185307f * u2;
+   float sin_phi, cos_phi;
+   __sincosf(phi, &sin_phi, &cos_phi);
+   float p_x = r * cos_phi;
+   float p_y = r * sin_phi;
+   float h = sqrtf(fmaxf(0.0f, 1.0f - p_x * p_x));
+   float s = (1.0f + wh.z) * 0.5f;
+   p_y = (1.0f - s) * h + s * p_y;
+   float pz = sqrtf(fmaxf(0.0f, 1.0f - p_x * p_x - p_y * p_y));
+   float3 nh = p_x * T1 + p_y * T2 + pz * wh;
+   return normalize3(make_float3(alpha_x * nh.x, alpha_y * nh.y, fmaxf(1e-6f, nh.z)));
+}
+
+__device__ __forceinline__ float FrComplex1_opt(float cos2, float sin2, float cos_theta_i,
+                                                float eta_ch, float k_ch)
+{
+   float eta2 = eta_ch * eta_ch;
+   float k2 = k_ch * k_ch;
+   float t0 = eta2 - k2 - sin2;
+   float a2plusb2 = sqrtf(fmaxf(t0 * t0 + 4.0f * eta2 * k2, 0.0f));
+   float a = sqrtf(fmaxf((a2plusb2 + t0) * 0.5f, 0.0f));
+   float Rs_num = a2plusb2 + cos2 - 2.0f * a * cos_theta_i;
+   float Rs_den = a2plusb2 + cos2 + 2.0f * a * cos_theta_i;
+   float Rs = Rs_num / fmaxf(Rs_den, 1e-10f);
+   float Rp_num = a2plusb2 * cos2 + sin2 * sin2 - 2.0f * a * cos_theta_i * sin2;
+   float Rp_den = a2plusb2 * cos2 + sin2 * sin2 + 2.0f * a * cos_theta_i * sin2;
+   float Rp = Rs * Rp_num / fmaxf(Rp_den, 1e-10f);
+   return (Rs + Rp) * 0.5f;
+}
+
+__device__ __forceinline__ float3 FrComplex_opt(float cos_theta_i, const float3 &eta, const float3 &k)
+{
+   cos_theta_i = fminf(fmaxf(cos_theta_i, 0.0f), 1.0f);
+   float cos2 = cos_theta_i * cos_theta_i;
+   float sin2 = 1.0f - cos2;
+   return make_float3(FrComplex1_opt(cos2, sin2, cos_theta_i, eta.x, k.x),
+                      FrComplex1_opt(cos2, sin2, cos_theta_i, eta.y, k.y),
+                      FrComplex1_opt(cos2, sin2, cos_theta_i, eta.z, k.z));
+}
+
+//==============================================================================
 // PAYLOAD HELPERS — pass PRD pointer via 2 payload slots
 //==============================================================================
 
@@ -299,13 +372,58 @@ extern "C" __global__ void __raygen__rg()
          }
          else if (prd.hit_material_type == OptixMaterialType::ANISOTROPIC_METAL)
          {
-            // Approximation: isotropic rough mirror (ignore anisotropy in OptiX)
-            float3 unit_dir = normalize3(cur_direction);
-            float eff_roughness = prd.hit_roughness * params.metal_fuzziness;
-            float3 perturbed_n = normalize3(prd.hit_normal + eff_roughness * rand_unit_sphere(seed));
-            scatter_dir = reflect3(unit_dir, perturbed_n);
-            attenuation = prd.hit_color;
-            did_scatter = (dot3(scatter_dir, prd.hit_normal) > 0.0f);
+            // Full anisotropic GGX microfacet conductor (PBR Book §9.6)
+            float aspect = sqrtf(fmaxf(1e-4f, 1.0f - 0.9f * prd.hit_anisotropy));
+            float r2 = prd.hit_roughness * prd.hit_roughness;
+            float alpha_x = fmaxf(1e-4f, r2 / aspect);
+            float alpha_y = fmaxf(1e-4f, r2 * aspect);
+
+            float3 N = prd.hit_normal;
+
+            if (fmaxf(alpha_x, alpha_y) < 1e-3f)
+            {
+               // Nearly smooth: perfect mirror with complex Fresnel tint
+               float3 unit_dir = normalize3(cur_direction);
+               scatter_dir = reflect3(unit_dir, N);
+               float cos_i = fmaxf(dot3(-unit_dir, N), 0.0f);
+               attenuation = prd.hit_color * FrComplex_opt(cos_i, prd.hit_eta, prd.hit_k);
+               did_scatter = dot3(scatter_dir, N) > 0.0f;
+            }
+            else
+            {
+               // Build TBN frame
+               float3 T = normalize3(prd.hit_tangent - dot3(prd.hit_tangent, N) * N);
+               float3 B = cross3(N, T);
+
+               // Outgoing direction (toward viewer) in local shading space
+               float3 wo_world = normalize3(-cur_direction);
+               float3 wo_local = make_float3(dot3(wo_world, T), dot3(wo_world, B), dot3(wo_world, N));
+
+               if (wo_local.z > 0.0f)
+               {
+                  // Sample microfacet normal via VNDF
+                  float3 wm = Sample_wm_GGX_opt(wo_local, alpha_x, alpha_y, rand_float(seed), rand_float(seed));
+
+                  // Reflect incoming direction around microfacet normal to get wi
+                  float3 wi_local = reflect3(make_float3(-wo_local.x, -wo_local.y, -wo_local.z), wm);
+
+                  if (wi_local.z > 0.0f)
+                  {
+                     // Transform wi back to world space
+                     float3 wi_world = wi_local.x * T + wi_local.y * B + wi_local.z * N;
+
+                     // Fresnel + VNDF weighting: F * G / G1
+                     float cos_theta_i = fmaxf(dot3(wo_local, wm), 0.0f);
+                     float3 F = FrComplex_opt(cos_theta_i, prd.hit_eta, prd.hit_k);
+                     float G = G_GGX_opt(wo_local, wi_local, alpha_x, alpha_y);
+                     float G1 = G1_GGX_opt(wo_local, alpha_x, alpha_y);
+
+                     attenuation = prd.hit_color * F * (G / fmaxf(G1, 1e-6f));
+                     scatter_dir = wi_world;
+                     did_scatter = true;
+                  }
+               }
+            }
          }
          else if (prd.hit_material_type == OptixMaterialType::THIN_FILM)
          {
@@ -577,6 +695,38 @@ extern "C" __global__ void __closesthit__ch()
 
    // Look up material from params array
    int mat_idx = sbt_data->material_idx;
+
+   // Compute surface tangent for anisotropic materials (geometry-specific)
+   {
+      float3 N = prd->hit_normal;
+      float3 T;
+      if (sbt_data->geom_type == OptixGeomType::RECTANGLE)
+      {
+         T = normalize3(sbt_data->u_vec);
+      }
+      else if (sbt_data->geom_type == OptixGeomType::TRIANGLE)
+      {
+         float3 edge1 = sbt_data->tri_v1 - sbt_data->tri_v0;
+         T = normalize3(edge1 - dot3(edge1, N) * N);
+         // fallback if degenerate
+         if (dot3(T, T) < 1e-8f)
+         {
+            float3 helper = (fabsf(N.x) > 0.8f) ? make_float3(0.0f, 1.0f, 0.0f) : make_float3(1.0f, 0.0f, 0.0f);
+            T = normalize3(cross3(helper, N));
+         }
+      }
+      else // SPHERE, DISPLACED_SPHERE
+      {
+         // Azimuthal tangent matching CUDA renderer: cross(up, outward_normal)
+         float3 up = make_float3(0.0f, 1.0f, 0.0f);
+         T = cross3(up, N);
+         if (dot3(T, T) < 1e-6f)
+            T = make_float3(1.0f, 0.0f, 0.0f); // degenerate at poles
+         T = normalize3(T);
+      }
+      prd->hit_tangent = T;
+   }
+
    if (mat_idx >= 0 && mat_idx < params.num_materials)
    {
       const OptixMaterialData &mat = params.materials[mat_idx];
@@ -587,6 +737,9 @@ extern "C" __global__ void __closesthit__ch()
       prd->hit_refractive_index = mat.refractive_index;
       prd->hit_film_thickness = mat.film_thickness;
       prd->hit_film_ior = mat.film_ior;
+      prd->hit_anisotropy = mat.anisotropy;
+      prd->hit_eta = mat.eta;
+      prd->hit_k = mat.k;
 
       // Texture sampling: override diffuse color with texel if texture is bound
       if (mat.texture_id >= 0 && mat.texture_id < params.num_textures && params.d_textures)

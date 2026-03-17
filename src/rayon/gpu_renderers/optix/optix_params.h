@@ -74,6 +74,8 @@ struct OptixMaterialData
 
    // Extra material parameters
    float anisotropy;     // ANISOTROPIC_METAL: anisotropy ratio
+   float3 eta;           // ANISOTROPIC_METAL: complex IOR real part (R,G,B)
+   float3 k;             // ANISOTROPIC_METAL: complex IOR imaginary/extinction (R,G,B)
    float film_thickness; // THIN_FILM: thickness in nm
    float film_ior;       // THIN_FILM: film refractive index
 
@@ -145,6 +147,10 @@ struct PRDRadiance
    float hit_film_thickness;   // THIN_FILM: film thickness in nm
    float hit_film_ior;         // THIN_FILM: film refractive index
    float2 hit_uv;              // Interpolated UV at hit point (for texture sampling)
+   float3 hit_tangent;         // Surface tangent (for anisotropic materials)
+   float3 hit_eta;             // ANISOTROPIC_METAL: complex IOR real part
+   float3 hit_k;               // ANISOTROPIC_METAL: complex IOR imaginary/extinction
+   float hit_anisotropy;       // ANISOTROPIC_METAL: anisotropy ratio
    OptixMaterialType hit_material_type;
    unsigned int seed;
    bool hit;
