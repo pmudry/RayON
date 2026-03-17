@@ -1,7 +1,7 @@
 # TODO List
 
 ## CUDA renderer
-- [ ] Textures loading (Venturi's style)
+- [X] Textures loading (Venturi's style)
 - [ ] Volumetric smoke ray-marching
 - [ ] Depth map exporting
 - [ ] New sphere / point light light types
@@ -11,12 +11,6 @@
 ## General
 - [ ] Better skybox
 - [ ] Skybox as HDR, dynamic loading
-
-## Bug fixing
-- [ ] Rendering (numeric?) artifacts when zooming out a lot (in ground sphere)
-- [ ] Artifacts when rendering metallic ground (grazing angle)
-- [ ] Artifacts when rendering glass (might be related to metallic ground somehow ?)
-- [ ] Adaptive sampling is not converging correctly in some cases, maybe can be fixed (not sure though)
 
 ## Website
 - [ ] History script testing
