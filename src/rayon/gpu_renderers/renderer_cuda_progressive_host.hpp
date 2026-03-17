@@ -78,7 +78,7 @@ class RendererCUDAProgressive : public IRenderer
       refreshCameraFrame();
 
       // Initialize GUI
-      SDLGuiHandler gui(target.width, target.height, settings_.theme);
+      SDLGuiHandler gui(target.width, target.height, settings_.theme, "CUDA");
       if (!gui.initialize())
          return;
       int max_samples = camera.samples_per_pixel;

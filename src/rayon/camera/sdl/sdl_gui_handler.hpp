@@ -65,8 +65,8 @@ static const char *visualizationModeNames[] = {"Normal Render", "Show Normals"};
 class SDLGuiHandler
 {
  public:
-   SDLGuiHandler(int image_width, int image_height, GuiTheme initial_theme = GuiTheme::NORD)
-       : image_width(image_width), image_height(image_height), show_controls(true), collapse_headers(false),
+   SDLGuiHandler(int image_width, int image_height, GuiTheme initial_theme = GuiTheme::NORD, std::string backend_name = "")
+       : image_width(image_width), image_height(image_height), backend_name(std::move(backend_name)), show_controls(true), collapse_headers(false),
          reset_headers(false), window_collapse_requested(false), window_collapsed(false), current_theme(initial_theme), initialized(false), window(nullptr), renderer(nullptr),
          texture(nullptr), logo_texture(nullptr), perf_write_index(0), last_perf_sample_time_ms(0),
          perf_sample_interval_ms(50), perf_time_window_ms(20000)
@@ -84,7 +84,7 @@ class SDLGuiHandler
       }
 
       std::string window_title =
-          "RayON v" + std::string(constants::version) + "";
+          "RayON v" + std::string(constants::version) + (backend_name.empty() ? "" : " [" + backend_name + "]");
       window = SDL_CreateWindow(window_title.c_str(), SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, image_width,
                                 image_height, SDL_WINDOW_SHOWN);
       if (!window)
@@ -556,6 +556,7 @@ class SDLGuiHandler
  private:
    int image_width;
    int image_height;
+   std::string backend_name;
    bool show_controls;
    bool collapse_headers;
    bool reset_headers;

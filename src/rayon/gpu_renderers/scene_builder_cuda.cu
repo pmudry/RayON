@@ -7,6 +7,7 @@
  */
 
 #include "cuda_scene.cuh"
+#include "cuda_utils.cuh"
 #include "scene_description.hpp"
 #include <cmath>
 #include <cuda_runtime.h>
