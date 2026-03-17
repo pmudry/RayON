@@ -200,7 +200,9 @@ class SDLGuiHandler
                       bool *show_normal_arrows = nullptr, int *normal_arrow_count = nullptr,
                       float *normal_arrow_scale = nullptr, float *normal_arrow_thickness = nullptr,
                       bool *show_spps_counter = nullptr, int triangle_count = 0,
-                      int *target_fps_ptr = nullptr)
+                      int *target_fps_ptr = nullptr,
+                      int *golf_dimple_count = nullptr, float *golf_dimple_radius = nullptr,
+                      float *golf_dimple_depth = nullptr)
    {
       SDL_UpdateTexture(texture, nullptr, image.data(), image_width * image_channels);
       SDL_RenderClear(renderer);
@@ -443,6 +445,26 @@ class SDLGuiHandler
                      *visualization_mode =
                          show_normals ? static_cast<int>(VisualizationMode::SHOW_NORMALS)
                                       : static_cast<int>(VisualizationMode::NORMAL);
+                  }
+               }
+            }
+
+            // --- Procedural Patterns ---
+            if (golf_dimple_count)
+            {
+               if (reset_headers)
+                  ImGui::SetNextItemOpen(!collapse_headers);
+               if (ImGui::CollapsingHeader("Procedural Patterns"))
+               {
+                  if (golf_dimple_count && golf_dimple_radius && golf_dimple_depth)
+                  {
+                     ImGui::SeparatorText("Golf Ball Dimples");
+                     ImGui::SliderInt("Dimple Count##golf", golf_dimple_count, 50, 400);
+                     ImGui::SetItemTooltip("Number of dimples.\nHigher values are more expensive per hit.");
+                     ImGui::SliderFloat("Dimple Radius##golf", golf_dimple_radius, 0.05f, 0.6f, "%.3f");
+                     ImGui::SetItemTooltip("Angular radius of each dimple (radians).");
+                     ImGui::SliderFloat("Dimple Depth##golf", golf_dimple_depth, 0.0f, 1.0f, "%.3f");
+                     ImGui::SetItemTooltip("Depth of each dimple (displacement scale).");
                   }
                }
             }

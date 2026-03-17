@@ -128,6 +128,11 @@ struct OptixLaunchParams
    float metal_fuzziness;      // Multiplier on roughness of metallic materials
    float glass_ior_multiplier; // Multiplier on refractive index of glass/dielectric
 
+   // Golf ball dimple parameters (runtime-adjustable via GUI sliders)
+   int   golf_dimple_count;  // Number of dimples (Fibonacci sphere distribution)
+   float golf_dimple_radius; // Angular radius of each dimple (radians)
+   float golf_dimple_depth;  // Depth of each dimple (displacement factor)
+
    // Textures
    cudaTextureObject_t *d_textures; // Device array of CUDA texture objects
    int num_textures;

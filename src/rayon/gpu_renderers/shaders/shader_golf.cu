@@ -15,7 +15,7 @@ __device__ f3 fibonacci_point(int i, int n)
 __device__ float distanceToNearestDimple(f3 p)
 {
    f3 q = normalize(p);
-   const int N = 150;
+   int N = g_golf_dimple_count;
    float max_dot = -1.0f;
    for (int i = 0; i < N; ++i)
    {
@@ -31,8 +31,8 @@ __device__ float distanceToNearestDimple(f3 p)
 __device__ float hexagonalDimplePattern(f3 p)
 {
    float ang = distanceToNearestDimple(normalize(p));
-   const float dimple_radius = 0.24f;
-   const float dimple_depth = 0.35f;
+   float dimple_radius = g_golf_dimple_radius;
+   float dimple_depth  = g_golf_dimple_depth;
    if (ang < dimple_radius)
    {
       float t = ang / dimple_radius;
@@ -64,7 +64,7 @@ __device__ bool hit_golf_ball_sphere(f3 center, float radius, const ray_simple &
    float base_displacement = golfBallDisplacement(surface_point, center, radius);
 
    const float displacement_scale = 0.2f;
-   const float dimple_depth_param = 0.35f;
+   float dimple_depth_param = g_golf_dimple_depth;
    const float geo_strength = 0.35f;
 
    f3 base_outward = normalize(f3(surface_point.x - center.x, surface_point.y - center.y, surface_point.z - center.z));

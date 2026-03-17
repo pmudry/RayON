@@ -564,7 +564,7 @@ __device__ __forceinline__ float3 fibonacci_point_optix(int i, int n)
 __device__ __forceinline__ float distanceToNearestDimple_optix(float3 p)
 {
    float3 q = normalize3(p);
-   const int N = 150;
+   int N = params.golf_dimple_count;
    float max_dot = -1.0f;
    for (int i = 0; i < N; ++i)
    {
@@ -580,8 +580,8 @@ __device__ __forceinline__ float distanceToNearestDimple_optix(float3 p)
 __device__ __forceinline__ float hexagonalDimplePattern_optix(float3 p)
 {
    float ang = distanceToNearestDimple_optix(normalize3(p));
-   const float dimple_radius = 0.24f;
-   const float dimple_depth  = 0.35f;
+   float dimple_radius = params.golf_dimple_radius;
+   float dimple_depth  = params.golf_dimple_depth;
    if (ang < dimple_radius)
    {
       float t = ang / dimple_radius;
@@ -634,7 +634,7 @@ extern "C" __global__ void __closesthit__ch()
       float  base_disp      = hexagonalDimplePattern_optix(normalized_loc);
 
       const float displacement_scale = 0.2f;
-      const float dimple_depth_param = 0.35f;
+      float dimple_depth_param       = params.golf_dimple_depth;
       const float geo_strength       = 0.35f;
 
       float  d_norm       = fminf(1.0f, fmaxf(0.0f, -base_disp / dimple_depth_param));

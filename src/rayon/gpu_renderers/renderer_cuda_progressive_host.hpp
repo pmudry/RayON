@@ -117,6 +117,12 @@ class RendererCUDAProgressive : public IRenderer
       int adaptive_samples_per_batch = samples_per_batch;
       int user_samples_per_batch = samples_per_batch;
 
+      // Runtime-tweakable procedural pattern parameters (declared before applySceneSettings)
+      bool scene_has_golf_ball      = false;
+      int   golf_dimple_count       = 150;
+      float golf_dimple_radius      = 0.24f;
+      float golf_dimple_depth       = 0.35f;
+
       auto syncSamplesFromSlider = [&]()
       { samples_per_batch = std::max(1, static_cast<int>(samples_per_batch_float)); };
 
@@ -129,6 +135,9 @@ class RendererCUDAProgressive : public IRenderer
          ::setDOFEnabled(dof_enabled);
          ::setDOFAperture(dof_aperture);
          ::setDOFFocusDistance(dof_focus_distance);
+         ::setGolfDimpleCount(golf_dimple_count);
+         ::setGolfDimpleRadius(golf_dimple_radius);
+         ::setGolfDimpleDepth(golf_dimple_depth);
       };
 
       auto propagateAccumulationToggle = [&]()
@@ -139,7 +148,6 @@ class RendererCUDAProgressive : public IRenderer
 
       applySceneSettings();
 
-      // Rendering buffers
       SDL_Event event;
       vector<unsigned char> display_image(image_width * image_height * image_channels);
       vector<unsigned char> base_display_image(image_width * image_height * image_channels);
@@ -386,6 +394,17 @@ class RendererCUDAProgressive : public IRenderer
       // Build initial GPU scene
       CudaScene::Scene *gpu_scene = Scene::CudaSceneBuilder::buildGPUScene(active_scene);
 
+      // Scan for procedural geometry/materials — must be after active_scene is initialized
+      auto scanProceduralPatterns = [&]() {
+         scene_has_golf_ball = false;
+         for (const auto &g : active_scene.geometries)
+         {
+            if (g.type == Scene::GeometryType::DISPLACED_SPHERE)
+               scene_has_golf_ball = true;
+         }
+      };
+      scanProceduralPatterns(); // Initial scan
+
       auto applySceneSelectionChange = [&]() {
          if (current_scene_index < 0 || current_scene_index >= scene_count)
             current_scene_index = 0;
@@ -421,6 +440,9 @@ class RendererCUDAProgressive : public IRenderer
          // Apply scene-specific rendering settings
          background_intensity = active_scene.background_intensity;
          adaptive_sampling_enabled = active_scene.adaptive_sampling;
+
+         // Re-scan for procedural patterns so GUI sections update correctly
+         scanProceduralPatterns();
 
          // Rebuild GPU scene
          Scene::CudaSceneBuilder::freeGPUScene(gpu_scene);
@@ -729,6 +751,9 @@ class RendererCUDAProgressive : public IRenderer
          int old_normal_arrow_count = normal_arrow_count;
          float old_normal_arrow_scale = normal_arrow_scale;
          float old_normal_arrow_thickness = normal_arrow_thickness;
+         int   old_golf_dimple_count  = golf_dimple_count;
+         float old_golf_dimple_radius = golf_dimple_radius;
+         float old_golf_dimple_depth  = golf_dimple_depth;
 
          // Draw ImGui UI — passes pointers so ImGui can modify values directly
          bool auto_orbit = camera_control.isAutoOrbitEnabled();
@@ -752,7 +777,10 @@ class RendererCUDAProgressive : public IRenderer
                            &adaptive_sampling_enabled, &adaptive_threshold, convergence_pct, &show_heatmap,
                            &visualization_mode, &show_normal_arrows, &normal_arrow_count,
                            &normal_arrow_scale, &normal_arrow_thickness, &show_spps_counter, tri_count,
-                           &target_fps);
+                           &target_fps,
+                           scene_has_golf_ball      ? &golf_dimple_count  : nullptr,
+                           scene_has_golf_ball      ? &golf_dimple_radius : nullptr,
+                           scene_has_golf_ball      ? &golf_dimple_depth  : nullptr);
 
          if (auto_orbit != camera_control.isAutoOrbitEnabled())
          {
@@ -786,7 +814,9 @@ class RendererCUDAProgressive : public IRenderer
          // Detect if ImGui changed any scene parameter
          if (dof_enabled != old_dof || dof_aperture != old_aperture || dof_focus_distance != old_focus ||
              light_intensity != old_light || background_intensity != old_background || metal_fuzziness != old_fuzz ||
-             glass_refraction_index != old_ior || cam_fov_ui != old_cam_fov)
+             glass_refraction_index != old_ior || cam_fov_ui != old_cam_fov ||
+             golf_dimple_count != old_golf_dimple_count || golf_dimple_radius != old_golf_dimple_radius ||
+             golf_dimple_depth != old_golf_dimple_depth)
          {
             if (cam_fov_ui != old_cam_fov)
             {

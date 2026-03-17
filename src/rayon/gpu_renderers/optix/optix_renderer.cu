@@ -81,6 +81,11 @@ struct OptixState
    // Persistent device launch params — avoids cudaMalloc/cudaFree per batch
    CUdeviceptr d_launch_params = 0;
 
+   // Golf ball dimple parameters (cached between launches, set via optixRendererSetGolfDimples)
+   int   golf_dimple_count  = 150;
+   float golf_dimple_radius = 0.24f;
+   float golf_dimple_depth  = 0.35f;
+
    bool initialized = false;
 };
 
@@ -706,6 +711,9 @@ extern "C" unsigned long long optixRendererLaunch(int width, int height, int num
    launch_params.light_intensity = light_intensity;
    launch_params.metal_fuzziness = metal_fuzziness;
    launch_params.glass_ior_multiplier = glass_ior_multiplier;
+   launch_params.golf_dimple_count  = g_state.golf_dimple_count;
+   launch_params.golf_dimple_radius = g_state.golf_dimple_radius;
+   launch_params.golf_dimple_depth  = g_state.golf_dimple_depth;
 
    // Single memcpy to persistent device buffer — no malloc/free per batch
    CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(g_state.d_launch_params), &launch_params, sizeof(OptixLaunchParams),
@@ -743,6 +751,13 @@ extern "C" void optixRendererDownloadAccum(float *host_accum_buffer, int width, 
       host_accum_buffer[i * 3 + 1] = host_f4[i].y;
       host_accum_buffer[i * 3 + 2] = host_f4[i].z;
    }
+}
+
+extern "C" void optixRendererSetGolfDimples(int count, float radius, float depth)
+{
+   g_state.golf_dimple_count  = count;
+   g_state.golf_dimple_radius = radius;
+   g_state.golf_dimple_depth  = depth;
 }
 
 extern "C" void optixRendererCleanup()

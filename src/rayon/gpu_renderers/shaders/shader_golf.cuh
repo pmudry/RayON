@@ -6,6 +6,11 @@
 struct ray_simple;
 struct hit_record_simple;
 
+// Runtime-adjustable golf ball dimple constants (defined in renderer_cuda_device.cu)
+extern __constant__ int   g_golf_dimple_count;
+extern __constant__ float g_golf_dimple_radius;
+extern __constant__ float g_golf_dimple_depth;
+
 #include <cfloat>
 #include <curand_kernel.h>
 

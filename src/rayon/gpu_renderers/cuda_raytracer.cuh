@@ -21,6 +21,11 @@ extern __constant__ bool g_dof_enabled;
 extern __constant__ float g_dof_aperture;
 extern __constant__ float g_dof_focus_distance;
 
+// Golf ball dimple parameters (also declared in shader_golf.cuh)
+extern __constant__ int   g_golf_dimple_count;
+extern __constant__ float g_golf_dimple_radius;
+extern __constant__ float g_golf_dimple_depth;
+
 // Forward declarations for golf-ball helpers implemented in shader_golf.cu
 struct ray_simple;
 struct hit_record_simple;

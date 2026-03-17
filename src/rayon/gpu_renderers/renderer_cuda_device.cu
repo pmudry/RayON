@@ -25,6 +25,11 @@ __constant__ bool g_dof_enabled = false;
 __constant__ float g_dof_aperture = 0.1f;
 __constant__ float g_dof_focus_distance = 10.0f;
 
+// Golf ball dimple constants (runtime-adjustable)
+__constant__ int   g_golf_dimple_count  = 150;
+__constant__ float g_golf_dimple_radius = 0.24f;
+__constant__ float g_golf_dimple_depth  = 0.35f;
+
 //==================== CUDA STREAM & PINNED MEMORY ====================
 // Display stream: gamma-correct kernel + async D2H copy pipeline.
 // Non-blocking so it does not implicitly synchronize with the default stream.
@@ -76,6 +81,20 @@ extern "C" void setDOFAperture(float aperture) { cudaMemcpyToSymbol(g_dof_apertu
 extern "C" void setDOFFocusDistance(float distance)
 {
    cudaMemcpyToSymbol(g_dof_focus_distance, &distance, sizeof(float));
+}
+
+// Golf ball dimple setters
+extern "C" void setGolfDimpleCount(int count)
+{
+   cudaMemcpyToSymbol(g_golf_dimple_count, &count, sizeof(int));
+}
+extern "C" void setGolfDimpleRadius(float radius)
+{
+   cudaMemcpyToSymbol(g_golf_dimple_radius, &radius, sizeof(float));
+}
+extern "C" void setGolfDimpleDepth(float depth)
+{
+   cudaMemcpyToSymbol(g_golf_dimple_depth, &depth, sizeof(float));
 }
 
 //==================== DEVICE MEMORY MANAGEMENT ====================

@@ -53,6 +53,7 @@ extern "C"
                                           float glass_ior_multiplier);
    void optixRendererDownloadAccum(float *host_accum_buffer, int width, int height);
    void optixRendererCleanup();
+   void optixRendererSetGolfDimples(int count, float radius, float depth);
 }
 
 class RendererOptiXProgressive : public IRenderer
@@ -155,6 +156,12 @@ class RendererOptiXProgressive : public IRenderer
       float adaptive_threshold = 3.16e-5f;    // no-op for OptiX
       float convergence_pct = 0.0f;
 
+      // Runtime-tweakable golf ball dimple parameters
+      bool scene_has_golf_ball = false;
+      int   golf_dimple_count  = 150;
+      float golf_dimple_radius = 0.24f;
+      float golf_dimple_depth  = 0.35f;
+
       auto syncSamplesFromSlider = [&]()
       { samples_per_batch = std::max(1, static_cast<int>(samples_per_batch_float)); };
 
@@ -225,6 +232,14 @@ class RendererOptiXProgressive : public IRenderer
       Scene::SceneDescription original_scene = scene;
       Hittable_list cpu_scene_for_arrows = Scene::CPUSceneBuilder::buildCPUScene(original_scene);
 
+      // Scan active scene for displaced spheres so the GUI section appears when relevant
+      auto scanProceduralPatterns = [&]() {
+         scene_has_golf_ball = false;
+         for (const auto &g : active_scene.geometries)
+            if (g.type == Scene::GeometryType::DISPLACED_SPHERE)
+               scene_has_golf_ball = true;
+      };
+
       auto applyVisualizationToActiveScene = [&]()
       {
          active_scene = original_scene;
@@ -265,10 +280,18 @@ class RendererOptiXProgressive : public IRenderer
 
          background_intensity = active_scene.background_intensity;
 
+         // Re-scan for procedural patterns after scene change
+         scanProceduralPatterns();
+         ::optixRendererSetGolfDimples(golf_dimple_count, golf_dimple_radius, golf_dimple_depth);
+
          // Rebuild OptiX scene
          optixRendererBuildScene(active_scene);
          camera_changed = true;
       };
+
+      // Scan scene initially (after active_scene is set)
+      scanProceduralPatterns();
+      ::optixRendererSetGolfDimples(golf_dimple_count, golf_dimple_radius, golf_dimple_depth);
 
       // CPU normal-arrow overlay helpers (identical to CUDA renderer)
       auto drawLineRGB = [&](std::vector<unsigned char> &img, int x0, int y0, int x1, int y1,
@@ -582,6 +605,9 @@ class RendererOptiXProgressive : public IRenderer
          int old_normal_arrow_count = normal_arrow_count;
          float old_normal_arrow_scale = normal_arrow_scale;
          float old_normal_arrow_thickness = normal_arrow_thickness;
+         int   old_golf_dimple_count  = golf_dimple_count;
+         float old_golf_dimple_radius = golf_dimple_radius;
+         float old_golf_dimple_depth  = golf_dimple_depth;
 
          bool auto_orbit = camera_control.isAutoOrbitEnabled();
          float cam_pos[3] = {(float)look_from.x(), (float)look_from.y(), (float)look_from.z()};
@@ -600,7 +626,10 @@ class RendererOptiXProgressive : public IRenderer
                            &adaptive_sampling_enabled, &adaptive_threshold, convergence_pct, &show_heatmap,
                            &visualization_mode, &show_normal_arrows, &normal_arrow_count,
                            &normal_arrow_scale, &normal_arrow_thickness, &show_spps_counter, tri_count,
-                           &target_fps);
+                           &target_fps,
+                           scene_has_golf_ball ? &golf_dimple_count  : nullptr,
+                           scene_has_golf_ball ? &golf_dimple_radius : nullptr,
+                           scene_has_golf_ball ? &golf_dimple_depth  : nullptr);
 
          if (auto_orbit != camera_control.isAutoOrbitEnabled())
             camera_control.setAutoOrbit(auto_orbit);
@@ -627,6 +656,14 @@ class RendererOptiXProgressive : public IRenderer
          {
             if (cam_fov_ui != old_cam_fov)
                camera.vfov = cam_fov_ui;
+            camera_changed = true;
+         }
+
+         // Golf ball dimple params changed — push to GPU via OptiX launch params
+         if (golf_dimple_count != old_golf_dimple_count || golf_dimple_radius != old_golf_dimple_radius ||
+             golf_dimple_depth != old_golf_dimple_depth)
+         {
+            ::optixRendererSetGolfDimples(golf_dimple_count, golf_dimple_radius, golf_dimple_depth);
             camera_changed = true;
          }
 
