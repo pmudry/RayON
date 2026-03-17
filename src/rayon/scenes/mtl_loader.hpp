@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <map>
@@ -192,7 +193,7 @@ class MTLLoader
             if (!tex_path.empty())
             {
                // Resolve relative to mtl directory
-               if (!mtl_dir.empty() && tex_path[0] != '/')
+               if (!mtl_dir.empty() && !std::filesystem::path(tex_path).is_absolute())
                   tex_path = mtl_dir + "/" + tex_path;
                map_Kd = tex_path;
                current_entry.diffuse_tex_path = map_Kd;

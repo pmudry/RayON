@@ -295,7 +295,7 @@ CudaScene::Scene *CudaSceneBuilder::buildGPUScene(const SceneDescription &desc)
             // Allocate a 2D CUDA array (RGBA float4)
             cudaChannelFormatDesc fmt = cudaCreateChannelDesc<float4>();
             cudaArray_t cu_array = nullptr;
-            cudaMallocArray(&cu_array, &fmt, static_cast<size_t>(td.width), static_cast<size_t>(td.height));
+            CUDA_CHECK(cudaMallocArray(&cu_array, &fmt, static_cast<size_t>(td.width), static_cast<size_t>(td.height)));
 
             // Convert uint8 RGBA → float4 row by row
             std::vector<float4> float_pixels(static_cast<size_t>(td.width) * static_cast<size_t>(td.height));
@@ -305,11 +305,11 @@ CudaScene::Scene *CudaSceneBuilder::buildGPUScene(const SceneDescription &desc)
                float_pixels[p] = make_float4(px[0] / 255.0f, px[1] / 255.0f, px[2] / 255.0f, px[3] / 255.0f);
             }
 
-            cudaMemcpy2DToArray(cu_array, 0, 0, float_pixels.data(),
+            CUDA_CHECK(cudaMemcpy2DToArray(cu_array, 0, 0, float_pixels.data(),
                                 static_cast<size_t>(td.width) * sizeof(float4),
                                 static_cast<size_t>(td.width) * sizeof(float4),
                                 static_cast<size_t>(td.height),
-                                cudaMemcpyHostToDevice);
+                                cudaMemcpyHostToDevice));
 
             // Create texture object with bilinear filtering and clamp addressing
             cudaResourceDesc res_desc = {};
@@ -324,16 +324,16 @@ CudaScene::Scene *CudaSceneBuilder::buildGPUScene(const SceneDescription &desc)
             tex_desc.normalizedCoords = 1;
 
             cudaTextureObject_t tex_obj = 0;
-            cudaCreateTextureObject(&tex_obj, &res_desc, &tex_desc, nullptr);
+            CUDA_CHECK(cudaCreateTextureObject(&tex_obj, &res_desc, &tex_desc, nullptr));
             host_tex_objs[ti] = tex_obj;
 
             printf("GPU Texture[%d]: '%s' (%dx%d)\n", ti, td.path.c_str(), td.width, td.height);
          }
 
          // Upload the array of handles to device memory
-         cudaMalloc(&host_scene.d_textures, num_textures * sizeof(cudaTextureObject_t));
-         cudaMemcpy(host_scene.d_textures, host_tex_objs.data(),
-                    num_textures * sizeof(cudaTextureObject_t), cudaMemcpyHostToDevice);
+         CUDA_CHECK(cudaMalloc(&host_scene.d_textures, num_textures * sizeof(cudaTextureObject_t)));
+         CUDA_CHECK(cudaMemcpy(host_scene.d_textures, host_tex_objs.data(),
+                    num_textures * sizeof(cudaTextureObject_t), cudaMemcpyHostToDevice));
       }
       else
       {

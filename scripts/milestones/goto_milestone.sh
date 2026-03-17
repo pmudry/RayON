@@ -356,7 +356,7 @@ cmake "$REPO_ROOT" \
     --no-warn-unused-cli \
     -Wno-dev \
     -DCMAKE_RULE_MESSAGES=OFF \
-    2>&1 | grep -v "^--" | grep -v "^\s*$" || true
+    2>&1 | grep -v "^--" | grep -Ev "^[[:space:]]*$" || true
 
 echo ""
 echo "→ Building target '$MS_TARGET' (this may take a minute) …"

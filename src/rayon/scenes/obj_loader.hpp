@@ -13,6 +13,7 @@
 #include "scene_description.hpp"
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <map>
@@ -138,7 +139,7 @@ class OBJLoader
             if (e != std::string::npos) mtl_file = mtl_file.substr(0, e + 1);
 
             std::string mtl_path = mtl_file;
-            if (!obj_dir.empty() && !mtl_file.empty() && mtl_file[0] != '/')
+            if (!obj_dir.empty() && !mtl_file.empty() && !std::filesystem::path(mtl_file).is_absolute())
                mtl_path = obj_dir + "/" + mtl_file;
 
             // Compute the directory containing the .mtl file itself (may differ

@@ -51,6 +51,14 @@ lighting effects, and geometric complexity the renderer supports.
       </figure>
       
       <figure>
+        <img src="../assets/images/samples/textures/uv_mapping.png" alt="UV texture mapped cube, sphere and ground plane with a grid texture">
+        <figcaption><strong>UV Texture Mapping</strong> — a grid texture applied to UV-mapped OBJ models via MTL. UVs are interpolated per-triangle using barycentric coordinates.</figcaption>
+      </figure>
+      <figure>
+        <img src="../assets/images/samples/textures/texture_orig.png" alt="Blender-exported OBJ scene with multi-material MTL textures">
+        <figcaption><strong>MTL-driven Textures</strong> — per-group materials from a Blender-exported scene. Each mesh group picks its diffuse texture from the <code>.mtl</code> file automatically.</figcaption>
+      </figure>
+      <figure>
         <img src="../assets/images/samples/thin_film_shader.png" alt="Soap-bubble like thin film shading">
         <figcaption><strong>Thin-film rendering</strong> — mimics oil stains or soap bubbles.</figcaption>
       </figure>

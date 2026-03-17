@@ -7,6 +7,7 @@
 #include "obj_loader.hpp"
 #include <algorithm>
 #include <cctype>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <map>
@@ -397,7 +398,8 @@ static bool loadMaterials(const SimpleYAMLParser &parser, SceneDescription &scen
          if (!tex_path.empty())
          {
             // Resolve relative paths against the YAML file's directory
-            if (!tex_path.empty() && tex_path[0] != '/' && !scene_dir.empty())
+            if (!tex_path.empty() && !scene_dir.empty() &&
+                !std::filesystem::path(tex_path).is_absolute())
                tex_path = scene_dir + "/" + tex_path;
             int tex_id = scene.addTexture(tex_path);
             mat.texture_id = tex_id;
@@ -513,8 +515,11 @@ static bool loadGeometry(const SimpleYAMLParser &parser, SceneDescription &scene
          int geom_start = static_cast<int>(scene.geometries.size());
          int tri_count = OBJLoader::loadOBJ(obj_path, scene, mat_id, obj_position, obj_scale);
          if (tri_count < 0)
+         {
             cerr << "ERROR: Failed to load OBJ file: " << obj_path << "\n";
-         else if (!visible)
+            continue; // Skip success log and generic visibility assignment
+         }
+         if (!visible)
          {
             // Apply visibility to all triangles added by this OBJ
             for (int gi = geom_start; gi < static_cast<int>(scene.geometries.size()); ++gi)

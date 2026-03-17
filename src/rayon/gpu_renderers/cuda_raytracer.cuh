@@ -434,7 +434,7 @@ __device__ inline f3 apply_procedural_pattern(CudaScene::ProceduralPattern patte
 
 __device__ __forceinline__ void apply_material(const CudaScene::Material &mat, hit_record_simple &rec,
                                                const f3 &geometry_center,
-                                               const cudaTextureObject_t *d_textures)
+                                               const cudaTextureObject_t *d_textures, int num_textures)
 {
    using namespace CudaScene;
    switch (mat.type)
@@ -503,7 +503,8 @@ __device__ __forceinline__ void apply_material(const CudaScene::Material &mat, h
 
    // Texture sampling: overrides the solid albedo set above. The pattern was
    // applied first, so the texture then overwrites it (texture takes precedence).
-   if (mat.texture_id >= 0 && d_textures != nullptr)
+   if (mat.texture_id >= 0 && mat.texture_id < num_textures && d_textures != nullptr &&
+       d_textures[mat.texture_id] != 0)
    {
       float4 texel = tex2D<float4>(d_textures[mat.texture_id], rec.uv.x, 1.0f - rec.uv.y);
       rec.color = f3(texel.x, texel.y, texel.z);
@@ -621,7 +622,7 @@ __device__ inline bool hit_scene(const CudaScene::Scene &scene, const ray_simple
             geom_center = geom.data.sphere.center;
          }
       }
-      apply_material(scene.materials[closest_material_id], rec, geom_center, scene.d_textures);
+      apply_material(scene.materials[closest_material_id], rec, geom_center, scene.d_textures, scene.num_textures);
       rec.visible = closest_visible;
    }
    return hit_anything;

@@ -2,14 +2,14 @@
  * @file texture_loader.cc
  * @brief Implements SceneDescription::addTexture() using stb_image
  *
- * Compiled separately so that STB_IMAGE_IMPLEMENTATION is defined exactly
- * once. The sdl_gui_handler.hpp uses STB_IMAGE_STATIC for its own copy, so
- * there is no duplicate-symbol conflict.
+ * STB_IMAGE_STATIC is defined so all stb functions get internal linkage.
+ * sdl_gui_handler.hpp also defines STB_IMAGE_STATIC+IMPLEMENTATION for its
+ * own translation unit — both are safe (each gets its own static copy).
  */
 
 #define STB_IMAGE_STATIC
 #define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.h"
+#include "external/stb_image.h"
 
 #include "scene_description.hpp"
 #include <iostream>

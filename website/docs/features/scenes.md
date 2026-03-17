@@ -101,16 +101,41 @@ materials:
 
 ### Procedural patterns
 
-```yaml
-  - name: checkerboard_floor
-    type: checker
-    albedo_even: [0.9, 0.9, 0.9]
-    albedo_odd:  [0.1, 0.1, 0.1]
+Procedural patterns can be added to any Lambertian or rough-mirror material via a `pattern`
+block. The pattern modulates the base albedo.
 
-  - name: fibonacci_dots
-    type: fibonacci_dots
-    albedo: [0.8, 0.8, 0.8]
+```yaml
+  - name: fibonacci_ball
+    type: lambertian
+    albedo: [0.2, 0.8, 0.86]
+    pattern:
+      type: fibonacci_dots
+      color: [0.04, 0.04, 0.04]   # dot colour
+      dot_count: 8
+      dot_radius: 0.45
+
+  - name: striped_ball
+    type: lambertian
+    albedo: [0.8, 0.2, 0.2]
+    pattern:
+      type: stripes
+      color: [0.9, 0.9, 0.9]      # stripe colour (alternates with albedo)
 ```
+
+### Image texture
+
+Any material can reference an image file for its diffuse albedo (GPU backends only):
+
+```yaml
+  - name: textured_floor
+    type: lambertian
+    albedo: [1.0, 1.0, 1.0]   # base tint — overridden at hit points by the texture
+    texture: "../resources/textures/grid_512.png"
+```
+
+The texture path is resolved relative to the YAML file's directory. Textures are loaded once
+and deduplicated by path.
+See [OBJ Loading](obj-loading.md) for applying textures via MTL files.
 
 ---
 
@@ -154,15 +179,18 @@ The surface normal is `cross(u_vec, v_vec)`. Flip `u_vec` or `v_vec` to reverse 
 ### OBJ mesh
 
 ```yaml
-  - type: obj_mesh
-    material: plastic
+  - type: obj
+    material: plastic          # optional — overridden by MTL per-group materials
     file: "../resources/models/bunny.obj"
-    scale: [1.0, 1.0, 1.0]
-    offset: [0.0, 0.0, 0.0]
+    scale:    [1.0, 1.0, 1.0]
+    position: [0.0, 0.0, 0.0]
 ```
 
+The `material` key is optional when the OBJ has a `mtllib` — each `usemtl` group in the OBJ
+will use the material defined in the `.mtl` file.
+
 The path is relative to the scene YAML file's directory.
-See [OBJ Loading](obj-loading.md) for mesh format requirements.
+See [OBJ Loading](obj-loading.md) for MTL materials, UV textures, and mesh format requirements.
 
 ### SDF primitive
 
@@ -233,5 +261,7 @@ geometry:
 | `10_isc_neons_bunny.yaml` | Emissive neon lights + bunny mesh |
 | `11_soap_bubbles.yaml` | Thin-film iridescence |
 | `12_clearcoat_pokemonball.yaml` | Clearcoat over diffuse base |
+| `13_texture_test1.yaml` | UV-mapped OBJ with grid texture (MTL-driven) |
+| `14_texture_test2.yaml` | Multi-material OBJ scene with Blender-exported MTL |
 | `bvh_stress_courtyard.yaml` | 300+ objects, BVH stress test |
-| `pattern_gallery.yaml` | Checkerboard, Fibonacci, Voronoi textures |
+| `pattern_gallery.yaml` | Fibonacci dots, stripes patterns |
