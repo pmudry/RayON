@@ -54,6 +54,11 @@ extern "C"
    void setGolfDimpleRadius(float radius);
    void setGolfDimpleDepth(float depth);
 
+   // HDR environment map (equirectangular lat-long)
+   // rgba_data: packed float4 (R, G, B, A) row-major, w×h pixels
+   bool uploadHdrEnvironment(const float *rgba_data, int w, int h);
+   void clearHdrEnvironment();
+
    // GPU-side gamma correction: reads device accum buffer, writes uint8 display image to host
    // When d_pixel_sample_counts is non-null, uses per-pixel sample counts (adaptive sampling)
    void convertAccumToDisplayCUDA(void *d_accum_buffer, unsigned char *display_image, int width, int height, int channels,

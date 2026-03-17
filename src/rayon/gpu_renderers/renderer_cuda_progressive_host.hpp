@@ -173,6 +173,84 @@ class RendererCUDAProgressive : public IRenderer
       float normal_arrow_thickness = 1.2f;    // Arrow thickness in pixels
       bool show_spps_counter = true;          // SDL overlay throughput counter under logo
 
+      // --- HDR Environment Map ---
+      // Scan resources/hdri/ for .hdr files; index 0 = built-in gradient sky.
+      std::vector<std::string> hdr_files;
+      std::vector<std::string> hdr_labels;
+      hdr_labels.push_back("Gradient Sky (built-in)");
+
+      auto scanHdriDir = [&](const std::string &dir)
+      {
+         namespace fs = std::filesystem;
+         std::error_code ec;
+         if (!fs::exists(dir, ec) || !fs::is_directory(dir, ec))
+            return;
+         for (const auto &entry : fs::directory_iterator(dir, ec))
+         {
+            if (ec) break;
+            if (!entry.is_regular_file(ec)) continue;
+            std::string ext = entry.path().extension().string();
+            std::transform(ext.begin(), ext.end(), ext.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            if (ext == ".hdr")
+               hdr_files.push_back(entry.path().lexically_normal().string());
+         }
+      };
+      scanHdriDir("../resources/hdri");
+      scanHdriDir("resources/hdri");
+      std::sort(hdr_files.begin(), hdr_files.end());
+      for (const auto &f : hdr_files)
+         hdr_labels.push_back(std::filesystem::path(f).stem().string());
+
+      std::vector<const char *> hdr_name_ptrs;
+      for (const auto &l : hdr_labels) hdr_name_ptrs.push_back(l.c_str());
+      int hdr_count = static_cast<int>(hdr_labels.size());
+      int current_hdr_index = 0; // 0 = gradient sky
+
+      // Lambda: load (or unload) an HDR environment by display index.
+      auto applyHdrChange = [&](int new_index)
+      {
+         new_index = std::max(0, std::min(new_index, hdr_count - 1));
+         current_hdr_index = new_index;
+
+         if (new_index == 0)
+         {
+            ::clearHdrEnvironment();
+            std::cout << "HDR sky: Gradient Sky (built-in)\n";
+         }
+         else
+         {
+            const std::string &path = hdr_files[new_index - 1]; // entry 0 is gradient
+            int w = 0, h = 0, channels = 0;
+            float *raw = stbi_loadf(path.c_str(), &w, &h, &channels, 3);
+            if (!raw)
+            {
+               std::cerr << "HDR: Failed to load '" << path << "'\n";
+               return;
+            }
+            // Convert RGB → float4 (CUDA texture requires float4)
+            std::vector<float> rgba(static_cast<size_t>(w) * h * 4);
+            for (int i = 0; i < w * h; ++i)
+            {
+               rgba[i * 4 + 0] = raw[i * 3 + 0];
+               rgba[i * 4 + 1] = raw[i * 3 + 1];
+               rgba[i * 4 + 2] = raw[i * 3 + 2];
+               rgba[i * 4 + 3] = 1.0f;
+            }
+            stbi_image_free(raw);
+
+            if (!::uploadHdrEnvironment(rgba.data(), w, h))
+            {
+               std::cerr << "HDR: GPU upload failed for '" << path << "'\n";
+               ::clearHdrEnvironment();
+               current_hdr_index = 0;
+               return;
+            }
+            std::cout << "HDR sky: '" << hdr_labels[new_index] << "' (" << w << "x" << h << ")\n";
+         }
+         camera_changed = true;
+      };
+
       // Scene selection: built-ins + all YAML files discovered at runtime.
       struct SceneEntry
       {
@@ -549,6 +627,14 @@ class RendererCUDAProgressive : public IRenderer
                   current_scene_index = (current_scene_index + 1) % scene_count;
                   scene_switched_by_key = true;
                }
+               else if (event.key.keysym.sym == SDLK_KP_PLUS || event.key.keysym.sym == SDLK_EQUALS)
+               {
+                  applyHdrChange((current_hdr_index + 1) % hdr_count);
+               }
+               else if (event.key.keysym.sym == SDLK_KP_MINUS || event.key.keysym.sym == SDLK_MINUS)
+               {
+                  applyHdrChange((current_hdr_index - 1 + hdr_count) % hdr_count);
+               }
                else if (camera_control.handleKeyDown(event, accumulation_enabled, samples_per_batch_float,
                                                       light_intensity, background_intensity, needs_rerender,
                                                       camera_changed))
@@ -754,6 +840,7 @@ class RendererCUDAProgressive : public IRenderer
          int   old_golf_dimple_count  = golf_dimple_count;
          float old_golf_dimple_radius = golf_dimple_radius;
          float old_golf_dimple_depth  = golf_dimple_depth;
+         int   old_hdr_index          = current_hdr_index;
 
          // Draw ImGui UI — passes pointers so ImGui can modify values directly
          bool auto_orbit = camera_control.isAutoOrbitEnabled();
@@ -780,7 +867,10 @@ class RendererCUDAProgressive : public IRenderer
                            &target_fps,
                            scene_has_golf_ball      ? &golf_dimple_count  : nullptr,
                            scene_has_golf_ball      ? &golf_dimple_radius : nullptr,
-                           scene_has_golf_ball      ? &golf_dimple_depth  : nullptr);
+                           scene_has_golf_ball      ? &golf_dimple_depth  : nullptr,
+                           &current_hdr_index,
+                           hdr_count > 0 ? hdr_name_ptrs.data() : nullptr,
+                           hdr_count);
 
          if (auto_orbit != camera_control.isAutoOrbitEnabled())
          {
@@ -809,6 +899,12 @@ class RendererCUDAProgressive : public IRenderer
             // Reset rendering state
             camera_changed = true;
             applySceneSettings();
+         }
+
+         // Detect ImGui-driven HDR sky change
+         if (current_hdr_index != old_hdr_index)
+         {
+            applyHdrChange(current_hdr_index);
          }
 
          // Detect if ImGui changed any scene parameter
@@ -870,6 +966,7 @@ class RendererCUDAProgressive : public IRenderer
 
       // Cleanup scene
       Scene::CudaSceneBuilder::freeGPUScene(gpu_scene);
+      ::clearHdrEnvironment();
       ::cleanupCudaStreams();
       // gui is cleaned up by its destructor
    }
@@ -882,27 +979,28 @@ class RendererCUDAProgressive : public IRenderer
     */
    int calculateProgressiveMaxDepth(int current_samples, bool is_moving, int max_depth) const
    {
-      if (is_moving)
-         return 3;
+      return is_moving ? max_depth / 2 : max_depth;
+      // if (is_moving)
+      //    return 4;
 
-      if (current_samples <= 4)
-         return 4;
-      else if (current_samples <= 16)
-         return 5;
-      else if (current_samples <= 32)
-         return 6;
-      else if (current_samples <= 64)
-         return 7;
-      else if (current_samples <= 128)
-         return 8;
-      else if (current_samples <= 256)
-         return 16;
-      else if (current_samples <= 512)
-         return 16;
-      else if (current_samples <= 1024)
-         return 24;
-      else
-         return std::min(512, max_depth);
+      // if (current_samples <= 4)
+      //    return 4;
+      // else if (current_samples <= 16)
+      //    return 5;
+      // else if (current_samples <= 32)
+      //    return 6;
+      // else if (current_samples <= 64)
+      //    return 7;
+      // else if (current_samples <= 128)
+      //    return 8;
+      // else if (current_samples <= 256)
+      //    return 16;
+      // else if (current_samples <= 512)
+      //    return 16;
+      // else if (current_samples <= 1024)
+      //    return 24;
+      // else
+      //    return std::min(512, max_depth);
    }
 
    /**

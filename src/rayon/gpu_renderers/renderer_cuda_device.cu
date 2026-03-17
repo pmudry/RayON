@@ -28,6 +28,10 @@ __constant__ float g_dof_focus_distance = 10.0f;
 // Golf ball dimple constants (runtime-adjustable)
 __constant__ int   g_golf_dimple_count  = 150;
 __constant__ float g_golf_dimple_radius = 0.24f;
+
+// HDR Environment Map (equirectangular lat-long)
+__constant__ cudaTextureObject_t g_hdr_env_tex = 0;
+__constant__ bool                g_use_hdr_env = false;
 __constant__ float g_golf_dimple_depth  = 0.35f;
 
 //==================== CUDA STREAM & PINNED MEMORY ====================
@@ -147,6 +151,88 @@ extern "C" void resetDeviceAccumBuffer(void *d_accum_buffer, int num_pixels)
       cudaMemset(d_accum_buffer, 0, (size_t)num_pixels * sizeof(float4));
    }
 }
+
+//==================== HDR ENVIRONMENT MAP ====================
+// Static GPU resources for the currently loaded HDR sky dome.
+static cudaArray_t          s_hdr_cuda_array = nullptr;
+static cudaTextureObject_t  s_hdr_tex_obj    = 0;
+
+extern "C" void clearHdrEnvironment()
+{
+   bool   use_hdr = false;
+   cudaTextureObject_t zero = 0;
+   cudaMemcpyToSymbol(g_use_hdr_env, &use_hdr, sizeof(bool));
+   cudaMemcpyToSymbol(g_hdr_env_tex, &zero,    sizeof(cudaTextureObject_t));
+
+   if (s_hdr_tex_obj != 0)
+   {
+      cudaDestroyTextureObject(s_hdr_tex_obj);
+      s_hdr_tex_obj = 0;
+   }
+   if (s_hdr_cuda_array != nullptr)
+   {
+      cudaFreeArray(s_hdr_cuda_array);
+      s_hdr_cuda_array = nullptr;
+   }
+}
+
+/**
+ * @brief Upload a host-side RGBA float buffer as a GPU environment-map texture.
+ *
+ * @param rgba_data  Pointer to float4 data (R,G,B,A) in row-major order.
+ * @param w          Image width  (longitude pixels)
+ * @param h          Image height (latitude pixels)
+ * @return true on success, false on any CUDA error.
+ */
+extern "C" bool uploadHdrEnvironment(const float *rgba_data, int w, int h)
+{
+   clearHdrEnvironment();
+   if (!rgba_data || w <= 0 || h <= 0)
+      return false;
+
+   cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<float4>();
+   if (cudaMallocArray(&s_hdr_cuda_array, &channelDesc, (size_t)w, (size_t)h) != cudaSuccess)
+   {
+      fprintf(stderr, "HDR: cudaMallocArray failed (%dx%d)\n", w, h);
+      s_hdr_cuda_array = nullptr;
+      return false;
+   }
+
+   if (cudaMemcpy2DToArray(s_hdr_cuda_array, 0, 0, rgba_data,
+                           (size_t)w * sizeof(float4), (size_t)w * sizeof(float4), (size_t)h,
+                           cudaMemcpyHostToDevice) != cudaSuccess)
+   {
+      fprintf(stderr, "HDR: cudaMemcpy2DToArray failed\n");
+      cudaFreeArray(s_hdr_cuda_array);
+      s_hdr_cuda_array = nullptr;
+      return false;
+   }
+
+   cudaResourceDesc resDesc = {};
+   resDesc.resType               = cudaResourceTypeArray;
+   resDesc.res.array.array       = s_hdr_cuda_array;
+
+   cudaTextureDesc texDesc = {};
+   texDesc.addressMode[0]   = cudaAddressModeWrap;   // horizontal: wrap (longitude)
+   texDesc.addressMode[1]   = cudaAddressModeClamp;  // vertical: clamp (poles)
+   texDesc.filterMode       = cudaFilterModeLinear;
+   texDesc.readMode         = cudaReadModeElementType;
+   texDesc.normalizedCoords = 1;
+
+   if (cudaCreateTextureObject(&s_hdr_tex_obj, &resDesc, &texDesc, nullptr) != cudaSuccess)
+   {
+      fprintf(stderr, "HDR: cudaCreateTextureObject failed\n");
+      cudaFreeArray(s_hdr_cuda_array);
+      s_hdr_cuda_array = nullptr;
+      return false;
+   }
+
+   bool use_hdr = true;
+   CUDA_CHECK(cudaMemcpyToSymbol(g_hdr_env_tex, &s_hdr_tex_obj, sizeof(cudaTextureObject_t)));
+   CUDA_CHECK(cudaMemcpyToSymbol(g_use_hdr_env, &use_hdr,       sizeof(bool)));
+   return true;
+}
+
 /**
  * @brief Accumulative rendering function that adds new samples to existing accumulated color buffer
  *

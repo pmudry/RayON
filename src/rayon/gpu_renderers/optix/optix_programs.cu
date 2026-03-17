@@ -289,8 +289,22 @@ extern "C" __global__ void __raygen__rg()
          {
             // Sky/background
             float3 unit_dir = normalize3(cur_direction);
-            float t = 0.5f * (unit_dir.y + 1.0f);
-            float3 sky = (1.0f - t) * make_float3(1.0f, 1.0f, 1.0f) + t * make_float3(0.5f, 0.7f, 1.0f);
+            float3 sky;
+            if (params.use_hdr_env)
+            {
+               // Equirectangular (lat-long) mapping
+               float theta = acosf(fmaxf(-1.0f, fminf(1.0f, unit_dir.y)));
+               float phi   = atan2f(-unit_dir.z, unit_dir.x);
+               float u     = (phi + 3.14159265f) * (0.5f / 3.14159265f);
+               float v     = theta * (1.0f / 3.14159265f);
+               float4 samp = tex2D<float4>(params.hdr_env_tex, u, v);
+               sky = make_float3(samp.x, samp.y, samp.z);
+            }
+            else
+            {
+               float t = 0.5f * (unit_dir.y + 1.0f);
+               sky = (1.0f - t) * make_float3(1.0f, 1.0f, 1.0f) + t * make_float3(0.5f, 0.7f, 1.0f);
+            }
             color = color + throughput * sky * params.background_intensity;
             break;
          }

@@ -86,6 +86,10 @@ struct OptixState
    float golf_dimple_radius = 0.24f;
    float golf_dimple_depth  = 0.35f;
 
+   // HDR environment map managed outside the scene textures to survive scene rebuilds
+   cudaArray_t         hdr_cuda_array = nullptr;
+   cudaTextureObject_t hdr_tex_obj    = 0;
+
    bool initialized = false;
 };
 
@@ -714,6 +718,8 @@ extern "C" unsigned long long optixRendererLaunch(int width, int height, int num
    launch_params.golf_dimple_count  = g_state.golf_dimple_count;
    launch_params.golf_dimple_radius = g_state.golf_dimple_radius;
    launch_params.golf_dimple_depth  = g_state.golf_dimple_depth;
+   launch_params.hdr_env_tex        = g_state.hdr_tex_obj;
+   launch_params.use_hdr_env        = (g_state.hdr_tex_obj != 0);
 
    // Single memcpy to persistent device buffer — no malloc/free per batch
    CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(g_state.d_launch_params), &launch_params, sizeof(OptixLaunchParams),
@@ -760,8 +766,69 @@ extern "C" void optixRendererSetGolfDimples(int count, float radius, float depth
    g_state.golf_dimple_depth  = depth;
 }
 
+extern "C" void optixRendererClearHdrEnv()
+{
+   if (g_state.hdr_tex_obj != 0)
+   {
+      cudaDestroyTextureObject(g_state.hdr_tex_obj);
+      g_state.hdr_tex_obj = 0;
+   }
+   if (g_state.hdr_cuda_array != nullptr)
+   {
+      cudaFreeArray(g_state.hdr_cuda_array);
+      g_state.hdr_cuda_array = nullptr;
+   }
+}
+
+extern "C" bool optixRendererUploadHdrEnv(const float *rgba_data, int w, int h)
+{
+   optixRendererClearHdrEnv();
+   if (!rgba_data || w <= 0 || h <= 0)
+      return false;
+
+   cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<float4>();
+   if (cudaMallocArray(&g_state.hdr_cuda_array, &channelDesc, (size_t)w, (size_t)h) != cudaSuccess)
+   {
+      fprintf(stderr, "OptiX HDR: cudaMallocArray failed (%dx%d)\n", w, h);
+      g_state.hdr_cuda_array = nullptr;
+      return false;
+   }
+
+   if (cudaMemcpy2DToArray(g_state.hdr_cuda_array, 0, 0, rgba_data,
+                           (size_t)w * sizeof(float4), (size_t)w * sizeof(float4), (size_t)h,
+                           cudaMemcpyHostToDevice) != cudaSuccess)
+   {
+      fprintf(stderr, "OptiX HDR: cudaMemcpy2DToArray failed\n");
+      cudaFreeArray(g_state.hdr_cuda_array);
+      g_state.hdr_cuda_array = nullptr;
+      return false;
+   }
+
+   cudaResourceDesc resDesc = {};
+   resDesc.resType               = cudaResourceTypeArray;
+   resDesc.res.array.array       = g_state.hdr_cuda_array;
+
+   cudaTextureDesc texDesc = {};
+   texDesc.addressMode[0]   = cudaAddressModeWrap;
+   texDesc.addressMode[1]   = cudaAddressModeClamp;
+   texDesc.filterMode       = cudaFilterModeLinear;
+   texDesc.readMode         = cudaReadModeElementType;
+   texDesc.normalizedCoords = 1;
+
+   if (cudaCreateTextureObject(&g_state.hdr_tex_obj, &resDesc, &texDesc, nullptr) != cudaSuccess)
+   {
+      fprintf(stderr, "OptiX HDR: cudaCreateTextureObject failed\n");
+      cudaFreeArray(g_state.hdr_cuda_array);
+      g_state.hdr_cuda_array = nullptr;
+      return false;
+   }
+
+   return true;
+}
+
 extern "C" void optixRendererCleanup()
 {
+   optixRendererClearHdrEnv();
    if (g_state.d_accum_buffer)
       CUDA_CHECK(cudaFree(g_state.d_accum_buffer));
    if (g_state.d_launch_params)

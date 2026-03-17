@@ -16,6 +16,10 @@ extern __constant__ float g_background_intensity;
 extern __constant__ float g_metal_fuzziness;
 extern __constant__ float g_glass_refraction_index;
 
+// HDR environment map (equirectangular lat-long)
+extern __constant__ cudaTextureObject_t g_hdr_env_tex;
+extern __constant__ bool                g_use_hdr_env;
+
 // Depth of Field parameters
 extern __constant__ bool g_dof_enabled;
 extern __constant__ float g_dof_aperture;
@@ -955,8 +959,22 @@ __device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scen
       {
          // Sky/background
          f3 unit_direction = normalize(current_ray.dir);
-         float t = 0.5f * (unit_direction.y + 1.0f);
-         f3 sky_color = (1.0f - t) * f3(1.0f, 1.0f, 1.0f) + t * f3(0.5f, 0.7f, 1.0f);
+         f3 sky_color;
+         if (g_use_hdr_env)
+         {
+            // Equirectangular (lat-long) mapping: theta = polar [0,π], phi = azimuth [-π,π]
+            float theta = acosf(fmaxf(-1.0f, fminf(1.0f, unit_direction.y)));
+            float phi   = atan2f(-unit_direction.z, unit_direction.x);
+            float u     = (phi + CUDART_PI_F) * (0.5f / CUDART_PI_F);  // [0, 1]
+            float v     = theta * (1.0f / CUDART_PI_F);                 // [0, 1]
+            float4 samp = tex2D<float4>(g_hdr_env_tex, u, v);
+            sky_color   = f3(samp.x, samp.y, samp.z);
+         }
+         else
+         {
+            float t = 0.5f * (unit_direction.y + 1.0f);
+            sky_color = (1.0f - t) * f3(1.0f, 1.0f, 1.0f) + t * f3(0.5f, 0.7f, 1.0f);
+         }
          accumulated_color = accumulated_color + accumulated_attenuation * sky_color * g_background_intensity;
          return accumulated_color;
       }

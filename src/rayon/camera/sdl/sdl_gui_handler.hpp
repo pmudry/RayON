@@ -202,7 +202,9 @@ class SDLGuiHandler
                       bool *show_spps_counter = nullptr, int triangle_count = 0,
                       int *target_fps_ptr = nullptr,
                       int *golf_dimple_count = nullptr, float *golf_dimple_radius = nullptr,
-                      float *golf_dimple_depth = nullptr)
+                      float *golf_dimple_depth = nullptr,
+                      int *hdr_env_index = nullptr, const char *const *hdr_env_names = nullptr,
+                      int hdr_env_count = 0)
    {
       SDL_UpdateTexture(texture, nullptr, image.data(), image_width * image_channels);
       SDL_RenderClear(renderer);
@@ -404,6 +406,13 @@ class SDLGuiHandler
                ImGui::SetNextItemOpen(!collapse_headers);
             if (ImGui::CollapsingHeader("Environment & Materials", ImGuiTreeNodeFlags_DefaultOpen))
             {
+               // HDR sky selector
+               if (hdr_env_index && hdr_env_names && hdr_env_count > 0)
+               {
+                  ImGui::Combo("Sky##hdr", hdr_env_index, hdr_env_names, hdr_env_count);
+                  ImGui::SetItemTooltip("Background sky dome.\nNumpad +/- to cycle.");
+               }
+
                if (light_intensity && background_intensity && metal_fuzziness && glass_ior)
                {
                   ImGui::SliderFloat("Light Intensity", light_intensity, 0.1f, 3.0f, "%.1f");
@@ -411,7 +420,7 @@ class SDLGuiHandler
                   ImGui::SliderFloat("Metal Fuzz", metal_fuzziness, 0.0f, 5.0f, "%.2f");
                   ImGui::SliderFloat("Glass IOR", glass_ior, 1.0f, 2.5f, "%.2f");
                }
-               
+
                ImGui::Separator();
 
                if (show_normal_arrows && normal_arrow_count && normal_arrow_scale && normal_arrow_thickness)
@@ -513,6 +522,7 @@ class SDLGuiHandler
                ImGui::BulletText("A: Toggle Normal Arrows");
                ImGui::BulletText("N: Toggle Show Normals");
                ImGui::BulletText("Left/Right: Previous/Next Scene");
+               ImGui::BulletText("Numpad +/-: Next/Prev HDR Sky");
                ImGui::BulletText("O: Auto orbit");
                ImGui::BulletText("F / H: Toggle SPP/s Counter");
                ImGui::BulletText("L: Toggle Logo");

@@ -122,6 +122,8 @@ struct OptixLaunchParams
 
    // Environment
    float background_intensity;
+   cudaTextureObject_t hdr_env_tex;  // equirectangular HDR sky (0 = gradient fallback)
+   bool                use_hdr_env;
 
    // Dynamic material multipliers (set per-frame from GUI sliders)
    float light_intensity;      // Multiplier on emissive materials
