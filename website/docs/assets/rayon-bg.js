@@ -18,7 +18,7 @@
    const DEFAULT_PRESET = "subtle";
 
    const PRESETS = {
-      subtle:   { count: 12, masterOpacity: 0.9,  speedMin: 0.8,  speedMax: 1.5,  opacityMin: 0.06, opacityMax: 0.18, glow: 0.4, dotBrightness: 0.8, rayLength: 400, fadeZone: 120 },
+      subtle:   { count: 30, masterOpacity: 1.0,  speedMin: 0.8,  speedMax: 1.5,  opacityMin: 0.2, opacityMax: 0.8, glow: 0.5, dotBrightness: 1.8, rayLength: 400, fadeZone: 120 },
       balanced: { count: 20, masterOpacity: 1.0,  speedMin: 0.2,  speedMax: 0.5,  opacityMin: 0.10, opacityMax: 0.30, glow: 0.5, dotBrightness: 1.2, rayLength: 500, fadeZone: 150 },
       vivid:    { count: 30, masterOpacity: 1.4,  speedMin: 0.3,  speedMax: 0.7,  opacityMin: 0.15, opacityMax: 0.45, glow: 0.8, dotBrightness: 1.6, rayLength: 550, fadeZone: 150 },
       intense:  { count: 40, masterOpacity: 1.8,  speedMin: 0.5,  speedMax: 1.0,  opacityMin: 0.20, opacityMax: 0.55, glow: 1.0, dotBrightness: 2.0, rayLength: 600, fadeZone: 180 },
