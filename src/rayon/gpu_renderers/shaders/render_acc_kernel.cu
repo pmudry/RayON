@@ -115,6 +115,26 @@ __global__ void sampleHeatmapKernel(const int *pixel_sample_counts, unsigned cha
 }
 
 //==============================================================================
+// GPU-side converged pixel counting — replaces expensive host-side copy + loop.
+// Uses a single-pass warp-shuffle reduction: each thread checks one pixel,
+// warp-reduces the count, and lane 0 atomically adds to the global counter.
+// This avoids a full D2H buffer transfer just to count negative values.
+//==============================================================================
+__global__ void countConvergedKernel(const int *pixel_sample_counts, int num_pixels, int *d_converged_count)
+{
+   int idx = blockIdx.x * blockDim.x + threadIdx.x;
+   int converged = (idx < num_pixels && pixel_sample_counts[idx] < 0) ? 1 : 0;
+
+   // Warp-level reduction (no shared memory needed)
+   for (int offset = 16; offset > 0; offset >>= 1)
+      converged += __shfl_down_sync(0xFFFFFFFF, converged, offset);
+
+   // Lane 0 of each warp writes partial sum
+   if ((threadIdx.x & 31) == 0)
+      atomicAdd(d_converged_count, converged);
+}
+
+//==============================================================================
 // Path tracing kernel with optional adaptive sampling.
 //
 // Adaptive sampling (when pixel_sample_counts != nullptr):
@@ -125,7 +145,10 @@ __global__ void sampleHeatmapKernel(const int *pixel_sample_counts, unsigned cha
 //   - Convergence is measured as: |batch_luminance - average_luminance| / average
 //     If this relative change is below adaptive_threshold, the pixel is done.
 //==============================================================================
-__global__ void renderAccKernel(float4 *accum_buffer, const CudaScene::Scene *__restrict__ scene, int width, int height,
+// __launch_bounds__(256) tells the compiler to optimize register allocation for 256
+// threads per block (our 32×8 configuration). This enables better occupancy and helps
+// the compiler make smarter spill/register decisions for this register-heavy path tracer.
+__global__ void __launch_bounds__(256) renderAccKernel(float4 *accum_buffer, const CudaScene::Scene *__restrict__ scene, int width, int height,
                                 int samples_to_add, int total_samples_so_far, int max_depth, float cam_center_x,
                                 float cam_center_y, float cam_center_z, float pixel00_x, float pixel00_y,
                                 float pixel00_z, float delta_u_x, float delta_u_y, float delta_u_z, float delta_v_x,

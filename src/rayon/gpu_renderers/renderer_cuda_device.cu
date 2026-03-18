@@ -41,10 +41,16 @@ static cudaStream_t s_display_stream = nullptr;
 static unsigned char *s_pinned_display = nullptr;
 static size_t s_pinned_display_size = 0;
 
+// Compute stream: render kernel runs here so it can overlap with the display pipeline.
+// Non-blocking to avoid implicit synchronization with default stream or display stream.
+static cudaStream_t s_compute_stream = nullptr;
+
 extern "C" void initCudaStreams()
 {
    if (s_display_stream == nullptr)
       cudaStreamCreateWithFlags(&s_display_stream, cudaStreamNonBlocking);
+   if (s_compute_stream == nullptr)
+      cudaStreamCreateWithFlags(&s_compute_stream, cudaStreamNonBlocking);
 }
 
 extern "C" void cleanupCudaStreams()
@@ -53,6 +59,11 @@ extern "C" void cleanupCudaStreams()
    {
       cudaStreamDestroy(s_display_stream);
       s_display_stream = nullptr;
+   }
+   if (s_compute_stream != nullptr)
+   {
+      cudaStreamDestroy(s_compute_stream);
+      s_compute_stream = nullptr;
    }
    if (s_pinned_display != nullptr)
    {
@@ -381,7 +392,11 @@ extern "C" unsigned long long renderPixelsCUDAAccumulative(
       }
    }
 
-   renderAccKernel<<<blocks, threads>>>(
+   // Launch render kernel on the compute stream (if available) to enable overlap
+   // with the display conversion pipeline on s_display_stream.
+   cudaStream_t render_stream = s_compute_stream ? s_compute_stream : 0;
+
+   renderAccKernel<<<blocks, threads, 0, render_stream>>>(
        d_accum, scene, width, height, samples_to_add, total_samples_so_far, max_depth, (float)cam_center_x,
        (float)cam_center_y, (float)cam_center_z, (float)pixel00_x, (float)pixel00_y, (float)pixel00_z, (float)delta_u_x,
        (float)delta_u_y, (float)delta_u_z, (float)delta_v_x, (float)delta_v_y, (float)delta_v_z, d_ray_count,
@@ -394,7 +409,9 @@ extern "C" unsigned long long renderPixelsCUDAAccumulative(
       printf("❌ Kernel launch error: %s\n", cudaGetErrorString(kernel_err));
    }
 
-   cudaError_t sync_err = cudaDeviceSynchronize();
+   // Stream-specific sync instead of cudaDeviceSynchronize() — only waits for
+   // this stream to finish, allowing other streams to continue running.
+   cudaError_t sync_err = cudaStreamSynchronize(render_stream);
    if (sync_err != cudaSuccess)
    {
       printf("❌ Kernel execution error: %s\n", cudaGetErrorString(sync_err));
@@ -529,16 +546,21 @@ extern "C" int countConvergedPixels(void *d_pixel_sample_counts, int num_pixels)
    if (d_pixel_sample_counts == nullptr)
       return 0;
 
-   // Copy buffer to host and count negative values (converged pixels)
-   std::vector<int> host_counts(num_pixels);
-   cudaMemcpy(host_counts.data(), d_pixel_sample_counts, (size_t)num_pixels * sizeof(int), cudaMemcpyDeviceToHost);
+   // GPU-side reduction: count negative values (converged pixels) using warp-shuffle.
+   // Avoids expensive full-buffer D2H transfer that the old host-side loop required.
+   static int *d_converged_count = nullptr;
+   if (d_converged_count == nullptr)
+      cudaMalloc(&d_converged_count, sizeof(int));
+
+   cudaMemset(d_converged_count, 0, sizeof(int));
+
+   int threads_per_block = 256;
+   int blocks = (num_pixels + threads_per_block - 1) / threads_per_block;
+   countConvergedKernel<<<blocks, threads_per_block>>>(
+       static_cast<const int *>(d_pixel_sample_counts), num_pixels, d_converged_count);
 
    int converged = 0;
-   for (int i = 0; i < num_pixels; ++i)
-   {
-      if (host_counts[i] < 0)
-         ++converged;
-   }
+   cudaMemcpy(&converged, d_converged_count, sizeof(int), cudaMemcpyDeviceToHost);
    return converged;
 }
 

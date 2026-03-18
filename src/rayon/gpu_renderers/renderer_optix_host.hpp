@@ -30,6 +30,8 @@ extern "C"
                                           float dof_focus_dist, float light_intensity, float metal_fuzziness,
                                           float glass_ior_multiplier);
    void optixRendererDownloadAccum(float *host_accum_buffer, int width, int height);
+   void optixRendererConvertAccumToDisplay(unsigned char *display_image, int width, int height,
+                                           int channels, int num_samples, float gamma);
    void optixRendererCleanup();
 }
 
@@ -91,12 +93,12 @@ class RendererOptiX : public IRenderer
          render::showProgress(progress_steps, frame.image_height);
       }
 
-      // Download accumulated results from device — single transfer at the end
-      // (previously this happened every batch: 5 round-trips → 1)
-      std::vector<float> accum_buffer(frame.image_width * frame.image_height * 3);
-      optixRendererDownloadAccum(accum_buffer.data(), frame.image_width, frame.image_height);
-
-      render::convertAccumBufferToImage(request.target, accum_buffer, frame.samples_per_pixel, context.gamma);
+      // GPU-side gamma correction: converts float4 accum buffer directly to uint8
+      // display image on the GPU, avoiding the expensive float4 D2H + host conversion.
+      // This mirrors the CUDA renderer's optimized display pipeline.
+      request.target.pixels->resize(frame.image_width * frame.image_height * frame.image_channels);
+      optixRendererConvertAccumToDisplay(request.target.pixels->data(), frame.image_width, frame.image_height,
+                                         frame.image_channels, frame.samples_per_pixel, context.gamma);
 
       context.ray_counter.fetch_add(total_rays, std::memory_order_relaxed);
 

@@ -52,6 +52,8 @@ extern "C"
                                           float dof_focus_dist, float light_intensity, float metal_fuzziness,
                                           float glass_ior_multiplier);
    void optixRendererDownloadAccum(float *host_accum_buffer, int width, int height);
+   void optixRendererConvertAccumToDisplay(unsigned char *display_image, int width, int height,
+                                           int channels, int num_samples, float gamma);
    void optixRendererCleanup();
    void optixRendererSetGolfDimples(int count, float radius, float depth);
    bool optixRendererUploadHdrEnv(const float *rgba_data, int w, int h);
@@ -614,7 +616,8 @@ class RendererOptiXProgressive : public IRenderer
          // Redisplay after overlay/settings change without adding new samples
          if (needs_rerender && current_samples > 0)
          {
-            render::convertAccumBufferToImage(display_view, accum_buffer, current_samples, gamma);
+            optixRendererConvertAccumToDisplay(display_image.data(), image_width, image_height,
+                                               image_channels, current_samples, gamma);
             base_display_image = display_image;
             display_image = base_display_image;
             drawCPUArrowOverlay(display_image);
@@ -812,13 +815,14 @@ class RendererOptiXProgressive : public IRenderer
           background_intensity, dof_enabled, dof_aperture, dof_focus_distance,
           light_intensity, metal_fuzziness, glass_ior_multiplier);
 
-      // Download GPU accumulation buffer to host for display
-      optixRendererDownloadAccum(accum_buffer.data(), frame.image_width, frame.image_height);
+      // GPU-side gamma correction: directly converts float4 accum buffer to uint8
+      // display image on the GPU, avoiding the expensive float4 D2H + host conversion.
+      optixRendererConvertAccumToDisplay(display_target.pixels->data(), frame.image_width, frame.image_height,
+                                         display_target.channels, new_total_samples, gamma);
 
       context.ray_counter.fetch_add(ray_count, std::memory_order_relaxed);
 
       current_samples = new_total_samples;
-      render::convertAccumBufferToImage(display_target, accum_buffer, current_samples, gamma);
    }
 
    // (display is now composited inline in the main loop — no displayFrame helper needed)
