@@ -684,8 +684,9 @@ extern "C" void optixRendererResetAccum(int width, int height)
       g_state.accum_height = height;
    }
 
-   // Zero the buffer on device — no host round-trip needed
-   CUDA_CHECK(cudaMemset(g_state.d_accum_buffer, 0, (size_t)width * height * sizeof(float4)));
+   // Zero the buffer on the render stream so the memset is ordered before the next optixLaunch.
+   // cudaMemset on the default stream (0) races with optixLaunch on the non-blocking render stream.
+   CUDA_CHECK(cudaMemsetAsync(g_state.d_accum_buffer, 0, (size_t)width * height * sizeof(float4), getOptiXStream()));
 
    // Allocate persistent launch params buffer (once)
    if (g_state.d_launch_params == 0)

@@ -167,7 +167,10 @@ extern "C" void resetDeviceAccumBuffer(void *d_accum_buffer, int num_pixels)
 {
    if (d_accum_buffer != nullptr)
    {
-      cudaMemset(d_accum_buffer, 0, (size_t)num_pixels * sizeof(float4));
+      // Use the compute stream so the memset is ordered before the next render kernel.
+      // cudaMemset on the default stream (0) races with kernels on non-blocking streams.
+      cudaStream_t stream = s_compute_stream ? s_compute_stream : 0;
+      cudaMemsetAsync(d_accum_buffer, 0, (size_t)num_pixels * sizeof(float4), stream);
    }
 }
 
@@ -537,7 +540,9 @@ extern "C" void resetAdaptiveBuffer(void *d_pixel_sample_counts, int num_pixels)
 {
    if (d_pixel_sample_counts != nullptr)
    {
-      cudaMemset(d_pixel_sample_counts, 0, (size_t)num_pixels * sizeof(int));
+      // Same stream as the render kernel so the reset is guaranteed to complete first.
+      cudaStream_t stream = s_compute_stream ? s_compute_stream : 0;
+      cudaMemsetAsync(d_pixel_sample_counts, 0, (size_t)num_pixels * sizeof(int), stream);
    }
 }
 
