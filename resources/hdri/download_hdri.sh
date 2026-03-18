@@ -12,7 +12,7 @@
 
 set -euo pipefail
 
-RES="${1:-4k}"
+RES="${1:-8k}"
 BASE="https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/${RES}"
 
 STEMS=(

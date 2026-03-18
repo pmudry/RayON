@@ -1,4 +1,6 @@
 // Forward declaration for CudaScene::Scene
+#include <cstdint>
+
 namespace CudaScene
 {
 struct Scene;
@@ -57,6 +59,8 @@ extern "C"
    // HDR environment map (equirectangular lat-long)
    // rgba_data: packed float4 (R, G, B, A) row-major, w×h pixels
    bool uploadHdrEnvironment(const float *rgba_data, int w, int h);
+   // rgba16: packed float16×4 (R, G, B, A) row-major — faster for repeated/cached loads
+   bool uploadHdrEnvironmentHalf(const uint16_t *rgba16, int w, int h);
    void clearHdrEnvironment();
 
    // GPU-side gamma correction: reads device accum buffer, writes uint8 display image to host

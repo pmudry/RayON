@@ -10,6 +10,7 @@ Makefile
 
 # Ignore HDR environment maps (can be downloaded from script in resources/hdr/ and are large files)
 resources/hdri/*.hdr
+resources/hdri/*.hdrcache
 
 # Material gallery build outputs
 material_gallery/

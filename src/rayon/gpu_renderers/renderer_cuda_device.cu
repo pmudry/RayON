@@ -7,7 +7,10 @@
 
 #include "shaders/render_acc_kernel.cuh"
 
+#include <cstdint>
 #include <cstdio>
+#include <cstring>
+#include <cuda_fp16.h>
 #include <cuda_runtime.h>
 #include <curand_kernel.h>
 #include <device_launch_parameters.h>
@@ -199,20 +202,25 @@ extern "C" void clearHdrEnvironment()
 }
 
 /**
- * @brief Upload a host-side RGBA float buffer as a GPU environment-map texture.
+ * @brief Upload pre-converted float16 RGBA data as a GPU environment-map texture.
  *
- * @param rgba_data  Pointer to float4 data (R,G,B,A) in row-major order.
- * @param w          Image width  (longitude pixels)
- * @param h          Image height (latitude pixels)
+ * Uses a {16,16,16,16, cudaChannelFormatKindFloat} (half4) texture object.
+ * This halves VRAM usage and PCIe transfer time compared to float4.
+ * CUDA hardware auto-converts float16→float32 on every tex2D<float4> access.
+ *
+ * @param rgba16  Pointer to half4 data (uint16_t per channel, IEEE 754 float16) in row-major order.
+ * @param w       Image width  (longitude pixels)
+ * @param h       Image height (latitude pixels)
  * @return true on success, false on any CUDA error.
  */
-extern "C" bool uploadHdrEnvironment(const float *rgba_data, int w, int h)
+extern "C" bool uploadHdrEnvironmentHalf(const uint16_t *rgba16, int w, int h)
 {
    clearHdrEnvironment();
-   if (!rgba_data || w <= 0 || h <= 0)
+   if (!rgba16 || w <= 0 || h <= 0)
       return false;
 
-   cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<float4>();
+   // float16×4 channel format — half VRAM vs float4 for the same resolution
+   cudaChannelFormatDesc channelDesc = {16, 16, 16, 16, cudaChannelFormatKindFloat};
    if (cudaMallocArray(&s_hdr_cuda_array, &channelDesc, (size_t)w, (size_t)h) != cudaSuccess)
    {
       fprintf(stderr, "HDR: cudaMallocArray failed (%dx%d)\n", w, h);
@@ -220,8 +228,8 @@ extern "C" bool uploadHdrEnvironment(const float *rgba_data, int w, int h)
       return false;
    }
 
-   if (cudaMemcpy2DToArray(s_hdr_cuda_array, 0, 0, rgba_data,
-                           (size_t)w * sizeof(float4), (size_t)w * sizeof(float4), (size_t)h,
+   if (cudaMemcpy2DToArray(s_hdr_cuda_array, 0, 0, rgba16,
+                           (size_t)w * 4 * sizeof(uint16_t), (size_t)w * 4 * sizeof(uint16_t), (size_t)h,
                            cudaMemcpyHostToDevice) != cudaSuccess)
    {
       fprintf(stderr, "HDR: cudaMemcpy2DToArray failed\n");
@@ -253,6 +261,35 @@ extern "C" bool uploadHdrEnvironment(const float *rgba_data, int w, int h)
    CUDA_CHECK(cudaMemcpyToSymbol(g_hdr_env_tex, &s_hdr_tex_obj, sizeof(cudaTextureObject_t)));
    CUDA_CHECK(cudaMemcpyToSymbol(g_use_hdr_env, &use_hdr,       sizeof(bool)));
    return true;
+}
+
+/**
+ * @brief Upload a host-side RGBA float buffer as a GPU environment-map texture.
+ *
+ * Converts float4 → float16 internally, then delegates to uploadHdrEnvironmentHalf.
+ * Prefer uploadHdrEnvironmentHalf directly when float16 data is already available
+ * (e.g. loaded from an .hdrcache file) for faster repeated loads.
+ *
+ * @param rgba_data  Pointer to float4 data (R,G,B,A) in row-major order.
+ * @param w          Image width  (longitude pixels)
+ * @param h          Image height (latitude pixels)
+ * @return true on success, false on any CUDA error.
+ */
+extern "C" bool uploadHdrEnvironment(const float *rgba_data, int w, int h)
+{
+   if (!rgba_data || w <= 0 || h <= 0)
+      return false;
+
+   // Convert float4 → half4 using CUDA intrinsic (round-to-nearest)
+   const size_t       npixels  = static_cast<size_t>(w) * static_cast<size_t>(h);
+   std::vector<uint16_t> rgba16(npixels * 4u);
+   for (size_t i = 0; i < npixels * 4u; ++i)
+   {
+      __half h16 = __float2half_rn(rgba_data[i]);
+      std::memcpy(&rgba16[i], &h16, sizeof(uint16_t));
+   }
+
+   return uploadHdrEnvironmentHalf(rgba16.data(), w, h);
 }
 
 /**

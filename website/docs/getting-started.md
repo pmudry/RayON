@@ -115,6 +115,7 @@ Rendered images are saved automatically to `build/rendered_images/` as timestamp
 | `--adaptive-depth` | off | Progressively increase max ray bounce depth |
 | `--no-adaptive-sampling` | off | Disable converged-pixel skipping (adaptive sampling) |
 | `--no-auto-accumulate` | off | Disable automatic sample accumulation when stationary |
+| `--no-hdr-cache` | off | Disable `.hdrcache` disk cache — always re-decode the `.hdr` file from scratch |
 | `--theme <name>` | `nord` | ImGui colour theme: `light`, `classic`, `nord`, `dracula`, `gruvbox`, `catppuccin` |
 | `-h`, `--help` | — | Print help and exit |
 

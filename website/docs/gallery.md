@@ -22,34 +22,29 @@ lighting effects, and geometric complexity the renderer supports.
       </figure>
       <figure>
         <img src="../assets/images/samples/bvh_testing.png" alt="Many spheres rendered">
-        <figcaption><strong>Multiple spheres</strong> — scene, using for performance assessment in realtime..</figcaption>
+        <figcaption><strong>Multiple spheres</strong> — scene, using for performance assessment in realtime.</figcaption>
       </figure>
       <figure>
         <img src="../assets/images/samples/golf.png" alt="Golf ball displacement mapping — dimpled surface under directional light">
         <figcaption><strong>Golf Ball</strong> — procedural displacement mapping creates the characteristic dimple pattern on a sphere. The BRDF captures specular highlights across the surface microstructure.</figcaption>
-      </figure>
-      <figure>
-        <img src="../assets/images/samples/large/rayon_4k_render.png" alt="Wide view of diverse material spheres on a brushed-metal ground plane — 4K master render">
-        <figcaption><strong>4K Master Render</strong> — full default scene at 4K resolution. Glass, rough mirror, Lambertian, tinted metal, and light-emitting materials share the scene with SDF shapes in the background.</figcaption>
-      </figure>
+      </figure>           
       <figure>
         <img src="../assets/images/for_project/sampling/aniso_512spp.png" alt="Anisotropic metals scene at 512 SPP — directional highlight streaks fully resolved">
         <figcaption><strong>Anisotropic Metals — 512 SPP</strong> — directional highlight streaks fully resolved across all roughness and anisotropy levels. Rendered with the CUDA path tracer.</figcaption>
-      </figure>
+      </figure>       
     </div>
 
 === "Materials"
 
     <div class="img-grid cols-2">
       <figure>
-        <img src="../assets/images/samples/metals shine 2.png" alt="Tinted rough mirrors — gold, copper, and steel preset tints">
+        <img src="../assets/images/samples/metals%20shine%202.png" alt="Tinted rough mirrors — gold, copper, and steel preset tints">
         <figcaption><strong>Tinted Rough Mirrors</strong> — gold, copper, and steel preset tints. Roughness controls how blurry the reflections appear (0 = perfect mirror, 1 ≈ diffuse).</figcaption>
       </figure>
       <figure>
-        <img src="../assets/images/samples/dielectric metsals.png" alt="Glass dielectric spheres with refractive caustics next to metallic surfaces">
+        <img src="../assets/images/samples/dielectric%20metsals.png" alt="Glass dielectric spheres with refractive caustics next to metallic surfaces">
         <figcaption><strong>Dielectrics &amp; Metals</strong> — glass spheres use Snell's law for refraction and Schlick's approximation for the reflection/transmission ratio at grazing angles.</figcaption>
-      </figure>
-      
+      </figure>      
       <figure>
         <img src="../assets/images/samples/textures/uv_mapping.png" alt="UV texture mapped cube, sphere and ground plane with a grid texture">
         <figcaption><strong>UV Texture Mapping</strong> — a grid texture applied to UV-mapped OBJ models via MTL. UVs are interpolated per-triangle using barycentric coordinates.</figcaption>
@@ -119,4 +114,20 @@ lighting effects, and geometric complexity the renderer supports.
         <img src="../assets/images/for_project/sampling/aniso_512spp.png" alt="512 samples per pixel — near-converged">
         <figcaption><strong>512 SPP</strong> — near-converged; anisotropic lobes fully resolved across all roughness levels.</figcaption>
       </figure>
+    </div>
+
+=== "HDR Skies"
+
+    <p>Scene renders using equirectangular HDR environment maps from <a href="https://polyhaven.com">Poly Haven</a> (CC0 licence) as the sky dome. Six environments are bundled — download them with <code>bash resources/hdri/download_hdri.sh 8k</code>.</p>
+
+    <div class="img-grid cols-3">
+      <img src="../assets/images/samples/hdri/hdri_0.png" alt="HDR sky render — default gradient sky">
+      <img src="../assets/images/samples/hdri/hdri_1.png" alt="HDR sky render — environment 1">
+      <img src="../assets/images/samples/hdri/hdri_3.png" alt="HDR sky render — environment 3">
+      <img src="../assets/images/samples/hdri/hdri_4.png" alt="HDR sky render — environment 4">
+      <img src="../assets/images/samples/hdri/hdri_5.png" alt="HDR sky render — environment 5">
+      <img src="../assets/images/samples/hdri/hdri_6.png" alt="HDR sky render — environment 6">
+      <img src="../assets/images/samples/hdri/hdri_7.png" alt="HDR sky render — environment 7">
+      <img src="../assets/images/samples/hdri/hdri_8.png" alt="HDR sky render — environment 8">
+      <img src="../assets/images/samples/hdri/hdri_9.png" alt="HDR sky render — environment 9">
     </div>

@@ -496,6 +496,60 @@ UV-mapped OBJ assets, `texture_test.yaml` scene, `generate_uv_models.py` script.
 
 ---
 
+## Milestone 17 — HDR Environment Sky & float16 Optimisation (March 18, 2026) { #hdri }
+
+!!! note "AI-assisted development"
+    This milestone was developed with the extensive assistance of an LLM coding agent.
+    The equirectangular mapping was made by hand. However, float16 GPU texture upload, binary `.hdrcache` sidecar,
+    `f32_to_f16` clamping fix, and `--no-hdr-cache` CLI flag were all implemented
+    collaboratively with Claude.
+
+The renderer gains a full **HDR environment sky dome**: any equirectangular `.hdr` file from
+[Poly Haven](https://polyhaven.com) (CC0 licence) can now be loaded as the background sky and
+sampled during path tracing.
+
+**Equirectangular mapping** — a ray that misses all scene geometry is mapped to a $(u, v)$ pair
+using:
+
+$$\theta = \arccos(d_y), \quad \phi = \text{atan2}(-d_z,\; d_x), \quad
+u = \tfrac{\phi+\pi}{2\pi}, \quad v = \tfrac{\theta}{\pi}$$
+
+Both the CUDA and OptiX backends share a common GPU texture object
+(`cudaTextureObject_t`) sampled with bilinear filtering.
+
+**float16 GPU textures** — the Radiance RGBE source is decoded to 32-bit float then
+immediately quantised to IEEE 754 half-precision before GPU upload.
+This halves the VRAM footprint and the PCIe transfer cost compared to a full fp32 texture
+(e.g. an 8K sky: 512 MB → 256 MB).
+
+**Binary `.hdrcache` sidecar** — decoding an 8K `.hdr` file takes several seconds.
+On first load the renderer writes a binary sidecar (`.hdr.hdrcache`) with a 24-byte header
+and raw fp16 pixels; subsequent launches skip the decode entirely and read the cache directly.
+Typical improvement: **5–10× faster** load times.
+
+**fp16 clamping fix** — HDR values above 65 504 (the fp16 finite ceiling) are clamped before
+storage. Without clamping, overflow produces fp16 ±∞ which propagates as NaN through GPU
+arithmetic and causes occasional pure-black "firefly" pixels. Cache files are versioned;
+stale v1 caches (created before the fix) are automatically invalidated and regenerated.
+
+**Interactive sky switching** — in interactive mode, `Numpad +` / `Numpad −` cycles through
+all `.hdr` files in the directory **without restarting** the program.
+A *Sky* combo-box in the ImGui Environment panel does the same with mouse clicks.
+
+**`--no-hdr-cache`** CLI flag bypasses the cache and always re-decodes from the source file
+(useful when replacing an `.hdr` file in place during development).
+
+Six HDRIs are bundled (not in git — download via `cd resources/hdri && bash download_hdri.sh 8k`):
+`venice_sunset`, `kloppenheim_06`, `autumn_crossing`, `studio_small_03`,
+`sunflowers_puresky`, `rosendal_plains_2`.
+
+**What changed:** equirectangular sky dome (CUDA + OptiX), float16 GPU texture format
+(`hdr_env_cache.hpp` / `hdr_env_cache.cc`), binary `.hdrcache` sidecar with staleness check,
+fp16 clamping and cache versioning, interactive Numpad sky cycling, ImGui Sky combo-box,
+`--no-hdr-cache` CLI flag.
+
+---
+
 ## The Timeline at a Glance
 
 ```
@@ -520,6 +574,7 @@ Mar 13 ━━ Triangle/OBJ pipeline, Platonic solids
 Mar 13 ━━ Anisotropic metals, thin-film, clear-coat
 Mar 15 ━━ NVIDIA OptiX — 4× speedup (hardware RT)
 Mar 15 ━━ MTL materials & image texture mapping (GPU)
+Mar 18 ━━ HDR sky dome · float16 textures · .hdrcache sidecar
 ```
 
 ---

@@ -25,4 +25,9 @@ Ray-marched signed-distance-function primitives: torus, octahedron, death star, 
 
 Import triangle meshes — Möller–Trumbore intersection, smooth per-vertex normal interpolation.
 </div>
+<div class="feature-card" markdown>
+**[HDR Sky Dome](hdr-sky.md)**
+
+Equirectangular HDRI environment maps as background sky — switchable at runtime with Numpad +/−, optimised with float16 GPU textures and a binary disk cache for fast repeated loads.
+</div>
 </div>

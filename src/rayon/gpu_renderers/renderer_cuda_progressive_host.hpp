@@ -16,6 +16,7 @@
 #include "scene_factory.hpp"
 #include "sdl_gui_controls.hpp"
 #include "sdl_gui_handler.hpp"
+#include "hdr_env_cache.hpp"
 
 #include <SDL.h>
 #include <algorithm>
@@ -39,6 +40,7 @@ class RendererCUDAProgressive : public IRenderer
       bool auto_accumulate = true;
       bool adaptive_depth = false;
       bool adaptive_sampling = true;
+      bool hdr_cache = true; ///< use .hdrcache sidecar to speed up repeated HDR loads
       GuiTheme theme = GuiTheme::NORD;
    };
 
@@ -53,6 +55,7 @@ class RendererCUDAProgressive : public IRenderer
       int target_fps = settings_.target_fps;
       bool auto_accumulate = settings_.auto_accumulate;
       bool adaptive_depth = settings_.adaptive_depth;
+      const bool hdr_cache = settings_.hdr_cache;
 
       auto &camera = request.camera;
       auto &scene = request.scene;
@@ -208,6 +211,7 @@ class RendererCUDAProgressive : public IRenderer
       int current_hdr_index = 0; // 0 = gradient sky
 
       // Lambda: load (or unload) an HDR environment by display index.
+      // Uses the disk cache (.hdrcache sidecar) for repeated loads (~5-10x faster for 4K/8K).
       auto applyHdrChange = [&](int new_index)
       {
          new_index = std::max(0, std::min(new_index, hdr_count - 1));
@@ -221,25 +225,14 @@ class RendererCUDAProgressive : public IRenderer
          else
          {
             const std::string &path = hdr_files[new_index - 1]; // entry 0 is gradient
-            int w = 0, h = 0, channels = 0;
-            float *raw = stbi_loadf(path.c_str(), &w, &h, &channels, 3);
-            if (!raw)
+            int w = 0, h = 0;
+            auto half_data = loadHdrEnvHalf(path, w, h, hdr_cache);
+            if (half_data.empty())
             {
                std::cerr << "HDR: Failed to load '" << path << "'\n";
                return;
             }
-            // Convert RGB → float4 (CUDA texture requires float4)
-            std::vector<float> rgba(static_cast<size_t>(w) * h * 4);
-            for (int i = 0; i < w * h; ++i)
-            {
-               rgba[i * 4 + 0] = raw[i * 3 + 0];
-               rgba[i * 4 + 1] = raw[i * 3 + 1];
-               rgba[i * 4 + 2] = raw[i * 3 + 2];
-               rgba[i * 4 + 3] = 1.0f;
-            }
-            stbi_image_free(raw);
-
-            if (!::uploadHdrEnvironment(rgba.data(), w, h))
+            if (!::uploadHdrEnvironmentHalf(half_data.data(), w, h))
             {
                std::cerr << "HDR: GPU upload failed for '" << path << "'\n";
                ::clearHdrEnvironment();

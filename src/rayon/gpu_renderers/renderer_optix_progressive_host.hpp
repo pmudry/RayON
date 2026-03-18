@@ -36,6 +36,7 @@
 #include "scene_factory.hpp"
 #include "sdl_gui_controls.hpp"
 #include "sdl_gui_handler.hpp"
+#include "hdr_env_cache.hpp"
 
 // Forward declarations of OptiX host functions (implemented in optix/optix_renderer.cu)
 extern "C"
@@ -57,6 +58,7 @@ extern "C"
    void optixRendererCleanup();
    void optixRendererSetGolfDimples(int count, float radius, float depth);
    bool optixRendererUploadHdrEnv(const float *rgba_data, int w, int h);
+   bool optixRendererUploadHdrEnvHalf(const uint16_t *rgba16, int w, int h);
    void optixRendererClearHdrEnv();
 }
 
@@ -71,6 +73,7 @@ class RendererOptiXProgressive : public IRenderer
       int target_fps = 60;
       bool adaptive_depth = false;
       bool adaptive_sampling = true; // no-op for OptiX; kept for UI parity
+      bool hdr_cache = true; ///< use .hdrcache sidecar to speed up repeated HDR loads
       GuiTheme theme = GuiTheme::NORD;
    };
 
@@ -85,6 +88,7 @@ class RendererOptiXProgressive : public IRenderer
       bool auto_accumulate = settings_.auto_accumulate;
       int target_fps = settings_.target_fps;
       bool adaptive_depth = settings_.adaptive_depth;
+      const bool hdr_cache = settings_.hdr_cache;
 
       auto &camera = request.camera;
       auto &scene = request.scene;
@@ -289,17 +293,14 @@ class RendererOptiXProgressive : public IRenderer
          else
          {
             const std::string &path = hdr_files[new_index - 1];
-            int w = 0, h = 0, channels = 0;
-            float *raw = stbi_loadf(path.c_str(), &w, &h, &channels, 3);
-            if (!raw) { std::cerr << "HDR: Failed to load '" << path << "'\n"; return; }
-            std::vector<float> rgba(static_cast<size_t>(w) * h * 4);
-            for (int i = 0; i < w * h; ++i)
+            int w = 0, h = 0;
+            auto half_data = loadHdrEnvHalf(path, w, h, hdr_cache);
+            if (half_data.empty())
             {
-               rgba[i*4+0] = raw[i*3+0]; rgba[i*4+1] = raw[i*3+1];
-               rgba[i*4+2] = raw[i*3+2]; rgba[i*4+3] = 1.0f;
+               std::cerr << "HDR: Failed to load '" << path << "'\n";
+               return;
             }
-            stbi_image_free(raw);
-            if (!::optixRendererUploadHdrEnv(rgba.data(), w, h))
+            if (!::optixRendererUploadHdrEnvHalf(half_data.data(), w, h))
             {
                std::cerr << "HDR: GPU upload failed for '" << path << "'\n";
                ::optixRendererClearHdrEnv();

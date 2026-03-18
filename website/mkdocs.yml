@@ -139,6 +139,7 @@ nav:
     - YAML Scene Format: features/scenes.md
     - SDF Shapes: features/sdf-shapes.md
     - OBJ Loading: features/obj-loading.md
+    - HDR Sky Dome: features/hdr-sky.md
   - Gallery: gallery.md
   - Performance: performance.md
   - Development History: history.md

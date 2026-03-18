@@ -84,6 +84,7 @@ set(SOURCE_RAYON
     src/rayon/render/render_coordinator.cpp
     src/rayon/scenes/yaml_scene_loader.cc
     src/rayon/scenes/texture_loader.cc
+    src/rayon/gpu_renderers/hdr_env_cache.cc
     src/rayon/gpu_renderers/renderer_cuda_device.cu
     src/rayon/gpu_renderers/cuda_raytracer.cu
     src/rayon/gpu_renderers/cuda_utils.cu

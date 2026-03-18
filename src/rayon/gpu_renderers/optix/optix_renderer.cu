@@ -9,7 +9,10 @@
 #include <optix_stubs.h>
 #include <optix_stack_size.h>
 
+#include <cuda_fp16.h>
 #include <cuda_runtime.h>
+#include <cstdint>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -877,13 +880,14 @@ extern "C" void optixRendererClearHdrEnv()
    }
 }
 
-extern "C" bool optixRendererUploadHdrEnv(const float *rgba_data, int w, int h)
+extern "C" bool optixRendererUploadHdrEnvHalf(const uint16_t *rgba16, int w, int h)
 {
    optixRendererClearHdrEnv();
-   if (!rgba_data || w <= 0 || h <= 0)
+   if (!rgba16 || w <= 0 || h <= 0)
       return false;
 
-   cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<float4>();
+   // float16×4 channel format — half VRAM vs float4 for the same resolution
+   cudaChannelFormatDesc channelDesc = {16, 16, 16, 16, cudaChannelFormatKindFloat};
    if (cudaMallocArray(&g_state.hdr_cuda_array, &channelDesc, (size_t)w, (size_t)h) != cudaSuccess)
    {
       fprintf(stderr, "OptiX HDR: cudaMallocArray failed (%dx%d)\n", w, h);
@@ -891,8 +895,8 @@ extern "C" bool optixRendererUploadHdrEnv(const float *rgba_data, int w, int h)
       return false;
    }
 
-   if (cudaMemcpy2DToArray(g_state.hdr_cuda_array, 0, 0, rgba_data,
-                           (size_t)w * sizeof(float4), (size_t)w * sizeof(float4), (size_t)h,
+   if (cudaMemcpy2DToArray(g_state.hdr_cuda_array, 0, 0, rgba16,
+                           (size_t)w * 4 * sizeof(uint16_t), (size_t)w * 4 * sizeof(uint16_t), (size_t)h,
                            cudaMemcpyHostToDevice) != cudaSuccess)
    {
       fprintf(stderr, "OptiX HDR: cudaMemcpy2DToArray failed\n");
@@ -921,6 +925,23 @@ extern "C" bool optixRendererUploadHdrEnv(const float *rgba_data, int w, int h)
    }
 
    return true;
+}
+
+extern "C" bool optixRendererUploadHdrEnv(const float *rgba_data, int w, int h)
+{
+   if (!rgba_data || w <= 0 || h <= 0)
+      return false;
+
+   // Convert float4 → half4 using CUDA intrinsic (round-to-nearest)
+   const size_t          npixels = static_cast<size_t>(w) * static_cast<size_t>(h);
+   std::vector<uint16_t> rgba16(npixels * 4u);
+   for (size_t i = 0; i < npixels * 4u; ++i)
+   {
+      __half h16 = __float2half_rn(rgba_data[i]);
+      std::memcpy(&rgba16[i], &h16, sizeof(uint16_t));
+   }
+
+   return optixRendererUploadHdrEnvHalf(rgba16.data(), w, h);
 }
 
 extern "C" void optixRendererCleanup()

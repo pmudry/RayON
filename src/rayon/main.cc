@@ -75,6 +75,7 @@ struct ProgramArgs
    bool auto_accumulate = true;
    bool adaptive_depth = false;
    bool adaptive_sampling = true;
+   bool hdr_cache = true;
    bool show_menu = false;
    const char *scene_file = nullptr;
    const char *theme = nullptr;
@@ -105,6 +106,7 @@ void dumpHelp()
    cout << "  --adaptive-depth          Progressively increase max bounce depth\n";
    cout << "  --no-adaptive-sampling    Disable converged-pixel skipping\n";
    cout << "  --no-auto-accumulate      Disable automatic sample accumulation\n";
+   cout << "  --no-hdr-cache            Disable disk cache for HDR sky textures (always re-decode .hdr)\n";
    cout << "  --theme <name>            GUI theme: light, classic, nord, dracula, gruvbox, catppuccin\n";
 }
 
@@ -202,6 +204,10 @@ ProgramArgs parseInput(int argc, char *argv[])
       else if (strcmp(argv[i], "--no-adaptive-sampling") == 0)
       {
          args.adaptive_sampling = false;
+      }
+      else if (strcmp(argv[i], "--no-hdr-cache") == 0)
+      {
+         args.hdr_cache = false;
       }
       else if (strcmp(argv[i], "--scene") == 0 && i + 1 < argc)
       {
@@ -406,6 +412,7 @@ int main(int argc, char *argv[])
       settings.auto_accumulate = args.auto_accumulate;
       settings.adaptive_depth = args.adaptive_depth;
       settings.adaptive_sampling = args.adaptive_sampling;
+      settings.hdr_cache = args.hdr_cache;
       settings.theme = parseThemeName(args.theme);
       renderer.setSettings(settings);
       coordinator.render(renderer, localImage);
@@ -434,6 +441,7 @@ int main(int argc, char *argv[])
       settings.target_fps = args.target_fps;
       settings.adaptive_depth = args.adaptive_depth;
       settings.adaptive_sampling = args.adaptive_sampling;
+      settings.hdr_cache = args.hdr_cache;
       settings.theme = parseThemeName(args.theme);
       renderer.setSettings(settings);
       coordinator.render(renderer, localImage);
