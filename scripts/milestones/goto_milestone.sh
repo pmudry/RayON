@@ -7,9 +7,18 @@
 #
 # Usage:
 #   ./scripts/milestones/goto_milestone.sh <N> [options]
+#   ./scripts/milestones/goto_milestone.sh --commit <hash> [options]
+#   ./scripts/milestones/goto_milestone.sh --restore
 #   ./scripts/milestones/goto_milestone.sh --list
 #
 # Options:
+#   --commit <h>   Check out a specific git commit hash (or tag/ref) instead of
+#                  a predefined milestone number. The binary is inferred as
+#                  'rayon'; use --exe to override.
+#   --exe <name>   Override the executable name when using --commit.
+#   --restore      Emergency recovery: checkout main (force), pull latest, and
+#                  pop any auto-stash left by a previous failed run.
+#                  Exits immediately — nothing is built or run.
 #   --offline      Force an offline render (produces a PNG) even for milestones
 #                  whose default demo mode is the interactive SDL window.
 #   --no-restore   Leave the repo at the milestone commit after the run.
@@ -204,20 +213,31 @@ NUM_MILESTONES=15
 usage() {
     cat <<EOF
 Usage: $(basename "$0") <N> [--offline] [--no-restore] [--help]
+       $(basename "$0") --commit <hash|ref> [--exe <name>] [--no-restore]
+       $(basename "$0") --restore
        $(basename "$0") --list
 
-Check out milestone N, build, and run the RayON renderer at that point in history.
+Check out milestone N (or an arbitrary commit), build, and run the RayON renderer.
 
 Options:
+  --commit <h>   Check out a specific git commit hash / tag / branch instead of
+                 a predefined milestone number.
+  --exe <name>   Override the executable / make-target name (default: rayon).
+                 Only meaningful with --commit.
+  --restore      Emergency recovery: checkout main (force), pull latest, pop any
+                 auto-stash left by a previous failed run. Exits immediately.
   --offline      Produce a PNG render instead of opening the SDL window.
   --no-restore   Do not restore the original branch after running.
-  --list         Print all 15 milestones and exit.
+  --list         Print all $NUM_MILESTONES milestones and exit.
   --help         Show this help.
 
 Examples:
-  $(basename "$0") 7              # Cornell box + BVH, interactive SDL
-  $(basename "$0") 3 --offline    # First CUDA render, writes a PNG
-  $(basename "$0") 15             # OptiX dragon mesh render
+  $(basename "$0") 7                         # Cornell box + BVH, interactive SDL
+  $(basename "$0") 3 --offline               # First CUDA render, writes a PNG
+  $(basename "$0") 15                        # OptiX dragon mesh render
+  $(basename "$0") --commit abc1234          # Arbitrary commit, runs ./rayon
+  $(basename "$0") --commit v1.2.0 --exe rayon --offline
+  $(basename "$0") --restore                 # Emergency: get back to main
 EOF
 }
 
@@ -233,55 +253,128 @@ list_milestones() {
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 
+# ── Emergency restore ────────────────────────────────────────────────────────
+# Called by --restore. Force-checks out main (works even from detached HEAD or
+# when old milestone trees have untracked files that would block a normal
+# checkout), pulls the latest, then pops any auto-stash from a failed run.
+
+restore_main() {
+    cd "$REPO_ROOT"
+    echo ""
+    echo "══════════════════════════════════════════════════════════════════"
+    echo "  RayON Milestone Explorer — Emergency Restore"
+    echo "══════════════════════════════════════════════════════════════════"
+    echo ""
+
+    echo "→ Checking out main branch (force) …"
+    git checkout --force main --quiet || die "Could not checkout main."
+
+    echo "→ Pulling latest changes from origin/main …"
+    git pull --ff-only origin main --quiet 2>/dev/null || \
+        echo "  (pull skipped — no remote, auth error, or already up-to-date)"
+
+    # grep exits 1 on no match; || true prevents set -e from aborting.
+    local stash_idx
+    stash_idx=$(git stash list | grep -n "goto_milestone: auto-stash" | head -1 | cut -d: -f1 || true)
+    if [[ -n "$stash_idx" ]]; then
+        local idx=$(( stash_idx - 1 ))
+        echo "→ Popping auto-stash (stash@{$idx}) …"
+        git stash pop "stash@{$idx}" --quiet && \
+            echo "  Stash restored." || \
+            echo "  Warning: stash pop failed — check 'git stash list' manually."
+    else
+        echo "  No goto_milestone auto-stash found."
+    fi
+
+    echo ""
+    echo "  Repository is now on main at $(git rev-parse --short HEAD)."
+    echo ""
+}
+
 # ── Parse arguments ──────────────────────────────────────────────────────────
 
 MILESTONE_N=""
 FORCE_OFFLINE=false
 NO_RESTORE=false
+CUSTOM_COMMIT=""      # set by --commit
+CUSTOM_EXE="rayon"    # overridable via --exe
 
-for arg in "$@"; do
-    case "$arg" in
+while [[ $# -gt 0 ]]; do
+    case "$1" in
         --help|-h) usage; exit 0 ;;
         --list)    list_milestones; exit 0 ;;
+        --restore) restore_main; exit 0 ;;
         --offline) FORCE_OFFLINE=true ;;
         --no-restore) NO_RESTORE=true ;;
-        [0-9]|[0-9][0-9]) MILESTONE_N="$arg" ;;
-        *) die "Unknown argument: '$arg'. Run with --help for usage." ;;
+        --commit)
+            [[ $# -ge 2 ]] || die "--commit requires an argument."
+            CUSTOM_COMMIT="$2"; shift ;;
+        --exe)
+            [[ $# -ge 2 ]] || die "--exe requires an argument."
+            CUSTOM_EXE="$2"; shift ;;
+        [0-9]|[0-9][0-9]) MILESTONE_N="$1" ;;
+        *) die "Unknown argument: '$1'. Run with --help for usage." ;;
     esac
+    shift
 done
 
-[[ -z "$MILESTONE_N" ]] && { usage; exit 1; }
-[[ "$MILESTONE_N" -lt 1 || "$MILESTONE_N" -gt $NUM_MILESTONES ]] && \
-    die "Milestone $MILESTONE_N out of range. Valid: 1–$NUM_MILESTONES."
+if [[ -n "$CUSTOM_COMMIT" && -n "$MILESTONE_N" ]]; then
+    die "Specify either a milestone number or --commit, not both."
+fi
+if [[ -z "$CUSTOM_COMMIT" && -z "$MILESTONE_N" ]]; then
+    usage; exit 1
+fi
 
 # ── Resolve config for the requested milestone ────────────────────────────────
 
-MS_COMMIT="${COMMIT[$MILESTONE_N]}"
-MS_EXE="${EXECUTABLE[$MILESTONE_N]}"
-MS_TARGET="${MAKE_TARGET[$MILESTONE_N]}"
-MS_MODE="${DEMO_MODE[$MILESTONE_N]}"
-MS_STDIN="${STDIN_CHOICE[$MILESTONE_N]}"
-MS_ARGS="${RUN_ARGS[$MILESTONE_N]}"
-MS_DESC="${DESCRIPTION[$MILESTONE_N]}"
-
-# Apply --offline override for interactive milestones
-if $FORCE_OFFLINE && [[ "$MS_MODE" == "interactive" ]]; then
+if [[ -n "$CUSTOM_COMMIT" ]]; then
+    MS_COMMIT="$(git -C "$REPO_ROOT" rev-parse --short "$CUSTOM_COMMIT" 2>/dev/null)" || \
+        die "Cannot resolve git ref '${CUSTOM_COMMIT}'. Is it a valid commit/tag/branch?"
+    MS_EXE="$CUSTOM_EXE"
+    MS_TARGET="$CUSTOM_EXE"
     MS_MODE="offline"
-    MS_ARGS="${OFFLINE_ARGS[$MILESTONE_N]}"
-    # Override stdin for pre-flag milestones 6-7
-    if [[ -n "${OFFLINE_STDIN[$MILESTONE_N]}" ]]; then
-        MS_STDIN="${OFFLINE_STDIN[$MILESTONE_N]}"
+    MS_STDIN=""
+    MS_ARGS=""
+    MS_DESC="Custom commit ${MS_COMMIT}"
+else
+    [[ "$MILESTONE_N" -lt 1 || "$MILESTONE_N" -gt $NUM_MILESTONES ]] && \
+        die "Milestone $MILESTONE_N out of range. Valid: 1–$NUM_MILESTONES."
+
+    MS_COMMIT="${COMMIT[$MILESTONE_N]}"
+    MS_EXE="${EXECUTABLE[$MILESTONE_N]}"
+    MS_TARGET="${MAKE_TARGET[$MILESTONE_N]}"
+    MS_MODE="${DEMO_MODE[$MILESTONE_N]}"
+    MS_STDIN="${STDIN_CHOICE[$MILESTONE_N]}"
+    MS_ARGS="${RUN_ARGS[$MILESTONE_N]}"
+    MS_DESC="${DESCRIPTION[$MILESTONE_N]}"
+
+    if $FORCE_OFFLINE && [[ "$MS_MODE" == "interactive" ]]; then
+        MS_MODE="offline"
+        MS_ARGS="${OFFLINE_ARGS[$MILESTONE_N]}"
+        if [[ -n "${OFFLINE_STDIN[$MILESTONE_N]}" ]]; then
+            MS_STDIN="${OFFLINE_STDIN[$MILESTONE_N]}"
+        fi
     fi
 fi
 
-echo ""
-echo "══════════════════════════════════════════════════════════════════"
-echo "  RayON Milestone Explorer"
-echo "  Milestone $MILESTONE_N of $NUM_MILESTONES — $MS_DESC"
-echo "  Commit : $MS_COMMIT"
-echo "  Mode   : $MS_MODE"
-echo "══════════════════════════════════════════════════════════════════"
-echo ""
+if [[ -n "$MILESTONE_N" ]]; then
+    echo ""
+    echo "══════════════════════════════════════════════════════════════════"
+    echo "  RayON Milestone Explorer"
+    echo "  Milestone $MILESTONE_N of $NUM_MILESTONES — $MS_DESC"
+    echo "  Commit : $MS_COMMIT"
+    echo "  Mode   : $MS_MODE"
+    echo "══════════════════════════════════════════════════════════════════"
+    echo ""
+else
+    echo ""
+    echo "══════════════════════════════════════════════════════════════════"
+    echo "  RayON Milestone Explorer — Custom Commit"
+    echo "  Commit : $MS_COMMIT  (${CUSTOM_COMMIT})"
+    echo "  Target : $MS_TARGET"
+    echo "══════════════════════════════════════════════════════════════════"
+    echo ""
+fi
 
 # ── Save git state ────────────────────────────────────────────────────────────
 
@@ -294,7 +387,7 @@ STASHED=false
 if ! git diff --quiet HEAD 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
     echo "→ Stashing uncommitted changes..."
     git stash push --include-untracked --quiet \
-        --message "goto_milestone: auto-stash before milestone $MILESTONE_N"
+        --message "goto_milestone: auto-stash before milestone ${MILESTONE_N:-$CUSTOM_COMMIT}"
     STASHED=true
 fi
 
@@ -333,8 +426,11 @@ trap cleanup EXIT
 
 # ── Checkout milestone commit ─────────────────────────────────────────────────
 
-echo "→ Checking out $MS_COMMIT …"
-git checkout "$MS_COMMIT" --quiet
+# When --commit was used, check out the originally supplied ref (the resolved
+# short hash is only for display); fall back to the short hash if needed.
+CHECKOUT_REF="${CUSTOM_COMMIT:-$MS_COMMIT}"
+echo "→ Checking out ${CHECKOUT_REF} …"
+git checkout "$CHECKOUT_REF" --quiet
 echo "  Done."
 echo ""
 
