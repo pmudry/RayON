@@ -86,6 +86,11 @@ mirroring the CPU. The architecture of a separate `.cu` file talking to a `.h` h
 an `extern "C"` boundary — a pattern that scales all the way to the OptiX integration months
 later — is established here.
 
+However, the two renders (CPU and GPU) look reasonably similar : 
+
+<img class="render-img" src="../assets/images/dev/m3_full_scene.png" alt="A full scene with CPU">
+<img class="render-img" src="../assets/images/dev/m4_first_gpu.png" alt="A full scene with CUDA GPU">
+
 The documentation in `explanations/CUDA_RENDER_EXPLANATION.md` is also written at this commit,
 showing that the explanation-driven development style starts early.
 
