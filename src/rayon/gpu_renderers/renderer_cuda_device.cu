@@ -45,6 +45,9 @@ static size_t s_pinned_display_size = 0;
 // Non-blocking to avoid implicit synchronization with default stream or display stream.
 static cudaStream_t s_compute_stream = nullptr;
 
+// Persistent device counter for GPU-side converged pixel counting (freed in cleanup)
+static int *s_d_converged_count = nullptr;
+
 extern "C" void initCudaStreams()
 {
    if (s_display_stream == nullptr)
@@ -70,6 +73,11 @@ extern "C" void cleanupCudaStreams()
       cudaFreeHost(s_pinned_display);
       s_pinned_display = nullptr;
       s_pinned_display_size = 0;
+   }
+   if (s_d_converged_count != nullptr)
+   {
+      cudaFree(s_d_converged_count);
+      s_d_converged_count = nullptr;
    }
 }
 
@@ -548,19 +556,18 @@ extern "C" int countConvergedPixels(void *d_pixel_sample_counts, int num_pixels)
 
    // GPU-side reduction: count negative values (converged pixels) using warp-shuffle.
    // Avoids expensive full-buffer D2H transfer that the old host-side loop required.
-   static int *d_converged_count = nullptr;
-   if (d_converged_count == nullptr)
-      cudaMalloc(&d_converged_count, sizeof(int));
+   if (s_d_converged_count == nullptr)
+      cudaMalloc(&s_d_converged_count, sizeof(int));
 
-   cudaMemset(d_converged_count, 0, sizeof(int));
+   cudaMemset(s_d_converged_count, 0, sizeof(int));
 
    int threads_per_block = 256;
    int blocks = (num_pixels + threads_per_block - 1) / threads_per_block;
    countConvergedKernel<<<blocks, threads_per_block>>>(
-       static_cast<const int *>(d_pixel_sample_counts), num_pixels, d_converged_count);
+       static_cast<const int *>(d_pixel_sample_counts), num_pixels, s_d_converged_count);
 
    int converged = 0;
-   cudaMemcpy(&converged, d_converged_count, sizeof(int), cudaMemcpyDeviceToHost);
+   cudaMemcpy(&converged, s_d_converged_count, sizeof(int), cudaMemcpyDeviceToHost);
    return converged;
 }
 

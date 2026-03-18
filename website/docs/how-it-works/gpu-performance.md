@@ -75,7 +75,7 @@ renderAccKernel(float4 *accum_buffer, ...)
 
 **Why 256?** The path tracing kernel is register-heavy (ray state, hit records, material data,
 RNG state). With 256 threads, the compiler can allocate up to 64 registers per thread on modern
-GPUs (65 536 registers per SM ÷ 256 threads = 256 max, but the compiler can keep more resident
+GPUs (65,536 registers per SM ÷ 256 threads = 256 max, but the compiler can keep more resident
 warps). This gives better occupancy than if the compiler had to assume a higher thread count.
 
 **Impact:** ~5–10% throughput improvement from better register allocation decisions. The compiler

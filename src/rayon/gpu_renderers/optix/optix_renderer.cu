@@ -105,6 +105,9 @@ struct OptixState
 
 static OptixState g_state;
 
+// Helper: return the dedicated render stream, or the default stream (0) if not initialized.
+static inline cudaStream_t getOptiXStream() { return g_state.render_stream ? g_state.render_stream : 0; }
+
 // Load PTX from file
 static std::string loadPTXFromFile(const char *filename)
 {
@@ -739,7 +742,7 @@ extern "C" unsigned long long optixRendererLaunch(int width, int height, int num
 
    // Single memcpy to persistent device buffer — no malloc/free per batch.
    // Use the dedicated stream for async param upload + launch.
-   cudaStream_t stream = g_state.render_stream ? g_state.render_stream : 0;
+   cudaStream_t stream = getOptiXStream();
    CUDA_CHECK(cudaMemcpyAsync(reinterpret_cast<void *>(g_state.d_launch_params), &launch_params,
                                sizeof(OptixLaunchParams), cudaMemcpyHostToDevice, stream));
 
@@ -848,7 +851,7 @@ extern "C" void optixRendererConvertAccumToDisplay(unsigned char *display_image,
    dim3 threads(32, 8);
    dim3 blocks((width + threads.x - 1) / threads.x, (height + threads.y - 1) / threads.y);
 
-   cudaStream_t stream = g_state.render_stream ? g_state.render_stream : 0;
+   cudaStream_t stream = getOptiXStream();
 
    optixGammaCorrectKernel<<<blocks, threads, 0, stream>>>(
        g_state.d_accum_buffer, g_state.d_display, width, height, num_samples, channels, gamma);
