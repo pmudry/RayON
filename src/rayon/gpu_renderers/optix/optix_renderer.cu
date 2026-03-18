@@ -90,10 +90,23 @@ struct OptixState
    cudaArray_t         hdr_cuda_array = nullptr;
    cudaTextureObject_t hdr_tex_obj    = 0;
 
+   // Dedicated CUDA stream for OptiX launches — avoids blocking the default stream
+   // and enables stream-specific synchronization instead of cudaDeviceSynchronize().
+   cudaStream_t render_stream = nullptr;
+
+   // Pinned host memory + device display buffer for async gamma correction + D2H pipeline
+   unsigned char *pinned_display = nullptr;
+   size_t pinned_display_size = 0;
+   unsigned char *d_display = nullptr;
+   size_t d_display_size = 0;
+
    bool initialized = false;
 };
 
 static OptixState g_state;
+
+// Helper: return the dedicated render stream, or the default stream (0) if not initialized.
+static inline cudaStream_t getOptiXStream() { return g_state.render_stream ? g_state.render_stream : 0; }
 
 // Load PTX from file
 static std::string loadPTXFromFile(const char *filename)
@@ -261,6 +274,12 @@ static void initializeOptiX()
    g_state.sbt.missRecordBase = g_state.d_sbt_miss;
    g_state.sbt.missRecordStrideInBytes = sizeof(MissRecord);
    g_state.sbt.missRecordCount = 1;
+
+   // Create a dedicated CUDA stream for OptiX launches — enables stream-specific
+   // synchronization instead of cudaDeviceSynchronize(), and allows overlap with
+   // display/gamma correction work.
+   if (g_state.render_stream == nullptr)
+      CUDA_CHECK(cudaStreamCreateWithFlags(&g_state.render_stream, cudaStreamNonBlocking));
 
    g_state.initialized = true;
    printf("OptiX renderer initialized successfully\n");
@@ -665,8 +684,9 @@ extern "C" void optixRendererResetAccum(int width, int height)
       g_state.accum_height = height;
    }
 
-   // Zero the buffer on device — no host round-trip needed
-   CUDA_CHECK(cudaMemset(g_state.d_accum_buffer, 0, (size_t)width * height * sizeof(float4)));
+   // Zero the buffer on the render stream so the memset is ordered before the next optixLaunch.
+   // cudaMemset on the default stream (0) races with optixLaunch on the non-blocking render stream.
+   CUDA_CHECK(cudaMemsetAsync(g_state.d_accum_buffer, 0, (size_t)width * height * sizeof(float4), getOptiXStream()));
 
    // Allocate persistent launch params buffer (once)
    if (g_state.d_launch_params == 0)
@@ -721,13 +741,18 @@ extern "C" unsigned long long optixRendererLaunch(int width, int height, int num
    launch_params.hdr_env_tex        = g_state.hdr_tex_obj;
    launch_params.use_hdr_env        = (g_state.hdr_tex_obj != 0);
 
-   // Single memcpy to persistent device buffer — no malloc/free per batch
-   CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(g_state.d_launch_params), &launch_params, sizeof(OptixLaunchParams),
-                          cudaMemcpyHostToDevice));
+   // Single memcpy to persistent device buffer — no malloc/free per batch.
+   // Use the dedicated stream for async param upload + launch.
+   cudaStream_t stream = getOptiXStream();
+   CUDA_CHECK(cudaMemcpyAsync(reinterpret_cast<void *>(g_state.d_launch_params), &launch_params,
+                               sizeof(OptixLaunchParams), cudaMemcpyHostToDevice, stream));
 
-   OPTIX_CHECK(optixLaunch(g_state.pipeline, 0, g_state.d_launch_params, sizeof(OptixLaunchParams), &g_state.sbt,
+   OPTIX_CHECK(optixLaunch(g_state.pipeline, stream, g_state.d_launch_params, sizeof(OptixLaunchParams), &g_state.sbt,
                             width, height, 1));
-   CUDA_CHECK(cudaDeviceSynchronize());
+
+   // Stream-specific sync instead of cudaDeviceSynchronize() — only waits for
+   // this stream, allowing other work (display pipeline) to proceed.
+   CUDA_CHECK(cudaStreamSynchronize(stream));
 
    return (unsigned long long)width * height * samples_to_add;
 }
@@ -764,6 +789,78 @@ extern "C" void optixRendererSetGolfDimples(int count, float radius, float depth
    g_state.golf_dimple_count  = count;
    g_state.golf_dimple_radius = radius;
    g_state.golf_dimple_depth  = depth;
+}
+
+//==============================================================================
+// GPU-side gamma correction for OptiX — mirrors the CUDA renderer's pipeline.
+// Converts float4 accum buffer directly to uint8 display image on the GPU,
+// then async-copies via pinned memory. Avoids the expensive float4 D2H transfer
+// + host-side conversion that the original optixRendererDownloadAccum() used.
+//==============================================================================
+__global__ void optixGammaCorrectKernel(const float4 *__restrict__ accum_buffer, unsigned char *display_image,
+                                         int width, int height, int num_samples, int channels, float gamma)
+{
+   int x = blockIdx.x * blockDim.x + threadIdx.x;
+   int y = blockIdx.y * blockDim.y + threadIdx.y;
+   if (x >= width || y >= height)
+      return;
+
+   int pixel_idx = y * width + x;
+   float4 acc = accum_buffer[pixel_idx];
+
+   float inv_samples = 1.0f / (float)num_samples;
+   float inv_gamma = 1.0f / gamma;
+
+   float r = fminf(powf(fmaxf(acc.x * inv_samples, 0.0f), inv_gamma), 0.999f);
+   float g = fminf(powf(fmaxf(acc.y * inv_samples, 0.0f), inv_gamma), 0.999f);
+   float b = fminf(powf(fmaxf(acc.z * inv_samples, 0.0f), inv_gamma), 0.999f);
+
+   int image_idx = pixel_idx * channels;
+   display_image[image_idx + 0] = (unsigned char)(256.0f * r);
+   display_image[image_idx + 1] = (unsigned char)(256.0f * g);
+   display_image[image_idx + 2] = (unsigned char)(256.0f * b);
+   if (channels == 4)
+      display_image[image_idx + 3] = 255;
+}
+
+extern "C" void optixRendererConvertAccumToDisplay(unsigned char *display_image, int width, int height,
+                                                    int channels, int num_samples, float gamma)
+{
+   if (!g_state.d_accum_buffer || !display_image || num_samples <= 0)
+      return;
+
+   size_t display_size = (size_t)width * height * channels * sizeof(unsigned char);
+
+   // Allocate/resize device display buffer (persistent across calls)
+   if (g_state.d_display == nullptr || g_state.d_display_size != display_size)
+   {
+      if (g_state.d_display != nullptr)
+         cudaFree(g_state.d_display);
+      cudaMalloc(&g_state.d_display, display_size);
+      g_state.d_display_size = display_size;
+   }
+
+   // Allocate/resize pinned host staging buffer for async D2H copy
+   if (g_state.pinned_display == nullptr || g_state.pinned_display_size != display_size)
+   {
+      if (g_state.pinned_display != nullptr)
+         cudaFreeHost(g_state.pinned_display);
+      cudaMallocHost(&g_state.pinned_display, display_size);
+      g_state.pinned_display_size = display_size;
+   }
+
+   dim3 threads(32, 8);
+   dim3 blocks((width + threads.x - 1) / threads.x, (height + threads.y - 1) / threads.y);
+
+   cudaStream_t stream = getOptiXStream();
+
+   optixGammaCorrectKernel<<<blocks, threads, 0, stream>>>(
+       g_state.d_accum_buffer, g_state.d_display, width, height, num_samples, channels, gamma);
+
+   // Async D2H copy via pinned memory, then single stream sync
+   cudaMemcpyAsync(g_state.pinned_display, g_state.d_display, display_size, cudaMemcpyDeviceToHost, stream);
+   cudaStreamSynchronize(stream);
+   memcpy(display_image, g_state.pinned_display, display_size);
 }
 
 extern "C" void optixRendererClearHdrEnv()
@@ -860,6 +957,14 @@ extern "C" void optixRendererCleanup()
       CUDA_CHECK(cudaFree(reinterpret_cast<void *>(g_state.d_sbt_hitgroup)));
    if (g_state.d_gas_output)
       CUDA_CHECK(cudaFree(reinterpret_cast<void *>(g_state.d_gas_output)));
+
+   // Clean up GPU display pipeline resources
+   if (g_state.render_stream)
+      CUDA_CHECK(cudaStreamDestroy(g_state.render_stream));
+   if (g_state.d_display)
+      CUDA_CHECK(cudaFree(g_state.d_display));
+   if (g_state.pinned_display)
+      CUDA_CHECK(cudaFreeHost(g_state.pinned_display));
 
    if (g_state.pipeline)
       OPTIX_CHECK(optixPipelineDestroy(g_state.pipeline));

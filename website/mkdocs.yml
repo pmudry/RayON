@@ -127,6 +127,7 @@ nav:
     - BVH Acceleration: how-it-works/bvh.md
     - Hemisphere Sampling: how-it-works/sampling.md
     - Performance Optimisations: how-it-works/optimizations.md
+    - GPU Performance Techniques: how-it-works/gpu-performance.md
   - Architecture:
     - architecture/index.md
     - Scene System: architecture/scene-system.md

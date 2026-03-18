@@ -545,6 +545,17 @@ extern "C" __global__ void __raygen__rg()
          }
       }
 
+      // Firefly rejection: clamp per-sample luminance to prevent single HDR texels
+      // (e.g., sun disk in outdoor environment maps) from causing permanent white dots.
+      // Uses a luminance-preserving scale so hue is maintained.
+      constexpr float FIREFLY_CLAMP = 20.0f;
+      float sample_lum = 0.2126f * color.x + 0.7152f * color.y + 0.0722f * color.z;
+      if (sample_lum > FIREFLY_CLAMP)
+      {
+         float scale = FIREFLY_CLAMP / sample_lum;
+         color = color * scale;
+      }
+
       accumulated = accumulated + color;
    }
 
