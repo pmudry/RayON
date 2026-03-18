@@ -36,8 +36,8 @@ that makes it look like a shaded disc.
     *"first commit"* — September 7, 2025
 
 <div class="img-grid cols-2">
-  <img src="../assets/images/dev/m1_first_pixel.png" alt="The very first render — a grey gradient disc, no perspective">
-  <img src="../assets/images/dev/m1_sphere_depth.png" alt="Sphere with depth shading — still no perspective, but clearly a sphere">
+  <img src="../assets/images/dev/m1_first_image_0.png" alt="The very first output — just a gradient :)">
+  <img src="../assets/images/dev/m1_first_render.png" alt="The very first render — a grey gradient disc, no perspective">  
 </div>
 
 **What changed:** project scaffolding, CMake, `stb_image`, first ray–sphere intersection, first
@@ -61,7 +61,8 @@ Within the first four days, the renderer gains the key ingredients of a recognis
 By September 11, the scene already has multiple spheres with different materials, and the output
 image is recognisably a physically-based render rather than a depth map.
 
-<img class="render-img" src="../assets/images/dev/m2_normals.png" alt="Normal-to-colour shading — the characteristic blue-tinted sphere from RTIOW">
+<img class="render-img" src="../assets/images/dev/m1_first_render_normals.png" alt="Normal-to-colour shading — the characteristic blue-tinted sphere from RTIOW">
+<img class="render-img" src="../assets/images/dev/m2_spheres.png" alt="A complete render with mirrors, on the CPU (multithreaded)">
 
 **What changed:** `Vec3` class, ray abstraction, camera class, normal-to-RGB shading, mirror
 reflection, multi-sphere scene, wall-clock timing.
