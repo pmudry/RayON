@@ -151,8 +151,29 @@ cudaMemcpyAsync(pinned_buf, d_display, size, cudaMemcpyDeviceToHost, s_display_s
 cudaStreamSynchronize(s_display_stream);
 ```
 
+**Critical requirement — buffer resets must use the same stream:**
+Because `s_compute_stream` is `cudaStreamNonBlocking`, it has *no implicit ordering relationship*
+with the default stream (stream 0). Calling `cudaMemset(...)` (which uses stream 0) to zero the
+accumulation buffer or the adaptive sample-count buffer before the next render kernel therefore
+creates a race condition: the kernel can start reading the buffer while the memset is still
+running. The fix is to use `cudaMemsetAsync` on the same non-blocking stream:
+
+```cuda
+// WRONG: cudaMemset uses stream 0 — races with compute_stream kernel
+cudaMemset(d_accum_buffer, 0, size);
+
+// CORRECT: ordered before the next renderAccKernel on the same stream
+cudaMemsetAsync(d_accum_buffer, 0, size, s_compute_stream);
+```
+
+This applies to both `resetDeviceAccumBuffer` and `resetAdaptiveBuffer`. Without it, stale
+accumulation values combined with a zeroed-but-unread sample-count buffer caused pixels to be
+divided by 1 instead of the true sample count, producing a white frame on the first rendered
+batch after a camera move (visible whenever adaptive sampling was enabled).
+
 **Impact:** In the interactive progressive renderer, the display pipeline (~0.5–2 ms) can
-overlap with the start of the next render batch, reducing per-frame latency.
+overlap with the start of the next render batch, reducing per-frame latency. The stream-ordering
+fix also eliminates the white-frame artifact on camera movement with adaptive sampling.
 
 **Files:** `renderer_cuda_device.cu`
 
@@ -173,8 +194,24 @@ optixLaunch(pipeline, render_stream, d_launch_params, sizeof(params), &sbt, w, h
 cudaStreamSynchronize(render_stream);  // Only waits for OptiX work
 ```
 
-**Impact:** Enables future overlap between OptiX rendering and display conversion, and avoids
-blocking unrelated GPU work on other streams.
+**Critical requirement — accumulation reset must use the same stream:**
+The `render_stream` is `cudaStreamNonBlocking`, so it has no ordering relationship with stream 0.
+If `optixRendererResetAccum` calls `cudaMemset(...)` (stream 0) to zero the accumulation buffer,
+the next `optixLaunch` on `render_stream` can run *concurrently* with the memset — meaning the
+launch can write pixels that the late-arriving memset then overwrites with zeros, producing black
+streaks on camera movement. The fix:
+
+```cuda
+// WRONG: cudaMemset uses stream 0 — races with optixLaunch on render_stream
+cudaMemset(g_state.d_accum_buffer, 0, size);
+
+// CORRECT: ordered before the next optixLaunch on the same stream
+cudaMemsetAsync(g_state.d_accum_buffer, 0, size, getOptiXStream());
+```
+
+**Impact:** Enables future overlap between OptiX rendering and display conversion, avoids
+blocking unrelated GPU work on other streams, and eliminates black-streak artifacts on camera
+movement caused by the stream 0 vs. non-blocking stream race.
 
 **Files:** `optix/optix_renderer.cu`
 
@@ -216,6 +253,40 @@ OptiX. The persistent pinned memory and device display buffers are managed as pa
 
 ---
 
+## 7 — Firefly rejection (per-sample luminance clamp)
+
+**Problem:** HDR environment maps contain extreme luminance values — the sun disk in an outdoor
+sky image (`sunflowers_puresky_4k`, `rosendal_plains_2_4k`, …) can reach 50,000+ in linear
+light. When a path happens to hit one of those texels (especially in the first few samples after
+a camera move or scene reset), the single-sample contribution dominates the accumulation buffer.
+With only 1–4 accumulated samples the gamma kernel divides by a small N, leaving the pixel
+white. The artifact resolves as more samples accumulate, but it is very visible as flickering
+white dots during motion.
+
+**Solution:** Apply a **luminance-preserving clamp** to each sample's contribution immediately
+before it is added to the accumulation buffer. The hue of the sample is preserved by scaling
+all three channels by the same factor:
+
+```cuda
+// In renderAccKernel (CUDA) and __raygen__rg (OptiX):
+constexpr float FIREFLY_CLAMP = 20.0f;
+float sample_lum = 0.2126f * color.x + 0.7152f * color.y + 0.0722f * color.z;
+if (sample_lum > FIREFLY_CLAMP)
+    color = color * (FIREFLY_CLAMP / sample_lum);  // scale, don't clip per-channel
+```
+
+The threshold of **20.0** (linear) covers the full visible sky (clear blue ≈ 3–8, bright clouds
+≈ 10–15) while rejecting only the extreme sun disk. Production renderers such as Blender Cycles
+expose equivalent settings ("Clamp Direct / Indirect").
+
+**Why luminance-preserving rather than per-channel min?** Per-channel clamping (`fminf(r, C)`)
+shifts hue — a nearly-white sun pixel that is already balanced stays balanced with a
+luminance scale, whereas clamping R/G/B independently can introduce a color cast.
+
+**Files:** `shaders/render_acc_kernel.cu`, `optix/optix_programs.cu`
+
+---
+
 ## Summary of techniques
 
 | # | Technique | Renderer | Bottleneck addressed | Estimated impact |
@@ -224,8 +295,13 @@ OptiX. The persistent pinned memory and device display buffers are managed as pa
 | 2 | `__launch_bounds__(256)` | CUDA | Register allocation / occupancy | ~5–10% |
 | 3 | Warp-shuffle converged counting | CUDA | 3.5 MB D2H per frame | < 0.1 ms vs. ~1–2 ms |
 | 4 | Dual CUDA streams | CUDA | Full-device synchronization | ~0.5–2 ms/frame latency reduction |
+| 4a | `cudaMemsetAsync` on compute stream | CUDA | Stream 0 race with non-blocking stream | Fixes white-frame on camera move (adaptive sampling) |
 | 5 | OptiX render stream | OptiX | Full-device synchronization | Enables async overlap |
+| 5a | `cudaMemsetAsync` on render stream | OptiX | Stream 0 race with non-blocking stream | Fixes black-streak artifacts on camera move |
 | 6 | GPU gamma + pinned memory | OptiX | 14 MB D2H + CPU conversion | 5× bandwidth reduction |
+| 7 | Per-sample firefly clamp | CUDA + OptiX | Extreme HDR texel contributions | Eliminates white-dot artifacts with HDR env maps |
 
-All techniques are **backward-compatible** — they do not change the rendered output, only the
-speed at which it is produced.
+Techniques 1–6 are **backward-compatible** — they do not change the rendered output, only the
+speed at which it is produced. Technique 7 introduces a slight bias (under-representing
+extreme-luminance regions such as the sun disk) in exchange for artifact-free interactive
+rendering.

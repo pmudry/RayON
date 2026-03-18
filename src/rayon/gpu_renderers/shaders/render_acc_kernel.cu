@@ -244,12 +244,22 @@ __global__ void __launch_bounds__(256) renderAccKernel(float4 *accum_buffer, con
       }
 
       ray_simple r(ray_origin, ray_direction);
-      accumulated_color = accumulated_color + ray_color(r, *scene, local_rand_state, max_depth
+      f3 sample_color = ray_color(r, *scene, local_rand_state, max_depth
 #ifdef DIAGS
-                                                        ,
-                                                        local_ray_count
+                                  ,
+                                  local_ray_count
 #endif
       );
+
+      // Firefly rejection: clamp per-sample luminance to prevent single HDR texels
+      // (e.g., sun disk in outdoor environment maps) from causing permanent white dots.
+      // Uses a luminance-preserving scale so hue is maintained.
+      constexpr float FIREFLY_CLAMP = 20.0f;
+      float sample_lum = 0.2126f * sample_color.x + 0.7152f * sample_color.y + 0.0722f * sample_color.z;
+      if (sample_lum > FIREFLY_CLAMP)
+         sample_color = sample_color * (FIREFLY_CLAMP / sample_lum);
+
+      accumulated_color = accumulated_color + sample_color;
    }
 
 #ifdef DIAGS
