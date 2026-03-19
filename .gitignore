@@ -1,7 +1,7 @@
 # CMake build directories
 build/
 .cache/
-docs/
+/docs/
 
 CMakeFiles/
 CMakeCache.txt
@@ -17,7 +17,7 @@ material_gallery/
 
 # MkDocs — generated outputs only (website/docs/ source is tracked)
 website/site/
-docs/
+/docs/
 
 # Auto-copied image directories (populated by hooks.py at build time — not source)
 website/docs/assets/images/samples/
