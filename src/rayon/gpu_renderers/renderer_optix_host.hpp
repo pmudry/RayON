@@ -66,11 +66,12 @@ class RendererOptiX : public IRenderer
 
       while (samples_completed < frame.samples_per_pixel)
       {
+         int samples_before_batch = samples_completed; // total BEFORE adding this batch
          int samples_to_add = std::min(samples_per_update, frame.samples_per_pixel - samples_completed);
          samples_completed += samples_to_add;
 
          unsigned long long ray_count = optixRendererLaunch(
-             frame.image_width, frame.image_height, num_materials, samples_to_add, samples_completed, frame.max_depth,
+             frame.image_width, frame.image_height, num_materials, samples_to_add, samples_before_batch, frame.max_depth,
              static_cast<float>(frame.camera_center.x()), static_cast<float>(frame.camera_center.y()),
              static_cast<float>(frame.camera_center.z()), static_cast<float>(frame.pixel00_loc.x()),
              static_cast<float>(frame.pixel00_loc.y()), static_cast<float>(frame.pixel00_loc.z()),

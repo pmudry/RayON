@@ -654,7 +654,8 @@ __device__ inline bool hit_scene(const CudaScene::Scene &scene, const ray_simple
  */
 __device__ __forceinline__ bool scatter_material(const hit_record_simple &rec, const ray_simple &current_ray,
                                                  ray_simple &scattered_ray, f3 &attenuation, f3 &emitted,
-                                                 curandState *state)
+                                                 curandState *state, uint32_t sample_n, uint32_t pixel_hash,
+                                                 int bounce)
 {
    emitted = f3(0.0f, 0.0f, 0.0f);
 
@@ -667,8 +668,9 @@ __device__ __forceinline__ bool scatter_material(const hit_record_simple &rec, c
       f3 u_basis, v_basis;
       build_orthonormal_basis(w, u_basis, v_basis);
 
-      float u1 = rand_float(state);
-      float u2 = rand_float(state);
+      float2 s  = rand_float2(state, sample_n, pixel_hash, (uint32_t)bounce, SOBOL_EFFECT_LAMBERTIAN);
+      float u1 = s.x;
+      float u2 = s.y;
       float r = sqrtf(u1);
       float theta = 2.0f * CUDART_PI_F * u2;
       f3 local_dir(r * cosf(theta), r * sinf(theta), sqrtf(fmaxf(0.0f, 1.0f - u1)));
@@ -689,7 +691,8 @@ __device__ __forceinline__ bool scatter_material(const hit_record_simple &rec, c
    case ROUGH_MIRROR:
    {
       // Reflection with roughness-perturbed normal (microfacet approximation)
-      f3 perturbed_normal = normalize(rec.normal + rec.roughness * g_metal_fuzziness * randOnUnitSphere(state));
+      float2 srm = rand_float2(state, sample_n, pixel_hash, (uint32_t)bounce, SOBOL_EFFECT_ROUGH_MIRROR);
+      f3 perturbed_normal = normalize(rec.normal + rec.roughness * g_metal_fuzziness * sphere_from_square(srm.x, srm.y));
       f3 reflected = reflect(normalize(current_ray.dir), perturbed_normal);
       scattered_ray = ray_simple(rec.p, reflected);
       attenuation = rec.color;
@@ -707,8 +710,9 @@ __device__ __forceinline__ bool scatter_material(const hit_record_simple &rec, c
 
       bool total_internal_reflection = ratio * sin_theta > 1.0f;
 
+      float2 sg = rand_float2(state, sample_n, pixel_hash, (uint32_t)bounce, SOBOL_EFFECT_GLASS);
       f3 direction;
-      if (total_internal_reflection || reflectance(cos_theta, ratio) > rand_float(state))
+      if (total_internal_reflection || reflectance(cos_theta, ratio) > sg.x)
          direction = reflect(unit_dir, rec.normal);
       else
          direction = refract(unit_dir, rec.normal, ratio);
@@ -766,8 +770,8 @@ __device__ __forceinline__ bool scatter_material(const hit_record_simple &rec, c
          return false;
 
       // Sample microfacet normal via VNDF
-      f3 wm = Sample_wm_GGX(wo_local, alpha_x, alpha_y,
-                              rand_float(state), rand_float(state));
+      float2 sa = rand_float2(state, sample_n, pixel_hash, (uint32_t)bounce, SOBOL_EFFECT_ANISO_GGX);
+      f3 wm = Sample_wm_GGX(wo_local, alpha_x, alpha_y, sa.x, sa.y);
 
       // Reflect wo around wm to get wi
       f3 wi_local = reflect(f3(-wo_local.x, -wo_local.y, -wo_local.z), wm);
@@ -833,7 +837,8 @@ __device__ __forceinline__ bool scatter_material(const hit_record_simple &rec, c
       float Rr = airy(650.0f), Rg = airy(550.0f), Rb = airy(450.0f);
       float avg_R = (Rr + Rg + Rb) / 3.0f;
 
-      if (rand_float(state) < avg_R)
+      float2 stf = rand_float2(state, sample_n, pixel_hash, (uint32_t)bounce, SOBOL_EFFECT_THIN_FILM);
+      if (stf.x < avg_R)
       {
          // Reflect — carry the iridescent color; divide by selection probability
          f3 reflected = reflect(unit_dir, rec.normal);
@@ -858,11 +863,13 @@ __device__ __forceinline__ bool scatter_material(const hit_record_simple &rec, c
       float coat_ior = rec.refractive_index; // e.g. 1.5
       float F = reflectance(cos_theta, coat_ior);
 
-      if (rand_float(state) < F)
+      float2 scc = rand_float2(state, sample_n, pixel_hash, (uint32_t)bounce, SOBOL_EFFECT_CLEAR_COAT);
+      if (scc.x < F)
       {
          // Coat specular reflection (GGX-like roughness perturbation)
+         float2 scd = rand_float2(state, sample_n, pixel_hash, (uint32_t)bounce, SOBOL_EFFECT_CLEAR_COAT_DIR);
          f3 perturbed_normal = (rec.roughness > 1e-3f)
-            ? normalize(rec.normal + rec.roughness * randOnUnitSphere(state))
+            ? normalize(rec.normal + rec.roughness * sphere_from_square(scd.x, scd.y))
             : rec.normal;
          f3 reflected = reflect(unit_dir, perturbed_normal);
          scattered_ray = ray_simple(rec.p + 0.0001f * rec.normal, reflected);
@@ -875,8 +882,9 @@ __device__ __forceinline__ bool scatter_material(const hit_record_simple &rec, c
          f3 w = normalize(rec.normal);
          f3 u_basis, v_basis;
          build_orthonormal_basis(w, u_basis, v_basis);
-         float u1 = rand_float(state);
-         float u2 = rand_float(state);
+         float2 sdf = rand_float2(state, sample_n, pixel_hash, (uint32_t)bounce, SOBOL_EFFECT_CLEAR_COAT_DIFF);
+         float u1 = sdf.x;
+         float u2 = sdf.y;
          float r_s = sqrtf(u1);
          float theta_s = 2.0f * CUDART_PI_F * u2;
          f3 local_dir(r_s * cosf(theta_s), r_s * sinf(theta_s), sqrtf(fmaxf(0.0f, 1.0f - u1)));
@@ -897,7 +905,8 @@ __device__ __forceinline__ bool scatter_material(const hit_record_simple &rec, c
  * Uses a direct switch for material scatter/emission instead of CRTP template
  * dispatch, reducing register pressure and giving nvcc better optimization control.
  */
-__device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scene, curandState *state, int depth
+__device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scene, curandState *state, int depth,
+                               uint32_t sample_n, uint32_t pixel_hash
 #ifdef DIAGS
                                ,
                                int &local_ray_count
@@ -928,7 +937,8 @@ __device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scen
          ray_simple scattered_ray;
          f3 emitted;
 
-         bool did_scatter = scatter_material(rec, current_ray, scattered_ray, attenuation, emitted, state);
+         bool did_scatter = scatter_material(rec, current_ray, scattered_ray, attenuation, emitted, state,
+                                              sample_n, pixel_hash, bounce);
 
          if (emitted.length_squared() > 0.0f)
          {
@@ -952,7 +962,8 @@ __device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scen
                 fmaxf(accumulated_attenuation.x, fmaxf(accumulated_attenuation.y, accumulated_attenuation.z));
             float survival_prob = fminf(max_component, 0.95f);
 
-            if (rand_float(state) > survival_prob)
+            float2 srr = rand_float2(state, sample_n, pixel_hash, (uint32_t)bounce, SOBOL_EFFECT_RR);
+            if (srr.x > survival_prob)
             {
                return accumulated_color;
             }

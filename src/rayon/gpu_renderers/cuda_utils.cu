@@ -18,16 +18,14 @@ extern "C" void setSobolSampler(bool use_sobol)
 }
 
 //------------------------------------------------------------------------------
-// Simple Laine-Karras pixel hash (32-bit PCG finaliser).
-// Used to generate a stable per-pixel hash for Sobol scrambling.
+// pixel_hash_fn: maps a linear pixel index to a per-pixel scramble seed.
+// Uses the MurmurHash3 fmix32 finalizer (defined in sobol_sampler.cuh)
+// which guarantees full avalanche from any single-bit input change.
+// The scene/session seed is mixed in so re-renders get fresh scrambles.
 //------------------------------------------------------------------------------
-static __device__ __forceinline__ uint32_t pixel_hash_fn(int x, int y, unsigned long long seed)
+static __device__ __forceinline__ uint32_t pixel_hash_fn(uint32_t linear_idx, unsigned long long seed)
 {
-   uint32_t h = (uint32_t)x ^ ((uint32_t)y * 1799011u) ^ (uint32_t)(seed * 2654435761ull);
-   h ^= h >> 16;
-   h *= 0x45d9f3bu;
-   h ^= h >> 16;
-   return h;
+   return fmix32(linear_idx ^ (uint32_t)(seed * 2654435761ull));
 }
 
 // Implement kernel in a single translation unit to avoid nvlink multiple definition errors
@@ -56,9 +54,10 @@ __global__ void init_random_states(curandState *rand_states, int num_states, uns
       {
          // Initialise as SobolSamplerState (overlaid on curandState)
          SobolSamplerState *ss = reinterpret_cast<SobolSamplerState *>(&rand_states[idx]);
-         ss->pixel_hash = pixel_hash_fn(x, y, seed);
+         ss->pixel_hash = pixel_hash_fn((uint32_t)idx, seed);
+         ss->sample_n   = 0u;
          ss->sample_idx = 0u;
-         ss->dim_idx = 0u;
+         ss->dim_idx    = 0u;
          // PCG fallback seed — unique per pixel, derived differently from pixel_hash
          ss->pcg_seed = ss->pixel_hash ^ 0xdeadbeef ^ (uint32_t)(seed >> 32);
       }

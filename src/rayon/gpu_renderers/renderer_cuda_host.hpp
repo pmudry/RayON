@@ -38,6 +38,7 @@ class RendererCUDA : public IRenderer
       
       while (samples_completed < frame.samples_per_pixel)
       {
+         int samples_before_batch = samples_completed; // total BEFORE adding this batch
          int samples_to_add = std::min(samples_per_update, frame.samples_per_pixel - samples_completed);
          samples_completed += samples_to_add;
          
@@ -46,7 +47,7 @@ class RendererCUDA : public IRenderer
              frame.camera_center.y(), frame.camera_center.z(), frame.pixel00_loc.x(), frame.pixel00_loc.y(),
              frame.pixel00_loc.z(), frame.pixel_delta_u.x(), frame.pixel_delta_u.y(), frame.pixel_delta_u.z(),
              frame.pixel_delta_v.x(), frame.pixel_delta_v.y(), frame.pixel_delta_v.z(), samples_to_add,
-             samples_completed, frame.max_depth, &d_rand_states, &d_accum_buffer, frame.u.x(), frame.u.y(),
+             samples_before_batch, frame.max_depth, &d_rand_states, &d_accum_buffer, frame.u.x(), frame.u.y(),
              frame.u.z(), frame.v.x(), frame.v.y(), frame.v.z());
          
          total_rays += cuda_ray_count;

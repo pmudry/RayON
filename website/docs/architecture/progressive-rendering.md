@@ -10,7 +10,7 @@ image quality.
 
 The progressive renderer operates in a loop:
 
-1. User moves the camera → **motion detected** → reset accumulation, restart at low SPP.
+1. User moves the camera → **motion detected** → reset accumulation, restart progressive rendering.
 2. Camera is still for 500 ms → **accumulation phase** → add more samples per stage.
 3. Each stage: one GPU kernel pass, gamma-correct on GPU, copy uint8 to host, blit to SDL texture.
 
@@ -25,12 +25,12 @@ sequenceDiagram
     SDL-->>Host: SDL_MOUSEMOTION event
     Host->>GPU: reset accum buffer (clear float array)
     loop accumulation stages
-        Host->>GPU: renderPixelsKernelAccum(spp=8)
+        Host->>GPU: renderPixelsKernelAccum(spp=samples_per_batch)
         GPU-->>Host: uint8 display buffer (D2H)
         Host->>SDL: SDL_UpdateTexture + SDL_RenderCopy
         SDL-->>User: frame displayed
         Note over Host: wait 500 ms if stationary
-        Host->>GPU: renderPixelsKernelAccum(spp=+8)
+        Host->>GPU: renderPixelsKernelAccum(spp=+samples_per_batch)
     end
 ```
 

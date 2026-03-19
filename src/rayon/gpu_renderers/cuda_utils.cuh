@@ -29,12 +29,31 @@
 struct SobolSamplerState
 {
    uint32_t pixel_hash;  ///< Per-pixel stable hash (from pixel coords + scene seed)
-   uint32_t sample_idx;  ///< Gray-code encoded sample index — set by reset_sobol_state_for_sample()
+   uint32_t sample_idx;  ///< Gray-code encoded sample index — kept for backward-compat rand_float() path
    uint32_t dim_idx;     ///< Auto-increments on every rand_float() call; resets to 0 each sample
    uint32_t pcg_seed;    ///< PCG fallback seed used when dim_idx >= SOBOL_MAX_DIM
+   uint32_t sample_n;    ///< Raw sample index (not Gray-coded) — used by rand_float2() / sobol_2d_sample()
 };
 static_assert(sizeof(SobolSamplerState) <= sizeof(curandState),
               "SobolSamplerState must fit inside curandState (48 bytes)");
+
+// ---------------------------------------------------------------------------
+// Sobol effect IDs for rand_float2().
+// Each distinct sampling use within a path (AA jitter, DOF, per-material
+// scatter, Russian roulette) gets its own ID so sobol_2d_sample() produces
+// an independent, well-stratified 2D sequence for every use.
+// ---------------------------------------------------------------------------
+constexpr uint32_t SOBOL_EFFECT_AA               = 0u;  ///< Camera ray anti-aliasing jitter
+constexpr uint32_t SOBOL_EFFECT_DOF              = 1u;  ///< Depth-of-field aperture disk
+constexpr uint32_t SOBOL_EFFECT_LAMBERTIAN       = 2u;  ///< Lambertian cosine hemisphere
+constexpr uint32_t SOBOL_EFFECT_GLASS            = 3u;  ///< Glass/dielectric Fresnel decision
+constexpr uint32_t SOBOL_EFFECT_ANISO_GGX        = 4u;  ///< Anisotropic GGX microfacet VNDF
+constexpr uint32_t SOBOL_EFFECT_THIN_FILM        = 5u;  ///< Thin-film Fresnel decision
+constexpr uint32_t SOBOL_EFFECT_CLEAR_COAT       = 6u;  ///< Clear-coat Fresnel lobe selection
+constexpr uint32_t SOBOL_EFFECT_CLEAR_COAT_DIR   = 7u;  ///< Clear-coat specular perturbation
+constexpr uint32_t SOBOL_EFFECT_CLEAR_COAT_DIFF  = 8u;  ///< Clear-coat base diffuse hemisphere
+constexpr uint32_t SOBOL_EFFECT_ROUGH_MIRROR     = 9u;  ///< Rough mirror normal perturbation
+constexpr uint32_t SOBOL_EFFECT_RR               = 10u; ///< Russian roulette path termination
 
 /// Runtime toggle — defined in cuda_utils.cu, set via setSobolSampler() extern-C call.
 extern __device__ bool g_use_sobol;
@@ -87,17 +106,54 @@ static __device__ inline float rand_float(curandState *state)
  * @brief Reset the Sobol state for a new sample.
  * Must be called at the top of each per-sample loop iteration.
  * In PCG mode this is a no-op.
- * @param state  Per-pixel random state (interpretted as SobolSamplerState)
- * @param n      Absolute sample index (0, 1, 2, ...) — converted to Gray code internally
+ * @param state  Per-pixel random state (interpreted as SobolSamplerState)
+ * @param n      Absolute sample index (0, 1, 2, ...) — stored raw for rand_float2()
+ *               and also Gray-coded for the legacy rand_float() path.
  */
 static __device__ inline void reset_sobol_state_for_sample(curandState *state, uint32_t n)
 {
    if (g_use_sobol)
    {
       SobolSamplerState *ss = reinterpret_cast<SobolSamplerState *>(state);
-      ss->sample_idx = sobol_gray(n);
-      ss->dim_idx = 0u;
+      ss->sample_n   = n;            // raw index for sobol_2d_sample() via rand_float2()
+      ss->sample_idx = sobol_gray(n); // Gray-coded index for legacy rand_float() path
+      ss->dim_idx    = 0u;
    }
+}
+
+/**
+ * @brief Get a well-stratified 2D sample for a specific (bounce, effect) use.
+ *
+ * In Sobol mode: calls sobol_2d_sample() with full per-(pixel,bounce,effect)
+ * seeding and index shuffling — the reference ShaderToy approach.
+ * In PCG mode: two independent rand_float() calls.
+ *
+ * @param state      Per-pixel random state
+ * @param sample_n   Raw sample index (total_samples_so_far + s)
+ * @param pixel_hash Per-pixel hash (from SobolSamplerState::pixel_hash)
+ * @param bounce     Path depth (0 = first scatter)
+ * @param effect     Use-case ID (SOBOL_EFFECT_* constant)
+ */
+static __device__ inline float2 rand_float2(curandState *state, uint32_t sample_n, uint32_t pixel_hash,
+                                             uint32_t bounce, uint32_t effect)
+{
+   if (g_use_sobol)
+      return sobol_2d_sample(sample_n, bounce, effect, pixel_hash);
+   // PCG fallback: two stateful calls
+   return {rand_float(state), rand_float(state)};
+}
+
+/**
+ * @brief Area-preserving square-to-unit-sphere mapping.
+ * Maps (u, v) ∈ [0,1)² to a uniformly distributed point on the unit sphere.
+ * No rejection needed — safe to use with low-discrepancy sequences.
+ */
+__device__ __forceinline__ f3 sphere_from_square(float u, float v)
+{
+   float z   = 1.0f - 2.0f * u;
+   float phi = 6.28318530717958647692f * v;  // 2π
+   float r   = sqrtf(fmaxf(0.0f, 1.0f - z * z));
+   return f3(r * cosf(phi), r * sinf(phi), z);
 }
 
 /**

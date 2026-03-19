@@ -9,7 +9,7 @@ mouse-driven camera controls and an ImGui control panel.
 
 ```bash
 # Interactive mode is the default when SDL2 is present:
-./rayon --scene ../resources/scenes/default_scene.yaml --target-fps 60
+./rayon --scene ../resources/scenes/default_scene.yaml
 
 # With adaptive depth for progressive quality:
 ./rayon --adaptive-depth
@@ -31,8 +31,8 @@ mouse-driven camera controls and an ImGui control panel.
 | **Space** | Force re-render (reset accumulation buffer) |
 | **ESC** | Quit |
 
-Any camera change immediately resets sample accumulation and restarts at a low initial batch
-size. The batch size is then auto-scaled each frame to meet the `--target-fps` budget.
+Any camera change immediately resets sample accumulation. Rendering then continues using the
+current fixed `samples-per-batch` value.
 
 ---
 
@@ -40,8 +40,7 @@ size. The batch size is then auto-scaled each frame to meet the `--target-fps` b
 
 | Flag | Default | Effect |
 |---|---|---|
-| `--samples-per-batch <n>` | 50 | Quality ceiling: the auto-scheduler will never exceed this many samples per batch |
-| `--target-fps <fps>` | 60 | Minimum frame rate target — the batch size auto-scales every frame to stay at or above this |
+| `--samples-per-batch <n>` | 10 | Fixed samples per batch for interactive rendering |
 | `--adaptive-depth` | off | Progressively increase max bounce depth per stage |
 | `--no-adaptive-sampling` | off | Disable converged-pixel skipping (adaptive sampling) |
 | `--no-auto-accumulate` | off | Disable automatic sample increase when stationary |
@@ -50,13 +49,13 @@ size. The batch size is then auto-scaled each frame to meet the `--target-fps` b
 
 ```bash
 ./rayon --scene ../resources/scenes/09_color_bleed_box.yaml \
-        --target-fps 30 --adaptive-depth
+    --samples-per-batch 24 --adaptive-depth
 ```
 
 **Example: very responsive orbit for scene exploration:**
 
 ```bash
-./rayon --samples-per-batch 4 --target-fps 120 --no-auto-accumulate
+./rayon --samples-per-batch 4 --no-auto-accumulate
 ```
 
 ---
@@ -65,9 +64,14 @@ size. The batch size is then auto-scaled each frame to meet the `--target-fps` b
 
 While the scene is rendering, a panel in the top-right corner of the window provides live controls:
 
+The performance section includes a single combined history graph for throughput and time per pass
+so short-term responsiveness and rendering cost can be compared in one view. Hovering the graph
+shows the sampled values at that point in history, and the latest values are listed directly under
+the plot.
+
 | Control | Effect | Notes |
 |---|---|---|
-| **Samples** slider | Quality ceiling for the adaptive batch scheduler (`--samples-per-batch`) | Does **not** trigger a full reset; auto-scheduler immediately respects the new ceiling |
+| **Samples** slider | Fixed samples per batch (`--samples-per-batch`) | Does **not** trigger a full reset; the new batch size is used immediately |
 | **Max samples** slider | Upper limit for auto-accumulate | — |
 | **Light intensity** | Scales area light emission | **No reset required** — updates via `cudaMemcpyToSymbol` |
 | **Roughness** | Material roughness | Triggers reset |

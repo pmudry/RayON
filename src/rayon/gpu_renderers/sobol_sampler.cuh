@@ -295,4 +295,60 @@ __device__ __forceinline__ float pcg_rand_float(uint32_t &seed)
    return result * (1.0f / 4294967296.0f);
 }
 
+//------------------------------------------------------------------------------
+// MurmurHash3 fmix32 — full avalanche finalizer.
+// Every output bit depends on every input bit; required for independent per-use seeds.
+//------------------------------------------------------------------------------
+__device__ __forceinline__ uint32_t fmix32(uint32_t h)
+{
+   h ^= h >> 16;
+   h *= 0x85ebca6bu;
+   h ^= h >> 13;
+   h *= 0xc2b2ae35u;
+   h ^= h >> 16;
+   return h;
+}
+
+//------------------------------------------------------------------------------
+// Owen-scrambled 2D (0,2)-sequence Sobol sample.
+//
+// This is the approach from "Stratified Sampling for Stochastic Transparency"
+// (Laine & Karras) and the ShaderToy reference implementation:
+//
+//   1. Derive independent per-use seeds from (pixel_hash, bounce, effect)
+//   2. Shuffle the sample index per-pixel — different pixels explore different
+//      permutations of the same Sobol sequence (cross-pixel decorrelation)
+//   3. Look up dims 0 & 1 of the Joe-Kuo (0,2) table at the shuffled index
+//   4. Owen-scramble each component independently
+//
+// Result: adjacent pixels get completely independent 2D Sobol samples even at
+// 1 spp, and each (bounce, effect) pair gets its own decorrelated sequence.
+//------------------------------------------------------------------------------
+__device__ __forceinline__ float2 sobol_2d_sample(uint32_t sample_n, uint32_t bounce, uint32_t effect,
+                                                   uint32_t pixel_hash)
+{
+   // Master seed: unique per (pixel, bounce, effect)
+   uint32_t seed = fmix32(pixel_hash ^ (bounce * 0x9e3779b9u));
+   seed          = fmix32(seed       ^ (effect * 0x517cc1b7u));
+
+   uint32_t shuffle_seed = fmix32(seed ^ 0u);  // index permutation
+   uint32_t x_seed       = fmix32(seed ^ 1u);  // x value scramble
+   uint32_t y_seed       = fmix32(seed ^ 2u);  // y value scramble
+
+   // Shuffle the sample index: owen_scramble is a bijection preserving the
+   // (0,2)-net stratification property, giving per-pixel sequence permutations.
+   uint32_t shuffled_n = owen_scramble(sobol_gray(sample_n), shuffle_seed);
+
+   // 2D Sobol point from the canonical best-projecting pair (dims 0 and 1)
+   uint32_t x_raw = sobol_uint(shuffled_n, 0);
+   uint32_t y_raw = sobol_uint(shuffled_n, 1);
+
+   // Owen-scramble each component with its own seed
+   x_raw = owen_scramble(x_raw, x_seed);
+   y_raw = owen_scramble(y_raw, y_seed);
+
+   constexpr float scale = 1.0f / 4294967296.0f;
+   return {x_raw * scale, y_raw * scale};
+}
+
 #endif // __CUDACC__

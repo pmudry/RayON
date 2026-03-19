@@ -218,6 +218,9 @@ class SDLGuiHandler
       if (show_controls)
       {
          ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_Always);
+         // Keep a stable panel width so opening sections doesn't cause horizontal jitter.
+         const float panel_width = 300.0f;
+         ImGui::SetNextWindowSizeConstraints(ImVec2(panel_width, 0.0f), ImVec2(panel_width, 10000.0f));
          if (window_collapse_requested)
          {
             window_collapsed = !window_collapsed;
@@ -227,6 +230,13 @@ class SDLGuiHandler
          if (ImGui::Begin("RayON - Interactive UI", nullptr,
                           ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove))
          {
+            auto pushSliderWidth = []()
+            {
+               const float width_from_layout = ImGui::GetContentRegionAvail().x * 0.7f;
+               const float clamped_width = std::clamp(width_from_layout, 120.0f, 240.0f);
+               ImGui::PushItemWidth(clamped_width);
+            };
+
             // --- Performance Monitoring ---
             if (reset_headers)
                ImGui::SetNextItemOpen(!collapse_headers);
@@ -243,31 +253,15 @@ class SDLGuiHandler
                   ImGui::Text("Throughput: %.0f S/s", sps);
                ImGui::Text("Time/Pass: %.3f ms", ms_per_sample);
 
-               // Batch size quality ceiling and FPS target
+               // Fixed batch size and motion batch cap
                if (samples_per_batch)
                {
-                  ImGui::SliderFloat("Max Samples/Batch", samples_per_batch, 4.0f, 500.0f, "%.0f");
-                  ImGui::SetItemTooltip("Quality ceiling for the adaptive scheduler.\nThe batch size auto-scales down to hit the FPS target.");
+                  pushSliderWidth();
+                  ImGui::SliderFloat("Samples/Batch", samples_per_batch, 1.0f, 100.0f, "%.0f");
+                  ImGui::PopItemWidth();
+                  ImGui::SetItemTooltip("Fixed samples per batch while the camera is still.");
                }
-               if (target_fps_ptr)
-               {
-                  ImGui::SliderInt("Target FPS", target_fps_ptr, 5, 240);
-                  ImGui::SetItemTooltip("Minimum frame rate to maintain.\nThe batch size adapts every frame to stay at or above this.");
-               }
-               ImGui::SameLine();
-               if (ImGui::SmallButton("-##graph_dt"))
-               {
-                  perf_sample_interval_ms = (perf_sample_interval_ms > 20) ? perf_sample_interval_ms - 20 : 20;
-                  last_perf_sample_time_ms = 0;
-               }
-               ImGui::SameLine();
-               if (ImGui::SmallButton("+##graph_dt"))
-               {
-                  perf_sample_interval_ms = (perf_sample_interval_ms < 1000) ? perf_sample_interval_ms + 20 : 1000;
-                  last_perf_sample_time_ms = 0;
-               }
-
-               if (sps > 0.0f)
+               if (sps > 0.0f || ms_per_sample > 0.0f)
                {
                   const Uint32 now_ms = SDL_GetTicks();
                   if (last_perf_sample_time_ms == 0 || now_ms - last_perf_sample_time_ms >= perf_sample_interval_ms)
@@ -293,23 +287,102 @@ class SDLGuiHandler
                {
                   const int n = static_cast<int>(sps_history.size());
 
-                  float max_sps = 0.0f;
-                  for (float f : sps_history)
-                     max_sps = std::max(max_sps, f);
+                  auto maxHistoryValue = [](const std::vector<float> &history)
+                  {
+                     float max_value = 0.0f;
+                     for (float value : history)
+                        max_value = std::max(max_value, value);
+                     return max_value;
+                  };
 
-                  ImGui::PushStyleColor(ImGuiCol_PlotLines, ImVec4(0.0f, 1.0f, 0.0f, 1.0f));
-                  ImGui::PlotLines("Live SPS", sps_history.data(), n, perf_write_index, nullptr,
-                                   0.0f, max_sps * 1.1f, ImVec2(ImGui::CalcItemWidth(), 50));
-                  ImGui::PopStyleColor();
+                  const float max_sps = std::max(maxHistoryValue(sps_history), 1.0f);
+                  const float max_ms = std::max(maxHistoryValue(ms_history), 1.0f);
+                  const int latest_index = (perf_write_index + n - 1) % n;
 
-                  float max_ms = 0.0f;
-                  for (float f : ms_history)
-                     max_ms = std::max(max_ms, f);
+                  auto formatSpsValue = [](float value)
+                  {
+                     char buffer[32];
+                     if (value >= 1e9f)
+                        std::snprintf(buffer, sizeof(buffer), "%.2f GS/s", static_cast<double>(value * 1e-9f));
+                     else if (value >= 1e6f)
+                        std::snprintf(buffer, sizeof(buffer), "%.2f MS/s", static_cast<double>(value * 1e-6f));
+                     else if (value >= 1e3f)
+                        std::snprintf(buffer, sizeof(buffer), "%.1f kS/s", static_cast<double>(value * 1e-3f));
+                     else
+                        std::snprintf(buffer, sizeof(buffer), "%.0f S/s", static_cast<double>(value));
+                     return std::string(buffer);
+                  };
 
-                  ImGui::PushStyleColor(ImGuiCol_PlotLines, ImVec4(1.0f, 0.7f, 0.0f, 1.0f));
-                  ImGui::PlotLines("Time/Sample", ms_history.data(), n, perf_write_index, nullptr,
-                                   0.0f, max_ms * 1.1f, ImVec2(ImGui::CalcItemWidth(), 50));
-                  ImGui::PopStyleColor();
+                  ImGui::TextUnformatted("Performance History (normalized)");
+                  ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "SPS");
+                  ImGui::SameLine();
+                  ImGui::TextUnformatted("/");
+                  ImGui::SameLine();
+                  ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.0f, 1.0f), "Time/Pass");
+
+                  const ImVec2 graph_size(std::max(ImGui::GetContentRegionAvail().x, 1.0f), 80.0f);
+                  const ImVec2 graph_pos = ImGui::GetCursorScreenPos();
+                  ImGui::InvisibleButton("##perf_history_graph", graph_size);
+
+                  ImDrawList *draw = ImGui::GetWindowDrawList();
+                  const ImU32 bg_col = IM_COL32(18, 18, 18, 160);
+                  const ImU32 border_col = IM_COL32(110, 110, 110, 180);
+                  const ImU32 grid_col = IM_COL32(90, 90, 90, 70);
+                  const ImVec2 graph_min = graph_pos;
+                  const ImVec2 graph_max(graph_pos.x + graph_size.x, graph_pos.y + graph_size.y);
+
+                  draw->AddRectFilled(graph_min, graph_max, bg_col, 4.0f);
+                  draw->AddRect(graph_min, graph_max, border_col, 4.0f);
+
+                  for (int grid = 1; grid < 4; ++grid)
+                  {
+                     const float y = graph_min.y + (graph_size.y * static_cast<float>(grid) / 4.0f);
+                     draw->AddLine(ImVec2(graph_min.x, y), ImVec2(graph_max.x, y), grid_col);
+                  }
+
+                  auto drawHistoryLine = [&](const std::vector<float> &history, float max_value, ImU32 color)
+                  {
+                     if (history.size() < 2)
+                        return;
+
+                     for (int i = 1; i < n; ++i)
+                     {
+                        const int prev_index = (perf_write_index + i - 1) % n;
+                        const int curr_index = (perf_write_index + i) % n;
+                        const float prev_value = history[prev_index] / max_value;
+                        const float curr_value = history[curr_index] / max_value;
+
+                        const float x0 = graph_min.x + (graph_size.x * static_cast<float>(i - 1) / static_cast<float>(n - 1));
+                        const float x1 = graph_min.x + (graph_size.x * static_cast<float>(i) / static_cast<float>(n - 1));
+                        const float y0 = graph_max.y - prev_value * graph_size.y;
+                        const float y1 = graph_max.y - curr_value * graph_size.y;
+                        draw->AddLine(ImVec2(x0, y0), ImVec2(x1, y1), color, 1.0f);
+                     }
+                  };
+
+                  drawHistoryLine(sps_history, max_sps, IM_COL32(0, 255, 0, 255));
+                  drawHistoryLine(ms_history, max_ms, IM_COL32(255, 179, 0, 255));
+
+                  if (ImGui::IsItemHovered())
+                  {
+                     const ImVec2 mouse = ImGui::GetIO().MousePos;
+                     const float graph_width = std::max(graph_size.x, 1.0f);
+                     const float t = std::clamp((mouse.x - graph_min.x) / graph_width, 0.0f, 1.0f);
+                     const int sample_offset = (n <= 1) ? 0 : static_cast<int>(std::lround(t * static_cast<float>(n - 1)));
+                     const int history_index = (perf_write_index + sample_offset) % n;
+                     const int age = n - 1 - sample_offset;
+                     const Uint32 age_ms = static_cast<Uint32>(age) * perf_sample_interval_ms;
+
+                     ImGui::BeginTooltip();
+                     ImGui::Text("History sample: -%u ms", age_ms);
+                     ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "SPS: %s", formatSpsValue(sps_history[history_index]).c_str());
+                     ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.0f, 1.0f), "Time/Pass: %.3f ms", ms_history[history_index]);
+                     ImGui::EndTooltip();
+                  }
+
+                  ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "SPS  %s", formatSpsValue(sps_history[latest_index]).c_str());
+                  ImGui::SameLine();
+                  ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.0f, 1.0f), "Time  %.3f ms", ms_history[latest_index]);
                }
 
             }
@@ -338,10 +411,12 @@ class SDLGuiHandler
                         float log_val = log10f(*adaptive_threshold);
                         char label[32];
                         snprintf(label, sizeof(label), "10^%.1f", log_val);
+                        pushSliderWidth();
                         if (ImGui::SliderFloat("Threshold", &log_val, -6.0f, -1.0f, label))
                         {
                            *adaptive_threshold = powf(10.0f, log_val);
                         }
+                        ImGui::PopItemWidth();
                      }
                      if (show_heatmap)
                         ImGui::Checkbox("Show Sample Heatmap", show_heatmap);
@@ -379,15 +454,19 @@ class SDLGuiHandler
 
                   if (!(*dof_enabled))
                      ImGui::BeginDisabled();
+                  pushSliderWidth();
                   ImGui::SliderFloat("Aperture", aperture, 0.0f, 1.0f, "%.2f");
                   ImGui::SliderFloat("Focus Dist", focus_dist, 0.1f, 100.0f, "%.1f");
+                  ImGui::PopItemWidth();
                   if (!(*dof_enabled))
                      ImGui::EndDisabled();
                }
 
                if (cam_fov)
                {
+                  pushSliderWidth();
                   ImGui::SliderFloat("FOV", cam_fov, 10.0f, 140.0f, "%.1f");
+                  ImGui::PopItemWidth();
                }
 
                if (cam_pos && cam_lookat)
@@ -415,10 +494,12 @@ class SDLGuiHandler
 
                if (light_intensity && background_intensity && metal_fuzziness && glass_ior)
                {
+                  pushSliderWidth();
                   ImGui::SliderFloat("Light Intensity", light_intensity, 0.1f, 3.0f, "%.1f");
                   ImGui::SliderFloat("Ambient Light", background_intensity, 0.0f, 5.0f, "%.2f");
                   ImGui::SliderFloat("Metal Fuzz", metal_fuzziness, 0.0f, 5.0f, "%.2f");
                   ImGui::SliderFloat("Glass IOR", glass_ior, 1.0f, 2.5f, "%.2f");
+                  ImGui::PopItemWidth();
                }
 
                ImGui::Separator();
@@ -441,9 +522,11 @@ class SDLGuiHandler
 
                   if (*show_normal_arrows)
                   {
+                     pushSliderWidth();
                      ImGui::SliderInt("Arrow Count", normal_arrow_count, 40, 2500);
                      ImGui::SliderFloat("Arrow Scale", normal_arrow_scale, 0.2f, 1.8f, "%.2f");
                      ImGui::SliderFloat("Arrow Thickness", normal_arrow_thickness, 1.0f, 2.5f, "%.1f");
+                     ImGui::PopItemWidth();
                   }
                }
                else if (visualization_mode)
@@ -468,12 +551,14 @@ class SDLGuiHandler
                   if (golf_dimple_count && golf_dimple_radius && golf_dimple_depth)
                   {
                      ImGui::SeparatorText("Golf Ball Dimples");
+                     pushSliderWidth();
                      ImGui::SliderInt("Dimple Count##golf", golf_dimple_count, 50, 400);
                      ImGui::SetItemTooltip("Number of dimples.\nHigher values are more expensive per hit.");
                      ImGui::SliderFloat("Dimple Radius##golf", golf_dimple_radius, 0.05f, 0.6f, "%.3f");
                      ImGui::SetItemTooltip("Angular radius of each dimple (radians).");
                      ImGui::SliderFloat("Dimple Depth##golf", golf_dimple_depth, 0.0f, 1.0f, "%.3f");
                      ImGui::SetItemTooltip("Depth of each dimple (displacement scale).");
+                     ImGui::PopItemWidth();
                   }
                }
             }

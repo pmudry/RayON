@@ -194,6 +194,15 @@ __global__ void __launch_bounds__(256) renderAccKernel(float4 *accum_buffer, con
 
    curandState *local_rand_state = &rand_states[pixel_idx];
 
+   // Extract per-pixel Sobol state for use in rand_float2() calls below.
+   // In PCG mode pixel_hash is unused (rand_float2 falls back to rand_float).
+   uint32_t pixel_hash = 0u;
+   if (g_use_sobol)
+   {
+      SobolSamplerState *ss = reinterpret_cast<SobolSamplerState *>(local_rand_state);
+      pixel_hash = ss->pixel_hash;
+   }
+
    f3 camera_center(cam_center_x, cam_center_y, cam_center_z);
    f3 pixel00_loc(pixel00_x, pixel00_y, pixel00_z);
    f3 pixel_delta_u(delta_u_x, delta_u_y, delta_u_z);
@@ -220,12 +229,15 @@ __global__ void __launch_bounds__(256) renderAccKernel(float4 *accum_buffer, con
    // --- Trace new samples ---
    for (int s = 0; s < samples_to_add; s++)
    {
-      // Reset Sobol dimension counter for each new sample.
-      // In PCG mode this is a no-op (branch compiled away when g_use_sobol == false).
-      reset_sobol_state_for_sample(local_rand_state, (uint32_t)(total_samples_so_far + s));
+      // Reset Sobol state for this sample (sets sample_n and resets dim_idx).
+      // In PCG mode this is a no-op.
+      const uint32_t sample_n = (uint32_t)(total_samples_so_far + s);
+      reset_sobol_state_for_sample(local_rand_state, sample_n);
 
-      float offset_u = rand_float(local_rand_state) - 0.5f;
-      float offset_v = rand_float(local_rand_state) - 0.5f;
+      // AA jitter: 2D Sobol pair at (bounce=0, effect=AA)
+      float2 aa  = rand_float2(local_rand_state, sample_n, pixel_hash, 0u, SOBOL_EFFECT_AA);
+      float offset_u = aa.x - 0.5f;
+      float offset_v = aa.y - 0.5f;
 
       f3 pixel_center = pixel00_loc + ((float)x + offset_u) * pixel_delta_u + ((float)y + offset_v) * pixel_delta_v;
       f3 ray_direction = pixel_center - camera_center;
@@ -239,8 +251,12 @@ __global__ void __launch_bounds__(256) renderAccKernel(float4 *accum_buffer, con
          f3 normalized_dir = normalize(ray_direction);
          f3 focus_point = camera_center + g_dof_focus_distance * normalized_dir;
 
-         // Offset ray origin randomly on aperture disk
-         f3 aperture_offset = sample_aperture_disk(cam_u, cam_v, local_rand_state);
+         // DOF aperture disk: 2D Sobol pair mapped via polar method (no rejection).
+         // u -> angle (phi = 2π*u), v -> radius (r = sqrt(v)*aperture)
+         float2 dof = rand_float2(local_rand_state, sample_n, pixel_hash, 0u, SOBOL_EFFECT_DOF);
+         float phi  = 2.0f * CUDART_PI_F * dof.x;
+         float r    = g_dof_aperture * sqrtf(dof.y);
+         f3 aperture_offset = r * (cosf(phi) * cam_u + sinf(phi) * cam_v);
          ray_origin = camera_center + aperture_offset;
 
          // Ray from offset origin to focus point
@@ -248,7 +264,7 @@ __global__ void __launch_bounds__(256) renderAccKernel(float4 *accum_buffer, con
       }
 
       ray_simple r(ray_origin, ray_direction);
-      f3 sample_color = ray_color(r, *scene, local_rand_state, max_depth
+      f3 sample_color = ray_color(r, *scene, local_rand_state, max_depth, sample_n, pixel_hash
 #ifdef DIAGS
                                   ,
                                   local_ray_count

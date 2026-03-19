@@ -35,10 +35,7 @@ class RendererCUDAProgressive : public IRenderer
    struct Settings
    {
       int samples_per_batch = constants::INTERACTIVE_SAMPLES_PER_BATCH;
-      int motion_samples = constants::INTERACTIVE_MOTION_SAMPLES; // kept for CLI compat; not used for scheduling
-      int target_fps = 60;
       bool auto_accumulate = true;
-      bool adaptive_depth = false;
       bool adaptive_sampling = true;
       bool hdr_cache = true; ///< use .hdrcache sidecar to speed up repeated HDR loads
       GuiTheme theme = GuiTheme::NORD;
@@ -52,9 +49,7 @@ class RendererCUDAProgressive : public IRenderer
    void render(const RenderRequest &request, RenderContext &context) override
    {
       int samples_per_batch = settings_.samples_per_batch;
-      int target_fps = settings_.target_fps;
       bool auto_accumulate = settings_.auto_accumulate;
-      bool adaptive_depth = settings_.adaptive_depth;
       const bool hdr_cache = settings_.hdr_cache;
 
       auto &camera = request.camera;
@@ -118,7 +113,6 @@ class RendererCUDAProgressive : public IRenderer
 
       // Adaptive sample rate
       int adaptive_samples_per_batch = samples_per_batch;
-      int user_samples_per_batch = samples_per_batch;
 
       // Runtime-tweakable procedural pattern parameters (declared before applySceneSettings)
       bool scene_has_golf_ball      = false;
@@ -700,9 +694,6 @@ class RendererCUDAProgressive : public IRenderer
             current_samples = 0;
             force_immediate_render = true;
 
-            // Cap batch size so the first motion frame is responsive
-            adaptive_samples_per_batch = std::clamp(adaptive_samples_per_batch, 4, 8);
-
             last_camera_change_time = now;
             is_camera_moving = true;
 
@@ -753,8 +744,7 @@ class RendererCUDAProgressive : public IRenderer
             force_immediate_render = false;
 
             syncSamplesFromSlider();
-            user_samples_per_batch = samples_per_batch;
-            adaptive_samples_per_batch = std::min(adaptive_samples_per_batch, user_samples_per_batch);
+            adaptive_samples_per_batch = samples_per_batch;
 
             auto frame_start = std::chrono::high_resolution_clock::now();
 
@@ -765,7 +755,7 @@ class RendererCUDAProgressive : public IRenderer
             }
 
             renderBatch(frame, display_view, current_samples, max_samples, adaptive_samples_per_batch, gamma,
-                        d_rand_states, d_accum_buffer, gpu_scene, is_camera_moving, adaptive_depth, context,
+                        d_rand_states, d_accum_buffer, gpu_scene, is_camera_moving, context,
                         adaptive_sampling_enabled ? d_pixel_sample_counts : nullptr,
                         min_adaptive_samples, adaptive_threshold);
 
@@ -779,11 +769,6 @@ class RendererCUDAProgressive : public IRenderer
                current_sps = (total_samples * 1000.0f) / frame_time.count();
                // ms per sample-pass (one pass = all pixels get one more sample)
                current_ms_per_sample = frame_time.count() / static_cast<float>(adaptive_samples_per_batch);
-               // Adaptive controller: scale batch size each frame to maintain target_fps
-               const float target_ms = 1000.0f / static_cast<float>(target_fps);
-               const float scale = std::clamp(target_ms / frame_time.count(), 0.5f, 2.0f);
-               int new_batch = std::max(4, static_cast<int>(std::lround(static_cast<float>(adaptive_samples_per_batch) * scale)));
-               adaptive_samples_per_batch = std::min(new_batch, user_samples_per_batch);
             }
 
             // Update convergence percentage for GUI display (every 10th frame to avoid overhead)
@@ -857,7 +842,7 @@ class RendererCUDAProgressive : public IRenderer
                            &adaptive_sampling_enabled, &adaptive_threshold, convergence_pct, &show_heatmap,
                            &visualization_mode, &show_normal_arrows, &normal_arrow_count,
                            &normal_arrow_scale, &normal_arrow_thickness, &show_spps_counter, tri_count,
-                           &target_fps,
+                           nullptr,
                            scene_has_golf_ball      ? &golf_dimple_count  : nullptr,
                            scene_has_golf_ball      ? &golf_dimple_radius : nullptr,
                            scene_has_golf_ball      ? &golf_dimple_depth  : nullptr,
@@ -968,35 +953,6 @@ class RendererCUDAProgressive : public IRenderer
    Settings settings_{};
 
    /**
-    * @brief Calculate progressive max depth based on accumulated samples
-    */
-   int calculateProgressiveMaxDepth(int current_samples, bool is_moving, int max_depth) const
-   {
-      return is_moving ? max_depth / 2 : max_depth;
-      // if (is_moving)
-      //    return 4;
-
-      // if (current_samples <= 4)
-      //    return 4;
-      // else if (current_samples <= 16)
-      //    return 5;
-      // else if (current_samples <= 32)
-      //    return 6;
-      // else if (current_samples <= 64)
-      //    return 7;
-      // else if (current_samples <= 128)
-      //    return 8;
-      // else if (current_samples <= 256)
-      //    return 16;
-      // else if (current_samples <= 512)
-      //    return 16;
-      // else if (current_samples <= 1024)
-      //    return 24;
-      // else
-      //    return std::min(512, max_depth);
-   }
-
-   /**
     * @brief Render a batch of samples using CUDA
     *
     * The accumulation buffer stays entirely on GPU. After rendering, gamma correction
@@ -1004,7 +960,7 @@ class RendererCUDAProgressive : public IRenderer
     */
    void renderBatch(const CameraFrame &frame, RenderTargetView display_target, int &current_samples, int max_samples,
                     int samples_per_batch, float gamma, void *&d_rand_states, void *&d_accum_buffer,
-                    CudaScene::Scene *gpu_scene, bool is_moving, bool adaptive_depth, RenderContext &context,
+                    CudaScene::Scene *gpu_scene, bool is_moving, RenderContext &context,
                     void *d_pixel_sample_counts = nullptr, int min_adaptive_samples = 32,
                     float adaptive_threshold = 0.01f)
    {
@@ -1016,9 +972,7 @@ class RendererCUDAProgressive : public IRenderer
 
       int actual_samples_to_add = current_samples - samples_before_batch;
 
-      const int progressive_depth =
-          adaptive_depth ? calculateProgressiveMaxDepth(current_samples, is_moving, frame.max_depth)
-                         : frame.max_depth;
+      const int progressive_depth = frame.max_depth;
 
       // Call CUDA to render and accumulate samples — accum buffer stays on GPU (pass nullptr for host buffer)
       unsigned long long cuda_ray_count = ::renderPixelsCUDAAccumulative(

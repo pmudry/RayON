@@ -110,8 +110,7 @@ Rendered images are saved automatically to `build/rendered_images/` as timestamp
 | `-s <n>` | 64 | Samples per pixel (offline modes 0–2, 4) |
 | `-r <h>` | 720 | Image height; aspect ratio 16:9 auto-applied (`-r 1080`) |
 | `-r <WxH>` | — | Arbitrary resolution (`-r 1920x1080`, `-r 800x600`) |
-| `--samples-per-batch <n>` | 50 | Quality ceiling for the adaptive batch scheduler (interactive mode) |
-| `--target-fps <n>` | 60 | Target frame rate; batch size auto-scales every frame to meet this budget |
+| `--samples-per-batch <n>` | 10 | Fixed samples per batch for interactive mode |
 | `--adaptive-depth` | off | Progressively increase max ray bounce depth |
 | `--no-adaptive-sampling` | off | Disable converged-pixel skipping (adaptive sampling) |
 | `--no-auto-accumulate` | off | Disable automatic sample accumulation when stationary |
@@ -128,8 +127,8 @@ Rendered images are saved automatically to `build/rendered_images/` as timestamp
 # Fast preview (offline)
 ./rayon -m 2 --scene ../resources/scenes/default_scene.yaml -s 8 -r 360
 
-# Interactive session, 30 fps budget, adaptive depth
-./rayon --scene ../resources/scenes/default_scene.yaml --target-fps 30 --adaptive-depth
+# Interactive session with manual batch size
+./rayon --scene ../resources/scenes/default_scene.yaml --samples-per-batch 12 --adaptive-depth
 # > interactive window opens directly (mode 3)
 
 # Interactive with custom theme and no adaptive sampling

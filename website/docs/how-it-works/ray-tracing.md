@@ -117,8 +117,8 @@ A Monte Carlo estimator converges at rate \(\mathcal{O}(1/\sqrt{N})\):
 - **100 samples** → 10× reduction
 - **10 000 samples** → 100× reduction
 
-This is why interactive mode starts at 8 SPP (noisy but immediately responsive) and accumulates
-progressively: the image *always* improves with time.
+This is why interactive mode accumulates progressively: the image *always* improves with time.
+The interactive renderer now uses the user-selected samples-per-batch value directly.
 
 ---
 

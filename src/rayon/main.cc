@@ -70,10 +70,7 @@ struct ProgramArgs
    int height = IMAGE_HEIGHT;
    int width = -1; // -1 means derive from height using 16:9
    int samples_per_batch = INTERACTIVE_SAMPLES_PER_BATCH;
-   int motion_samples = INTERACTIVE_MOTION_SAMPLES;
-   int target_fps = 60;
    bool auto_accumulate = true;
-   bool adaptive_depth = false;
    bool adaptive_sampling = true;
    bool hdr_cache = true;
    bool show_menu = false;
@@ -98,13 +95,8 @@ void dumpHelp()
    cout << "  -s <samples>           Samples per pixel (default: " << SAMPLES_PER_PIXEL << ")\n";
    cout << "\n";
    cout << "Interactive rendering (mode 3):\n";
-   cout << "  --samples-per-batch <n>   Max samples per batch (the renderer auto-adjusts down to hit\n";
-   cout << "                            --target-fps; this sets the quality ceiling, default: " << INTERACTIVE_SAMPLES_PER_BATCH << ")\n";
-   cout << "  --motion-samples <n>      Accepted for backward compat; no longer used (scheduling is\n";
-   cout << "                            now automatic via --target-fps)\n";
-   cout << "  --target-fps <fps>        Target interactive frame rate; batch size auto-scales to meet\n";
-   cout << "                            this budget (default: 60)\n";
-   cout << "  --adaptive-depth          Progressively increase max bounce depth\n";
+      cout << "  --samples-per-batch <n>   Fixed samples per batch for interactive rendering (default: "
+         << INTERACTIVE_SAMPLES_PER_BATCH << ")\n";
    cout << "  --no-adaptive-sampling    Disable converged-pixel skipping\n";
    cout << "  --no-auto-accumulate      Disable automatic sample accumulation\n";
    cout << "  --no-hdr-cache            Disable disk cache for HDR sky textures (always re-decode .hdr)\n";
@@ -199,10 +191,6 @@ ProgramArgs parseInput(int argc, char *argv[])
       {
          args.auto_accumulate = false;
       }
-      else if (strcmp(argv[i], "--adaptive-depth") == 0)
-      {
-         args.adaptive_depth = true;
-      }
       else if (strcmp(argv[i], "--no-adaptive-sampling") == 0)
       {
          args.adaptive_sampling = false;
@@ -236,26 +224,6 @@ ProgramArgs parseInput(int argc, char *argv[])
          {
             cerr << "Invalid samples-per-batch value: " << args.samples_per_batch << " (must be >= 1)\n";
             args.samples = -1; // Indicate error
-            return args;
-         }
-      }
-      else if (strcmp(argv[i], "--motion-samples") == 0 && i + 1 < argc)
-      {
-         args.motion_samples = atoi(argv[++i]);
-         if (args.motion_samples < 1)
-         {
-            cerr << "Invalid motion-samples value: " << args.motion_samples << " (must be >= 1)\n";
-            args.samples = -1;
-            return args;
-         }
-      }
-      else if (strcmp(argv[i], "--target-fps") == 0 && i + 1 < argc)
-      {
-         args.target_fps = atoi(argv[++i]);
-         if (args.target_fps < 1)
-         {
-            cerr << "Invalid target-fps value: " << args.target_fps << " (must be >= 1)\n";
-            args.samples = -1;
             return args;
          }
       }
@@ -313,7 +281,6 @@ int main(int argc, char *argv[])
    cout << "Using features : yaml_scene_loader, unified_scene_descriptions, cuda_optimization_1, BVH" << "\n";
    cout << "fast_rnd, thread_block_optimal, inlining, atomic_reduction, russian_roulette" << "\n";
    cout << "lambertian_cosine_weighted_hemisphere_sampling, lambertian_owen_hash_distribution" << "\n";
-   cout << "inter_adaptive_depth" << "\n\n";
 #endif
    cout << "Rendering at resolution: " << image_width << " x " << image_height << " pixels - ";
    cout << "Samples per pixel: " << args.samples << "\n\n";
@@ -430,10 +397,7 @@ int main(int argc, char *argv[])
       RendererCUDAProgressive renderer;
       RendererCUDAProgressive::Settings settings;
       settings.samples_per_batch = args.samples_per_batch;
-      settings.motion_samples = args.motion_samples;
-      settings.target_fps = args.target_fps;
       settings.auto_accumulate = args.auto_accumulate;
-      settings.adaptive_depth = args.adaptive_depth;
       settings.adaptive_sampling = args.adaptive_sampling;
       settings.hdr_cache = args.hdr_cache;
       settings.theme = parseThemeName(args.theme);
@@ -459,10 +423,7 @@ int main(int argc, char *argv[])
       RendererOptiXProgressive renderer;
       RendererOptiXProgressive::Settings settings;
       settings.samples_per_batch = args.samples_per_batch;
-      settings.motion_samples = args.motion_samples;
       settings.auto_accumulate = args.auto_accumulate;
-      settings.target_fps = args.target_fps;
-      settings.adaptive_depth = args.adaptive_depth;
       settings.adaptive_sampling = args.adaptive_sampling;
       settings.hdr_cache = args.hdr_cache;
       settings.theme = parseThemeName(args.theme);

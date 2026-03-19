@@ -1,13 +1,15 @@
 #!/bin/bash
 #
 # RayON Performance Benchmark Script
-# Runs the offline CUDA renderer on the default scene with fixed parameters
+# Runs the offline renderer on the default scene with fixed parameters
 # and records wall-clock time. Results are appended to a CSV for regression
 # tracking across git commits.
 #
 # Usage:
 #   ./scripts/benchmark.sh              # Run benchmark, append to CSV
 #   ./scripts/benchmark.sh --compare    # Run + compare against last recorded commit
+#   ./scripts/benchmark.sh --method cuda # Choose renderer: cuda (2) or optix (4)
+#   ./scripts/benchmark.sh --sampler sobol # Choose sampler: pcg or sobol
 #
 
 set -euo pipefail
@@ -21,22 +23,73 @@ BINARY="$BUILD_DIR/rayon"
 # Benchmark parameters
 SAMPLES=1024
 RESOLUTION=720
-METHOD=2  # CUDA offline
+METHOD=2  # 2 = CUDA offline, 4 = OptiX offline
+METHOD_NAME="cuda"
+SAMPLER=pcg
 WARMUP_RUNS=1
 BENCH_RUNS=3
 
 COMPARE=false
 
-for arg in "$@"; do
-    case "$arg" in
-        --compare) COMPARE=true ;;
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --compare)
+            COMPARE=true
+            shift
+            ;;
+        --method)
+            if [[ $# -lt 2 ]]; then
+                echo "Error: --method requires a value (cuda|2|optix|4)" >&2
+                exit 1
+            fi
+
+            case "$2" in
+                cuda|2)
+                    METHOD=2
+                    METHOD_NAME="cuda"
+                    ;;
+                optix|4)
+                    METHOD=4
+                    METHOD_NAME="optix"
+                    ;;
+                *)
+                    echo "Error: invalid --method '$2'. Valid values: cuda, 2, optix, 4" >&2
+                    exit 1
+                    ;;
+            esac
+            shift 2
+            ;;
+        --sampler)
+            if [[ $# -lt 2 ]]; then
+                echo "Error: --sampler requires a value (pcg|sobol)" >&2
+                exit 1
+            fi
+
+            case "$2" in
+                pcg|sobol)
+                    SAMPLER="$2"
+                    ;;
+                *)
+                    echo "Error: invalid --sampler '$2'. Valid values: pcg, sobol" >&2
+                    exit 1
+                    ;;
+            esac
+            shift 2
+            ;;
         --help|-h)
-            echo "Usage: $0 [--compare]"
+            echo "Usage: $0 [--compare] [--method <cuda|2|optix|4>] [--sampler <pcg|sobol>]"
             echo ""
-            echo "  --compare   Compare results against the last recorded commit"
+            echo "  --compare            Compare results against the last recorded commit"
+            echo "  --method <value>     Benchmark renderer method: cuda (2) or optix (4)"
+            echo "  --sampler <value>    Benchmark sampler: pcg (default) or sobol"
             echo ""
-            echo "Config: ${WARMUP_RUNS} warmup + ${BENCH_RUNS} timed runs @ ${RESOLUTION}p, ${SAMPLES} spp"
+            echo "Config: ${WARMUP_RUNS} warmup + ${BENCH_RUNS} timed runs @ ${RESOLUTION}p, ${SAMPLES} spp, method=${METHOD_NAME}(${METHOD}), sampler=${SAMPLER}"
             exit 0
+            ;;
+        *)
+            echo "Error: unknown argument '$1'" >&2
+            echo "Run '$0 --help' for usage." >&2
+            exit 1
             ;;
     esac
 done
@@ -66,19 +119,21 @@ echo "========================================"
 echo " Commit:     $COMMIT_LABEL ($GIT_BRANCH)"
 echo " GPU:        $GPU_NAME"
 echo " Resolution: ${RESOLUTION}p | Samples: ${SAMPLES} spp"
+echo " Method:     ${METHOD_NAME} (${METHOD})"
+echo " Sampler:    ${SAMPLER}"
 echo " Runs:       ${WARMUP_RUNS} warmup + ${BENCH_RUNS} timed"
 echo "========================================"
 echo ""
 
 # Create CSV header if file doesn't exist or is empty
 if [[ ! -s "$RESULTS_FILE" ]] || ! head -1 "$RESULTS_FILE" | grep -q "^timestamp,"; then
-    echo "timestamp,commit,branch,gpu,resolution,samples,run,time_s" > "$RESULTS_FILE"
+    echo "timestamp,commit,branch,gpu,resolution,samples,method,sampler,run,time_s" > "$RESULTS_FILE"
 fi
 
 # Warmup
 printf "Warmup...  "
 for ((w = 1; w <= WARMUP_RUNS; w++)); do
-    (cd "$BUILD_DIR" && ./rayon -m $METHOD -s $SAMPLES -r $RESOLUTION > /dev/null 2>&1) < /dev/null
+    (cd "$BUILD_DIR" && ./rayon -m $METHOD -s $SAMPLES -r $RESOLUTION --sampler $SAMPLER > /dev/null 2>&1) < /dev/null
     printf "done "
 done
 echo ""
@@ -88,14 +143,14 @@ times=()
 printf "Benchmark: "
 for ((r = 1; r <= BENCH_RUNS; r++)); do
     start=$(date +%s%N)
-    (cd "$BUILD_DIR" && ./rayon -m $METHOD -s $SAMPLES -r $RESOLUTION > /dev/null 2>&1) < /dev/null
+    (cd "$BUILD_DIR" && ./rayon -m $METHOD -s $SAMPLES -r $RESOLUTION --sampler $SAMPLER > /dev/null 2>&1) < /dev/null
     end=$(date +%s%N)
 
     t=$(echo "scale=3; ($end - $start) / 1000000000" | bc)
     printf "%ss " "$t"
     times+=("$t")
 
-    echo "$TIMESTAMP,$COMMIT_LABEL,$GIT_BRANCH,$GPU_NAME,$RESOLUTION,$SAMPLES,$r,$t" >> "$RESULTS_FILE"
+    echo "$TIMESTAMP,$COMMIT_LABEL,$GIT_BRANCH,$GPU_NAME,$RESOLUTION,$SAMPLES,${METHOD_NAME}(${METHOD}),$SAMPLER,$r,$t" >> "$RESULTS_FILE"
 done
 
 # Compute median
@@ -112,14 +167,15 @@ if $COMPARE; then
     echo " Comparison with previous commit"
     echo "========================================"
 
-    PREV_COMMIT=$(awk -F',' -v cur="$COMMIT_LABEL" 'NR>1 && $2!=cur && $2!="" {print $2}' "$RESULTS_FILE" | tail -1)
+    PREV_COMMIT=$(awk -F',' -v cur="$COMMIT_LABEL" -v method="${METHOD_NAME}(${METHOD})" -v sampler="$SAMPLER" \
+        'NR>1 && $2!=cur && $2!="" && $7==method && $8==sampler {print $2}' "$RESULTS_FILE" | tail -1)
 
     if [[ -z "$PREV_COMMIT" ]]; then
         echo "No previous commit data found. Run benchmark on another commit first."
     else
         # Get previous median
-        prev_median=$(awk -F',' -v commit="$PREV_COMMIT" \
-            'NR>1 && $2==commit {print $8}' "$RESULTS_FILE" \
+        prev_median=$(awk -F',' -v commit="$PREV_COMMIT" -v method="${METHOD_NAME}(${METHOD})" -v sampler="$SAMPLER" \
+            'NR>1 && $2==commit && $7==method && $8==sampler {print $NF}' "$RESULTS_FILE" \
             | sort -n | awk '{a[NR]=$1} END{if(NR>0){if(NR%2==1) print a[(NR+1)/2]; else print (a[NR/2]+a[NR/2+1])/2}}')
 
         if [[ -z "$prev_median" || "$prev_median" == "0" ]]; then

@@ -98,18 +98,20 @@ noise requires **quadrupling** the samples.
 
 ```bash
 cd /path/to/RayON
-bash bench.sh
+bash scripts/benchmark.sh --method cuda --sampler pcg
 # Results appended to bench_results.csv
 ```
 
 The script launches three sequential renders of the default scene, records GPU, resolution, samples,
-commit hash, branch, and wall-clock render time to `bench_results.csv`:
+renderer method, sampler, commit hash, branch, and wall-clock render time to `bench_results.csv`.
+Supported methods are `cuda` (`-m 2`) and `optix` (`-m 4`), and the default benchmark sampler is `pcg`.
+You can override sampler with `--sampler sobol`.
 
 ```csv
-timestamp,commit,branch,gpu,resolution,samples,run,time_s
-2026-03-12T21:39:52+01:00,ce8002d-dirty,main,NVIDIA GB10,720,1024,1,1.651
-2026-03-12T21:39:52+01:00,ce8002d-dirty,main,NVIDIA GB10,720,1024,2,1.787
-2026-03-12T21:39:52+01:00,ce8002d-dirty,main,NVIDIA GB10,720,1024,3,1.652
+timestamp,commit,branch,gpu,resolution,samples,method,sampler,run,time_s
+2026-03-12T21:39:52+01:00,ce8002d-dirty,main,NVIDIA GB10,720,1024,cuda(2),pcg,1,1.651
+2026-03-12T21:39:52+01:00,ce8002d-dirty,main,NVIDIA GB10,720,1024,cuda(2),pcg,2,1.787
+2026-03-12T21:39:52+01:00,ce8002d-dirty,main,NVIDIA GB10,720,1024,cuda(2),pcg,3,1.652
 ```
 
 ---

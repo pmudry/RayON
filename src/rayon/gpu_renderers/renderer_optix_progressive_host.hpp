@@ -69,10 +69,7 @@ class RendererOptiXProgressive : public IRenderer
    struct Settings
    {
       int samples_per_batch = constants::INTERACTIVE_SAMPLES_PER_BATCH;
-      int motion_samples = constants::INTERACTIVE_MOTION_SAMPLES;
       bool auto_accumulate = true;
-      int target_fps = 60;
-      bool adaptive_depth = false;
       bool adaptive_sampling = true; // no-op for OptiX; kept for UI parity
       bool hdr_cache = true; ///< use .hdrcache sidecar to speed up repeated HDR loads
       GuiTheme theme = GuiTheme::NORD;
@@ -87,8 +84,6 @@ class RendererOptiXProgressive : public IRenderer
    {
       int samples_per_batch = settings_.samples_per_batch;
       bool auto_accumulate = settings_.auto_accumulate;
-      int target_fps = settings_.target_fps;
-      bool adaptive_depth = settings_.adaptive_depth;
       const bool hdr_cache = settings_.hdr_cache;
 
       auto &camera = request.camera;
@@ -151,7 +146,6 @@ class RendererOptiXProgressive : public IRenderer
       const float motion_cooldown_seconds = 0.5f;
 
       int adaptive_samples_per_batch = samples_per_batch;
-      int user_samples_per_batch = samples_per_batch;
 
       // Overlay / visualization state (mirrors CUDA renderer)
       int visualization_mode = static_cast<int>(VisualizationMode::NORMAL);
@@ -606,8 +600,6 @@ class RendererOptiXProgressive : public IRenderer
             camera_changed = false;
             current_samples = 0;
             force_immediate_render = true;
-            // Cap batch size so the first motion frame is responsive
-            adaptive_samples_per_batch = std::clamp(adaptive_samples_per_batch, 4, 8);
             std::fill(accum_buffer.begin(), accum_buffer.end(), 0.0f);
             last_camera_change_time = now;
             is_camera_moving = true;
@@ -634,14 +626,13 @@ class RendererOptiXProgressive : public IRenderer
          {
             force_immediate_render = false;
             syncSamplesFromSlider();
-            user_samples_per_batch = samples_per_batch;
-            adaptive_samples_per_batch = std::min(adaptive_samples_per_batch, user_samples_per_batch);
+            adaptive_samples_per_batch = samples_per_batch;
 
             auto frame_start = std::chrono::high_resolution_clock::now();
 
             const int num_materials_active = static_cast<int>(active_scene.materials.size());
             renderBatch(frame, accum_buffer, display_view, current_samples, max_samples,
-                        adaptive_samples_per_batch, gamma, is_camera_moving, adaptive_depth, context,
+                        adaptive_samples_per_batch, gamma, is_camera_moving, context,
                         num_materials_active, background_intensity, dof_enabled, dof_aperture, dof_focus_distance,
                         light_intensity, metal_fuzziness, glass_refraction_index);
 
@@ -652,11 +643,6 @@ class RendererOptiXProgressive : public IRenderer
                float total_samples = static_cast<float>(adaptive_samples_per_batch) * image_width * image_height;
                current_sps = (total_samples * 1000.0f) / frame_time.count();
                current_ms_per_sample = frame_time.count() / static_cast<float>(adaptive_samples_per_batch);
-               // Adaptive controller: scale batch size each frame to maintain target_fps
-               const float target_ms = 1000.0f / static_cast<float>(target_fps);
-               const float scale = std::clamp(target_ms / frame_time.count(), 0.5f, 2.0f);
-               int new_batch = std::max(4, static_cast<int>(std::lround(static_cast<float>(adaptive_samples_per_batch) * scale)));
-               adaptive_samples_per_batch = std::min(new_batch, user_samples_per_batch);
             }
 
             base_display_image = display_image;
@@ -709,7 +695,7 @@ class RendererOptiXProgressive : public IRenderer
                            &adaptive_sampling_enabled, &adaptive_threshold, convergence_pct, &show_heatmap,
                            &visualization_mode, &show_normal_arrows, &normal_arrow_count,
                            &normal_arrow_scale, &normal_arrow_thickness, &show_spps_counter, tri_count,
-                           &target_fps,
+                           nullptr,
                            scene_has_golf_ball ? &golf_dimple_count  : nullptr,
                            scene_has_golf_ball ? &golf_dimple_radius : nullptr,
                            scene_has_golf_ball ? &golf_dimple_depth  : nullptr,
@@ -779,31 +765,25 @@ class RendererOptiXProgressive : public IRenderer
  private:
    Settings settings_{};
 
-   int calculateProgressiveMaxDepth(int current_samples, bool is_moving, int max_depth) const
-   {
-      return is_moving ? max_depth / 2 : max_depth;
-   }
-
    void renderBatch(const CameraFrame &frame, std::vector<float> &accum_buffer, RenderTargetView display_target,
                     int &current_samples, int max_samples, int samples_per_batch, float gamma,
-                    bool is_moving, bool adaptive_depth, RenderContext &context, int num_materials,
+                    bool is_moving, RenderContext &context, int num_materials,
                     float background_intensity, bool dof_enabled, float dof_aperture, float dof_focus_distance,
                     float light_intensity, float metal_fuzziness, float glass_ior_multiplier)
    {
       // If we've already reached or exceeded the maximum, do not render more samples.
       if (current_samples >= max_samples) return;
 
-      const int remaining       = max_samples - current_samples;
-      const int actual_samples  = std::min(samples_per_batch, remaining);
-      const int new_total_samples = current_samples + actual_samples;
+      const int remaining           = max_samples - current_samples;
+      const int actual_samples      = std::min(samples_per_batch, remaining);
+      const int samples_before_batch = current_samples; // total BEFORE adding this batch
+      const int new_total_samples   = current_samples + actual_samples;
 
-      const int depth = adaptive_depth
-                            ? calculateProgressiveMaxDepth(new_total_samples, is_moving, frame.max_depth)
-                            : frame.max_depth;
+      const int depth = frame.max_depth;
 
       unsigned long long ray_count = optixRendererLaunch(
           frame.image_width, frame.image_height, num_materials,
-          actual_samples, new_total_samples, depth,
+          actual_samples, samples_before_batch, depth,
           static_cast<float>(frame.camera_center.x()), static_cast<float>(frame.camera_center.y()),
           static_cast<float>(frame.camera_center.z()),
           static_cast<float>(frame.pixel00_loc.x()), static_cast<float>(frame.pixel00_loc.y()),
