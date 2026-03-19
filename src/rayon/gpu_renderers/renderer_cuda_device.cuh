@@ -37,6 +37,9 @@ extern "C"
    // Set global light intensity (affects area light emission)
    void setLightIntensity(float intensity);
 
+   // Set quasi-random sampler: true = Sobol' (default), false = PCG
+   void setSobolSampler(bool use_sobol);
+
    // Set background gradient intensity (sky brightness)
    void setBackgroundIntensity(float intensity);
 

@@ -33,6 +33,7 @@ extern "C"
    void optixRendererConvertAccumToDisplay(unsigned char *display_image, int width, int height,
                                            int channels, int num_samples, float gamma);
    void optixRendererCleanup();
+   void setOptiXSobolSampler(bool use_sobol);
 }
 
 class RendererOptiX : public IRenderer

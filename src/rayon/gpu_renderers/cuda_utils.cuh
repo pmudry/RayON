@@ -1,5 +1,6 @@
 #pragma once
 #include "cuda_float3.cuh"
+#include "sobol_sampler.cuh"
 #include <cmath>
 #include <cuda_runtime.h>
 #include <curand_kernel.h>
@@ -20,6 +21,24 @@
 //==============================================================================
 // RANDOMNESS
 //==============================================================================
+
+/**
+ * @brief Sobol sampler state overlaid on curandState (which is 48 bytes on GPU).
+ * Only 16 bytes are used, leaving plenty of room in the 48-byte curandState.
+ */
+struct SobolSamplerState
+{
+   uint32_t pixel_hash;  ///< Per-pixel stable hash (from pixel coords + scene seed)
+   uint32_t sample_idx;  ///< Gray-code encoded sample index — set by reset_sobol_state_for_sample()
+   uint32_t dim_idx;     ///< Auto-increments on every rand_float() call; resets to 0 each sample
+   uint32_t pcg_seed;    ///< PCG fallback seed used when dim_idx >= SOBOL_MAX_DIM
+};
+static_assert(sizeof(SobolSamplerState) <= sizeof(curandState),
+              "SobolSamplerState must fit inside curandState (48 bytes)");
+
+/// Runtime toggle — defined in cuda_utils.cu, set via setSobolSampler() extern-C call.
+extern __device__ bool g_use_sobol;
+
 /**
  * @brief Initialize random states for all threads
  * This kernel should be called once at startup to initialize the shared random state array
@@ -31,21 +50,54 @@
 __global__ void init_random_states(curandState *rand_states, int num_states, unsigned long long seed, int width);
 
 /**
- * @brief Generate random float in range [0,1) using fast PCG generator
- * Replaces slow curand_uniform with much faster custom RNG
+ * @brief Generate random float in [0,1) — Sobol' or PCG depending on g_use_sobol.
+ *
+ * Sobol path: evaluates dimension dim_idx of the scrambled Sobol sequence at
+ * sample_idx stored in the SobolSamplerState overlay.  dim_idx is incremented
+ * automatically.  Falls back to PCG when dim_idx >= SOBOL_MAX_DIM.
+ *
+ * PCG path: classic PCG32 one-liner, identical to the previous implementation.
  */
 static __device__ inline float rand_float(curandState *state)
 {
-   // Use curandState as storage for our FastRNG state
-   // We reinterpret the curandState pointer as containing our simple uint state
+   if (g_use_sobol)
+   {
+      SobolSamplerState *ss = reinterpret_cast<SobolSamplerState *>(state);
+      if (ss->dim_idx < (uint32_t)SOBOL_MAX_DIM)
+      {
+         float v = sobol_float(ss->sample_idx, (int)ss->dim_idx, ss->pixel_hash);
+         ss->dim_idx++;
+         return v;
+      }
+      // PCG fallback for dims beyond SOBOL_MAX_DIM
+      ss->pcg_seed = ss->pcg_seed * 747796405u + 2891336453u;
+      uint32_t word = ((ss->pcg_seed >> ((ss->pcg_seed >> 28u) + 4u)) ^ ss->pcg_seed) * 277803737u;
+      ss->dim_idx++;
+      return ((word >> 22u) ^ word) * (1.0f / 4294967296.0f);
+   }
+   // Original PCG path (fast, stateful, pseudorandom)
    unsigned int *fast_state = (unsigned int *)state;
-
-   // PCG hash inline for maximum speed
    *fast_state = *fast_state * 747796405u + 2891336453u;
    unsigned int word = ((*fast_state >> ((*fast_state >> 28u) + 4u)) ^ *fast_state) * 277803737u;
    unsigned int result = (word >> 22u) ^ word;
-
    return result * (1.0f / 4294967296.0f);
+}
+
+/**
+ * @brief Reset the Sobol state for a new sample.
+ * Must be called at the top of each per-sample loop iteration.
+ * In PCG mode this is a no-op.
+ * @param state  Per-pixel random state (interpretted as SobolSamplerState)
+ * @param n      Absolute sample index (0, 1, 2, ...) — converted to Gray code internally
+ */
+static __device__ inline void reset_sobol_state_for_sample(curandState *state, uint32_t n)
+{
+   if (g_use_sobol)
+   {
+      SobolSamplerState *ss = reinterpret_cast<SobolSamplerState *>(state);
+      ss->sample_idx = sobol_gray(n);
+      ss->dim_idx = 0u;
+   }
 }
 
 /**

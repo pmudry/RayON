@@ -654,6 +654,11 @@ static void buildGAS(const Scene::SceneDescription &scene)
 // PUBLIC INTERFACE (extern "C" for host renderer)
 //==============================================================================
 
+/// Runtime sampler toggle for OptiX — mirrors the CUDA renderer's g_use_sobol.
+static bool g_optix_use_sobol = true;
+
+extern "C" void setOptiXSobolSampler(bool use_sobol) { g_optix_use_sobol = use_sobol; }
+
 extern "C" void optixRendererInit() { initializeOptiX(); }
 
 extern "C" void optixRendererBuildScene(const Scene::SceneDescription &scene)
@@ -726,6 +731,7 @@ extern "C" unsigned long long optixRendererLaunch(int width, int height, int num
    launch_params.total_samples_so_far = total_samples_so_far;
    launch_params.max_depth = max_depth;
    launch_params.frame_seed = total_samples_so_far + 42;
+   launch_params.use_sobol  = g_optix_use_sobol;
    launch_params.materials = g_state.d_materials;
    launch_params.num_materials = num_materials;
    launch_params.d_textures = g_state.d_textures;

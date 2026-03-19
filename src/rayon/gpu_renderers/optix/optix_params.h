@@ -1,6 +1,7 @@
 // Shared data structures for OptiX host and device code
 #pragma once
 
+#include <cstdint>
 #include <cuda_runtime.h>
 
 #ifdef __CUDACC__
@@ -103,6 +104,7 @@ struct OptixLaunchParams
    int total_samples_so_far;
    int max_depth;
    unsigned int frame_seed;
+   bool use_sobol;  ///< Use Sobol' quasi-random sampler instead of PCG (default: true)
 
    // Scene
    OptixMaterialData *materials;
@@ -159,7 +161,10 @@ struct PRDRadiance
    float3 hit_k;               // ANISOTROPIC_METAL: complex IOR imaginary/extinction
    float hit_anisotropy;       // ANISOTROPIC_METAL: anisotropy ratio
    OptixMaterialType hit_material_type;
-   unsigned int seed;
+   unsigned int seed;          ///< PCG seed (stateful fallback RNG)
+   uint32_t sobol_sample_idx;  ///< Gray-code sample index for Sobol path
+   uint32_t sobol_dim_idx;     ///< Dimension counter — incremented per rand_float call
+   uint32_t sobol_pixel_hash;  ///< Per-pixel stable hash for Owen scrambling
    bool hit;
    bool front_face;
 };

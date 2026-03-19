@@ -77,6 +77,7 @@ struct ProgramArgs
    bool adaptive_sampling = true;
    bool hdr_cache = true;
    bool show_menu = false;
+   bool use_sobol = true; // Sobol' quasi-random sampler (false = classic PCG)
    const char *scene_file = nullptr;
    const char *theme = nullptr;
 };
@@ -107,6 +108,7 @@ void dumpHelp()
    cout << "  --no-adaptive-sampling    Disable converged-pixel skipping\n";
    cout << "  --no-auto-accumulate      Disable automatic sample accumulation\n";
    cout << "  --no-hdr-cache            Disable disk cache for HDR sky textures (always re-decode .hdr)\n";
+   cout << "  --sampler <sobol|pcg>     GPU sampler type: sobol = low-discrepancy (default), pcg = classic PRNG\n";
    cout << "  --theme <name>            GUI theme: light, classic, nord, dracula, gruvbox, catppuccin\n";
 }
 
@@ -208,6 +210,20 @@ ProgramArgs parseInput(int argc, char *argv[])
       else if (strcmp(argv[i], "--no-hdr-cache") == 0)
       {
          args.hdr_cache = false;
+      }
+      else if (strcmp(argv[i], "--sampler") == 0 && i + 1 < argc)
+      {
+         const char *sampler = argv[++i];
+         if (strcmp(sampler, "sobol") == 0)
+            args.use_sobol = true;
+         else if (strcmp(sampler, "pcg") == 0)
+            args.use_sobol = false;
+         else
+         {
+            cerr << "Unknown sampler '" << sampler << "'. Valid options: sobol, pcg\n";
+            args.samples = -1;
+            return args;
+         }
       }
       else if (strcmp(argv[i], "--scene") == 0 && i + 1 < argc)
       {
@@ -352,6 +368,13 @@ int main(int argc, char *argv[])
    }
 
    RndGen::set_seed(1984);
+
+   // Configure GPU sampler (Sobol' by default; ignored by CPU renderers)
+   setSobolSampler(args.use_sobol);
+   cout << "GPU sampler: " << (args.use_sobol ? "Sobol' (low-discrepancy)" : "PCG (classic PRNG)") << "\n\n";
+#ifdef OPTIX_FOUND
+   setOptiXSobolSampler(args.use_sobol);
+#endif
 
    Scene::SceneDescription scene_desc;
 

@@ -220,6 +220,10 @@ __global__ void __launch_bounds__(256) renderAccKernel(float4 *accum_buffer, con
    // --- Trace new samples ---
    for (int s = 0; s < samples_to_add; s++)
    {
+      // Reset Sobol dimension counter for each new sample.
+      // In PCG mode this is a no-op (branch compiled away when g_use_sobol == false).
+      reset_sobol_state_for_sample(local_rand_state, (uint32_t)(total_samples_so_far + s));
+
       float offset_u = rand_float(local_rand_state) - 0.5f;
       float offset_v = rand_float(local_rand_state) - 0.5f;
 

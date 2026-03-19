@@ -26,4 +26,9 @@ Surface Area Heuristic tree construction, GPU iterative traversal, and 64-byte c
 
 Why cosine-weighted sampling beats uniform sampling, and how the orthonormal basis maps directions to world space.
 </div>
+<div class="feature-card" markdown>
+**[Sobol' Quasi-Random Sampling](sobol-sampling.md)**
+
+How 128-dimensional Joe–Kuo direction vectors and Owen scrambling deliver faster convergence than pseudo-random PCG.
+</div>
 </div>

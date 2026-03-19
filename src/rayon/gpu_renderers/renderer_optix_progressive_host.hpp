@@ -60,6 +60,7 @@ extern "C"
    bool optixRendererUploadHdrEnv(const float *rgba_data, int w, int h);
    bool optixRendererUploadHdrEnvHalf(const uint16_t *rgba16, int w, int h);
    void optixRendererClearHdrEnv();
+   void setOptiXSobolSampler(bool use_sobol);
 }
 
 class RendererOptiXProgressive : public IRenderer

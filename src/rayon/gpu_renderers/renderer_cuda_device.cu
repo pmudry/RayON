@@ -311,7 +311,9 @@ extern "C" bool uploadHdrEnvironment(const float *rgba_data, int w, int h)
  * @param delta_u_x,y,z Pixel step in U direction
  * @param delta_v_x,y,z Pixel step in V direction
  * @param samples_to_add Number of new samples to add this iteration
- * @param total_samples_so_far Total samples accumulated INCLUDING this batch
+ * @param total_samples_so_far Total samples accumulated BEFORE this batch (exclusive).
+ *        The kernel uses this as the base Sobol sample index: sample s gets index (total_samples_so_far + s).
+ *        For one-shot rendering pass 0; for progressive rendering pass the count before the current batch.
  * @param max_depth Maximum ray bounce depth
  * @param d_rand_states_ptr Persistent device random states pointer
  * @param d_accum_buffer_ptr Persistent device accumulation buffer pointer (stays on device!)

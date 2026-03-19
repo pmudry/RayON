@@ -1008,14 +1008,13 @@ class RendererCUDAProgressive : public IRenderer
                     void *d_pixel_sample_counts = nullptr, int min_adaptive_samples = 32,
                     float adaptive_threshold = 0.01f)
    {
+      int samples_before_batch = current_samples; // total accumulated BEFORE this batch
       current_samples += samples_per_batch;
 
       if (current_samples > max_samples)
          current_samples = max_samples;
 
-      int actual_samples_to_add = samples_per_batch;
-      if (current_samples > max_samples)
-         actual_samples_to_add = max_samples - (current_samples - samples_per_batch);
+      int actual_samples_to_add = current_samples - samples_before_batch;
 
       const int progressive_depth =
           adaptive_depth ? calculateProgressiveMaxDepth(current_samples, is_moving, frame.max_depth)
@@ -1027,7 +1026,7 @@ class RendererCUDAProgressive : public IRenderer
           frame.camera_center.y(), frame.camera_center.z(), frame.pixel00_loc.x(), frame.pixel00_loc.y(),
           frame.pixel00_loc.z(), frame.pixel_delta_u.x(), frame.pixel_delta_u.y(), frame.pixel_delta_u.z(),
           frame.pixel_delta_v.x(), frame.pixel_delta_v.y(), frame.pixel_delta_v.z(), actual_samples_to_add,
-          current_samples, progressive_depth, &d_rand_states, &d_accum_buffer, frame.u.x(), frame.u.y(), frame.u.z(),
+          samples_before_batch, progressive_depth, &d_rand_states, &d_accum_buffer, frame.u.x(), frame.u.y(), frame.u.z(),
           frame.v.x(), frame.v.y(), frame.v.z(), d_pixel_sample_counts, min_adaptive_samples, adaptive_threshold);
 
       context.ray_counter.fetch_add(cuda_ray_count, std::memory_order_relaxed);

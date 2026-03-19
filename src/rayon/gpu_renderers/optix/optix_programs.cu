@@ -7,6 +7,9 @@
 #include <curand_kernel.h>
 
 #include "optix_params.h"
+// OptiX PTX is a separate GPU binary; it needs its own copy of the table.
+#define SOBOL_DEFINE_DIRECTIONS
+#include "../sobol_sampler.cuh"
 
 // Launch parameters in constant memory
 extern "C"
@@ -29,6 +32,33 @@ __device__ __forceinline__ float rand_float(unsigned int &seed)
 {
    seed = pcg_hash(seed);
    return (float)seed / (float)0xFFFFFFFFu;
+}
+
+//------------------------------------------------------------------------------
+// Sobol-aware rand_float for OptiX.
+// Routes through the scrambled Sobol sequence when params.use_sobol is true,
+// incrementing prd->sobol_dim_idx automatically.  Falls back to PCG when the
+// dimension budget is exceeded.
+//
+// Usage: replace rand_float(seed) with sobol_rand_float(prd, seed)
+//        in all OptiX material scatter code.
+//------------------------------------------------------------------------------
+__device__ __forceinline__ float sobol_rand_float(PRDRadiance *prd, unsigned int &seed)
+{
+   if (params.use_sobol)
+   {
+      if (prd->sobol_dim_idx < (uint32_t)SOBOL_MAX_DIM)
+      {
+         float v = sobol_float(prd->sobol_sample_idx, (int)prd->sobol_dim_idx, prd->sobol_pixel_hash);
+         prd->sobol_dim_idx++;
+         return v;
+      }
+      // PCG fallback for dims beyond SOBOL_MAX_DIM
+      seed = pcg_hash(seed);
+      prd->sobol_dim_idx++;
+      return (float)seed / (float)0xFFFFFFFFu;
+   }
+   return rand_float(seed);
 }
 
 // Direct uniform unit vector — no rejection loop, no warp divergence.
@@ -239,6 +269,9 @@ extern "C" __global__ void __raygen__rg()
 
    const unsigned int pixel_idx = y * params.width + x;
 
+   // Per-pixel stable hash for Sobol scrambling (computed once, reused every sample).
+   const uint32_t pixel_hash = pcg_hash(pixel_idx ^ (0xdeadbeef + params.frame_seed));
+
    // Initialize seed based on pixel and frame
    unsigned int seed = pcg_hash(pixel_idx ^ (params.frame_seed * 1099511628211u));
 
@@ -248,9 +281,22 @@ extern "C" __global__ void __raygen__rg()
 
    for (int s = 0; s < params.samples_per_launch; ++s)
    {
+      // Reset Sobol dimension counter and advance sample index each iteration.
+      // total_samples_so_far + s gives the global sample number; Gray-code encoding
+      // improves progressive convergence (each successive index flips one bit).
+      const uint32_t abs_sample = (uint32_t)(params.total_samples_so_far + s);
+      const uint32_t sobol_sample_idx = sobol_gray(abs_sample);
+
       // Jittered pixel sample
-      float offset_u = rand_float(seed) - 0.5f;
-      float offset_v = rand_float(seed) - 0.5f;
+      // dims 0, 1 — pixel AA jitter
+      float offset_u, offset_v;
+      if (params.use_sobol) {
+         offset_u = sobol_float(sobol_sample_idx, 0, pixel_hash) - 0.5f;
+         offset_v = sobol_float(sobol_sample_idx, 1, pixel_hash) - 0.5f;
+      } else {
+         offset_u = rand_float(seed) - 0.5f;
+         offset_v = rand_float(seed) - 0.5f;
+      }
 
       float3 pixel_center = params.pixel00_loc + ((float)x + offset_u) * params.pixel_delta_u +
                              ((float)y + offset_v) * params.pixel_delta_v;
@@ -263,7 +309,18 @@ extern "C" __global__ void __raygen__rg()
          float3 normalized_dir = normalize3(ray_direction);
          float3 focus_point = params.camera_center + params.dof_focus_distance * normalized_dir;
 
-         float2 disk = rand_in_unit_disk(seed);
+         // dims 2, 3 — aperture disk sample
+         float2 disk;
+         if (params.use_sobol) {
+            float du = sobol_float(sobol_sample_idx, 2, pixel_hash) * 2.0f - 1.0f;
+            float dv = sobol_float(sobol_sample_idx, 3, pixel_hash) * 2.0f - 1.0f;
+            // Uniform disk from (u,v) via concentric mapping
+            float r   = du * du + dv * dv;
+            if (r < 1.0f) { disk = make_float2(du, dv); }
+            else { disk = make_float2(0.0f, 0.0f); }
+         } else {
+            disk = rand_in_unit_disk(seed);
+         }
          float3 aperture_offset = params.dof_aperture * (disk.x * params.cam_u + disk.y * params.cam_v);
          ray_origin = params.camera_center + aperture_offset;
          ray_direction = focus_point - ray_origin;
@@ -276,11 +333,16 @@ extern "C" __global__ void __raygen__rg()
       float3 cur_origin = ray_origin;
       float3 cur_direction = ray_direction;
 
+      uint32_t sobol_dim_idx = 4u; // dims 0-3 used for AA + DOF above; carried across bounces
       for (int bounce = 0; bounce < params.max_depth; ++bounce)
       {
          PRDRadiance prd;
          prd.seed = seed;
          prd.hit = false;
+         // Sobol state passed through PRD; sobol_dim_idx persists across bounces (not reset each iteration)
+         prd.sobol_sample_idx  = sobol_sample_idx;
+         prd.sobol_dim_idx     = sobol_dim_idx;
+         prd.sobol_pixel_hash  = pixel_hash;
 
          trace(params.traversable, cur_origin, cur_direction, 0.001f, 1e16f, &prd);
          seed = prd.seed; // Propagate RNG state
@@ -338,7 +400,14 @@ extern "C" __global__ void __raygen__rg()
              prd.hit_material_type == OptixMaterialType::SDF_MATERIAL)
          {
             // Lambertian: cosine-weighted hemisphere sampling
-            scatter_dir = prd.hit_normal + rand_unit_vector(seed);
+            // Uses 2 Sobol dims
+            float u1 = sobol_rand_float(&prd, seed);
+            float u2 = sobol_rand_float(&prd, seed);
+            float z  = 2.0f * u1 - 1.0f;
+            float r  = sqrtf(fmaxf(0.0f, 1.0f - z * z));
+            float phi = 6.283185307f * u2;
+            float3 rnd_unit = make_float3(r * __cosf(phi), r * __sinf(phi), z);
+            scatter_dir = prd.hit_normal + rnd_unit;
             // Catch degenerate direction
             if (fabsf(scatter_dir.x) < 1e-8f && fabsf(scatter_dir.y) < 1e-8f && fabsf(scatter_dir.z) < 1e-8f)
                scatter_dir = prd.hit_normal;
@@ -357,7 +426,15 @@ extern "C" __global__ void __raygen__rg()
          {
             float3 unit_dir = normalize3(cur_direction);
             float eff_roughness = prd.hit_roughness * params.metal_fuzziness;
-            float3 perturbed_n = normalize3(prd.hit_normal + eff_roughness * rand_unit_sphere(seed));
+            float u1 = sobol_rand_float(&prd, seed);
+            float u2 = sobol_rand_float(&prd, seed);
+            float u3 = sobol_rand_float(&prd, seed);  // cube root radial
+            float z  = 2.0f * u1 - 1.0f;
+            float r  = sqrtf(fmaxf(0.0f, 1.0f - z * z));
+            float phi = 6.283185307f * u2;
+            float t   = cbrtf(u3);
+            float3 perturb = make_float3(r * __cosf(phi) * t, r * __sinf(phi) * t, z * t);
+            float3 perturbed_n = normalize3(prd.hit_normal + eff_roughness * perturb);
             scatter_dir = reflect3(unit_dir, perturbed_n);
             attenuation = prd.hit_color;
             did_scatter = (dot3(scatter_dir, prd.hit_normal) > 0.0f);
@@ -374,7 +451,7 @@ extern "C" __global__ void __raygen__rg()
             float sin_theta = sqrtf(1.0f - cos_theta * cos_theta);
 
             bool cannot_refract = ri * sin_theta > 1.0f;
-            if (cannot_refract || reflectance(cos_theta, ri) > rand_float(seed))
+            if (cannot_refract || reflectance(cos_theta, ri) > sobol_rand_float(&prd, seed))
             {
                scatter_dir = reflect3(unit_dir, prd.hit_normal);
             }
@@ -416,7 +493,7 @@ extern "C" __global__ void __raygen__rg()
                if (wo_local.z > 0.0f)
                {
                   // Sample microfacet normal via VNDF
-                  float3 wm = Sample_wm_GGX_opt(wo_local, alpha_x, alpha_y, rand_float(seed), rand_float(seed));
+                  float3 wm = Sample_wm_GGX_opt(wo_local, alpha_x, alpha_y, sobol_rand_float(&prd, seed), sobol_rand_float(&prd, seed));
 
                   // Reflect incoming direction around microfacet normal to get wi
                   float3 wi_local = reflect3(make_float3(-wo_local.x, -wo_local.y, -wo_local.z), wm);
@@ -477,7 +554,7 @@ extern "C" __global__ void __raygen__rg()
             float Rr = airy(650.0f), Rg = airy(550.0f), Rb = airy(450.0f);
             float avg_R = (Rr + Rg + Rb) / 3.0f;
 
-            if (rand_float(seed) < avg_R)
+            if (sobol_rand_float(&prd, seed) < avg_R)
             {
                // Reflect — carry iridescent color
                scatter_dir = reflect3(unit_dir, prd.hit_normal);
@@ -504,10 +581,18 @@ extern "C" __global__ void __raygen__rg()
             float cx2 = cx * cx;
             float fresnel = r0 + (1.0f - r0) * (cx2 * cx2 * cx);
 
-            if (rand_float(seed) < fresnel)
+            if (sobol_rand_float(&prd, seed) < fresnel)
             {
                // Specular reflection through the coat
-               float3 perturbed_n = normalize3(prd.hit_normal + prd.hit_roughness * rand_unit_sphere(seed));
+               float u1 = sobol_rand_float(&prd, seed);
+               float u2 = sobol_rand_float(&prd, seed);
+               float u3 = sobol_rand_float(&prd, seed);
+               float z  = 2.0f * u1 - 1.0f;
+               float r  = sqrtf(fmaxf(0.0f, 1.0f - z * z));
+               float phi_r = 6.283185307f * u2;
+               float t   = cbrtf(u3);
+               float3 perturb = make_float3(r * __cosf(phi_r) * t, r * __sinf(phi_r) * t, z * t);
+               float3 perturbed_n = normalize3(prd.hit_normal + prd.hit_roughness * perturb);
                scatter_dir = reflect3(unit_dir, perturbed_n);
                attenuation = make_float3(1.0f, 1.0f, 1.0f); // coat is clear
                did_scatter = (dot3(scatter_dir, prd.hit_normal) > 0.0f);
@@ -515,7 +600,13 @@ extern "C" __global__ void __raygen__rg()
             else
             {
                // Diffuse base color
-               scatter_dir = prd.hit_normal + rand_unit_vector(seed);
+               float u1 = sobol_rand_float(&prd, seed);
+               float u2 = sobol_rand_float(&prd, seed);
+               float z  = 2.0f * u1 - 1.0f;
+               float r  = sqrtf(fmaxf(0.0f, 1.0f - z * z));
+               float phi_r = 6.283185307f * u2;
+               float3 rnd_unit = make_float3(r * __cosf(phi_r), r * __sinf(phi_r), z);
+               scatter_dir = prd.hit_normal + rnd_unit;
                if (fabsf(scatter_dir.x) < 1e-8f && fabsf(scatter_dir.y) < 1e-8f && fabsf(scatter_dir.z) < 1e-8f)
                   scatter_dir = prd.hit_normal;
                attenuation = prd.hit_color;
@@ -537,12 +628,15 @@ extern "C" __global__ void __raygen__rg()
          {
             float max_comp = fmaxf(throughput.x, fmaxf(throughput.y, throughput.z));
             float survival_prob = fminf(max_comp, 0.95f);
-            if (rand_float(seed) > survival_prob)
+            if (sobol_rand_float(&prd, seed) > survival_prob)
             {
                break;
             }
             throughput = throughput / survival_prob;
          }
+
+         // Persist Sobol dimension counter so the next bounce continues from where this one left off
+         sobol_dim_idx = prd.sobol_dim_idx;
       }
 
       // Firefly rejection: clamp per-sample luminance to prevent single HDR texels
