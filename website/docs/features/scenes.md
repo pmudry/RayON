@@ -295,5 +295,6 @@ geometry:
 | `12_clearcoat_pokemonball.yaml` | Clearcoat over diffuse base |
 | `13_texture_test1.yaml` | UV-mapped OBJ with grid texture (MTL-driven) |
 | `14_texture_test2.yaml` | Multi-material OBJ scene with Blender-exported MTL |
+| `15_mis_furnace_test.yaml` | MIS furnace test — energy conservation validation |
 | `bvh_stress_courtyard.yaml` | 300+ objects, BVH stress test |
 | `pattern_gallery.yaml` | Fibonacci dots, stripes patterns |
