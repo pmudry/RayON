@@ -165,7 +165,7 @@ class CPURayTracer
          Vec3 scatter_dir = unit_vector(srec.scattered.direction());
          if (srec.is_specular)
          {
-            throughput   *= srec.bsdf_value;
+            throughput    = throughput * srec.bsdf_value;
             prev_bsdf_pdf = 1.0;
             prev_specular = true;
          }
@@ -173,7 +173,7 @@ class CPURayTracer
          {
             double cos_th = std::max(0.0, dot(scatter_dir, rec.normal));
             if (srec.pdf > 1e-10)
-               throughput *= srec.bsdf_value * cos_th / srec.pdf;
+               throughput  = throughput * srec.bsdf_value * (cos_th / srec.pdf);
             prev_bsdf_pdf = srec.pdf;
             prev_specular = false;
          }

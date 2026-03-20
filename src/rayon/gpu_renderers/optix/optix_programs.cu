@@ -255,6 +255,150 @@ __device__ __forceinline__ void trace(OptixTraversableHandle handle, float3 orig
 }
 
 //==============================================================================
+// SHADOW RAY — uses the same GAS but terminates on first hit
+//==============================================================================
+
+__device__ __forceinline__ bool trace_shadow(OptixTraversableHandle handle, float3 origin,
+                                              float3 direction, float tmin, float tmax)
+{
+   // Reuse a PRD just to test prd.hit. The closesthit will fill it.
+   PRDRadiance prd;
+   prd.hit = false;
+   prd.seed = 0;
+   prd.sobol_sample_idx = 0;
+   prd.sobol_dim_idx = 0;
+   prd.sobol_pixel_hash = 0;
+   unsigned int p0 = (unsigned int)((unsigned long long)&prd);
+   unsigned int p1 = (unsigned int)((unsigned long long)&prd >> 32);
+   optixTrace(handle, origin, direction, tmin, tmax,
+              0.0f, OptixVisibilityMask(1),
+              OPTIX_RAY_FLAG_TERMINATE_ON_FIRST_HIT, // any-hit early exit
+              0, 1, 0, p0, p1);
+   return prd.hit;
+}
+
+//==============================================================================
+// NEE / MIS HELPERS — light sampling, BSDF eval/PDF
+//==============================================================================
+
+struct OptiXLightSample
+{
+   float3 direction;
+   float3 emission;
+   float  pdf;
+   float  dist;
+};
+
+__device__ __forceinline__ void build_onb(const float3 &n, float3 &u, float3 &v)
+{
+   float sign = copysignf(1.0f, n.z);
+   float a    = -1.0f / (sign + n.z);
+   float b    = n.x * n.y * a;
+   u = make_float3(1.0f + sign * n.x * n.x * a, sign * b, -sign * n.x);
+   v = make_float3(b, sign + n.y * n.y * a, -n.y);
+}
+
+__device__ OptiXLightSample sample_light_optix(const float3 &shading_p, float u_sel, float u1, float u2)
+{
+   OptiXLightSample ls;
+   ls.pdf = 0.0f;
+
+   if (params.num_lights == 0) return ls;
+
+   // CDF-based light selection
+   int idx = 0;
+   for (int i = 0; i < params.num_lights; ++i)
+   {
+      if (u_sel < params.light_cdfs[i + 1]) { idx = i; break; }
+      idx = i;
+   }
+
+   const OptixLightData &light = params.lights[idx];
+   float select_pdf = params.light_cdfs[idx + 1] - params.light_cdfs[idx];
+   if (select_pdf < 1e-8f) return ls;
+
+   if (light.geom_type == OptixLightGeomType::RECTANGLE)
+   {
+      float3 sampled_pt = light.corner + u1 * light.u_vec + u2 * light.v_vec;
+      float3 to_light   = sampled_pt - shading_p;
+      float  dist       = length3(to_light);
+      if (dist < 1e-5f) return ls;
+
+      float3 dir   = to_light / dist;
+      float  cos_l = fabsf(dot3(-dir, light.normal));
+      if (cos_l < 1e-6f) return ls;
+
+      float area_pdf = 1.0f / fmaxf(light.area, 1e-8f);
+      ls.direction   = dir;
+      ls.emission    = light.emission * params.light_intensity;
+      ls.dist        = dist;
+      ls.pdf         = select_pdf * area_pdf * (dist * dist) / cos_l;
+   }
+   else // SPHERE
+   {
+      float3 to_center = light.center - shading_p;
+      float  dist_sq   = dot3(to_center, to_center);
+      if (dist_sq <= light.radius * light.radius) return ls;
+
+      float  dist          = sqrtf(dist_sq);
+      float  cos_theta_max = sqrtf(fmaxf(0.0f, 1.0f - (light.radius * light.radius) / dist_sq));
+      float  solid_angle   = 2.0f * 3.14159265f * (1.0f - cos_theta_max);
+      if (solid_angle < 1e-8f) return ls;
+
+      float3 w = to_center / dist;
+      float3 u_basis, v_basis;
+      build_onb(w, u_basis, v_basis);
+
+      float cos_theta = 1.0f - u1 * (1.0f - cos_theta_max);
+      float sin_theta = sqrtf(fmaxf(0.0f, 1.0f - cos_theta * cos_theta));
+      float phi       = 2.0f * 3.14159265f * u2;
+
+      ls.direction = normalize3(sin_theta * cosf(phi) * u_basis + sin_theta * sinf(phi) * v_basis + cos_theta * w);
+      ls.emission  = light.emission * params.light_intensity;
+      ls.dist      = dist;
+      ls.pdf       = select_pdf / solid_angle;
+   }
+   return ls;
+}
+
+/// Compute the solid-angle PDF the NEE sampler would assign to hitting a specific light
+__device__ float light_dir_pdf_optix(int light_idx, const float3 &prev_p, const float3 &dir)
+{
+   if (light_idx < 0 || params.num_lights == 0) return 0.0f;
+
+   const OptixLightData &light = params.lights[light_idx];
+   float select_pdf = params.light_cdfs[light_idx + 1] - params.light_cdfs[light_idx];
+   if (select_pdf < 1e-8f) return 0.0f;
+
+   if (light.geom_type == OptixLightGeomType::RECTANGLE)
+   {
+      float denom = dot3(dir, light.normal);
+      if (fabsf(denom) < 1e-8f) return 0.0f;
+      float t = dot3(light.corner - prev_p, light.normal) / denom;
+      if (t < 0.0f) return 0.0f;
+      float cos_l = fabsf(dot3(-dir, light.normal));
+      if (cos_l < 1e-6f) return 0.0f;
+      return select_pdf * (t * t) / (cos_l * fmaxf(light.area, 1e-8f));
+   }
+   else // SPHERE
+   {
+      float3 to_center   = light.center - prev_p;
+      float  dist_sq     = dot3(to_center, to_center);
+      float  cos_max     = sqrtf(fmaxf(0.0f, 1.0f - (light.radius * light.radius) / dist_sq));
+      float  solid_angle = 2.0f * 3.14159265f * (1.0f - cos_max);
+      if (solid_angle < 1e-8f) return 0.0f;
+      return select_pdf / solid_angle;
+   }
+}
+
+/// True for materials that are delta distributions (skip NEE)
+__device__ __forceinline__ bool is_delta_material_optix(OptixMaterialType mat)
+{
+   return mat != OptixMaterialType::LAMBERTIAN && mat != OptixMaterialType::SDF_MATERIAL
+       && mat != OptixMaterialType::CLEAR_COAT;
+}
+
+//==============================================================================
 // RAY GENERATION — path tracing loop
 //==============================================================================
 
@@ -333,6 +477,10 @@ extern "C" __global__ void __raygen__rg()
       float3 cur_origin = ray_origin;
       float3 cur_direction = ray_direction;
 
+      // MIS tracking
+      float prev_bsdf_pdf = 1.0f;
+      bool  prev_is_delta = true; // camera ray treated as delta
+
       uint32_t sobol_dim_idx = 4u; // dims 0-3 used for AA + DOF above; carried across bounces
       for (int bounce = 0; bounce < params.max_depth; ++bounce)
       {
@@ -374,7 +522,27 @@ extern "C" __global__ void __raygen__rg()
          // Get material data
          if (prd.hit_material_type == OptixMaterialType::LIGHT)
          {
-            color = color + throughput * prd.hit_emission * params.light_intensity;
+            // MIS weight for BSDF-sampled emissive hit
+            float w = 1.0f;
+            if (params.mis_enabled && bounce > 0 && !prev_is_delta && params.num_lights > 0)
+            {
+               int prim_idx = prd.hit_prim_idx;
+               int light_idx = -1;
+               if (prim_idx >= 0 && prim_idx < params.num_geom_entries && params.geom_to_light_map)
+                  light_idx = params.geom_to_light_map[prim_idx];
+               if (light_idx >= 0)
+               {
+                  float3 hit_dir = normalize3(cur_direction);
+                  float lp = light_dir_pdf_optix(light_idx, cur_origin, hit_dir);
+                  if (lp > 0.0f)
+                  {
+                     float a = prev_bsdf_pdf * prev_bsdf_pdf;
+                     float b = lp * lp;
+                     w = a / (a + b);
+                  }
+               }
+            }
+            color = color + throughput * prd.hit_emission * params.light_intensity * w;
             break;
          }
 
@@ -619,9 +787,63 @@ extern "C" __global__ void __raygen__rg()
             break;
          }
 
+         // --- NEE: direct light sampling for non-delta materials ---
+         bool is_delta = is_delta_material_optix(prd.hit_material_type);
+         if (params.mis_enabled && !is_delta && params.num_lights > 0)
+         {
+            bool do_nee = (bounce == 0 || !params.nee_first_bounce_only);
+            float nee_scale = 1.0f;
+            if (do_nee && params.nee_stride > 1)
+            {
+               do_nee = ((abs_sample % (uint32_t)params.nee_stride) == 0u);
+               nee_scale = (float)params.nee_stride;
+            }
+
+            if (do_nee)
+            {
+               float max_att = fmaxf(throughput.x, fmaxf(throughput.y, throughput.z));
+               if (max_att > 1e-4f)
+               {
+                  float nee_u1  = sobol_rand_float(&prd, seed);
+                  float nee_u2  = sobol_rand_float(&prd, seed);
+                  float nee_sel = rand_float(seed);
+
+                  OptiXLightSample ls = sample_light_optix(prd.hit_point, nee_sel, nee_u1, nee_u2);
+                  if (ls.pdf > 0.0f)
+                  {
+                     // Shadow ray
+                     if (!trace_shadow(params.traversable, prd.hit_point + 0.0001f * prd.hit_normal,
+                                       ls.direction, 0.0001f, ls.dist - 0.002f))
+                     {
+                        // Lambertian BSDF: f = albedo / pi, pdf = cos(theta) / pi
+                        float3 f_nee = prd.hit_color * (1.0f / 3.14159265f);
+                        float cos_th = fmaxf(0.0f, dot3(ls.direction, prd.hit_normal));
+                        float p_mat  = cos_th / 3.14159265f;
+                        float a      = ls.pdf * ls.pdf;
+                        float b      = p_mat * p_mat;
+                        float w_nee  = (a + b > 0.0f) ? (a / (a + b)) : 1.0f;
+                        color = color + throughput * f_nee * ls.emission * cos_th * w_nee * nee_scale / ls.pdf;
+                     }
+                  }
+               }
+            }
+         }
+
          throughput = throughput * attenuation;
          cur_origin = prd.hit_point;
          cur_direction = scatter_dir;
+
+         // Track BSDF PDF for MIS weighting at the next emissive hit
+         if (is_delta)
+         {
+            prev_bsdf_pdf = 1.0f;
+            prev_is_delta = true;
+         }
+         else
+         {
+            prev_bsdf_pdf = fmaxf(0.0f, dot3(normalize3(scatter_dir), prd.hit_normal)) / 3.14159265f;
+            prev_is_delta = false;
+         }
 
          // Russian Roulette (from bounce 1)
          if (bounce > 0)
@@ -718,6 +940,7 @@ extern "C" __global__ void __closesthit__ch()
 {
    PRDRadiance *prd = getPRD();
    prd->hit = true;
+   prd->hit_prim_idx = optixGetPrimitiveIndex();
 
    const HitGroupData *sbt_data = reinterpret_cast<const HitGroupData *>(optixGetSbtDataPointer());
 

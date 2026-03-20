@@ -30,6 +30,11 @@ extern __constant__ int   g_golf_dimple_count;
 extern __constant__ float g_golf_dimple_radius;
 extern __constant__ float g_golf_dimple_depth;
 
+// MIS / NEE runtime controls
+extern __constant__ bool g_mis_enabled;           ///< Global MIS toggle
+extern __constant__ bool g_nee_first_bounce_only;  ///< Option B: NEE on first bounce only
+extern __constant__ int  g_nee_stride;             ///< Option C: NEE every N samples
+
 // Forward declarations for golf-ball helpers implemented in shader_golf.cu
 struct ray_simple;
 struct hit_record_simple;
@@ -663,7 +668,7 @@ __device__ inline bool hit_scene_shadow(const CudaScene::Scene &scene, const ray
    if (scene.use_bvh && scene.bvh_root_idx >= 0)
    {
       const f3 inv_dir(1.0f / r.dir.x, 1.0f / r.dir.y, 1.0f / r.dir.z);
-      int stack[16];
+      int stack[32];
       int stack_ptr = 0;
       stack[stack_ptr++] = scene.bvh_root_idx;
 
@@ -688,8 +693,8 @@ __device__ inline bool hit_scene_shadow(const CudaScene::Scene &scene, const ray
          }
          else
          {
-            if (stack_ptr < 15) stack[stack_ptr++] = node.data.interior.left_child;
-            if (stack_ptr < 15) stack[stack_ptr++] = node.data.interior.right_child;
+            if (stack_ptr < 31) stack[stack_ptr++] = node.data.interior.left_child;
+            if (stack_ptr < 31) stack[stack_ptr++] = node.data.interior.right_child;
          }
       }
    }
@@ -716,7 +721,8 @@ __device__ __forceinline__ bool is_delta_material(LegacyMaterialType mat)
 }
 
 /// Evaluate f(wo, wi) for a given incoming direction wi (Lambertian only)
-__device__ __noinline__ f3 eval_bsdf_gpu(const hit_record_simple &rec, const f3 &wi)
+/// Forceinline: 2-line function; inlining enables CSE with scatter_pdf_gpu (shared cos_th/pi factor).
+__device__ __forceinline__ f3 eval_bsdf_gpu(const hit_record_simple &rec, const f3 &wi)
 {
    if (rec.material == LAMBERTIAN)
       return rec.color * (1.0f / CUDART_PI_F);
@@ -724,7 +730,8 @@ __device__ __noinline__ f3 eval_bsdf_gpu(const hit_record_simple &rec, const f3 
 }
 
 /// PDF of BSDF sampling direction wi
-__device__ __noinline__ float scatter_pdf_gpu(const hit_record_simple &rec, const f3 &wi)
+/// Forceinline: 2-line function; allows nvcc to CSE the dot(wi,normal) with eval_bsdf_gpu's cos_th.
+__device__ __forceinline__ float scatter_pdf_gpu(const hit_record_simple &rec, const f3 &wi)
 {
    if (rec.material == LAMBERTIAN)
       return fmaxf(0.0f, dot(wi, rec.normal)) / CUDART_PI_F;
@@ -749,7 +756,7 @@ struct LightSampleGPU
  * @param u_sel  Uniform [0,1) for CDF light selection
  * @param u1,u2  Uniform [0,1) for sampling a point on the chosen light
  */
-__device__ __noinline__ LightSampleGPU sample_light_gpu(const CudaScene::Scene &scene,
+static __device__ __noinline__ LightSampleGPU sample_light_gpu(const CudaScene::Scene &scene,
                                                         const f3 &shading_p,
                                                         float u_sel, float u1, float u2)
 {
@@ -789,7 +796,7 @@ __device__ __noinline__ LightSampleGPU sample_light_gpu(const CudaScene::Scene &
       f3 sampled_pt  = corner + u1 * u_vec + u2 * v_vec;
       f3 light_norm  = normalize(cross(u_vec, v_vec));
       f3 to_light    = sampled_pt - shading_p;
-      float dist     = length(to_light);
+      float dist     = to_light.length();
       if (dist < 1e-5f)
          return ls;
 
@@ -798,7 +805,7 @@ __device__ __noinline__ LightSampleGPU sample_light_gpu(const CudaScene::Scene &
       if (cos_l < 1e-6f)
          return ls;
 
-      float area     = length(cross(u_vec, v_vec));
+      float area     = cross(u_vec, v_vec).length();
       float area_pdf = 1.0f / fmaxf(area, 1e-8f);
 
       ls.direction = dir;
@@ -847,7 +854,7 @@ __device__ __noinline__ LightSampleGPU sample_light_gpu(const CudaScene::Scene &
  *
  * Used to compute the MIS weight when a BSDF-sampled path hits an emissive surface.
  */
-__device__ __noinline__ float light_dir_pdf_gpu(const CudaScene::Scene &scene,
+static __device__ __noinline__ float light_dir_pdf_gpu(const CudaScene::Scene &scene,
                                                 int geom_idx, const f3 &prev_p,
                                                 const f3 &dir)
 {
@@ -880,7 +887,7 @@ __device__ __noinline__ float light_dir_pdf_gpu(const CudaScene::Scene &scene,
       float t = dot(geom.data.rectangle.corner - prev_p, nrm) / denom;
       if (t < 0.0f)
          return 0.0f;
-      float area     = length(cross(u_vec, v_vec));
+      float area     = cross(u_vec, v_vec).length();
       float cos_l    = fabsf(dot(-dir, nrm));
       if (cos_l < 1e-6f)
          return 0.0f;
@@ -1206,7 +1213,8 @@ __device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scen
          if (emitted.length_squared() > 0.0f)
          {
             float w = 1.0f;
-            if (bounce > 0 && !prev_is_delta && scene.num_lights > 0)
+            // Apply MIS power heuristic only when MIS is globally enabled
+            if (g_mis_enabled && bounce > 0 && !prev_is_delta && scene.num_lights > 0)
             {
                f3 hit_dir = normalize(current_ray.dir);
                float light_pdf = light_dir_pdf_gpu(scene, rec.geom_idx, current_ray.orig, hit_dir);
@@ -1227,30 +1235,53 @@ __device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scen
 
          // --- NEE: direct light sampling (Lambertian only) ---
          bool is_delta = is_delta_material(rec.material);
-         if (!is_delta && scene.num_lights > 0)
+         if (g_mis_enabled && !is_delta && scene.num_lights > 0)
          {
-            // Fetch 3 stratified samples: 2D for light point, 1D for selection
-            float2 nee_uv  = rand_float2(state, sample_n, pixel_hash, (uint32_t)bounce, SOBOL_EFFECT_NEE_POINT);
-            float  nee_sel = rand_float2(state, sample_n, pixel_hash, (uint32_t)bounce, SOBOL_EFFECT_NEE_SELECT).x;
+            // Option B: restrict NEE to the first path bounce
+            bool do_nee = (bounce == 0 || !g_nee_first_bounce_only);
 
+            // Option C: NEE every g_nee_stride samples; scale contribution to stay unbiased
+            float nee_scale = 1.0f;
+            if (do_nee && g_nee_stride > 1)
             {
-               LightSampleGPU ls = sample_light_gpu(scene, rec.p, nee_sel, nee_uv.x, nee_uv.y);
+               do_nee = ((sample_n % (uint32_t)g_nee_stride) == 0u);
+               nee_scale = (float)g_nee_stride;
+            }
 
-               if (ls.pdf > 0.0f)
+            if (do_nee)
+            {
+               // Throughput culling: skip shadow ray when path contribution is negligible.
+               // RR handles most low-throughput paths, but this catches corner cases
+               // and saves the full sample_light + BVH traversal cost.
+               float max_att = fmaxf(accumulated_attenuation.x,
+                                     fmaxf(accumulated_attenuation.y, accumulated_attenuation.z));
+               if (max_att > 1e-4f)
                {
-                  // Shadow ray — stop just before the light surface
-                  ray_simple shadow_ray(rec.p + 0.0001f * rec.normal, ls.direction);
-                  if (!hit_scene_shadow(scene, shadow_ray, 0.0001f, ls.dist - 0.002f))
-                  {
-                     f3    f_nee    = eval_bsdf_gpu(rec, ls.direction);
-                     float cos_th   = fmaxf(0.0f, dot(ls.direction, rec.normal));
-                     float p_mat    = scatter_pdf_gpu(rec, ls.direction);
-                     float a        = ls.pdf * ls.pdf;
-                     float b        = p_mat * p_mat;
-                     float w_nee    = (a + b > 0.0f) ? (a / (a + b)) : 1.0f;
+                  // Use a single rand_float2 for the 2D light-point sample; reuse its .y component
+                  // as the 1D light-selection variate (saves one full sobol_2d_sample() call).
+                  float2 nee_uv  = rand_float2(state, sample_n, pixel_hash, (uint32_t)bounce, SOBOL_EFFECT_NEE_POINT);
+                  float  nee_sel = rand_float(state);
 
-                     accumulated_color = accumulated_color +
-                         accumulated_attenuation * f_nee * ls.emission * cos_th * w_nee / ls.pdf;
+                  LightSampleGPU ls = sample_light_gpu(scene, rec.p, nee_sel, nee_uv.x, nee_uv.y);
+
+                  if (ls.pdf > 0.0f)
+                  {
+                     // Shadow ray — stop just before the light surface
+                     ray_simple shadow_ray(rec.p + 0.0001f * rec.normal, ls.direction);
+                     if (!hit_scene_shadow(scene, shadow_ray, 0.0001f, ls.dist - 0.002f))
+                     {
+                        // eval_bsdf and scatter_pdf are now __forceinline__, enabling CSE:
+                        // both reduce to cos_th/pi for Lambertian, so nvcc combines the dot products.
+                        f3    f_nee    = eval_bsdf_gpu(rec, ls.direction);
+                        float cos_th   = fmaxf(0.0f, dot(ls.direction, rec.normal));
+                        float p_mat    = scatter_pdf_gpu(rec, ls.direction);
+                        float a        = ls.pdf * ls.pdf;
+                        float b        = p_mat * p_mat;
+                        float w_nee    = (a + b > 0.0f) ? (a / (a + b)) : 1.0f;
+
+                        accumulated_color = accumulated_color +
+                            accumulated_attenuation * f_nee * ls.emission * cos_th * w_nee * nee_scale / ls.pdf;
+                     }
                   }
                }
             }
@@ -1263,7 +1294,10 @@ __device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scen
                 accumulated_attenuation.y * attenuation.y,
                 accumulated_attenuation.z * attenuation.z);
 
-         // Store BSDF PDF for MIS weighting at the next emissive hit
+         // Store BSDF PDF for MIS weighting at the next emissive hit.
+         // For Lambertian (the only non-delta material), scattered_ray.dir is already unit-length
+         // (sampled on the unit sphere via cosine mapping), so normalize() is redundant.
+         // We inline the PDF formula directly to avoid a second function call.
          if (is_delta)
          {
             prev_bsdf_pdf = 1.0f;
@@ -1271,7 +1305,8 @@ __device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scen
          }
          else
          {
-            prev_bsdf_pdf = scatter_pdf_gpu(rec, normalize(scattered_ray.dir));
+            // Lambertian: pdf = max(0, cos(theta)) / pi — direction is already normalized
+            prev_bsdf_pdf = fmaxf(0.0f, dot(scattered_ray.dir, rec.normal)) / CUDART_PI_F;
             prev_is_delta = false;
          }
 

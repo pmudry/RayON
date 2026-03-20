@@ -83,6 +83,28 @@ struct OptixMaterialData
    int texture_id; // Diffuse texture index (-1 = none)
 };
 
+// Light geometry data for Next Event Estimation (NEE)
+enum class OptixLightGeomType : unsigned char
+{
+   RECTANGLE,
+   SPHERE
+};
+
+struct OptixLightData
+{
+   OptixLightGeomType geom_type;
+   float3 emission; // Already scaled by material emission
+   // Rectangle fields
+   float3 corner;
+   float3 u_vec;
+   float3 v_vec;
+   float3 normal;
+   float  area;
+   // Sphere fields
+   float3 center;
+   float  radius;
+};
+
 // Launch parameters — passed to all OptiX programs via __constant__ memory
 struct OptixLaunchParams
 {
@@ -140,6 +162,20 @@ struct OptixLaunchParams
    // Textures
    cudaTextureObject_t *d_textures; // Device array of CUDA texture objects
    int num_textures;
+
+   // Light list for Next Event Estimation (NEE / MIS)
+   OptixLightData *lights;     // Device array of emissive geometries
+   int             num_lights;
+   float          *light_cdfs; // Cumulative area CDF [num_lights+1] for importance selection
+
+   // MIS / NEE runtime controls
+   bool mis_enabled;            // Master MIS toggle
+   bool nee_first_bounce_only;  // Option B: NEE on first bounce only
+   int  nee_stride;             // Option C: NEE every N samples
+
+   // Reverse lookup: SBT geometry index → light list index (-1 if not a light)
+   int *geom_to_light_map;
+   int  num_geom_entries;       // size of geom_to_light_map array
 };
 
 // Per-ray data passed through payload pointer.
@@ -161,6 +197,7 @@ struct PRDRadiance
    float3 hit_k;               // ANISOTROPIC_METAL: complex IOR imaginary/extinction
    float hit_anisotropy;       // ANISOTROPIC_METAL: anisotropy ratio
    OptixMaterialType hit_material_type;
+   int hit_prim_idx;             ///< SBT primitive index (for light identification in MIS)
    unsigned int seed;          ///< PCG seed (stateful fallback RNG)
    uint32_t sobol_sample_idx;  ///< Gray-code sample index for Sobol path
    uint32_t sobol_dim_idx;     ///< Dimension counter — incremented per rand_float call

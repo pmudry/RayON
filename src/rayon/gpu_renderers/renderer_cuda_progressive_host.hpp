@@ -39,6 +39,11 @@ class RendererCUDAProgressive : public IRenderer
       bool adaptive_sampling = true;
       bool hdr_cache = true; ///< use .hdrcache sidecar to speed up repeated HDR loads
       GuiTheme theme = GuiTheme::NORD;
+      // MIS / NEE options
+      bool mis_enabled          = true;  ///< Master MIS toggle
+      bool motion_gate_mis      = true;  ///< Option A: auto-disable MIS during camera motion
+      bool nee_first_bounce_only = false; ///< Option B: NEE on first bounce only
+      int  nee_stride           = 1;     ///< Option C: do NEE every N samples (1 = always)
    };
 
    RendererCUDAProgressive() = default;
@@ -106,6 +111,12 @@ class RendererCUDAProgressive : public IRenderer
       float current_ms_per_sample = 0.0f;
       float current_fps = 0.0f;
 
+      // MIS / NEE options (Options A–C)
+      bool mis_enabled           = settings_.mis_enabled;
+      bool motion_gate_mis       = settings_.motion_gate_mis;
+      bool nee_first_bounce_only = settings_.nee_first_bounce_only;
+      int  nee_stride            = settings_.nee_stride;
+
       // Motion detection for adaptive quality
       bool is_camera_moving = false;
       auto last_camera_change_time = std::chrono::high_resolution_clock::now();
@@ -135,6 +146,8 @@ class RendererCUDAProgressive : public IRenderer
          ::setGolfDimpleCount(golf_dimple_count);
          ::setGolfDimpleRadius(golf_dimple_radius);
          ::setGolfDimpleDepth(golf_dimple_depth);
+         ::setNEEFirstBounceOnly(nee_first_bounce_only);
+         ::setNEEStride(nee_stride);
       };
 
       auto propagateAccumulationToggle = [&]()
@@ -310,7 +323,7 @@ class RendererCUDAProgressive : public IRenderer
       int current_scene_index = 0; // Start with whatever was passed in
       Scene::SceneDescription active_scene = scene; // Mutable copy
       Scene::SceneDescription original_scene = scene; // Keep original to restore materials
-      Hittable_list cpu_scene_for_arrows = Scene::CPUSceneBuilder::buildCPUScene(original_scene);
+      Scene::CPUScene cpu_scene_for_arrows = Scene::CPUSceneBuilder::buildCPUScene(original_scene);
 
       auto applyVisualizationToActiveScene = [&]() {
          // Always start from original materials, then apply visualization override.
@@ -409,7 +422,7 @@ class RendererCUDAProgressive : public IRenderer
                Point3 pixel_center = frame.pixel00_loc + static_cast<double>(x) * frame.pixel_delta_u +
                                      static_cast<double>(y) * frame.pixel_delta_v;
                Ray r(frame.camera_center, pixel_center - frame.camera_center);
-               if (!cpu_scene_for_arrows.hit(r, Interval(0.0001, inf), rec))
+               if (!cpu_scene_for_arrows.scene.hit(r, Interval(0.0001, inf), rec))
                {
                   continue;
                }
@@ -579,6 +592,11 @@ class RendererCUDAProgressive : public IRenderer
                   gui.setLogoVisible(true);
                   samples_per_batch_float = static_cast<float>(settings_.samples_per_batch);
                   camera_control.setAutoOrbit(false);
+                  // Reset MIS options to settings_ defaults
+                  mis_enabled           = settings_.mis_enabled;
+                  motion_gate_mis       = settings_.motion_gate_mis;
+                  nee_first_bounce_only = settings_.nee_first_bounce_only;
+                  nee_stride            = settings_.nee_stride;
                   camera_changed = true;
                   applySceneSettings();
                }
@@ -746,6 +764,11 @@ class RendererCUDAProgressive : public IRenderer
             syncSamplesFromSlider();
             adaptive_samples_per_batch = samples_per_batch;
 
+            // Option A: motion-gate MIS — auto-disable NEE/MIS while the camera is moving
+            // so the GPU spends its budget on ray throughput rather than shadow rays.
+            bool effective_mis = mis_enabled && !(motion_gate_mis && is_camera_moving);
+            ::setMISEnabled(effective_mis);
+
             auto frame_start = std::chrono::high_resolution_clock::now();
 
             // Allocate adaptive sampling buffer on first use (lazy init)
@@ -819,6 +842,11 @@ class RendererCUDAProgressive : public IRenderer
          float old_golf_dimple_radius = golf_dimple_radius;
          float old_golf_dimple_depth  = golf_dimple_depth;
          int   old_hdr_index          = current_hdr_index;
+         // MIS option snapshots
+         bool old_mis_enabled           = mis_enabled;
+         bool old_motion_gate_mis       = motion_gate_mis;
+         bool old_nee_first_bounce_only = nee_first_bounce_only;
+         int  old_nee_stride            = nee_stride;
 
          // Draw ImGui UI — passes pointers so ImGui can modify values directly
          bool auto_orbit = camera_control.isAutoOrbitEnabled();
@@ -848,7 +876,8 @@ class RendererCUDAProgressive : public IRenderer
                            scene_has_golf_ball      ? &golf_dimple_depth  : nullptr,
                            &current_hdr_index,
                            hdr_count > 0 ? hdr_name_ptrs.data() : nullptr,
-                           hdr_count);
+                           hdr_count,
+                           &mis_enabled, &motion_gate_mis, &nee_first_bounce_only, &nee_stride);
 
          if (auto_orbit != camera_control.isAutoOrbitEnabled())
          {
@@ -898,6 +927,19 @@ class RendererCUDAProgressive : public IRenderer
             }
             camera_changed = true;
             applySceneSettings();
+         }
+
+         // MIS option changes — push updated constants to GPU and restart accumulation
+         if (nee_first_bounce_only != old_nee_first_bounce_only || nee_stride != old_nee_stride)
+         {
+            ::setNEEFirstBounceOnly(nee_first_bounce_only);
+            ::setNEEStride(nee_stride);
+            camera_changed = true;
+         }
+         if (mis_enabled != old_mis_enabled || motion_gate_mis != old_motion_gate_mis)
+         {
+            // effective_mis is recalculated each frame before renderBatch; just restart accumulation
+            camera_changed = true;
          }
 
          // Adaptive sampling toggled or threshold changed — restart accumulation
