@@ -16,7 +16,7 @@ class Rectangle : public Hittable
        : corner(corner), u(u), v(v), mat_ptr(mat), is_light(false), light_color(Vec3_ONES), light_intensity(1.0)
    {
       normal = unit_vector(cross(u, v));
-      area   = u.length() * v.length();
+      area   = cross(u, v).length();
    }
 
    Rectangle(const Point3 &corner, const Vec3 &u, const Vec3 &v, const Color &light_col, double intensity)
@@ -24,7 +24,7 @@ class Rectangle : public Hittable
          light_intensity(intensity)
    {
       normal = unit_vector(cross(u, v));
-      area   = u.length() * v.length();
+      area   = cross(u, v).length();
    }
 
    bool hit(const Ray &r, Interval ray_t, Hit_record &rec) const override

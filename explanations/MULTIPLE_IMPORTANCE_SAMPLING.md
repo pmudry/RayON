@@ -296,13 +296,17 @@ CDF, then computes the solid-angle PDF for the rectangle or sphere as described 
 
 ### Sobol sampling dimensions
 
-Two new effect IDs ensure the NEE samples are well-stratified and independent from other random
-decisions along the path:
+One Sobol effect ID is used to ensure the NEE samples on the light surface are well-stratified and
+independent from other random decisions along the path:
 
 | ID | Name | Usage |
 |---|---|---|
 | 11 | `SOBOL_EFFECT_NEE_POINT` | 2D sample for the point on the selected light |
-| 12 | `SOBOL_EFFECT_NEE_SELECT` | 1D sample for light selection via CDF |
+
+Light *selection* itself no longer uses a dedicated Sobol effect. Instead, a scalar `rand_float()`
+is drawn from the per-thread RNG and mapped through the light CDF to choose which light to sample.
+This keeps the sequence simple while still gaining stratification on the light surface via
+`SOBOL_EFFECT_NEE_POINT`.
 
 ### `hit_record_simple.geom_idx`
 

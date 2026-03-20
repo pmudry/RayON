@@ -107,9 +107,9 @@ void dumpHelp()
    cout << "  --no-hdr-cache            Disable disk cache for HDR sky textures (always re-decode .hdr)\n";
    cout << "  --sampler <sobol|pcg>     GPU sampler type: sobol = low-discrepancy (default), pcg = classic PRNG\n";
    cout << "  --theme <name>            GUI theme: light, classic, nord, dracula, gruvbox, catppuccin\n";
-   cout << "MIS / NEE options:\n";
+   cout << "MIS / NEE options (GPU modes 2, 3, 5):\n";
    cout << "  --no-mis                  Disable Multiple-Importance Sampling (max throughput, noisier)\n";
-   cout << "  --no-motion-gate-mis      Keep MIS on during camera motion (disable Option A auto-gate)\n";
+   cout << "  --no-motion-gate-mis      Keep MIS on during camera motion (disable Option A auto-gate; interactive only)\n";
    cout << "  --nee-first-bounce        Restrict NEE shadow rays to the first path bounce (Option B)\n";
    cout << "  --nee-stride <N>          Do NEE on 1 of every N samples, contribution \xc3\x97N (Option C; 1=always)\n";
 }
@@ -475,6 +475,10 @@ int main(int argc, char *argv[])
    default:
    {
       cout << "Using CUDA GPU rendering..." << "\n";
+      // Apply MIS/NEE settings to the CUDA global constants before rendering.
+      ::setMISEnabled(args.mis_enabled);
+      ::setNEEFirstBounceOnly(args.nee_first_bounce_only);
+      ::setNEEStride(args.nee_stride);
       RendererCUDA renderer;
       coordinator.render(renderer, localImage);
       break;

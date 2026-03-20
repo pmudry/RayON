@@ -338,25 +338,49 @@ __device__ OptiXLightSample sample_light_optix(const float3 &shading_p, float u_
    {
       float3 to_center = light.center - shading_p;
       float  dist_sq   = dot3(to_center, to_center);
-      if (dist_sq <= light.radius * light.radius) return ls;
 
-      float  dist          = sqrtf(dist_sq);
-      float  cos_theta_max = sqrtf(fmaxf(0.0f, 1.0f - (light.radius * light.radius) / dist_sq));
-      float  solid_angle   = 2.0f * CUDART_PI_F * (1.0f - cos_theta_max);
-      if (solid_angle < 1e-8f) return ls;
+      if (dist_sq <= light.radius * light.radius)
+      {
+         // Shading point is inside the sphere — sample uniformly over 4π steradians.
+         float z    = 1.0f - 2.0f * u1;
+         float r_xy = sqrtf(fmaxf(0.0f, 1.0f - z * z));
+         float phi  = 2.0f * CUDART_PI_F * u2;
+         float3 dir = make_float3(r_xy * cosf(phi), r_xy * sinf(phi), z);
 
-      float3 w = to_center / dist;
-      float3 u_basis, v_basis;
-      build_onb(w, u_basis, v_basis);
+         // Interior ray-sphere intersection: take the far root.
+         float3 oc  = shading_p - light.center;
+         float  b   = dot3(oc, dir);
+         float  c   = dot3(oc, oc) - light.radius * light.radius;
+         float  disc = b * b - c;
+         if (disc <= 0.0f) return ls;
+         float  t   = -b + sqrtf(disc);
+         if (t <= 1e-5f) return ls;
 
-      float cos_theta = 1.0f - u1 * (1.0f - cos_theta_max);
-      float sin_theta = sqrtf(fmaxf(0.0f, 1.0f - cos_theta * cos_theta));
-      float phi       = 2.0f * 3.14159265f * u2;
+         ls.direction = dir;
+         ls.emission  = light.emission * params.light_intensity;
+         ls.dist      = t;
+         ls.pdf       = select_pdf / (4.0f * CUDART_PI_F);
+      }
+      else
+      {
+         float  dist          = sqrtf(dist_sq);
+         float  cos_theta_max = sqrtf(fmaxf(0.0f, 1.0f - (light.radius * light.radius) / dist_sq));
+         float  solid_angle   = 2.0f * CUDART_PI_F * (1.0f - cos_theta_max);
+         if (solid_angle < 1e-8f) return ls;
 
-      ls.direction = normalize3(sin_theta * cosf(phi) * u_basis + sin_theta * sinf(phi) * v_basis + cos_theta * w);
-      ls.emission  = light.emission * params.light_intensity;
-      ls.dist      = dist;
-      ls.pdf       = select_pdf / solid_angle;
+         float3 w = to_center / dist;
+         float3 u_basis, v_basis;
+         build_onb(w, u_basis, v_basis);
+
+         float cos_theta = 1.0f - u1 * (1.0f - cos_theta_max);
+         float sin_theta = sqrtf(fmaxf(0.0f, 1.0f - cos_theta * cos_theta));
+         float phi       = 2.0f * 3.14159265f * u2;
+
+         ls.direction = normalize3(sin_theta * cosf(phi) * u_basis + sin_theta * sinf(phi) * v_basis + cos_theta * w);
+         ls.emission  = light.emission * params.light_intensity;
+         ls.dist      = dist;
+         ls.pdf       = select_pdf / solid_angle;
+      }
    }
    return ls;
 }
@@ -384,7 +408,16 @@ __device__ float light_dir_pdf_optix(int light_idx, const float3 &prev_p, const 
    {
       float3 to_center   = light.center - prev_p;
       float  dist_sq     = dot3(to_center, to_center);
-      float  cos_max     = sqrtf(fmaxf(0.0f, 1.0f - (light.radius * light.radius) / dist_sq));
+      float  r_sq        = light.radius * light.radius;
+
+      // If the shading point is inside (or on) the sphere, the visible solid
+      // angle is the full 4π steradians.  Guard against dist_sq ≈ 0 as well.
+      const float eps_dist2    = 1e-8f;
+      const float inv_four_pi  = 0.07957747154f; // 1 / (4π)
+      if (dist_sq <= r_sq + eps_dist2)
+         return select_pdf * inv_four_pi;
+
+      float  cos_max     = sqrtf(fmaxf(0.0f, 1.0f - r_sq / dist_sq));
       float  solid_angle = 2.0f * 3.14159265f * (1.0f - cos_max);
       if (solid_angle < 1e-8f) return 0.0f;
       return select_pdf / solid_angle;

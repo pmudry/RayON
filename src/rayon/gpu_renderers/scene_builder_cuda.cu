@@ -340,8 +340,21 @@ CudaScene::Scene *CudaSceneBuilder::buildGPUScene(const SceneDescription &desc)
          float total = 0.0f;
          for (float a : light_area_host)
             total += a;
-         for (int i = 0; i < host_scene.num_lights; ++i)
-            cdf[i + 1] = cdf[i] + light_area_host[i] / (total > 0.0f ? total : 1.0f);
+
+         if (total > 0.0f)
+         {
+            for (int i = 0; i < host_scene.num_lights; ++i)
+               cdf[i + 1] = cdf[i] + light_area_host[i] / total;
+         }
+         else
+         {
+            // Degenerate: all areas are zero — fall back to a uniform distribution.
+            const float step = 1.0f / static_cast<float>(host_scene.num_lights);
+            for (int i = 0; i < host_scene.num_lights; ++i)
+               cdf[i + 1] = cdf[i] + step;
+         }
+         // Clamp to exactly 1.0 to guard against floating-point accumulation drift.
+         cdf[host_scene.num_lights] = 1.0f;
 
          cudaMalloc(&host_scene.light_cdfs, (host_scene.num_lights + 1) * sizeof(float));
          cudaMemcpy(host_scene.light_cdfs, cdf.data(),

@@ -65,24 +65,36 @@ class Sphere : public Hittable
 
    double pdf_value(const Point3 &origin, const Vec3 &direction) const override
    {
-      // If origin is inside the sphere, use uniform hemisphere PDF
-      Vec3 to_center = center - origin;
-      double dist_sq = to_center.length_squared();
+      Vec3   to_center = center - origin;
+      double dist_sq   = to_center.length_squared();
+      Vec3   dir_unit  = unit_vector(direction);
+
+      // If origin is inside the sphere, the full sphere surface is visible.
+      // Any direction hits the sphere, so use the uniform full-sphere PDF.
       if (dist_sq <= radius * radius)
          return 1.0 / (4.0 * M_PI);
 
+      double dist          = std::sqrt(dist_sq);
       double cos_theta_max = std::sqrt(std::max(0.0, 1.0 - (radius * radius) / dist_sq));
-      double solid_angle   = 2.0 * M_PI * (1.0 - cos_theta_max);
+
+      // Return 0 when the direction lies outside the visible cone of the sphere.
+      double cos_theta = dot(dir_unit, to_center) / dist;
+      if (cos_theta < cos_theta_max)
+         return 0.0;
+
+      double solid_angle = 2.0 * M_PI * (1.0 - cos_theta_max);
       return (solid_angle > 0.0) ? (1.0 / solid_angle) : 0.0;
    }
 
    Vec3 random_direction(const Point3 &origin) const override
    {
-      Vec3 to_center = center - origin;
-      double dist_sq = to_center.length_squared();
+      Vec3   to_center = center - origin;
+      double dist_sq   = to_center.length_squared();
 
+      // Inside the sphere every direction hits the surface — sample uniformly
+      // over the full sphere to match the 1/(4π) PDF returned by pdf_value().
       if (dist_sq <= radius * radius)
-         return Vec3::random_in_hemisphere(unit_vector(to_center));
+         return unit_vector(Vec3::random_in_unit_sphere());
 
       double dist           = std::sqrt(dist_sq);
       double cos_theta_max  = std::sqrt(std::max(0.0, 1.0 - (radius * radius) / dist_sq));
