@@ -242,8 +242,9 @@ __device__ __forceinline__ PRDRadiance *getPRD()
 __device__ __forceinline__ void trace(OptixTraversableHandle handle, float3 origin, float3 direction, float tmin,
                                        float tmax, PRDRadiance *prd)
 {
-   unsigned int p0 = (unsigned int)((unsigned long long)prd);
-   unsigned int p1 = (unsigned int)((unsigned long long)prd >> 32);
+   const unsigned long long uptr = reinterpret_cast<unsigned long long>(prd);
+   unsigned int p0 = static_cast<unsigned int>(uptr & 0xFFFFFFFFULL);
+   unsigned int p1 = static_cast<unsigned int>(uptr >> 32);
    optixTrace(handle, origin, direction, tmin, tmax,
               0.0f,                    // rayTime
               OptixVisibilityMask(1),  // visibilityMask
@@ -268,8 +269,9 @@ __device__ __forceinline__ bool trace_shadow(OptixTraversableHandle handle, floa
    prd.sobol_sample_idx = 0;
    prd.sobol_dim_idx = 0;
    prd.sobol_pixel_hash = 0;
-   unsigned int p0 = (unsigned int)((unsigned long long)&prd);
-   unsigned int p1 = (unsigned int)((unsigned long long)&prd >> 32);
+   const unsigned long long uptr = reinterpret_cast<unsigned long long>(&prd);
+   unsigned int p0 = static_cast<unsigned int>(uptr & 0xFFFFFFFFULL);
+   unsigned int p1 = static_cast<unsigned int>(uptr >> 32);
    optixTrace(handle, origin, direction, tmin, tmax,
               0.0f, OptixVisibilityMask(1),
               OPTIX_RAY_FLAG_TERMINATE_ON_FIRST_HIT, // any-hit early exit
