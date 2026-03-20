@@ -1,9 +1,11 @@
-# Default Scene Configuration
-# This scene matches the create_scene_description() function in main.cc
+# Default Scene — No Ambient Light
+# Variant of default_scene.yaml with ambient light disabled.
+# All illumination comes from the area light only — ideal for
+# demonstrating MIS / sampling differences.
 
 scene:
-  name: "Default Scene"
-  description: "Scene with rough mirrors, glass, Fibonacci dots, and area light"
+  name: "Default Scene (no ambient)"
+  description: "Scene with rough mirrors, glass, Fibonacci dots, and area light — no ambient"
   
   # Camera settings
   camera:
@@ -13,11 +15,12 @@ scene:
     fov: 46.0
   
 settings:
-  background_color: [0.25, 0.35, 0.55]
-  ambient_light: 0.08
-  background_intensity: 0.25
-  use_bvh: true
-  
+  # Background and ambient lighting — all disabled
+  background_color: [0.0, 0.0, 0.0]
+  background_intensity: 0.0
+  ambient_light: 0.0
+  use_bvh: false
+
 # Material definitions
 materials:
   - name: "ground"
@@ -53,23 +56,23 @@ materials:
   
   - name: "isc_yellow"
     type: "lambertian"
-    albedo: [0.969, 0.945, 0.624]  # 247/255, 241/255, 159/255
+    albedo: [0.969, 0.945, 0.624]
   
   - name: "isc_blue"
     type: "lambertian"
-    albedo: [0.549, 0.776, 0.902]  # 140/255, 198/255, 230/255
+    albedo: [0.549, 0.776, 0.902]
   
   - name: "isc_violet"
     type: "lambertian"
-    albedo: [0.659, 0.565, 0.753]  # 168/255, 144/255, 192/255
+    albedo: [0.659, 0.565, 0.753]
   
   - name: "isc_rose"
     type: "lambertian"
-    albedo: [0.886, 0.671, 0.729]  # 226/255, 171/255, 186/255
+    albedo: [0.886, 0.671, 0.729]
   
   - name: "isc_green"
     type: "lambertian"
-    albedo: [0.596, 0.780, 0.749]  # 152/255, 199/255, 191/255
+    albedo: [0.596, 0.780, 0.749]
   
   - name: "area_light"
     type: "light"
@@ -93,7 +96,7 @@ geometry:
     center: [1.2, 0.0, -2.0]
     radius: 0.5
     displacement_scale: 0.2
-    pattern_type: 0  # 0 = golf ball dimples
+    pattern_type: 0
   
   - type: "sphere"
     material: "red_fibonacci_dots"

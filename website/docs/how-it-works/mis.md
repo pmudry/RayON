@@ -327,6 +327,49 @@ total ray count increases by ~25–40 %.
 
 ---
 
+## Visual comparison
+
+The renders below isolate the effect of enabling MIS while keeping the Sobol' sampler fixed —
+so all noise differences come from Next-Event Estimation alone.
+Drag the slider to compare.
+
+### Caustics chapel (512 SPP)
+
+<div class="comparison-wrap comparison-block">
+  <span class="label-left">No MIS</span>
+  <span class="label-right">MIS on</span>
+  <img-comparison-slider>
+    <img slot="first"  src="../../assets/images/comparisons/06_caustics_sobol_nomis.png" alt="Caustics — Sobol', no MIS">
+    <img slot="second" src="../../assets/images/comparisons/06_caustics_sobol_mis.png"   alt="Caustics — Sobol', MIS on">
+  </img-comparison-slider>
+  <p class="comparison-caption">
+    <strong>Left: MIS off &nbsp;|&nbsp; Right: MIS on</strong> — Sobol' sampler, 512 SPP.
+    MIS eliminates the firefly hot-spots and resolves the diffuse wall illumination correctly.
+  </p>
+</div>
+
+### Default scene — area light only (64 SPP)
+
+<div class="comparison-wrap comparison-block">
+  <span class="label-left">No MIS</span>
+  <span class="label-right">MIS on</span>
+  <img-comparison-slider>
+    <img slot="first"  src="../../assets/images/comparisons/default_sobol_nomis.png" alt="Default scene — Sobol', no MIS">
+    <img slot="second" src="../../assets/images/comparisons/default_sobol_mis.png"   alt="Default scene — Sobol', MIS on">
+  </img-comparison-slider>
+  <p class="comparison-caption">
+    <strong>Left: MIS off &nbsp;|&nbsp; Right: MIS on</strong> — Sobol' sampler, 64 SPP.
+    Shadow edges, the lit side of the coloured spheres, and the rough-mirror highlight all
+    resolve cleanly with NEE.
+  </p>
+</div>
+
+!!! info "See the full comparison"
+    Four scenes across all configurations are on the
+    [Visual Comparisons](visual-comparisons.md) page.
+
+---
+
 ## References
 
 - Veach, E. & Guibas, L. (1995). *Optimally Combining Sampling Techniques for Monte Carlo Rendering*. SIGGRAPH '95.

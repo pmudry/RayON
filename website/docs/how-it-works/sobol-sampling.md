@@ -184,7 +184,47 @@ The per-launch `use_sobol` boolean (set via `OptixLaunchParams`) selects Sobol' 
 Both samplers are available on CUDA (`-m 2`, `-m 3`) and OptiX (`-m 4`, `-m 5`) backends.
 
 ---
+## Visual comparison
 
+The renders below isolate the effect of switching from PCG to Sobol' while keeping MIS
+**disabled** — so all noise differences come purely from the sampler choice.
+Drag the slider to compare.
+
+### Caustics chapel (512 SPP)
+
+<div class="comparison-wrap comparison-block">
+  <span class="label-left">PCG</span>
+  <span class="label-right">Sobol'</span>
+  <img-comparison-slider>
+    <img slot="first"  src="../../assets/images/comparisons/06_caustics_pcg_nomis.png"   alt="Caustics — PCG, no MIS">
+    <img slot="second" src="../../assets/images/comparisons/06_caustics_sobol_nomis.png" alt="Caustics — Sobol', no MIS">
+  </img-comparison-slider>
+  <p class="comparison-caption">
+    <strong>Left: PCG &nbsp;|&nbsp; Right: Sobol'</strong> — MIS off, 512 SPP.
+    Sobol' reduces the high-frequency grain on the walls and caustic floor patterns.
+  </p>
+</div>
+
+### Color bleed box (64 SPP)
+
+<div class="comparison-wrap comparison-block">
+  <span class="label-left">PCG</span>
+  <span class="label-right">Sobol'</span>
+  <img-comparison-slider>
+    <img slot="first"  src="../../assets/images/comparisons/09_colorbleed_pcg_nomis.png"   alt="Color Bleed — PCG, no MIS">
+    <img slot="second" src="../../assets/images/comparisons/09_colorbleed_sobol_nomis.png" alt="Color Bleed — Sobol', no MIS">
+  </img-comparison-slider>
+  <p class="comparison-caption">
+    <strong>Left: PCG &nbsp;|&nbsp; Right: Sobol'</strong> — MIS off, 64 SPP.
+    The Cornell-box walls and soft colour gradients converge faster with Sobol'.
+  </p>
+</div>
+
+!!! info "See the full comparison"
+    Four scenes across all configurations are on the
+    [Visual Comparisons](visual-comparisons.md) page.
+
+---
 ## References
 
 1. I. Joe and F. Kuo, "Constructing Sobol Sequences with Better Two-Dimensional Projections," *SIAM J. Sci. Comput.* **30** (2008) 2635–2654
