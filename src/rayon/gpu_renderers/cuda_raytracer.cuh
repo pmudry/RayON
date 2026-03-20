@@ -756,9 +756,9 @@ struct LightSampleGPU
  * @param u_sel  Uniform [0,1) for CDF light selection
  * @param u1,u2  Uniform [0,1) for sampling a point on the chosen light
  */
-static __device__ __noinline__ LightSampleGPU sample_light_gpu(const CudaScene::Scene &scene,
-                                                        const f3 &shading_p,
-                                                        float u_sel, float u1, float u2)
+static __device__ LightSampleGPU sample_light_gpu(const CudaScene::Scene &scene,
+                                                  const f3 &shading_p,
+                                                  float u_sel, float u1, float u2)
 {
    LightSampleGPU ls;
    ls.pdf = 0.0f;
@@ -854,9 +854,9 @@ static __device__ __noinline__ LightSampleGPU sample_light_gpu(const CudaScene::
  *
  * Used to compute the MIS weight when a BSDF-sampled path hits an emissive surface.
  */
-static __device__ __noinline__ float light_dir_pdf_gpu(const CudaScene::Scene &scene,
-                                                int geom_idx, const f3 &prev_p,
-                                                const f3 &dir)
+static __device__ float light_dir_pdf_gpu(const CudaScene::Scene &scene,
+                                          int geom_idx, const f3 &prev_p,
+                                          const f3 &dir)
 {
    if (geom_idx < 0 || scene.num_lights == 0)
       return 0.0f;

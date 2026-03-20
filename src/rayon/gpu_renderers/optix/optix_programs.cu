@@ -342,7 +342,7 @@ __device__ OptiXLightSample sample_light_optix(const float3 &shading_p, float u_
 
       float  dist          = sqrtf(dist_sq);
       float  cos_theta_max = sqrtf(fmaxf(0.0f, 1.0f - (light.radius * light.radius) / dist_sq));
-      float  solid_angle   = 2.0f * 3.14159265f * (1.0f - cos_theta_max);
+      float  solid_angle   = 2.0f * CUDART_PI_F * (1.0f - cos_theta_max);
       if (solid_angle < 1e-8f) return ls;
 
       float3 w = to_center / dist;

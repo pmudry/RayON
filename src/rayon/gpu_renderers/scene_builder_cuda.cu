@@ -307,15 +307,15 @@ CudaScene::Scene *CudaSceneBuilder::buildGPUScene(const SceneDescription &desc)
             if (gd.type == GeometryType::SPHERE)
             {
                float r = static_cast<float>(gd.data.sphere.radius);
-               area    = 4.0f * 3.14159265f * r * r;
+               area    = 4.0f * CUDART_PI_F * r * r;
             }
             else if (gd.type == GeometryType::RECTANGLE)
             {
-               auto u = gd.data.rectangle.u;
-               auto v = gd.data.rectangle.v;
+               auto rect_u = gd.data.rectangle.u;
+               auto rect_v = gd.data.rectangle.v;
                // |u × v| approximated from host Vec3
-               float ux = static_cast<float>(u.x()), uy = static_cast<float>(u.y()), uz = static_cast<float>(u.z());
-               float vx = static_cast<float>(v.x()), vy = static_cast<float>(v.y()), vz = static_cast<float>(v.z());
+               float ux = static_cast<float>(rect_u.x()), uy = static_cast<float>(rect_u.y()), uz = static_cast<float>(rect_u.z());
+               float vx = static_cast<float>(rect_v.x()), vy = static_cast<float>(rect_v.y()), vz = static_cast<float>(rect_v.z());
                float cx = uy * vz - uz * vy;
                float cy = uz * vx - ux * vz;
                float cz = ux * vy - uy * vx;

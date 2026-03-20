@@ -718,7 +718,7 @@ static void buildGAS(const Scene::SceneDescription &scene)
                                      static_cast<float>(g.data.sphere.center.y()),
                                      static_cast<float>(g.data.sphere.center.z()));
             ld.radius = static_cast<float>(g.data.sphere.radius);
-            float area = 4.0f * 3.14159265f * ld.radius * ld.radius;
+            float area = 4.0f * CUDART_PI_F * ld.radius * ld.radius;
             ld.area   = area;
             valid = true;
             host_areas.push_back(area);

@@ -149,6 +149,8 @@ class Lambertian : public Material
       double u1  = RndGen::random_double();
       double u2  = RndGen::random_double();
       double r   = std::sqrt(u1);
+      // Note: CPU materials use double-precision constants (M_PI). The corresponding
+      // GPU implementation uses CUDART_PI_F (float) for the same math.
       double phi = 2.0 * M_PI * u2;
 
       Vec3 dir = r * std::cos(phi) * u + r * std::sin(phi) * v + std::sqrt(std::max(0.0, 1.0 - u1)) * w;
