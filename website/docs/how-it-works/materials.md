@@ -310,17 +310,20 @@ the imported mesh makes the face boundaries invisible.*
 
 ## The material dispatch system
 
-Both CPU and GPU renderers share the same material logic. On the CPU, standard
-C++ virtual functions are used. On the GPU, virtual dispatch is not allowed, so RayON stores all
-material parameters in a **flat POD union** and selects the correct code path at runtime via a
-`switch` statement.
+The GPU renderer stores all material parameters in a **flat POD union** and selects the correct
+code path at runtime via a `switch` statement, since virtual dispatch is not available on the GPU.
+
+!!! info "CPU renderers archived"
+    The CPU rendering backends (which used polymorphic C++ virtual dispatch for materials)
+    have been moved to the
+    [`legacy/cpu-renderer`](https://github.com/pmudry/RayON/tree/legacy/cpu-renderer) branch.
 
 A **Plain Old Data (POD) union** is a C/C++ union whose members contain only simple data fields
 (no constructors, destructors, or virtual functions). All members of a union occupy the **same
 memory location** — only one member is valid at a time, selected by a separate tag field. Because
 a POD union has no hidden pointers and no vtable, it can be passed directly to a GPU kernel like
 any other value type. The GPU cannot allocate heap memory or call virtual methods, so every
-polymorphic CPU class (Lambertian, Glass, AnisotropicMetal…) maps to one named member of this
+material type (Lambertian, Glass, AnisotropicMetal…) maps to one named member of this
 union:
 
 ```cpp

@@ -21,7 +21,9 @@
 After editing docs, always run `cd website && uv run mkdocs build --strict` to verify no broken references.
 
 ## Project Overview
-High-performance path tracer (C++17/CUDA) with CPU, multi-threaded, and GPU backends, plus interactive SDL2 real-time rendering. Educational ISC 302 HPC project based on "Ray Tracing in One Weekend." Version 1.5.5, licensed GNU GPL v3.
+High-performance path tracer (C++17/CUDA) with GPU (CUDA and OptiX) backends, plus interactive SDL2 real-time rendering. Educational ISC 302 HPC project based on "Ray Tracing in One Weekend." Version 1.5.5, licensed GNU GPL v3.
+
+> **Note:** The original CPU rendering backends (sequential and multi-threaded) have been moved to the `legacy/cpu-renderer` branch.
 
 ## Architecture: The Unified Scene System
 
@@ -29,10 +31,9 @@ High-performance path tracer (C++17/CUDA) with CPU, multi-threaded, and GPU back
 
 ### Scene Flow
 1. **Host-side construction**: `Scene::SceneDescription` built on CPU (from YAML or programmatically in `main.cc`)
-2. **CPU rendering**: Converted to polymorphic `Hittable_list` via `CPUSceneBuilder::buildCPUScene()`
-3. **GPU rendering**: Converted to flat `CudaScene::Scene` structure via `CudaSceneBuilder::buildGPUScene()` in `scene_builder_cuda.cu`
+2. **GPU rendering**: Converted to flat `CudaScene::Scene` structure via `CudaSceneBuilder::buildGPUScene()` in `scene_builder_cuda.cu`
 
-**Why**: GPU cannot use virtual functions or polymorphism, so CPU uses classes (Sphere, Rectangle, Material) while GPU uses flat structs with enum-based type discrimination.
+**Why**: GPU cannot use virtual functions or polymorphism, so it uses flat structs with enum-based type discrimination.
 
 ### BVH Acceleration
 - **Built on CPU**: `SceneDescription::buildBVH()` uses Surface Area Heuristic (SAH) for optimal partitioning
@@ -162,15 +163,12 @@ Most classes are header-only for template/device code compatibility. Implementat
 ### Virtual Inheritance Pattern
 `Camera` class uses virtual inheritance to combine rendering backends:
 ```cpp
-class Camera : public RendererCPUSingleThread, public RendererCPUParallel,
-               public RendererCUDA, public RendererCUDAProgressive
+class Camera : public RendererCUDA, public RendererCUDAProgressive
 ```
 All inherit virtually from `CameraBase` to avoid diamond problem.
 
 ### Renderer Separation
 - `camera/camera_base.hpp`: Core camera parameters (look_from, look_at, FOV, pixel_delta_u/v)
-- `cpu_renderers/renderer_cpu_single_thread.hpp`: Single-threaded `renderPixels()`
-- `cpu_renderers/renderer_cpu_parallel.hpp`: Thread pool with `std::async`
 - `gpu_renderers/renderer_cuda_host.hpp`: One-shot CUDA render
 - `gpu_renderers/renderer_cuda_progressive_host.hpp`: Interactive SDL + accumulation
 
@@ -203,7 +201,7 @@ Procedural patterns (`ProceduralPattern` enum): FIBONACCI_DOTS, CHECKERBOARD, ST
 ### Geometry Types (enum `GeometryType` in `src/rayon/scenes/scene_description.hpp`)
 - **Primitives**: SPHERE, DISPLACED_SPHERE (golf ball), RECTANGLE, CUBE, TRIANGLE
 - **Mesh**: OBJ_MESH — loaded via `src/rayon/scenes/obj_loader.hpp`
-- **Ray marched**: SDF_PRIMITIVE (torus, octahedron, pyramid) — see `cpu_renderers/cpu_shapes/sdf_shape.hpp`
+- **Ray marched**: SDF_PRIMITIVE (torus, octahedron, pyramid) — see `shaders/shader_golf.cu`
 - **Acceleration**: BVHNODE (internal, not added by users)
 
 ### SDF Shapes
@@ -212,9 +210,8 @@ Ray marched using sphere tracing in `shaders/shader_golf.cu`. Rotation support v
 ## Performance Characteristics
 
 ### Expected Speedups
-- **CPU → Multi-threaded CPU**: ~8-16× (depends on core count)
-- **CPU → CUDA**: ~100-500× (depends on GPU, scene complexity)
 - **With BVH**: 5-50× improvement for complex scenes (100+ objects)
+- **CUDA vs CPU baseline**: ~100-500× (depends on GPU, scene complexity)
 
 ### Optimization Flags
 - **CUDA**: `--use_fast_math` (disabled by default), `-O3`, `--expt-relaxed-constexpr`
@@ -226,15 +223,13 @@ Ray marched using sphere tracing in `shaders/shader_golf.cu`. Rotation support v
 ### Adding New Geometry
 1. Add enum to `GeometryType` in `src/rayon/scenes/scene_description.hpp`
 2. Add struct to `GeometryDesc` union
-3. Implement CPU intersection as `Hittable` subclass in `cpu_renderers/cpu_shapes/`
-4. Implement GPU intersection in `gpu_renderers/cuda_raytracer.cuh::intersect_geometry()`
-5. Add factory method `SceneDescription::addMyShape()`
+3. Implement GPU intersection in `gpu_renderers/cuda_raytracer.cuh::intersect_geometry()`
+4. Add factory method `SceneDescription::addMyShape()`
 
 ### Adding New Material
 1. Add enum to `MaterialType` in `src/rayon/scenes/scene_description.hpp`
 2. Add parameters to `MaterialDesc` struct
-3. Implement CPU scattering in `data_structures/material.hpp`
-4. Add GPU evaluation in `gpu_renderers/materials/material_dispatcher.cuh`
+3. Add GPU evaluation in `gpu_renderers/materials/material_dispatcher.cuh`
 
 ### Debugging CUDA Kernels
 - **Compile Debug**: `-DCMAKE_BUILD_TYPE=Debug` enables `-lineinfo` for cuda-gdb
@@ -243,7 +238,7 @@ Ray marched using sphere tracing in `shaders/shader_golf.cu`. Rotation support v
 
 ## Command Line Arguments
 ```bash
--m <method>              # 0=CPU, 1=CPU parallel, 2=CUDA, 3=CUDA+SDL,
+-m <method>              # 2=CUDA, 3=CUDA+SDL,
                          #   4=OptiX offline (if built with OPTIX), 5=OptiX+SDL (if built with OPTIX)
 -s <samples>             # Samples per pixel (default: SAMPLES_PER_PIXEL)
 -r <WxH>|<height>        # Resolution: e.g. 1920x1080 or 720 (16:9)
@@ -268,7 +263,7 @@ Provided in `resources/scenes/`:
 
 ## Key Files Reference
 - **Main entry**: `src/rayon/main.cc`
-- **Scene hub**: `src/rayon/scenes/scene_description.hpp` — unified CPU/GPU scene format (read this first!)
+- **Scene hub**: `src/rayon/scenes/scene_description.hpp` — unified scene format (read this first!)
 - **Scene factory**: `src/rayon/scenes/scene_factory.hpp` — functions to create scenes (from YAML or programmatically)
 - **GPU scene**: `src/rayon/gpu_renderers/cuda_scene.cuh` — flat GPU-friendly scene structs
 - **CUDA ray tracer**: `src/rayon/gpu_renderers/cuda_raytracer.cuh` — intersection, BVH traversal, shading

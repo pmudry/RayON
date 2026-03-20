@@ -15,12 +15,12 @@
 
 Based on the [Ray-tracing In One Weekend](https://github.com/RayTracing/raytracing.github.io/tree/release/src/InOneWeekend) series, an amazing resource for discovering ray-tracing magic! 
 
-This project started as a hand-made reimplementation of the `InOneWeekend` ray tracer to better understand how it works. It evolved into an interactive, real-time path tracer with progressive sample accumulation. As a result, there are multiple renderers available:
+This project started as a hand-made reimplementation of the `InOneWeekend` ray tracer to better understand how it works. It evolved into an interactive, real-time path tracer with progressive sample accumulation. The available rendering backends are:
 
-1. CPU single-threaded (useless)
-1. CPU multi-threaded
-1. GPU CUDA accelerated
-1. GPU CUDA real-time raytracing with accumulative sampling
+1. GPU CUDA accelerated (offline)
+1. GPU CUDA real-time raytracing with accumulative sampling (interactive)
+
+> **Note:** The original CPU rendering backends (sequential and multi-threaded) have been moved to the [`legacy/cpu-renderer`](https://github.com/pmudry/RayON/tree/legacy/cpu-renderer) branch.
 
 ## Quick start
 

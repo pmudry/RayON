@@ -1,30 +1,24 @@
 # Scene System
 
 RayON uses a **"build once, render anywhere"** architecture. A single host-side scene description
-is constructed once and can be handed to any renderer — CPU or GPU — without duplication.
+is constructed once and handed to the GPU renderer.
 
 ---
 
 ## The core idea
 
-GPU kernels cannot use virtual functions, heap allocation, or polymorphism. CPU code uses all
-of these freely. If the CPU and GPU renderers kept separate scene representations, every change
-to a scene would require updating two code paths.
-
-Instead, RayON uses one **neutral representation** (`Scene::SceneDescription`) that is converted
-into the renderer-specific format at build time:
+GPU kernels cannot use virtual functions, heap allocation, or polymorphism.
+RayON uses one **neutral representation** (`Scene::SceneDescription`) that is converted
+into the GPU-specific flat format at build time:
 
 ```mermaid
 flowchart LR
     yaml["YAML file\nor\nC++ code"]
     desc["SceneDescription\n(host-side, neutral)"]
-    cpu_builder["CPUSceneBuilder\n::buildCPUScene()"]
     gpu_builder["CUDASceneBuilder\n::buildGPUScene()"]
-    cpu_scene["Hittable_list\n(polymorphic C++)"]
     gpu_scene["CudaScene::Scene\n(flat GPU structs)"]
 
     yaml -->|parse / construct| desc
-    desc --> cpu_builder --> cpu_scene
     desc --> gpu_builder --> gpu_scene
 
     style desc fill:#2d3436,stroke:#e17055,color:#ffffff
@@ -70,7 +64,12 @@ This is exactly how `main.cc::create_scene_description()` builds the default sce
 
 ## CPU scene building
 
-`CPUSceneBuilder::buildCPUScene(desc)` walks the `GeometryDesc` list and instantiates normal
+!!! info "CPU renderers archived"
+    The CPU rendering backends and `CPUSceneBuilder` have been moved to the
+    [`legacy/cpu-renderer`](https://github.com/pmudry/RayON/tree/legacy/cpu-renderer) branch.
+    The main branch now supports GPU rendering only.
+
+`CPUSceneBuilder::buildCPUScene(desc)` walked the `GeometryDesc` list and instantiated normal
 C++ objects:
 
 ```cpp
@@ -84,8 +83,8 @@ if (geom.type == GeometryType::SPHERE) {
 }
 ```
 
-The key classes (`Sphere`, `Rectangle`, `Triangle`, etc.) inherit from `Hittable` and implement
-a virtual `hit()` function. This is idiomatic C++ — no GPU concerns here.
+The key classes (`Sphere`, `Rectangle`, `Triangle`, etc.) inherited from `Hittable` and implemented
+a virtual `hit()` function. This is idiomatic C++ — no GPU concerns.
 
 ---
 
@@ -169,9 +168,8 @@ artefacts in scene geometry construction while keeping GPU compute on `float` la
 
 1. Add the enum value to `GeometryType` in `scene_description.hpp`.
 2. Add a parameters struct inside the `GeometryDesc` union.
-3. Implement a CPU `Hittable` subclass in `cpu_renderers/cpu_shapes/`.
-4. Add a `CudaScene::Geometry` union member in `cuda_scene.cuh`.
-5. Implement `intersect_my_shape()` in `shader_common.cuh`.
-6. Add the case to both switch statements above.
-7. Add `convertGeometry()` case in `scene_builder_cuda.cu`.
-8. Add a `SceneDescription::addMyShape()` factory method.
+3. Add a `CudaScene::Geometry` union member in `cuda_scene.cuh`.
+4. Implement `intersect_my_shape()` in `shader_common.cuh`.
+5. Add the case to both switch statements above.
+6. Add `convertGeometry()` case in `scene_builder_cuda.cu`.
+7. Add a `SceneDescription::addMyShape()` factory method.

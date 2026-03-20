@@ -10,13 +10,12 @@ This page walks you through everything needed to build RayON from source and run
 |---|---|---|---|
 | C++ compiler | C++17 | **Yes** | Clang ≥ 14 (default) or GCC ≥ 11 |
 | CMake | ≥ 3.20 | **Yes** | Ninja also supported |
-| CUDA Toolkit | ≥ 12.0 | Optional | Required for GPU renderer modes 2 & 3 |
-| SDL2 | ≥ 2.0 | Optional | Required for interactive mode (3) and real-time display |
+| CUDA Toolkit | ≥ 12.0 | **Yes** | Required for GPU renderer modes 2–5 |
+| SDL2 | ≥ 2.0 | Optional | Required for interactive mode (3, 5) and real-time display |
 | SDL2_image | ≥ 2.0 | Optional | Companion to SDL2 for texture loading |
 | Dear ImGui | bundled | — | Included under `src/external/` |
 | stb | bundled | — | Included under `src/external/` |
 
-> **Without CUDA** the GPU modes are silently disabled — all CPU modes still work.
 > **Without SDL2** the interactive mode is disabled but all offline render modes work.
 
 ---
@@ -74,10 +73,10 @@ When only CUDA is available, it defaults to the one-shot CUDA renderer (mode 2).
 To pick a renderer explicitly, use `-m`:
 
 ```bash
-./rayon -m 0          # CPU single-thread
-./rayon -m 1          # CPU parallel
 ./rayon -m 2          # CUDA one-shot
 ./rayon -m 3          # CUDA interactive (SDL2 required)
+./rayon -m 4          # OptiX one-shot (if built with OptiX)
+./rayon -m 5          # OptiX interactive (SDL2 + OptiX required)
 ```
 
 Or add `--menu` to see the interactive selection prompt:
@@ -85,10 +84,10 @@ Or add `--menu` to see the interactive selection prompt:
 ```bash
 ./rayon --menu
 # Choose rendering method:
-#   0. CPU sequential
-#   1. CPU parallel
 #   2. CUDA GPU (default)
 #   3. CUDA GPU with interactive SDL display
+#   4. OptiX GPU (hardware RT cores)
+#   5. OptiX GPU with interactive SDL display
 ```
 
 Rendered images are saved automatically to `build/rendered_images/` as timestamped
@@ -104,10 +103,10 @@ Rendered images are saved automatically to `build/rendered_images/` as timestamp
 
 | Flag | Default | Description |
 |---|---|---|
-| `-m <method>` | 3 (or 2) | Renderer: `0`=CPU seq, `1`=CPU par, `2`=CUDA, `3`=CUDA interactive, `4`=OptiX, `5`=OptiX interactive |
+| `-m <method>` | 3 (or 2) | Renderer: `2`=CUDA, `3`=CUDA interactive, `4`=OptiX, `5`=OptiX interactive |
 | `--menu` | — | Show interactive renderer-selection menu instead of using the default |
 | `--scene <yaml>` | built-in | Load a scene from a YAML file |
-| `-s <n>` | 64 | Samples per pixel (offline modes 0–2, 4) |
+| `-s <n>` | 64 | Samples per pixel (offline modes 2, 4) |
 | `-r <h>` | 720 | Image height; aspect ratio 16:9 auto-applied (`-r 1080`) |
 | `-r <WxH>` | — | Arbitrary resolution (`-r 1920x1080`, `-r 800x600`) |
 | `--samples-per-batch <n>` | 10 | Fixed samples per batch for interactive mode |

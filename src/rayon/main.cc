@@ -1,7 +1,5 @@
 #include "camera/camera.hpp"
 #include "constants.hpp"
-#include "cpu_renderers/renderer_cpu_parallel.hpp"
-#include "cpu_renderers/renderer_cpu_single_thread.hpp"
 #include "gpu_renderers/renderer_cuda_host.hpp"
 #include "scene_description.hpp"
 #include "scene_factory.hpp"
@@ -88,15 +86,15 @@ void dumpHelp()
 {
    cout << "Options:\n";
    cout << "  -h, --help, /?         Show this help message\n";
-   cout << "  -m <method>            Rendering method: 0=CPU sequential, 1=CPU parallel,\n";
-   cout << "                         2=CUDA offline, 3=CUDA interactive (default: 3)\n";
+   cout << "  -m <method>            Rendering method: 2=CUDA offline, 3=CUDA interactive (default: 3)\n";
+   cout << "                         4=OptiX offline, 5=OptiX interactive (if built with OptiX)\n";
    cout << "  --menu                 Show interactive method selection menu\n";
    cout << "  -r <WxH>               Arbitrary resolution, e.g. 1920x1080 or 800x600\n";
    cout << "  -r <height>            Preset height (16:9): 2160, 1080, 720, 360, 180 (default: "
         << IMAGE_HEIGHT << ")\n";
    cout << "  --scene <file>         Load scene from YAML file (default: built-in scene)\n";
    cout << "\n";
-   cout << "Offline rendering (modes 0, 1, 2):\n";
+   cout << "Offline rendering (modes 2, 4):\n";
    cout << "  -s <samples>           Samples per pixel (default: " << SAMPLES_PER_PIXEL << ")\n";
    cout << "\n";
    cout << "Interactive rendering (mode 3):\n";
@@ -131,7 +129,7 @@ ProgramArgs parseInput(int argc, char *argv[])
       else if (strcmp(argv[i], "-m") == 0 && i + 1 < argc)
       {
          // Validate rendering method
-         if (strcmp(argv[i + 1], "0") == 0 || strcmp(argv[i + 1], "1") == 0 || strcmp(argv[i + 1], "2") == 0
+         if (strcmp(argv[i + 1], "2") == 0
 #ifdef SDL2_FOUND
              || strcmp(argv[i + 1], "3") == 0
 #endif
@@ -147,7 +145,7 @@ ProgramArgs parseInput(int argc, char *argv[])
          }
          else
          {
-            cout << "Invalid rendering method specified after -m. Allowed values are 0, 1, 2"
+            cout << "Invalid rendering method specified after -m. Allowed values are 2"
 #ifdef SDL2_FOUND
                  ", 3"
 #endif
@@ -325,8 +323,6 @@ int main(int argc, char *argv[])
    {
       // Choose rendering method
       cout << "Choose rendering method:" << "\n";
-      cout << "\t0. CPU sequential" << "\n";
-      cout << "\t1. CPU parallel" << "\n";
       cout << "\t2. CUDA GPU (default)" << "\n";
 #ifdef SDL2_FOUND
       cout << "\t3. CUDA GPU with interactive SDL display" << "\n";
@@ -337,7 +333,7 @@ int main(int argc, char *argv[])
 #if defined(SDL2_FOUND) && defined(OPTIX_FOUND)
       cout << "\t5. OptiX GPU with interactive SDL display" << "\n";
 #endif
-      cout << "Enter choice (0, 1, 2"
+      cout << "Enter choice (2"
 #ifdef SDL2_FOUND
            << ", 3"
 #endif
@@ -406,21 +402,6 @@ int main(int argc, char *argv[])
 
    switch (renderType)
    {
-   case 0:
-   {
-      cout << "Using CPU single threaded..." << "\n";
-      RendererCPU renderer;
-      coordinator.render(renderer, localImage);
-      break;
-   }
-   case 1:
-   {
-      cout << "Using CPU parallel rendering..." << "\n";
-      RendererCPUParallel renderer;
-      coordinator.render(renderer, localImage);
-      break;
-   }
-
 #ifdef SDL2_FOUND
    case 3:
    {

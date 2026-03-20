@@ -9,6 +9,11 @@ typical 720p scene with 1 024 SPP.
 
 ## 1 — CPU multi-threading
 
+!!! info "CPU renderers archived"
+    The CPU rendering backends (sequential and multi-threaded) have been moved to the
+    [`legacy/cpu-renderer`](https://github.com/pmudry/RayON/tree/legacy/cpu-renderer) branch.
+    The main branch now supports GPU rendering only.
+
 **What it is:** tile-based work dispatch using `std::async`. The image is divided into blocks;
 each block is submitted as an independent `std::future` and picked up by a thread-pool of
 `N−2` hardware threads.
@@ -458,7 +463,7 @@ production renderers (Blender Cycles exposes equivalent "Clamp Direct / Indirect
 
 | # | Optimisation | Impact | Renderer |
 |---|---|---|---|
-| 1 | CPU multi-threading | ~15× | CPU |
+| 1 | CPU multi-threading | ~15× | CPU *(archived — see `legacy/cpu-renderer` branch)* |
 | 2 | CUDA GPU kernels | ~400× vs. CPU ST | CUDA |
 | 3 | 32×4 thread blocks | ~5–10% throughput | CUDA |
 | 4 | Cosine-weighted sampling | 4–8× fewer SPP | All |

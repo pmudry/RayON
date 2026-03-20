@@ -63,7 +63,7 @@ There is a compact geometric construction: pick a random point on a unit sphere 
 along the surface normal**. The resulting direction is automatically cosine-distributed.
 
 ```cpp
-// From cpu_renderers/renderer_cpu_single_thread.hpp
+// Cosine-weighted hemisphere sampling
 Vec3 random_unit_sphere() {
     while (true) {
         Vec3 p = Vec3::random(-1, 1);

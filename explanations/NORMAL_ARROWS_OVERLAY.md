@@ -1,6 +1,10 @@
 # CPU Normal Arrows Overlay
 
-This document explains how the normal arrows overlay is implemented in interactive mode.
+> **Note:** This feature has been removed from the main branch as part of the CPU renderer
+> archival. The CPU rendering backends (which this overlay depended on) have been moved to the
+> `legacy/cpu-renderer` branch. This document is preserved for historical reference.
+
+This document explains how the normal arrows overlay was implemented in interactive mode.
 
 ## Goal
 

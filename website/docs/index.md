@@ -11,33 +11,23 @@ hide:
   <img src="assets/rayon_logo_animated.svg"
        alt="RayON — animated prism logo with light rays dispersing into a spectrum"
        loading="eager" class="hero-svg off-glb">
-  <p class="hero-tagline">A high-performance CPU &amp; CUDA path tracer with real-time progressive sampling</p>
+  <p class="hero-tagline">A high-performance CUDA &amp; OptiX path tracer with real-time progressive sampling</p>
 </div>
 
 ## What is RayON?
 
-RayON is an educational and experimental **path tracer** built in C++ with optional CUDA acceleration.
+RayON is an educational and experimental **path tracer** built in C++ with CUDA and OptiX acceleration.
 It started as a re-implementation of the classic
 [Ray Tracing in One Weekend](https://github.com/RayTracing/raytracing.github.io) series and evolved
 into a fully interactive raytracer running at **> 100 FPS @ 720p** on an NVIDIA DGX Spark.
 
-Four rendering back-ends are available at runtime — no recompilation needed:
+Two GPU rendering back-ends are available at runtime — no recompilation needed:
 
 <div class="feature-grid" markdown>
 <div class="feature-card" markdown>
-**CPU Single-thread**
-
-Reference implementation on the CPU, one pixel at a time. It was the starting point but is in reality useless
-</div>
-<div class="feature-card" markdown>
-**CPU Multi-thread**
-
-Splits the image into tiles and dispatches them across all available cores using `std::async`. Typical speedup: 8–16×, depending on your CPU.
-</div>
-<div class="feature-card" markdown>
 **CUDA GPU**
 
-One-shot CUDA kernel with 32×4 thread blocks, warp-friendly memory layout, and persistent `curand` states. ~100–500× faster than single-thread CPU.
+One-shot CUDA kernel with 32×4 thread blocks, warp-friendly memory layout, and persistent `curand` states.
 </div>
 <div class="feature-card" markdown>
 **CUDA Interactive**
@@ -45,6 +35,11 @@ One-shot CUDA kernel with 32×4 thread blocks, warp-friendly memory layout, and 
 SDL2 window with progressive accumulation. Orbit, pan, zoom with the mouse. [`Dear ImGui`](https://github.com/ocornut/imgui) sliders for live DOF, samples, light intensity, and roughness.
 </div>
 </div>
+
+!!! info "CPU renderers archived"
+    The original CPU rendering backends (sequential and multi-threaded) have been moved to the
+    [`legacy/cpu-renderer`](https://github.com/pmudry/RayON/tree/legacy/cpu-renderer) branch.
+    The main branch now supports GPU rendering only.
 
 It also features **BVH Acceleration**, CPU-built, with GPU-traversed Bounding Volume Hierarchy with Surface Area Heuristic (SAH) splitting. This provides 5–50× speedup on scenes with 100+ objects.
 

@@ -1,5 +1,9 @@
 # Multiple Importance Sampling (MIS) in RayON
 
+> **Note:** References to `cpu_renderers/` and `cpu_shapes/` files below refer to code that
+> has been moved to the `legacy/cpu-renderer` branch. The GPU implementation of MIS remains
+> on the main branch.
+
 ## Overview
 
 RayON's path tracer previously used **pure BSDF sampling**: at each bounce, a new direction was drawn

@@ -28,9 +28,6 @@ CompileFlags:
     - -I/home/pmudry/git/RayON/src/rayon
     - -I/home/pmudry/git/RayON/src/rayon/camera
     - -I/home/pmudry/git/RayON/src/rayon/camera/sdl
-    - -I/home/pmudry/git/RayON/src/rayon/cpu_renderers
-    - -I/home/pmudry/git/RayON/src/rayon/cpu_renderers/cpu_shapes
-    - -I/home/pmudry/git/RayON/src/rayon/cpu_renderers/utils
     - -I/home/pmudry/git/RayON/src/rayon/data_structures
     - -I/home/pmudry/git/RayON/src/rayon/gpu_renderers
     - -I/home/pmudry/git/RayON/src/rayon/gpu_renderers/materials

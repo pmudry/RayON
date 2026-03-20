@@ -178,10 +178,6 @@ class RendererCUDAProgressive : public IRenderer
       float convergence_pct = 0.0f;          // % of pixels that have converged (for display)
       bool show_heatmap = false;              // Toggle to display sample count heatmap
       int visualization_mode = static_cast<int>(VisualizationMode::NORMAL); // Visualization mode (normal vs show normals)
-      bool show_normal_arrows = false;        // CPU overlay of normal vectors
-      int normal_arrow_count = 2000;           // Target number of arrows on screen
-      float normal_arrow_scale = 0.6f;        // Arrow length multiplier
-      float normal_arrow_thickness = 1.2f;    // Arrow thickness in pixels
       bool show_spps_counter = true;          // SDL overlay throughput counter under logo
 
       // --- HDR Environment Map ---
@@ -324,7 +320,6 @@ class RendererCUDAProgressive : public IRenderer
       int current_scene_index = 0; // Start with whatever was passed in
       Scene::SceneDescription active_scene = scene; // Mutable copy
       Scene::SceneDescription original_scene = scene; // Keep original to restore materials
-      Scene::CPUScene cpu_scene_for_arrows = Scene::CPUSceneBuilder::buildCPUScene(original_scene);
 
       auto applyVisualizationToActiveScene = [&]() {
          // Always start from original materials, then apply visualization override.
@@ -335,137 +330,6 @@ class RendererCUDAProgressive : public IRenderer
             for (auto &geom : active_scene.geometries)
             {
                geom.material_id = material_index;
-            }
-         }
-      };
-
-      auto drawLineRGB = [&](vector<unsigned char> &img, int x0, int y0, int x1, int y1, unsigned char r,
-                    unsigned char g, unsigned char b, float thickness) {
-         int dx = std::abs(x1 - x0);
-         int sx = x0 < x1 ? 1 : -1;
-         int dy = -std::abs(y1 - y0);
-         int sy = y0 < y1 ? 1 : -1;
-         int err = dx + dy;
-         const float radius_f = std::max(0.0f, thickness - 1.0f);
-         const int radius = static_cast<int>(std::ceil(radius_f + 1.0f));
-
-         while (true)
-         {
-            for (int oy = -radius; oy <= radius; ++oy)
-            {
-               const int py = y0 + oy;
-               if (py < 0 || py >= image_height)
-               {
-                  continue;
-               }
-               for (int ox = -radius; ox <= radius; ++ox)
-               {
-                  const int px = x0 + ox;
-                  if (px < 0 || px >= image_width)
-                  {
-                     continue;
-                  }
-
-                  const float dist = std::sqrt(static_cast<float>(ox * ox + oy * oy));
-                  // Coverage ramps from center pixel to neighbors as thickness increases.
-                  // Nonlinear gain makes 1.0/1.1/1.2 visibly different without hard jumps.
-                  const float base = radius_f + 1.0f - dist;
-                  const float coverage = std::clamp(std::pow(std::max(0.0f, base), 0.7f) * 1.8f, 0.0f, 1.0f);
-                  if (coverage <= 0.0f)
-                  {
-                     continue;
-                  }
-
-                  const int idx = (py * image_width + px) * image_channels;
-                  img[idx + 0] = static_cast<unsigned char>(
-                      (1.0f - coverage) * static_cast<float>(img[idx + 0]) + coverage * static_cast<float>(r));
-                  img[idx + 1] = static_cast<unsigned char>(
-                      (1.0f - coverage) * static_cast<float>(img[idx + 1]) + coverage * static_cast<float>(g));
-                  img[idx + 2] = static_cast<unsigned char>(
-                      (1.0f - coverage) * static_cast<float>(img[idx + 2]) + coverage * static_cast<float>(b));
-               }
-            }
-            if (x0 == x1 && y0 == y1)
-               break;
-            int e2 = 2 * err;
-            if (e2 >= dy)
-            {
-               err += dy;
-               x0 += sx;
-            }
-            if (e2 <= dx)
-            {
-               err += dx;
-               y0 += sy;
-            }
-         }
-      };
-
-      auto drawCPUArrowOverlay = [&](vector<unsigned char> &img) {
-         if (!show_normal_arrows || normal_arrow_count <= 0)
-         {
-            return;
-         }
-
-         const int pixel_count = image_width * image_height;
-         const float target_density = static_cast<float>(pixel_count) / static_cast<float>(normal_arrow_count);
-         const int step = std::max(6, static_cast<int>(std::sqrt(std::max(1.0f, target_density))));
-         const float arrow_len = std::max(4.0f, normal_arrow_scale * static_cast<float>(step));
-         const float head_len = 0.35f * arrow_len;
-         const float c = 0.8660254f; // cos(30 deg)
-         const float s = 0.5f;       // sin(30 deg)
-
-         Hit_record rec;
-         for (int y = step / 2; y < image_height; y += step)
-         {
-            for (int x = step / 2; x < image_width; x += step)
-            {
-               Point3 pixel_center = frame.pixel00_loc + static_cast<double>(x) * frame.pixel_delta_u +
-                                     static_cast<double>(y) * frame.pixel_delta_v;
-               Ray r(frame.camera_center, pixel_center - frame.camera_center);
-               if (!cpu_scene_for_arrows.scene.hit(r, Interval(0.0001, inf), rec))
-               {
-                  continue;
-               }
-
-               const double sx_n = dot(rec.normal, frame.u);
-               const double sy_n = -dot(rec.normal, frame.v);
-               const double mag2 = sx_n * sx_n + sy_n * sy_n;
-               if (mag2 < 1e-8)
-               {
-                  continue;
-               }
-
-               const double inv_mag = 1.0 / std::sqrt(mag2);
-               const double dir_x = sx_n * inv_mag;
-               const double dir_y = sy_n * inv_mag;
-
-               const int tip_x = static_cast<int>(std::lround(static_cast<double>(x) + dir_x * arrow_len));
-               const int tip_y = static_cast<int>(std::lround(static_cast<double>(y) + dir_y * arrow_len));
-
-               unsigned char rr = static_cast<unsigned char>(127.5 * (rec.normal.x() + 1.0));
-               unsigned char gg = static_cast<unsigned char>(127.5 * (rec.normal.y() + 1.0));
-               unsigned char bb = static_cast<unsigned char>(127.5 * (rec.normal.z() + 1.0));
-
-               drawLineRGB(img, x, y, tip_x, tip_y, rr, gg, bb, normal_arrow_thickness);
-
-               const double back_x = -dir_x;
-               const double back_y = -dir_y;
-
-               const double left_x = back_x * c - back_y * s;
-               const double left_y = back_x * s + back_y * c;
-               const double right_x = back_x * c + back_y * s;
-               const double right_y = -back_x * s + back_y * c;
-
-               const int left_tip_x = static_cast<int>(std::lround(static_cast<double>(tip_x) + left_x * head_len));
-               const int left_tip_y = static_cast<int>(std::lround(static_cast<double>(tip_y) + left_y * head_len));
-               const int right_tip_x =
-                   static_cast<int>(std::lround(static_cast<double>(tip_x) + right_x * head_len));
-               const int right_tip_y =
-                   static_cast<int>(std::lround(static_cast<double>(tip_y) + right_y * head_len));
-
-               drawLineRGB(img, tip_x, tip_y, left_tip_x, left_tip_y, rr, gg, bb, normal_arrow_thickness);
-               drawLineRGB(img, tip_x, tip_y, right_tip_x, right_tip_y, rr, gg, bb, normal_arrow_thickness);
             }
          }
       };
@@ -505,7 +369,6 @@ class RendererCUDAProgressive : public IRenderer
 
          // Update original_scene as well, then re-apply visualization mode.
          original_scene = active_scene;
-         cpu_scene_for_arrows = Scene::CPUSceneBuilder::buildCPUScene(original_scene);
          applyVisualizationToActiveScene();
 
          // Apply scene camera
@@ -585,10 +448,6 @@ class RendererCUDAProgressive : public IRenderer
                   dof_enabled = false;
                   dof_aperture = 0.1f;
                   dof_focus_distance = 10.0f;
-                  show_normal_arrows = false;
-                  normal_arrow_count = 2000;
-                  normal_arrow_scale = 0.6f;
-                  normal_arrow_thickness = 1.2f;
                   show_spps_counter = true;
                   gui.setLogoVisible(true);
                   samples_per_batch_float = static_cast<float>(settings_.samples_per_batch);
@@ -609,12 +468,6 @@ class RendererCUDAProgressive : public IRenderer
                else if (event.key.keysym.sym == SDLK_l)
                {
                   gui.toggleLogo();
-               }
-               else if (event.key.keysym.sym == SDLK_a)
-               {
-                  show_normal_arrows = !show_normal_arrows;
-                  // Overlay is composited in display buffer; force refresh even if accumulation stopped.
-                  needs_rerender = true;
                }
                else if (event.key.keysym.sym == SDLK_n)
                {
@@ -836,10 +689,6 @@ class RendererCUDAProgressive : public IRenderer
          float old_adaptive_thresh = adaptive_threshold;
          bool old_show_heatmap = show_heatmap;
          int old_visualization_mode = visualization_mode;
-         bool old_show_normal_arrows = show_normal_arrows;
-         int old_normal_arrow_count = normal_arrow_count;
-         float old_normal_arrow_scale = normal_arrow_scale;
-         float old_normal_arrow_thickness = normal_arrow_thickness;
          int   old_golf_dimple_count  = golf_dimple_count;
          float old_golf_dimple_radius = golf_dimple_radius;
          float old_golf_dimple_depth  = golf_dimple_depth;
@@ -859,7 +708,6 @@ class RendererCUDAProgressive : public IRenderer
 
          // Recompose from a stable base every frame so overlays don't stack over time.
          display_image = base_display_image;
-         drawCPUArrowOverlay(display_image);
 
          int tri_count = 0;
          for (const auto &g : active_scene.geometries)
@@ -871,8 +719,8 @@ class RendererCUDAProgressive : public IRenderer
                            &auto_orbit, &current_scene_index, scene_names, scene_count,
                            cam_pos, cam_lookat, &cam_fov_ui,
                            &adaptive_sampling_enabled, &adaptive_threshold, convergence_pct, &show_heatmap,
-                           &visualization_mode, &show_normal_arrows, &normal_arrow_count,
-                           &normal_arrow_scale, &normal_arrow_thickness, &show_spps_counter, tri_count,
+                           &visualization_mode, nullptr, nullptr,
+                           nullptr, nullptr, &show_spps_counter, tri_count,
                            nullptr,
                            scene_has_golf_ball      ? &golf_dimple_count  : nullptr,
                            scene_has_golf_ball      ? &golf_dimple_radius : nullptr,
@@ -969,11 +817,6 @@ class RendererCUDAProgressive : public IRenderer
 
          // Arrow overlay settings affect the composited display image even when sampling is done,
          // so force a re-conversion from accumulation buffer when they change.
-         if (show_normal_arrows != old_show_normal_arrows || normal_arrow_count != old_normal_arrow_count ||
-             normal_arrow_scale != old_normal_arrow_scale || normal_arrow_thickness != old_normal_arrow_thickness)
-         {
-            needs_rerender = true;
-         }
       }
 
       auto total_end = std::chrono::high_resolution_clock::now();

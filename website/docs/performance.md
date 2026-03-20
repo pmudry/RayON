@@ -42,15 +42,16 @@ Measured on a single test scene (default scene, 720p, 256 SPP):
 
 | Renderer | Time (s) | Speedup vs CPU |
 |---|---|---|
-| CPU single-thread | ~1 800 | 1× (baseline) |
-| CPU multi-thread (16 cores) | ~120 | ~15× |
+| CPU single-thread *(archived)* | ~1 800 | 1× (baseline) |
+| CPU multi-thread *(archived)* | ~120 | ~15× |
 | CUDA GPU — no BVH | ~4.5 | ~400× |
 | CUDA GPU — with BVH | ~1.7 | ~1 060× |
 
-!!! note "CPU times above are estimates"
-    The CPU renderer was not benchmarked for 256 SPP at 720p in the automated suite
-    (it would take 30+ minutes). Values above extrapolate from lower-resolution timing
-    runs scaled linearly with pixel count.
+!!! info "CPU renderers archived"
+    The CPU rendering backends (sequential and multi-threaded) have been moved to the
+    [`legacy/cpu-renderer`](https://github.com/pmudry/RayON/tree/legacy/cpu-renderer) branch.
+    The main branch now supports GPU rendering only. CPU times above are kept for historical
+    reference as the baseline for speedup calculations.
 
 ---
 

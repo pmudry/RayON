@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-RayON is a high-performance path tracer (C++17/CUDA) with CPU, multi-threaded, and GPU backends, plus interactive SDL2 real-time rendering. Educational project for ISC 302 HPC course, based on "Ray Tracing in One Weekend." Version 1.5.5, licensed GNU GPL v3.
+RayON is a high-performance path tracer (C++17/CUDA) with GPU (CUDA and OptiX) backends, plus interactive SDL2 real-time rendering. Educational project for ISC 302 HPC course, based on "Ray Tracing in One Weekend." Version 1.5.5, licensed GNU GPL v3.
+
+> **Note:** The original CPU rendering backends (sequential and multi-threaded) have been moved to the `legacy/cpu-renderer` branch.
 
 ## Build Commands
 
@@ -19,8 +21,8 @@ make -C build -j
 cd build && cmake .. -DCMAKE_BUILD_TYPE=Debug && make -j && cd ..
 
 # Run (from build/)
-./rayon -m <0-5> -s <samples> -r <resolution> --scene <yaml_file>
-#   -m 0: CPU sequential, 1: CPU parallel, 2: CUDA, 3: CUDA+SDL interactive,
+./rayon -m <2-5> -s <samples> -r <resolution> --scene <yaml_file>
+#   -m 2: CUDA, 3: CUDA+SDL interactive,
 #       4: OptiX offline (if built with OPTIX), 5: OptiX+SDL interactive (if built with OPTIX)
 ```
 
@@ -40,10 +42,9 @@ After adding new files/directories under `src/`, re-run `cmake .. --fresh` to up
 Central hub: `Scene::SceneDescription` (`src/rayon/scenes/scene_description.hpp`).
 
 1. **Host-side**: SceneDescription built on CPU (from YAML or programmatically)
-2. **CPU path**: Converted to polymorphic `Hittable_list` via `CPUSceneBuilder`
-3. **GPU path**: Converted to flat `CudaScene::Scene` struct via `CudaSceneBuilder::buildGPUScene()`
+2. **GPU path**: Converted to flat `CudaScene::Scene` struct via `CudaSceneBuilder::buildGPUScene()`
 
-GPU cannot use virtual functions, so CPU uses polymorphic classes while GPU uses flat structs with enum-based type dispatch.
+GPU cannot use virtual functions, so it uses flat structs with enum-based type dispatch.
 
 ### Renderer Backends
 
@@ -51,8 +52,6 @@ All unified through `Camera` class (virtual inheritance from all renderer bases 
 
 | Backend | File | Notes |
 |---------|------|-------|
-| CPU Sequential | `cpu_renderers/renderer_cpu_single_thread.hpp` | Reference/debug |
-| CPU Parallel | `cpu_renderers/renderer_cpu_parallel.hpp` | `std::async` |
 | CUDA | `gpu_renderers/renderer_cuda_host.hpp` | Batch |
 | CUDA Progressive | `gpu_renderers/renderer_cuda_progressive_host.hpp` | Interactive SDL2 |
 | OptiX | `gpu_renderers/renderer_optix_host.hpp` | Batch (if built with OPTIX) |
@@ -65,8 +64,7 @@ src/rayon/
 ├── main.cc                    # Entry point, CLI parsing
 ├── constants.hpp              # Version, resolution, quality defaults
 ├── camera/                    # Camera + SDL interactive controls
-├── data_structures/           # vec3, ray, hittable, material, color, interval
-├── cpu_renderers/             # CPU backends + cpu_shapes/
+├── data_structures/           # vec3, ray, hittable, material, color, interval, rnd_gen
 ├── gpu_renderers/             # CUDA backends + materials/ + shaders/ + optix/
 │   ├── cuda_raytracer.cu      # Main CUDA ray tracing kernel + intersection/shading logic
 │   ├── materials/             # GPU material system (material_dispatcher.cuh, legacy/)
@@ -88,9 +86,9 @@ CPU uses `double` (Vec3), GPU uses `float` — conversion at kernel boundary.
 
 ## Adding New Geometry or Materials
 
-**Geometry**: Add enum to `GeometryType` in `scene_description.hpp` → add to `GeometryDesc` → implement CPU intersection as `Hittable` subclass → implement GPU intersection in `cuda_raytracer.cuh::intersect_geometry()` → add factory method to `SceneDescription`.
+**Geometry**: Add enum to `GeometryType` in `scene_description.hpp` → add to `GeometryDesc` → implement GPU intersection in `cuda_raytracer.cuh::intersect_geometry()` → add factory method to `SceneDescription`.
 
-**Material**: Add enum to `MaterialType` → add params to `MaterialDesc` → implement CPU scattering in `material.hpp` → implement GPU evaluation in `gpu_renderers/materials/material_dispatcher.cuh`.
+**Material**: Add enum to `MaterialType` → add params to `MaterialDesc` → implement GPU evaluation in `gpu_renderers/materials/material_dispatcher.cuh`.
 
 ## CUDA Patterns
 
@@ -111,7 +109,7 @@ CPU uses `double` (Vec3), GPU uses `float` — conversion at kernel boundary.
 ## Command Line Arguments
 
 ```bash
--m <method>              # Rendering method: 0=CPU, 1=CPU parallel, 2=CUDA, 3=CUDA+SDL,
+-m <method>              # Rendering method: 2=CUDA, 3=CUDA+SDL,
                          #   4=OptiX offline (if built with OPTIX), 5=OptiX+SDL (if built with OPTIX)
 -s <samples>             # Samples per pixel for offline modes (default: SAMPLES_PER_PIXEL)
 -r <WxH>|<height>        # Resolution: WxH (e.g. 1920x1080) or height for 16:9 (e.g. 720)

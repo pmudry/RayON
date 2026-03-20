@@ -1,5 +1,11 @@
 # Development History
 
+!!! info "CPU renderers archived"
+    The CPU rendering backends discussed in the early milestones have been moved to the
+    [`legacy/cpu-renderer`](https://github.com/pmudry/RayON/tree/legacy/cpu-renderer) branch.
+    The main branch now supports GPU rendering only. Historical references below are preserved
+    for context.
+
 A walkthrough of how RayON grew from a 53-line `main.cc` into a multi-backend interactive GPU
 path tracer — told through the git history.
 
