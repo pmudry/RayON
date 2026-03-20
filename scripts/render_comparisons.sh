@@ -70,15 +70,12 @@ for scene_line in "${SCENES[@]}"; do
             --scene "../$scene_yaml" \
             $config_flags)
 
-        # Find the most recent rendered image (newest by modification time)
-        latest=$(ls -t "$RENDERED"/*.png 2>/dev/null | head -1)
-
-        if [[ -z "$latest" ]]; then
+        if [[ ! -f "$RENDERED/latest.png" ]]; then
             echo "ERROR: No rendered image found after render." >&2
             exit 1
         fi
 
-        mv "$latest" "$dest"
+        cp "$RENDERED/latest.png" "$dest"
         echo "  ✓ Saved $dest"
     done
 done

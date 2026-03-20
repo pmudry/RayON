@@ -27,6 +27,8 @@ class RendererCUDA : public IRenderer
 
       CudaScene::Scene *gpu_scene = Scene::CudaSceneBuilder::buildGPUScene(request.scene);
 
+      ::setBackgroundIntensity(request.scene.background_intensity);
+
       std::vector<float> accum_buffer(frame.image_width * frame.image_height * 3, 0.0f);
       void *d_rand_states = nullptr;
       void *d_accum_buffer = nullptr;
