@@ -75,6 +75,18 @@ struct OptixState
    cudaTextureObject_t *d_textures = nullptr;
    int num_textures = 0;
 
+   // Light list for NEE / MIS
+   OptixLightData *d_lights = nullptr;
+   float          *d_light_cdfs = nullptr;
+   int            *d_geom_to_light = nullptr;
+   int             num_lights = 0;
+   int             num_geom_entries = 0;
+
+   // MIS / NEE runtime settings (cached between launches)
+   bool  mis_enabled          = true;
+   bool  nee_first_bounce_only = false;
+   int   nee_stride           = 1;
+
    // Persistent device accumulation buffer — stays on GPU across batches
    // to avoid costly per-batch host↔device float3↔float4 round-trips
    float4 *d_accum_buffer = nullptr;
@@ -648,6 +660,109 @@ static void buildGAS(const Scene::SceneDescription &scene)
       CUDA_CHECK(cudaMemcpy(g_state.d_textures, host_tex_objs.data(),
                              g_state.num_textures * sizeof(cudaTextureObject_t), cudaMemcpyHostToDevice));
    }
+
+   // ── Build light list for NEE / MIS ──────────────────────────────────────
+   if (g_state.d_lights)        { CUDA_CHECK(cudaFree(g_state.d_lights));        g_state.d_lights = nullptr; }
+   if (g_state.d_light_cdfs)    { CUDA_CHECK(cudaFree(g_state.d_light_cdfs));    g_state.d_light_cdfs = nullptr; }
+   if (g_state.d_geom_to_light) { CUDA_CHECK(cudaFree(g_state.d_geom_to_light)); g_state.d_geom_to_light = nullptr; }
+   g_state.num_lights = 0;
+   g_state.num_geom_entries = num_geoms;
+
+   {
+      std::vector<OptixLightData> host_lights;
+      std::vector<float> host_areas;
+      // Map: SBT index → light list index (-1 if not a light)
+      std::vector<int> geom_to_light(num_geoms, -1);
+
+      for (int sbt_idx = 0; sbt_idx < num_geoms; ++sbt_idx)
+      {
+         int orig_idx = supported_indices[sbt_idx];
+         const auto &g = scene.geometries[orig_idx];
+         int mat_id = g.material_id;
+         if (mat_id < 0 || mat_id >= static_cast<int>(scene.materials.size())) continue;
+         if (scene.materials[mat_id].type != Scene::MaterialType::LIGHT) continue;
+
+         const auto &mat = scene.materials[mat_id];
+         OptixLightData ld = {};
+         ld.emission = make_float3(static_cast<float>(mat.emission.x()),
+                                    static_cast<float>(mat.emission.y()),
+                                    static_cast<float>(mat.emission.z()));
+
+         bool valid = false;
+         if (g.type == Scene::GeometryType::RECTANGLE)
+         {
+            ld.geom_type = OptixLightGeomType::RECTANGLE;
+            ld.corner = make_float3(static_cast<float>(g.data.rectangle.corner.x()),
+                                     static_cast<float>(g.data.rectangle.corner.y()),
+                                     static_cast<float>(g.data.rectangle.corner.z()));
+            float3 u = make_float3(static_cast<float>(g.data.rectangle.u.x()),
+                                    static_cast<float>(g.data.rectangle.u.y()),
+                                    static_cast<float>(g.data.rectangle.u.z()));
+            float3 v = make_float3(static_cast<float>(g.data.rectangle.v.x()),
+                                    static_cast<float>(g.data.rectangle.v.y()),
+                                    static_cast<float>(g.data.rectangle.v.z()));
+            ld.u_vec = u;
+            ld.v_vec = v;
+            float3 n = make_float3(u.y*v.z - u.z*v.y, u.z*v.x - u.x*v.z, u.x*v.y - u.y*v.x);
+            float area = sqrtf(n.x*n.x + n.y*n.y + n.z*n.z);
+            float inv = (area > 1e-8f) ? 1.0f / area : 0.0f;
+            ld.normal = make_float3(n.x * inv, n.y * inv, n.z * inv);
+            ld.area   = area;
+            valid = true;
+            host_areas.push_back(area);
+         }
+         else if (g.type == Scene::GeometryType::SPHERE)
+         {
+            ld.geom_type = OptixLightGeomType::SPHERE;
+            ld.center = make_float3(static_cast<float>(g.data.sphere.center.x()),
+                                     static_cast<float>(g.data.sphere.center.y()),
+                                     static_cast<float>(g.data.sphere.center.z()));
+            ld.radius = static_cast<float>(g.data.sphere.radius);
+            float area = 4.0f * CUDART_PI_F * ld.radius * ld.radius;
+            ld.area   = area;
+            valid = true;
+            host_areas.push_back(area);
+         }
+
+         if (valid)
+         {
+            geom_to_light[sbt_idx] = static_cast<int>(host_lights.size());
+            host_lights.push_back(ld);
+         }
+      }
+
+      g_state.num_lights = static_cast<int>(host_lights.size());
+
+      // Always upload geom_to_light map (even if no lights — avoids null pointer)
+      if (num_geoms > 0)
+      {
+         CUDA_CHECK(cudaMalloc(&g_state.d_geom_to_light, num_geoms * sizeof(int)));
+         CUDA_CHECK(cudaMemcpy(g_state.d_geom_to_light, geom_to_light.data(),
+                                num_geoms * sizeof(int), cudaMemcpyHostToDevice));
+      }
+
+      if (g_state.num_lights > 0)
+      {
+         // Build CDF for area-weighted light selection
+         std::vector<float> cdf(g_state.num_lights + 1, 0.0f);
+         for (int i = 0; i < g_state.num_lights; ++i)
+            cdf[i + 1] = cdf[i] + host_areas[i];
+         float total_area = cdf.back();
+         if (total_area > 0.0f)
+            for (auto &v : cdf) v /= total_area;
+         cdf.back() = 1.0f; // ensure last entry is exactly 1
+
+         CUDA_CHECK(cudaMalloc(&g_state.d_lights, g_state.num_lights * sizeof(OptixLightData)));
+         CUDA_CHECK(cudaMemcpy(g_state.d_lights, host_lights.data(),
+                                g_state.num_lights * sizeof(OptixLightData), cudaMemcpyHostToDevice));
+
+         CUDA_CHECK(cudaMalloc(&g_state.d_light_cdfs, (g_state.num_lights + 1) * sizeof(float)));
+         CUDA_CHECK(cudaMemcpy(g_state.d_light_cdfs, cdf.data(),
+                                (g_state.num_lights + 1) * sizeof(float), cudaMemcpyHostToDevice));
+
+         printf("OptiX NEE: %d lights uploaded (total area %.2f)\n", g_state.num_lights, total_area);
+      }
+   }
 } // end buildGAS()
 
 //==============================================================================
@@ -658,6 +773,10 @@ static void buildGAS(const Scene::SceneDescription &scene)
 static bool g_optix_use_sobol = true;
 
 extern "C" void setOptiXSobolSampler(bool use_sobol) { g_optix_use_sobol = use_sobol; }
+
+extern "C" void setOptiXMISEnabled(bool enabled)          { g_state.mis_enabled = enabled; }
+extern "C" void setOptiXNEEFirstBounceOnly(bool enabled)   { g_state.nee_first_bounce_only = enabled; }
+extern "C" void setOptiXNEEStride(int stride)              { g_state.nee_stride = (stride < 1) ? 1 : stride; }
 
 extern "C" void optixRendererInit() { initializeOptiX(); }
 
@@ -749,6 +868,16 @@ extern "C" unsigned long long optixRendererLaunch(int width, int height, int num
    launch_params.golf_dimple_depth  = g_state.golf_dimple_depth;
    launch_params.hdr_env_tex        = g_state.hdr_tex_obj;
    launch_params.use_hdr_env        = (g_state.hdr_tex_obj != 0);
+
+   // NEE / MIS
+   launch_params.lights             = g_state.d_lights;
+   launch_params.num_lights         = g_state.num_lights;
+   launch_params.light_cdfs         = g_state.d_light_cdfs;
+   launch_params.mis_enabled        = g_state.mis_enabled;
+   launch_params.nee_first_bounce_only = g_state.nee_first_bounce_only;
+   launch_params.nee_stride         = g_state.nee_stride;
+   launch_params.geom_to_light_map  = g_state.d_geom_to_light;
+   launch_params.num_geom_entries   = g_state.num_geom_entries;
 
    // Single memcpy to persistent device buffer — no malloc/free per batch.
    // Use the dedicated stream for async param upload + launch.
@@ -959,6 +1088,12 @@ extern "C" void optixRendererCleanup()
       CUDA_CHECK(cudaFree(reinterpret_cast<void *>(g_state.d_launch_params)));
    if (g_state.d_materials)
       CUDA_CHECK(cudaFree(g_state.d_materials));
+   if (g_state.d_lights)
+      CUDA_CHECK(cudaFree(g_state.d_lights));
+   if (g_state.d_light_cdfs)
+      CUDA_CHECK(cudaFree(g_state.d_light_cdfs));
+   if (g_state.d_geom_to_light)
+      CUDA_CHECK(cudaFree(g_state.d_geom_to_light));
    if (g_state.d_textures)
    {
       std::vector<cudaTextureObject_t> texs(static_cast<size_t>(g_state.num_textures));

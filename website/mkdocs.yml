@@ -127,6 +127,7 @@ nav:
     - BVH Acceleration: how-it-works/bvh.md
     - Hemisphere Sampling: how-it-works/sampling.md
     - Sobol' Quasi-Random Sampling: how-it-works/sobol-sampling.md
+    - Multiple Importance Sampling: how-it-works/mis.md
     - Performance Optimisations: how-it-works/optimizations.md
   - Architecture:
     - architecture/index.md

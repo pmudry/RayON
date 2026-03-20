@@ -75,6 +75,11 @@ struct ProgramArgs
    bool hdr_cache = true;
    bool show_menu = false;
    bool use_sobol = true; // Sobol' quasi-random sampler (false = classic PCG)
+   // MIS / NEE options
+   bool mis_enabled           = true;
+   bool motion_gate_mis       = true;
+   bool nee_first_bounce_only = false;
+   int  nee_stride            = 1;
    const char *scene_file = nullptr;
    const char *theme = nullptr;
 };
@@ -102,6 +107,11 @@ void dumpHelp()
    cout << "  --no-hdr-cache            Disable disk cache for HDR sky textures (always re-decode .hdr)\n";
    cout << "  --sampler <sobol|pcg>     GPU sampler type: sobol = low-discrepancy (default), pcg = classic PRNG\n";
    cout << "  --theme <name>            GUI theme: light, classic, nord, dracula, gruvbox, catppuccin\n";
+   cout << "MIS / NEE options (GPU modes 2, 3, 5):\n";
+   cout << "  --no-mis                  Disable Multiple-Importance Sampling (max throughput, noisier)\n";
+   cout << "  --no-motion-gate-mis      Keep MIS on during camera motion (disable Option A auto-gate; interactive only)\n";
+   cout << "  --nee-first-bounce        Restrict NEE shadow rays to the first path bounce (Option B)\n";
+   cout << "  --nee-stride <N>          Do NEE on 1 of every N samples, contribution \xc3\x97N (Option C; 1=always)\n";
 }
 
 ProgramArgs parseInput(int argc, char *argv[])
@@ -198,6 +208,28 @@ ProgramArgs parseInput(int argc, char *argv[])
       else if (strcmp(argv[i], "--no-hdr-cache") == 0)
       {
          args.hdr_cache = false;
+      }
+      else if (strcmp(argv[i], "--no-mis") == 0)
+      {
+         args.mis_enabled = false;
+      }
+      else if (strcmp(argv[i], "--no-motion-gate-mis") == 0)
+      {
+         args.motion_gate_mis = false;
+      }
+      else if (strcmp(argv[i], "--nee-first-bounce") == 0)
+      {
+         args.nee_first_bounce_only = true;
+      }
+      else if (strcmp(argv[i], "--nee-stride") == 0 && i + 1 < argc)
+      {
+         args.nee_stride = atoi(argv[++i]);
+         if (args.nee_stride < 1)
+         {
+            cerr << "Invalid nee-stride value: must be >= 1\n";
+            args.samples = -1;
+            return args;
+         }
       }
       else if (strcmp(argv[i], "--sampler") == 0 && i + 1 < argc)
       {
@@ -401,6 +433,10 @@ int main(int argc, char *argv[])
       settings.adaptive_sampling = args.adaptive_sampling;
       settings.hdr_cache = args.hdr_cache;
       settings.theme = parseThemeName(args.theme);
+      settings.mis_enabled           = args.mis_enabled;
+      settings.motion_gate_mis       = args.motion_gate_mis;
+      settings.nee_first_bounce_only = args.nee_first_bounce_only;
+      settings.nee_stride            = args.nee_stride;
       renderer.setSettings(settings);
       coordinator.render(renderer, localImage);
       break;
@@ -427,6 +463,10 @@ int main(int argc, char *argv[])
       settings.adaptive_sampling = args.adaptive_sampling;
       settings.hdr_cache = args.hdr_cache;
       settings.theme = parseThemeName(args.theme);
+      settings.mis_enabled           = args.mis_enabled;
+      settings.motion_gate_mis       = args.motion_gate_mis;
+      settings.nee_first_bounce_only = args.nee_first_bounce_only;
+      settings.nee_stride            = args.nee_stride;
       renderer.setSettings(settings);
       coordinator.render(renderer, localImage);
       break;
@@ -435,6 +475,10 @@ int main(int argc, char *argv[])
    default:
    {
       cout << "Using CUDA GPU rendering..." << "\n";
+      // Apply MIS/NEE settings to the CUDA global constants before rendering.
+      ::setMISEnabled(args.mis_enabled);
+      ::setNEEFirstBounceOnly(args.nee_first_bounce_only);
+      ::setNEEStride(args.nee_stride);
       RendererCUDA renderer;
       coordinator.render(renderer, localImage);
       break;

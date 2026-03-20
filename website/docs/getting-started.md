@@ -118,6 +118,15 @@ Rendered images are saved automatically to `build/rendered_images/` as timestamp
 | `--theme <name>` | `nord` | ImGui colour theme: `light`, `classic`, `nord`, `dracula`, `gruvbox`, `catppuccin` |
 | `-h`, `--help` | — | Print help and exit |
 
+### MIS / NEE options (GPU modes 2, 3, 5)
+
+| Flag | Default | Description |
+|---|---|---|
+| `--no-mis` | MIS on | Disable Multiple Importance Sampling and NEE (noisier but faster per sample) |
+| `--no-motion-gate-mis` | auto-gate on | Keep MIS active during camera motion (interactive modes only) |
+| `--nee-first-bounce` | all bounces | Restrict NEE shadow rays to the first path bounce only |
+| `--nee-stride <N>` | `1` | Fire a shadow ray on 1-of-every-N samples and scale contribution by N |
+
 ### Examples
 
 ```bash

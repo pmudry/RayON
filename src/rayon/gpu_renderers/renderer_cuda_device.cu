@@ -37,6 +37,11 @@ __constant__ cudaTextureObject_t g_hdr_env_tex = 0;
 __constant__ bool                g_use_hdr_env = false;
 __constant__ float g_golf_dimple_depth  = 0.35f;
 
+// MIS / NEE runtime controls
+__constant__ bool g_mis_enabled          = true;  ///< Global MIS on/off (disables NEE + emissive MIS weight)
+__constant__ bool g_nee_first_bounce_only = false; ///< Option B: restrict NEE to the first path bounce only
+__constant__ int  g_nee_stride           = 1;      ///< Option C: do NEE every N samples (contribution × N)
+
 //==================== CUDA STREAM & PINNED MEMORY ====================
 // Display stream: gamma-correct kernel + async D2H copy pipeline.
 // Non-blocking so it does not implicitly synchronize with the default stream.
@@ -117,6 +122,23 @@ extern "C" void setGolfDimpleCount(int count)
 extern "C" void setGolfDimpleRadius(float radius)
 {
    cudaMemcpyToSymbol(g_golf_dimple_radius, &radius, sizeof(float));
+}
+
+// MIS / NEE setters
+extern "C" void setMISEnabled(bool enabled)
+{
+   cudaMemcpyToSymbol(g_mis_enabled, &enabled, sizeof(bool));
+}
+
+extern "C" void setNEEFirstBounceOnly(bool enabled)
+{
+   cudaMemcpyToSymbol(g_nee_first_bounce_only, &enabled, sizeof(bool));
+}
+
+extern "C" void setNEEStride(int stride)
+{
+   int clamped = (stride < 1) ? 1 : stride;
+   cudaMemcpyToSymbol(g_nee_stride, &clamped, sizeof(int));
 }
 extern "C" void setGolfDimpleDepth(float depth)
 {

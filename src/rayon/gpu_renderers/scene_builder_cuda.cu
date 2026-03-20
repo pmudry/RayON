@@ -287,6 +287,86 @@ CudaScene::Scene *CudaSceneBuilder::buildGPUScene(const SceneDescription &desc)
    delete[] host_materials;
    delete[] host_geometries;
 
+   // --- Build light list for NEE ---
+   {
+      std::vector<int>   light_idx_host;
+      std::vector<float> light_area_host;
+
+      for (int i = 0; i < num_geometries; ++i)
+      {
+         int mat_id = desc.geometries[i].material_id;
+         if (mat_id < 0 || mat_id >= static_cast<int>(desc.materials.size()))
+            continue;
+         const MaterialDesc &mat = desc.materials[mat_id];
+         if (mat.type == MaterialType::LIGHT)
+         {
+            light_idx_host.push_back(i);
+            // Approximate area for CDF: sphere = 4*pi*r^2, rectangle = |u×v|, others = 1
+            float area             = 1.0f;
+            const GeometryDesc &gd = desc.geometries[i];
+            if (gd.type == GeometryType::SPHERE)
+            {
+               float r = static_cast<float>(gd.data.sphere.radius);
+               area    = 4.0f * CUDART_PI_F * r * r;
+            }
+            else if (gd.type == GeometryType::RECTANGLE)
+            {
+               auto rect_u = gd.data.rectangle.u;
+               auto rect_v = gd.data.rectangle.v;
+               // |u × v| approximated from host Vec3
+               float ux = static_cast<float>(rect_u.x()), uy = static_cast<float>(rect_u.y()), uz = static_cast<float>(rect_u.z());
+               float vx = static_cast<float>(rect_v.x()), vy = static_cast<float>(rect_v.y()), vz = static_cast<float>(rect_v.z());
+               float cx = uy * vz - uz * vy;
+               float cy = uz * vx - ux * vz;
+               float cz = ux * vy - uy * vx;
+               area     = std::sqrt(cx * cx + cy * cy + cz * cz);
+            }
+            light_area_host.push_back(area);
+         }
+      }
+
+      host_scene.num_lights = static_cast<int>(light_idx_host.size());
+      printf("MIS: %d light(s) detected\n", host_scene.num_lights);
+
+      if (host_scene.num_lights > 0)
+      {
+         // Upload light indices
+         cudaMalloc(&host_scene.light_indices, host_scene.num_lights * sizeof(int));
+         cudaMemcpy(host_scene.light_indices, light_idx_host.data(),
+                    host_scene.num_lights * sizeof(int), cudaMemcpyHostToDevice);
+
+         // Build and upload CDF (prefix sum of areas, normalised to [0,1])
+         std::vector<float> cdf(host_scene.num_lights + 1, 0.0f);
+         float total = 0.0f;
+         for (float a : light_area_host)
+            total += a;
+
+         if (total > 0.0f)
+         {
+            for (int i = 0; i < host_scene.num_lights; ++i)
+               cdf[i + 1] = cdf[i] + light_area_host[i] / total;
+         }
+         else
+         {
+            // Degenerate: all areas are zero — fall back to a uniform distribution.
+            const float step = 1.0f / static_cast<float>(host_scene.num_lights);
+            for (int i = 0; i < host_scene.num_lights; ++i)
+               cdf[i + 1] = cdf[i] + step;
+         }
+         // Clamp to exactly 1.0 to guard against floating-point accumulation drift.
+         cdf[host_scene.num_lights] = 1.0f;
+
+         cudaMalloc(&host_scene.light_cdfs, (host_scene.num_lights + 1) * sizeof(float));
+         cudaMemcpy(host_scene.light_cdfs, cdf.data(),
+                    (host_scene.num_lights + 1) * sizeof(float), cudaMemcpyHostToDevice);
+      }
+      else
+      {
+         host_scene.light_indices = nullptr;
+         host_scene.light_cdfs    = nullptr;
+      }
+   }
+
    // Build CUDA texture objects from TextureDesc array
    {
       int num_textures = static_cast<int>(desc.textures.size());
@@ -398,17 +478,15 @@ void CudaSceneBuilder::freeGPUScene(CudaScene::Scene *d_scene)
 
    // Free device arrays
    if (host_scene.materials)
-   {
       cudaFree(host_scene.materials);
-   }
    if (host_scene.geometries)
-   {
       cudaFree(host_scene.geometries);
-   }
    if (host_scene.bvh_nodes)
-   {
       cudaFree(host_scene.bvh_nodes);
-   }
+   if (host_scene.light_indices)
+      cudaFree(host_scene.light_indices);
+   if (host_scene.light_cdfs)
+      cudaFree(host_scene.light_cdfs);
 
    // Destroy texture objects and free the handle array
    if (host_scene.d_textures && host_scene.num_textures > 0)

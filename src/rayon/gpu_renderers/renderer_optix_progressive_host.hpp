@@ -61,6 +61,9 @@ extern "C"
    bool optixRendererUploadHdrEnvHalf(const uint16_t *rgba16, int w, int h);
    void optixRendererClearHdrEnv();
    void setOptiXSobolSampler(bool use_sobol);
+   void setOptiXMISEnabled(bool enabled);
+   void setOptiXNEEFirstBounceOnly(bool enabled);
+   void setOptiXNEEStride(int stride);
 }
 
 class RendererOptiXProgressive : public IRenderer
@@ -73,6 +76,10 @@ class RendererOptiXProgressive : public IRenderer
       bool adaptive_sampling = true; // no-op for OptiX; kept for UI parity
       bool hdr_cache = true; ///< use .hdrcache sidecar to speed up repeated HDR loads
       GuiTheme theme = GuiTheme::NORD;
+      bool mis_enabled           = true;
+      bool motion_gate_mis       = true;
+      bool nee_first_bounce_only = false;
+      int  nee_stride            = 1;
    };
 
    RendererOptiXProgressive() = default;
@@ -139,6 +146,13 @@ class RendererOptiXProgressive : public IRenderer
       float current_sps = 0.0f;
       float current_ms_per_sample = 0.0f;
       float current_fps = 0.0f;
+
+      // MIS / NEE options (Options A–C)
+      bool mis_enabled           = settings_.mis_enabled;
+      bool motion_gate_mis       = settings_.motion_gate_mis;
+      bool nee_first_bounce_only = settings_.nee_first_bounce_only;
+      int  nee_stride            = settings_.nee_stride;
+      bool use_sobol             = true; // default: Sobol sampler
 
       // Motion detection
       bool is_camera_moving = false;
@@ -233,7 +247,7 @@ class RendererOptiXProgressive : public IRenderer
       int current_scene_index = 0;
       Scene::SceneDescription active_scene = scene;
       Scene::SceneDescription original_scene = scene;
-      Hittable_list cpu_scene_for_arrows = Scene::CPUSceneBuilder::buildCPUScene(original_scene);
+      Scene::CPUScene cpu_scene_for_arrows = Scene::CPUSceneBuilder::buildCPUScene(original_scene);
 
       // Scan active scene for displaced spheres so the GUI section appears when relevant
       auto scanProceduralPatterns = [&]() {
@@ -359,6 +373,8 @@ class RendererOptiXProgressive : public IRenderer
       // Scan scene initially (after active_scene is set)
       scanProceduralPatterns();
       ::optixRendererSetGolfDimples(golf_dimple_count, golf_dimple_radius, golf_dimple_depth);
+      ::setOptiXNEEFirstBounceOnly(nee_first_bounce_only);
+      ::setOptiXNEEStride(nee_stride);
 
       // CPU normal-arrow overlay helpers (identical to CUDA renderer)
       auto drawLineRGB = [&](std::vector<unsigned char> &img, int x0, int y0, int x1, int y1,
@@ -413,7 +429,7 @@ class RendererOptiXProgressive : public IRenderer
                Point3 pixel_center = frame.pixel00_loc + static_cast<double>(x) * frame.pixel_delta_u
                                      + static_cast<double>(y) * frame.pixel_delta_v;
                Ray ray_r(frame.camera_center, pixel_center - frame.camera_center);
-               if (!cpu_scene_for_arrows.hit(ray_r, Interval(0.0001, inf), rec)) continue;
+               if (!cpu_scene_for_arrows.scene.hit(ray_r, Interval(0.0001, inf), rec)) continue;
                const double sx_n = dot(rec.normal, frame.u);
                const double sy_n = -dot(rec.normal, frame.v);
                const double mag2 = sx_n * sx_n + sy_n * sy_n;
@@ -498,6 +514,12 @@ class RendererOptiXProgressive : public IRenderer
                   gui.setLogoVisible(true);
                   samples_per_batch_float = static_cast<float>(settings_.samples_per_batch);
                   camera_control.setAutoOrbit(false);
+                  // Reset MIS options to settings_ defaults
+                  mis_enabled           = settings_.mis_enabled;
+                  motion_gate_mis       = settings_.motion_gate_mis;
+                  nee_first_bounce_only = settings_.nee_first_bounce_only;
+                  nee_stride            = settings_.nee_stride;
+                  use_sobol             = true;
                   camera_changed = true;
                }
                else if (event.key.keysym.sym == SDLK_f)
@@ -628,6 +650,10 @@ class RendererOptiXProgressive : public IRenderer
             syncSamplesFromSlider();
             adaptive_samples_per_batch = samples_per_batch;
 
+            // Option A: motion-gate MIS — auto-disable NEE/MIS while the camera is moving
+            bool effective_mis = mis_enabled && !(motion_gate_mis && is_camera_moving);
+            ::setOptiXMISEnabled(effective_mis);
+
             auto frame_start = std::chrono::high_resolution_clock::now();
 
             const int num_materials_active = static_cast<int>(active_scene.materials.size());
@@ -677,6 +703,12 @@ class RendererOptiXProgressive : public IRenderer
          float old_golf_dimple_radius = golf_dimple_radius;
          float old_golf_dimple_depth  = golf_dimple_depth;
          int   old_hdr_index          = current_hdr_index;
+         // MIS option snapshots
+         bool old_mis_enabled           = mis_enabled;
+         bool old_motion_gate_mis       = motion_gate_mis;
+         bool old_nee_first_bounce_only = nee_first_bounce_only;
+         int  old_nee_stride            = nee_stride;
+         bool old_use_sobol             = use_sobol;
 
          bool auto_orbit = camera_control.isAutoOrbitEnabled();
          float cam_pos[3] = {(float)look_from.x(), (float)look_from.y(), (float)look_from.z()};
@@ -701,7 +733,9 @@ class RendererOptiXProgressive : public IRenderer
                            scene_has_golf_ball ? &golf_dimple_depth  : nullptr,
                            &current_hdr_index,
                            hdr_count > 0 ? hdr_name_ptrs.data() : nullptr,
-                           hdr_count);
+                           hdr_count,
+                           &mis_enabled, &motion_gate_mis, &nee_first_bounce_only, &nee_stride,
+                           &use_sobol);
 
          if (auto_orbit != camera_control.isAutoOrbitEnabled())
             camera_control.setAutoOrbit(auto_orbit);
@@ -746,6 +780,21 @@ class RendererOptiXProgressive : public IRenderer
          // Adaptive sampling toggled or threshold changed — restart accumulation
          if (adaptive_sampling_enabled != old_adaptive || adaptive_threshold != old_adaptive_thresh)
             camera_changed = true;
+
+         // MIS option changes — push updated constants to GPU and restart accumulation
+         if (nee_first_bounce_only != old_nee_first_bounce_only || nee_stride != old_nee_stride)
+         {
+            ::setOptiXNEEFirstBounceOnly(nee_first_bounce_only);
+            ::setOptiXNEEStride(nee_stride);
+            camera_changed = true;
+         }
+         if (mis_enabled != old_mis_enabled || motion_gate_mis != old_motion_gate_mis)
+            camera_changed = true;
+         if (use_sobol != old_use_sobol)
+         {
+            ::setOptiXSobolSampler(use_sobol);
+            camera_changed = true;
+         }
 
          // Arrow overlay settings changed — refresh display
          if (show_normal_arrows != old_show_normal_arrows || normal_arrow_count != old_normal_arrow_count ||

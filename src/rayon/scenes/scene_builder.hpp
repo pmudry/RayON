@@ -33,53 +33,66 @@ namespace Scene
 {
 
 //==============================================================================
+// CPU SCENE RESULT
+//==============================================================================
+
+/**
+ * @brief Combined CPU scene: the full scene plus a separate list of emissive objects.
+ *
+ * The lights list contains the same shared_ptr<Hittable> objects that are also
+ * in the main scene.  It is used exclusively by the MIS path tracer for Next
+ * Event Estimation (NEE) — shadow rays are tested against the full scene.
+ */
+struct CPUScene
+{
+   Hittable_list scene;  ///< All geometry
+   Hittable_list lights; ///< Only emissive geometry (for NEE light sampling)
+};
+
+//==============================================================================
 // CPU SCENE BUILDER
 //==============================================================================
 class CPUSceneBuilder
 {
  public:
    /**
-    * @brief Convert SceneDescription to CPU-compatible Hittable_list
+    * @brief Convert SceneDescription to CPU-compatible CPUScene
     * @param desc Scene description to convert
-    * @return Hittable_list containing polymorphic geometry objects
+    * @return CPUScene containing all geometry and a separate emissive-only list
     */
-   static Hittable_list buildCPUScene(const SceneDescription &desc)
+   static CPUScene buildCPUScene(const SceneDescription &desc)
    {
-      Hittable_list scene;
+      CPUScene result;
 
-      // First, create all materials
+      // Build all materials
       std::vector<shared_ptr<Material>> cpu_materials;
       cpu_materials.reserve(desc.materials.size());
-
       for (const auto &mat_desc : desc.materials)
-      {
          cpu_materials.push_back(createMaterial(mat_desc));
-      }
 
-      // Then create all geometries with material references
+      // Build geometry, tracking which objects are emissive
       for (const auto &geom_desc : desc.geometries)
       {
          if (geom_desc.material_id < 0 || geom_desc.material_id >= static_cast<int>(cpu_materials.size()))
-         {
-            continue; // Skip invalid material IDs
-         }
+            continue;
 
-         shared_ptr<Material> mat = cpu_materials[geom_desc.material_id];
+         shared_ptr<Material> mat  = cpu_materials[geom_desc.material_id];
          shared_ptr<Hittable> geom = createGeometry(geom_desc, mat);
 
-         if (geom)
-         {
-            scene.add(geom);
-         }
+         if (!geom)
+            continue;
+
+         result.scene.add(geom);
+
+         // Add to light list if material emits
+         if (desc.materials[geom_desc.material_id].type == MaterialType::LIGHT)
+            result.lights.add(geom);
       }
 
-      return scene;
+      return result;
    }
 
  private:
-   /**
-    * @brief Create a CPU Material from MaterialDesc
-    */
    static shared_ptr<Material> createMaterial(const MaterialDesc &desc)
    {
       switch (desc.type)
@@ -93,26 +106,32 @@ class CPUSceneBuilder
       case MaterialType::SHOW_NORMALS:
          return make_shared<ShowNormals>(desc.albedo);
 
-      // For materials not yet implemented in CPU renderer, use Lambertian as fallback
+      case MaterialType::LIGHT:
+         // Use emission if set, otherwise fall back to albedo as a warm white
+         {
+            Vec3 em = desc.emission;
+            if (em.length_squared() < 1e-8)
+               em = desc.albedo * 5.0; // sensible default: bright albedo
+            return make_shared<Light>(em);
+         }
+
+      case MaterialType::THIN_FILM:
+         return make_shared<ThinFilm>(desc.film_thickness, desc.film_ior);
+
+      // Materials not yet CPU-implemented — fall back to Lambertian
       case MaterialType::METAL:
       case MaterialType::MIRROR:
       case MaterialType::ROUGH_MIRROR:
       case MaterialType::GLASS:
       case MaterialType::DIELECTRIC:
-      case MaterialType::LIGHT:
       case MaterialType::SDF_MATERIAL:
       case MaterialType::ANISOTROPIC_METAL:
-      case MaterialType::THIN_FILM:
       case MaterialType::CLEAR_COAT:
       default:
-         // Use Lambertian as fallback
          return make_shared<Lambertian>(desc.albedo);
       }
    }
 
-   /**
-    * @brief Create CPU Hittable geometry from GeometryDesc
-    */
    static shared_ptr<Hittable> createGeometry(const GeometryDesc &desc, shared_ptr<Material> mat)
    {
       switch (desc.type)
@@ -121,31 +140,29 @@ class CPUSceneBuilder
          return make_shared<Sphere>(desc.data.sphere.center, desc.data.sphere.radius, mat);
 
       case GeometryType::RECTANGLE:
-         return make_shared<Rectangle>(desc.data.rectangle.corner, desc.data.rectangle.u, desc.data.rectangle.v, mat);
+         return make_shared<Rectangle>(desc.data.rectangle.corner, desc.data.rectangle.u,
+                                       desc.data.rectangle.v, mat);
 
       case GeometryType::SDF_PRIMITIVE:
          return createSDFShape(desc, mat);
 
       case GeometryType::TRIANGLE:
          if (desc.data.triangle.has_normals)
-            return make_shared<TriangleShape>(desc.data.triangle.v0, desc.data.triangle.v1, desc.data.triangle.v2,
-                                             desc.data.triangle.n0, desc.data.triangle.n1, desc.data.triangle.n2, mat);
+            return make_shared<TriangleShape>(desc.data.triangle.v0, desc.data.triangle.v1,
+                                             desc.data.triangle.v2, desc.data.triangle.n0,
+                                             desc.data.triangle.n1, desc.data.triangle.n2, mat);
          else
-            return make_shared<TriangleShape>(desc.data.triangle.v0, desc.data.triangle.v1, desc.data.triangle.v2, mat);
+            return make_shared<TriangleShape>(desc.data.triangle.v0, desc.data.triangle.v1,
+                                             desc.data.triangle.v2, mat);
 
-      // Other geometry types not yet supported in CPU renderer
       case GeometryType::CUBE:
       case GeometryType::DISPLACED_SPHERE:
       case GeometryType::TRIANGLE_MESH:
       default:
-         // Return null for unsupported types
          return nullptr;
       }
    }
 
-   /**
-    * @brief Create SDF shape from GeometryDesc
-    */
    static shared_ptr<Hittable> createSDFShape(const GeometryDesc &desc, shared_ptr<Material> mat)
    {
       const auto &sdf_data = desc.data.sdf;
@@ -154,74 +171,38 @@ class CPUSceneBuilder
       switch (sdf_data.sdf_type)
       {
       case SDFType::SPHERE:
-         return SDFShape::createSphere(sdf_data.position,
-                                       sdf_data.parameters.x(), // radius
-                                       mat, rotation);
-
+         return SDFShape::createSphere(sdf_data.position, sdf_data.parameters.x(), mat, rotation);
       case SDFType::BOX:
-         return SDFShape::createBox(sdf_data.position,
-                                    sdf_data.parameters, // half-extents (size)
-                                    mat, rotation);
-
+         return SDFShape::createBox(sdf_data.position, sdf_data.parameters, mat, rotation);
       case SDFType::TORUS:
-         return SDFShape::createTorus(sdf_data.position,
-                                      sdf_data.parameters.x(), // major radius
-                                      sdf_data.parameters.y(), // minor radius
-                                      mat, rotation);
-
+         return SDFShape::createTorus(sdf_data.position, sdf_data.parameters.x(), sdf_data.parameters.y(), mat,
+                                      rotation);
       case SDFType::CAPSULE:
       {
-         // For capsule, we need start and end points
-         // parameters.x = radius, parameters.y = height
          Vec3 a = sdf_data.position - Vec3(0, sdf_data.parameters.y() * 0.5, 0);
          Vec3 b = sdf_data.position + Vec3(0, sdf_data.parameters.y() * 0.5, 0);
          return SDFShape::createCapsule(a, b, sdf_data.parameters.x(), mat, rotation);
       }
-
       case SDFType::CYLINDER:
-         return SDFShape::createCylinder(sdf_data.position,
-                                         sdf_data.parameters.y(), // height
-                                         sdf_data.parameters.x(), // radius
+         return SDFShape::createCylinder(sdf_data.position, sdf_data.parameters.y(), sdf_data.parameters.x(),
                                          mat, rotation);
-
       case SDFType::PLANE:
-         return SDFShape::createPlane(Vec3(0, 1, 0),           // normal (default: up)
-                                      sdf_data.parameters.x(), // distance from origin
-                                      mat, rotation);
-
+         return SDFShape::createPlane(Vec3(0, 1, 0), sdf_data.parameters.x(), mat, rotation);
       case SDFType::MANDELBULB:
-         return SDFShape::createMandelbulb(sdf_data.position,
-                                           sdf_data.parameters.x(),                   // power (typically 8)
-                                           static_cast<int>(sdf_data.parameters.y()), // iterations
-                                           mat, rotation);
-
+         return SDFShape::createMandelbulb(sdf_data.position, sdf_data.parameters.x(),
+                                           static_cast<int>(sdf_data.parameters.y()), mat, rotation);
       case SDFType::DEATH_STAR:
-         return SDFShape::createDeathStar(sdf_data.position,
-                                          sdf_data.parameters.x(), // main radius
-                                          sdf_data.parameters.y(), // cutout radius
-                                          sdf_data.parameters.z(), // cutout distance
-                                          mat, rotation);
-
+         return SDFShape::createDeathStar(sdf_data.position, sdf_data.parameters.x(), sdf_data.parameters.y(),
+                                          sdf_data.parameters.z(), mat, rotation);
       case SDFType::CUT_HOLLOW_SPHERE:
-         return SDFShape::createCutHollowSphere(sdf_data.position,
-                                                sdf_data.parameters.x(), // radius
-                                                sdf_data.parameters.y(), // cut height
-                                                sdf_data.parameters.z(), // thickness
-                                                mat, rotation);
-
+         return SDFShape::createCutHollowSphere(sdf_data.position, sdf_data.parameters.x(),
+                                                sdf_data.parameters.y(), sdf_data.parameters.z(), mat, rotation);
       case SDFType::OCTAHEDRON:
-         return SDFShape::createOctahedron(sdf_data.position,
-                                           sdf_data.parameters.x(), // size
-                                           mat, rotation);
-
+         return SDFShape::createOctahedron(sdf_data.position, sdf_data.parameters.x(), mat, rotation);
       case SDFType::PYRAMID:
-         return SDFShape::createPyramid(sdf_data.position,
-                                        sdf_data.parameters.x(), // height
-                                        mat, rotation);
-
+         return SDFShape::createPyramid(sdf_data.position, sdf_data.parameters.x(), mat, rotation);
       case SDFType::CUSTOM:
       default:
-         // Custom SDFs not yet supported
          return nullptr;
       }
    }

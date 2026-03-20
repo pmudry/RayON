@@ -204,7 +204,10 @@ class SDLGuiHandler
                       int *golf_dimple_count = nullptr, float *golf_dimple_radius = nullptr,
                       float *golf_dimple_depth = nullptr,
                       int *hdr_env_index = nullptr, const char *const *hdr_env_names = nullptr,
-                      int hdr_env_count = 0)
+                      int hdr_env_count = 0,
+                      bool *mis_enabled = nullptr, bool *motion_gate_mis = nullptr,
+                      bool *nee_first_bounce_only = nullptr, int *nee_stride = nullptr,
+                      bool *use_sobol = nullptr)
    {
       SDL_UpdateTexture(texture, nullptr, image.data(), image_width * image_channels);
       SDL_RenderClear(renderer);
@@ -425,6 +428,62 @@ class SDLGuiHandler
 
                      // Visual progress bar for convergence
                      ImGui::ProgressBar(convergence_pct / 100.0f, ImVec2(-1, 0), "");
+                  }
+               }
+            }
+
+            // --- MIS / NEE ---
+            if (mis_enabled)
+            {
+               if (reset_headers)
+                  ImGui::SetNextItemOpen(!collapse_headers);
+               if (ImGui::CollapsingHeader("MIS / NEE"))
+               {
+                  ImGui::Checkbox("Enable MIS##mis_toggle", mis_enabled);
+                  ImGui::SetItemTooltip("Master toggle for Multiple-Importance Sampling.\n"
+                                       "Disabling removes shadow rays and emissive MIS weight\n"
+                                       "for maximum throughput (faster, noisier).");
+
+                  bool mis_ok = *mis_enabled;
+
+                  if (motion_gate_mis)
+                  {
+                     if (!mis_ok) ImGui::BeginDisabled();
+                     ImGui::Checkbox("Auto-disable during motion##mgm", motion_gate_mis);
+                     ImGui::SetItemTooltip("Option A: automatically disable MIS while the camera\n"
+                                          "is moving to maximise interactive FPS.\n"
+                                          "MIS resumes as soon as the camera stops.");
+                     if (!mis_ok) ImGui::EndDisabled();
+                  }
+
+                  if (nee_first_bounce_only)
+                  {
+                     if (!mis_ok) ImGui::BeginDisabled();
+                     ImGui::Checkbox("NEE first bounce only##nee_b0", nee_first_bounce_only);
+                     ImGui::SetItemTooltip("Option B: restrict shadow rays to the first path bounce.\n"
+                                          "Cuts shadow-ray cost ~50%% with little quality loss\n"
+                                          "in most scenes.");
+                     if (!mis_ok) ImGui::EndDisabled();
+                  }
+
+                  if (nee_stride)
+                  {
+                     if (!mis_ok) ImGui::BeginDisabled();
+                     pushSliderWidth();
+                     ImGui::SliderInt("NEE stride##nee_stride", nee_stride, 1, 8);
+                     ImGui::SetItemTooltip("Option C: perform NEE on 1 out of every N samples\n"
+                                          "(contribution \xc3\x97 N to stay unbiased).\n"
+                                          "1 = every sample (full quality), 2-4 = interactive sweet spot.");
+                     ImGui::PopItemWidth();
+                     if (!mis_ok) ImGui::EndDisabled();
+                  }
+
+                  if (use_sobol)
+                  {
+                     ImGui::Separator();
+                     ImGui::Checkbox("Sobol sampler##sobol_toggle", use_sobol);
+                     ImGui::SetItemTooltip("Use Sobol low-discrepancy sampler (better convergence).\n"
+                                          "Uncheck for classic PCG pseudo-random sampling.");
                   }
                }
             }
