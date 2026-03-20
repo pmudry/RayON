@@ -11,6 +11,7 @@
 #include "scene_description.hpp"
 #include <cmath>
 #include <cuda_runtime.h>
+#include <math_constants.h>
 
 namespace Scene
 {

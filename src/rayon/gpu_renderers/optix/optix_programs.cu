@@ -344,7 +344,7 @@ __device__ OptiXLightSample sample_light_optix(const float3 &shading_p, float u_
          // Shading point is inside the sphere — sample uniformly over 4π steradians.
          float z    = 1.0f - 2.0f * u1;
          float r_xy = sqrtf(fmaxf(0.0f, 1.0f - z * z));
-         float phi  = 2.0f * CUDART_PI_F * u2;
+         float phi  = 2.0f * M_PIf * u2;
          float3 dir = make_float3(r_xy * cosf(phi), r_xy * sinf(phi), z);
 
          // Interior ray-sphere intersection: take the far root.
@@ -359,13 +359,13 @@ __device__ OptiXLightSample sample_light_optix(const float3 &shading_p, float u_
          ls.direction = dir;
          ls.emission  = light.emission * params.light_intensity;
          ls.dist      = t;
-         ls.pdf       = select_pdf / (4.0f * CUDART_PI_F);
+         ls.pdf       = select_pdf / (4.0f * M_PIf);
       }
       else
       {
          float  dist          = sqrtf(dist_sq);
          float  cos_theta_max = sqrtf(fmaxf(0.0f, 1.0f - (light.radius * light.radius) / dist_sq));
-         float  solid_angle   = 2.0f * CUDART_PI_F * (1.0f - cos_theta_max);
+         float  solid_angle   = 2.0f * M_PIf * (1.0f - cos_theta_max);
          if (solid_angle < 1e-8f) return ls;
 
          float3 w = to_center / dist;

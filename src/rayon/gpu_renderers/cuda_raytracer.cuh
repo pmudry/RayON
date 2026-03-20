@@ -831,7 +831,7 @@ static __device__ LightSampleGPU sample_light_gpu(const CudaScene::Scene &scene,
          float z    = 1.0f - 2.0f * u1;
          float r_xy = sqrtf(fmaxf(0.0f, 1.0f - z * z));
          float phi  = 2.0f * CUDART_PI_F * u2;
-         f3    dir  = make_f3(r_xy * cosf(phi), r_xy * sinf(phi), z);
+         f3    dir  = f3(r_xy * cosf(phi), r_xy * sinf(phi), z);
 
          // Ray-sphere intersection from interior: take the far root.
          f3    oc           = shading_p - center;
