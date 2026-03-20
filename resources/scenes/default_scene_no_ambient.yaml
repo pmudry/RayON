@@ -18,7 +18,6 @@ settings:
   # Background and ambient lighting — all disabled
   background_color: [0.0, 0.0, 0.0]
   background_intensity: 0.0
-  ambient_light: 0.0
   use_bvh: false
 
 # Material definitions

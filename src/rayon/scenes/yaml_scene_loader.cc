@@ -575,8 +575,6 @@ bool loadSceneFromYAML(const char *filename, SceneDescription &scene)
    // Load scene settings (optional)
    if (parser.hasKey("settings.background_color"))
       scene.background_color = parser.getVec3("settings.background_color");
-   if (parser.hasKey("settings.ambient_light"))
-      scene.ambient_light = parser.getFloat("settings.ambient_light", 0.1f);
    if (parser.hasKey("settings.background_intensity"))
       scene.background_intensity = parser.getFloat("settings.background_intensity", 1.0f);
    // Accept both "settings.use_bvh" (canonical) and "scene.use_bvh" (legacy)

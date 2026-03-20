@@ -53,7 +53,6 @@ camera:
 |-----|------|---------|-------------|
 | `background_color` | vec3 | `[0.5, 0.7, 1.0]` | Sky/background colour (linear RGB) |
 | `background_intensity` | float | `1.0` | Multiplier applied to the background colour |
-| `ambient_light` | float | `0.1` | Constant ambient term added to all surfaces |
 | `use_bvh` | bool | `false` | Enable BVH acceleration (recommended for > 50 objects) |
 | `adaptive_sampling` | bool | `true` | Let converged pixels stop accumulating early |
 

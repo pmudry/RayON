@@ -6,7 +6,6 @@ camera:
 
 settings:
   background_color: [0.08, 0.12, 0.18]
-  ambient_light: 0.05
   background_intensity: 0.25
   use_bvh: true
 

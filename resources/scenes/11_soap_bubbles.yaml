@@ -13,7 +13,6 @@ camera:
 
 settings:
   background_color: [0.02, 0.02, 0.05]
-  ambient_light: 0.0
   background_intensity: 0.0
   use_bvh: true
   adaptive_sampling: false

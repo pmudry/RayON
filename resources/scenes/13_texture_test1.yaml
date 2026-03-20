@@ -10,7 +10,6 @@ camera:
 
 settings:
   background_color: [0.15, 0.2, 0.3]
-  ambient_light: 0.05
   use_bvh: true
 
 # The area-light material is defined here.

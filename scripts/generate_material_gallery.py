@@ -160,7 +160,6 @@ _THUMBNAIL_CAMERA = {
 _THUMBNAIL_SETTINGS = {
     "background_color":     [0.06, 0.06, 0.08],
     "background_intensity": 0.0,
-    "ambient_light":        0.03,
     "use_bvh":              False,
     "adaptive_sampling":    False,
 }
@@ -231,7 +230,6 @@ camera:
 settings:
   background_color: {_vec3_str(st["background_color"])}
   background_intensity: {st["background_intensity"]}
-  ambient_light: {st["ambient_light"]}
   use_bvh: {"true" if st["use_bvh"] else "false"}
   adaptive_sampling: {"true" if st["adaptive_sampling"] else "false"}
 

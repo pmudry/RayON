@@ -14,7 +14,6 @@ scene:
   
 settings:
   background_color: [0.25, 0.35, 0.55]
-  ambient_light: 0.08
   background_intensity: 0.25
   use_bvh: true
   

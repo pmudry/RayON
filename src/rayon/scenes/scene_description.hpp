@@ -475,7 +475,6 @@ public:
     
     // Rendering settings
     Vec3 background_color;
-    float ambient_light;
     float background_intensity;               // Sky/background brightness multiplier
     bool use_bvh;                             // Enable scene BVH
     bool adaptive_sampling;                   // Enable adaptive sampling
@@ -487,7 +486,6 @@ public:
         , camera_up(0, 1, 0)
         , camera_fov(90.0f)
         , background_color(0.5f, 0.7f, 1.0f)
-        , ambient_light(0.1f)
         , background_intensity(1.0f)
         , use_bvh(false)
         , adaptive_sampling(true)
