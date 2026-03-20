@@ -562,6 +562,30 @@ fp16 clamping and cache versioning, interactive Numpad sky cycling, ImGui Sky co
 
 ---
 
+### Mar 20 — Farewell, CPU renderer
+
+<div class="milestone-date">2026-03-20 · <code>e093324</code></div>
+
+The original CPU rendering backends — single-threaded and multi-threaded — are retired from the
+main branch.  They served as the project's foundation: the very first pixels were rendered one
+at a time on the CPU, and `std::async` tiles gave the first taste of parallelism.  But with
+CUDA delivering **~1 000×** the throughput and OptiX adding hardware ray tracing on top, the
+CPU paths had become dead weight — untested, unmaintained, and unused.
+
+The code is preserved on the
+[`legacy/cpu-renderer`](https://github.com/pmudry/RayON/tree/legacy/cpu-renderer) branch for
+anyone who wants to study the CPU-to-GPU evolution.  On `main`, the `cpu_renderers/` directory
+is gone, `rnd_gen.hpp` has been relocated to `data_structures/`, and the normal-arrows overlay
+(which depended on `CPUSceneBuilder`) has been removed.
+
+Bye bye! :wave:
+
+**What changed:** deleted `src/rayon/cpu_renderers/` (10 files, ~1 800 lines), removed CPU
+cases from `main.cc`, stripped `CPUSceneBuilder` from `scene_builder.hpp`, removed normal-arrows
+overlay from both GPU progressive renderers, updated all documentation with archival banners.
+
+---
+
 ## The Timeline at a Glance
 
 ```
@@ -587,6 +611,7 @@ Mar 13 ━━ Anisotropic metals, thin-film, clear-coat
 Mar 15 ━━ NVIDIA OptiX — 4× speedup (hardware RT)
 Mar 15 ━━ MTL materials & image texture mapping (GPU)
 Mar 18 ━━ HDR sky dome · float16 textures · .hdrcache sidecar
+Mar 20 ━━ CPU renderers archived to legacy/cpu-renderer 👋
 ```
 
 ---
