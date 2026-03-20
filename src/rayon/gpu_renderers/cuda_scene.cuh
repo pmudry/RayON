@@ -251,6 +251,11 @@ struct alignas(128) Scene
    // Ray marching settings
    int max_ray_march_steps;
    float ray_march_epsilon;
+
+   // Light list for Next Event Estimation (NEE / MIS)
+   int  *light_indices; ///< Device pointer: indices into geometries[] for LIGHT-material objects
+   int   num_lights;    ///< Number of emissive geometries
+   float *light_cdfs;   ///< Device pointer: cumulative area CDF [num_lights+1] for importance selection
 };
 
 } // namespace CudaScene

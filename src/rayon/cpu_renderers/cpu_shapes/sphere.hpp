@@ -22,48 +22,22 @@
 #include "hittable.hpp"
 #include "material.hpp"
 
-class Sphere : public Hittable{
- public:
-   Sphere(const Point3 &center, double radius, shared_ptr<Material> mat) : center(center), radius(std::fmax(0, radius)), mat(mat) {}
+#include <cmath>
 
-   /**
-    * @brief Calculates the intersection point of a ray with a sphere
-    *
-    * This function determines if and where a ray intersects with a sphere by
-    * solving the quadratic equation formed by substituting the ray equation
-    * into the sphere equation.
-    *
-    * **Mathematical Background:**
-    * - Sphere equation: `(C−P)⋅(C−P) = r²` where P is a point on the sphere
-    * - Ray equation: `P = O + t*d` where O is origin, d is direction, t is
-    * distance
-    * - We then solve for t by substituting the ray equation into the sphere
-    * equation
-    * - Substitution yields quadratic: `at² + bt + c = 0` where:
-    *   - `a = d⋅d` (direction vector dot product)
-    *   - `b = −2*d⋅(C−O)` (relates direction to center-origin vector)
-    *   - `c = (C−O)⋅(C−O) − r²` (distance from origin to center minus radius
-    * squared) 
-    *
-    * @param center The center point of the sphere in 3D space
-    * @param radius The radius of the sphere (must be positive)
-    * @param r The ray to test for intersection
-    *
-    * @return The parameter t for the intersection point along the ray:
-    *     - Returns `-1.0` if no intersection occurs (discriminant < 0)
-    *     - Returns the farther intersection point when two intersections exist
-    *     - The actual intersection point can be computed as `r.origin() + t *
-    * r.direction()`
-    *
-    * @note When the discriminant is non-negative, this function returns the
-    * larger t value, corresponding to the exit point of the ray from the sphere
-    */
+class Sphere : public Hittable
+{
+ public:
+   Sphere(const Point3 &center, double radius, shared_ptr<Material> mat)
+       : center(center), radius(std::fmax(0, radius)), mat(mat)
+   {
+   }
+
    bool hit(const Ray &r, Interval ray_t, Hit_record &rec) const override
    {
       Vec3 oc = center - r.origin();
-      auto a = r.direction().length_squared();
-      auto h = dot(r.direction(), oc);
-      auto c = oc.length_squared() - radius * radius;
+      auto a  = r.direction().length_squared();
+      auto h  = dot(r.direction(), oc);
+      auto c  = oc.length_squared() - radius * radius;
 
       auto discriminant = h * h - a * c;
       if (discriminant < 0)
@@ -71,9 +45,7 @@ class Sphere : public Hittable{
 
       auto sqrtd = std::sqrt(discriminant);
 
-      // Find the nearest root that lies in the acceptable range.
       auto root = (h - sqrtd) / a;
-
       if (ray_t.surrounds(root) == false)
       {
          root = (h + sqrtd) / a;
@@ -81,12 +53,53 @@ class Sphere : public Hittable{
             return false;
       }
 
-      rec.t = root;
-      rec.p = r.at(rec.t);
+      rec.t      = root;
+      rec.p      = r.at(rec.t);
       rec.normal = (rec.p - center) / radius;
       rec.mat_ptr = mat;
 
       return true;
+   }
+
+   // --- NEE emitter sampling ---
+
+   double pdf_value(const Point3 &origin, const Vec3 &direction) const override
+   {
+      // If origin is inside the sphere, use uniform hemisphere PDF
+      Vec3 to_center = center - origin;
+      double dist_sq = to_center.length_squared();
+      if (dist_sq <= radius * radius)
+         return 1.0 / (4.0 * M_PI);
+
+      double cos_theta_max = std::sqrt(std::max(0.0, 1.0 - (radius * radius) / dist_sq));
+      double solid_angle   = 2.0 * M_PI * (1.0 - cos_theta_max);
+      return (solid_angle > 0.0) ? (1.0 / solid_angle) : 0.0;
+   }
+
+   Vec3 random_direction(const Point3 &origin) const override
+   {
+      Vec3 to_center = center - origin;
+      double dist_sq = to_center.length_squared();
+
+      if (dist_sq <= radius * radius)
+         return Vec3::random_in_hemisphere(unit_vector(to_center));
+
+      double dist           = std::sqrt(dist_sq);
+      double cos_theta_max  = std::sqrt(std::max(0.0, 1.0 - (radius * radius) / dist_sq));
+
+      // Build ONB with w pointing toward sphere center
+      Vec3 w = to_center / dist;
+      Vec3 a = (std::fabs(w.x()) > 0.9) ? Vec3(0, 1, 0) : Vec3(1, 0, 0);
+      Vec3 v = unit_vector(cross(w, a));
+      Vec3 u = cross(v, w);
+
+      // Sample uniformly in the visible cone
+      double u1  = RndGen::random_double();
+      double phi = 2.0 * M_PI * RndGen::random_double();
+      double cos_theta = 1.0 - u1 * (1.0 - cos_theta_max);
+      double sin_theta = std::sqrt(std::max(0.0, 1.0 - cos_theta * cos_theta));
+
+      return unit_vector(sin_theta * std::cos(phi) * u + sin_theta * std::sin(phi) * v + cos_theta * w);
    }
 
  private:

@@ -52,4 +52,12 @@ class Hittable
    virtual ~Hittable() = default;
 
    virtual bool hit(const Ray &r, Interval ray_t, Hit_record &rec) const = 0;
+
+   /// Solid-angle PDF of sampling direction @p direction from @p origin toward this hittable.
+   /// Default: 0 (non-emissive objects cannot be sampled by NEE).
+   virtual double pdf_value(const Point3 &origin, const Vec3 &direction) const { return 0.0; }
+
+   /// Sample a unit direction from @p origin toward this hittable for NEE.
+   /// Default: fixed direction (only meaningful for emissive objects that override this).
+   virtual Vec3 random_direction(const Point3 &origin) const { return Vec3(1, 0, 0); }
 };

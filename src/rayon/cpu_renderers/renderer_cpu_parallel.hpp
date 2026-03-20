@@ -24,8 +24,11 @@ class RendererCPUParallel : public IRenderer
  public:
    void render(const RenderRequest &request, RenderContext &context) override
    {
-      Hittable_list cpu_scene = Scene::CPUSceneBuilder::buildCPUScene(request.scene);
+      Scene::CPUScene cpu = Scene::CPUSceneBuilder::buildCPUScene(request.scene);
       const CameraFrame frame = request.camera.buildFrame();
+
+      printf("CPU scene: %zu objects, %zu lights\n",
+             cpu.scene.objects.size(), cpu.lights.objects.size());
 
       const unsigned hw_threads = std::thread::hardware_concurrency();
       const int num_threads = static_cast<int>(std::max(1u, hw_threads));
@@ -41,7 +44,8 @@ class RendererCPUParallel : public IRenderer
          {
             for (int x = 0; x < frame.image_width; ++x)
             {
-               const Color pixel_color = CPURayTracer::computePixelColor(frame, cpu_scene, x, y, context.ray_counter);
+               const Color pixel_color = CPURayTracer::computePixelColor(
+                   frame, cpu.scene, cpu.lights, x, y, context.ray_counter);
                render::writePixel(request.target, x, y, pixel_color, context.gamma);
             }
 
@@ -57,14 +61,13 @@ class RendererCPUParallel : public IRenderer
       for (int t = 0; t < num_threads; ++t)
       {
          int start_y = t * rows_per_thread;
-         int end_y = (t == num_threads - 1) ? frame.image_height : std::min(frame.image_height, start_y + rows_per_thread);
+         int end_y   = (t == num_threads - 1) ? frame.image_height
+                                               : std::min(frame.image_height, start_y + rows_per_thread);
          threads[t] = std::thread(render_chunk, start_y, end_y);
       }
 
       for (auto &thread : threads)
-      {
          thread.join();
-      }
 
       auto end_time = std::chrono::high_resolution_clock::now();
 

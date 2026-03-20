@@ -23,13 +23,17 @@ class RendererCPU : public IRenderer
       auto start_time = std::chrono::high_resolution_clock::now();
 
       const CameraFrame frame = request.camera.buildFrame();
-      Hittable_list cpu_scene = Scene::CPUSceneBuilder::buildCPUScene(request.scene);
+      Scene::CPUScene cpu = Scene::CPUSceneBuilder::buildCPUScene(request.scene);
+
+      printf("CPU scene: %zu objects, %zu lights\n",
+             cpu.scene.objects.size(), cpu.lights.objects.size());
 
       for (int y = 0; y < frame.image_height; ++y)
       {
          for (int x = 0; x < frame.image_width; ++x)
          {
-            const Color pixel_color = CPURayTracer::computePixelColor(frame, cpu_scene, x, y, context.ray_counter);
+            const Color pixel_color = CPURayTracer::computePixelColor(
+                frame, cpu.scene, cpu.lights, x, y, context.ray_counter);
             render::writePixel(request.target, x, y, pixel_color, context.gamma);
          }
 

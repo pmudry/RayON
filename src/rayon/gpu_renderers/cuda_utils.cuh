@@ -54,6 +54,8 @@ constexpr uint32_t SOBOL_EFFECT_CLEAR_COAT_DIR   = 7u;  ///< Clear-coat specular
 constexpr uint32_t SOBOL_EFFECT_CLEAR_COAT_DIFF  = 8u;  ///< Clear-coat base diffuse hemisphere
 constexpr uint32_t SOBOL_EFFECT_ROUGH_MIRROR     = 9u;  ///< Rough mirror normal perturbation
 constexpr uint32_t SOBOL_EFFECT_RR               = 10u; ///< Russian roulette path termination
+constexpr uint32_t SOBOL_EFFECT_NEE_POINT        = 11u; ///< NEE: 2D sample for point on selected light
+constexpr uint32_t SOBOL_EFFECT_NEE_SELECT       = 12u; ///< NEE: 1D sample for light selection
 
 /// Runtime toggle — defined in cuda_utils.cu, set via setSobolSampler() extern-C call.
 extern __device__ bool g_use_sobol;

@@ -87,6 +87,9 @@ struct hit_record_simple
    // Thin-film interference fields (only meaningful when material == THIN_FILM)
    float film_thickness;   // Film thickness in nanometers
    float film_ior;         // Refractive index of the thin film
+
+   // Index into scene.geometries[] — used by MIS to compute light PDF for emissive hits
+   int geom_idx;
 };
 
 //==============================================================================
@@ -638,9 +641,264 @@ __device__ inline bool hit_scene(const CudaScene::Scene &scene, const ray_simple
          }
       }
       apply_material(scene.materials[closest_material_id], rec, geom_center, scene.d_textures, scene.num_textures);
-      rec.visible = closest_visible;
+      rec.visible  = closest_visible;
+      rec.geom_idx = closest_geom_idx;
    }
    return hit_anything;
+}
+
+//==============================================================================
+// SHADOW RAY — early-exit BVH traversal for occlusion tests
+//==============================================================================
+
+/**
+ * @brief Returns true if any geometry blocks the ray before t_max.
+ *
+ * Uses the same BVH but exits as soon as any hit is found (no need for closest).
+ * Stack depth capped at 16 — sufficient for typical light-visibility tests.
+ */
+__device__ inline bool hit_scene_shadow(const CudaScene::Scene &scene, const ray_simple &r,
+                                        float t_min, float t_max)
+{
+   if (scene.use_bvh && scene.bvh_root_idx >= 0)
+   {
+      const f3 inv_dir(1.0f / r.dir.x, 1.0f / r.dir.y, 1.0f / r.dir.z);
+      int stack[16];
+      int stack_ptr = 0;
+      stack[stack_ptr++] = scene.bvh_root_idx;
+
+      while (stack_ptr > 0)
+      {
+         int node_idx = stack[--stack_ptr];
+         const CudaScene::BVHNode &node = scene.bvh_nodes[node_idx];
+
+         if (!hit_aabb(r, inv_dir, node.bounds_min, node.bounds_max, t_min, t_max))
+            continue;
+
+         if (node.is_leaf)
+         {
+            int first = node.data.leaf.first_geom_idx;
+            int count = node.data.leaf.geom_count;
+            for (int i = 0; i < count; ++i)
+            {
+               hit_record_simple tmp;
+               if (intersect_geometry(scene.geometries[first + i], r, t_min, t_max, tmp))
+                  return true; // early exit
+            }
+         }
+         else
+         {
+            if (stack_ptr < 15) stack[stack_ptr++] = node.data.interior.left_child;
+            if (stack_ptr < 15) stack[stack_ptr++] = node.data.interior.right_child;
+         }
+      }
+   }
+   else
+   {
+      for (int i = 0; i < scene.num_geometries; ++i)
+      {
+         hit_record_simple tmp;
+         if (intersect_geometry(scene.geometries[i], r, t_min, t_max, tmp))
+            return true;
+      }
+   }
+   return false;
+}
+
+//==============================================================================
+// MIS HELPERS — BSDF eval / PDF / light sampling
+//==============================================================================
+
+/// True for materials that are delta distributions (skip NEE + MIS weighting)
+__device__ __forceinline__ bool is_delta_material(LegacyMaterialType mat)
+{
+   return mat != LAMBERTIAN;
+}
+
+/// Evaluate f(wo, wi) for a given incoming direction wi (Lambertian only)
+__device__ __noinline__ f3 eval_bsdf_gpu(const hit_record_simple &rec, const f3 &wi)
+{
+   if (rec.material == LAMBERTIAN)
+      return rec.color * (1.0f / CUDART_PI_F);
+   return f3(0.0f, 0.0f, 0.0f);
+}
+
+/// PDF of BSDF sampling direction wi
+__device__ __noinline__ float scatter_pdf_gpu(const hit_record_simple &rec, const f3 &wi)
+{
+   if (rec.material == LAMBERTIAN)
+      return fmaxf(0.0f, dot(wi, rec.normal)) / CUDART_PI_F;
+   return 0.0f;
+}
+
+/// GPU light sample result
+struct LightSampleGPU
+{
+   f3    direction; ///< Unit direction from shading point toward light
+   f3    emission;  ///< Emitted radiance
+   float pdf;       ///< Solid-angle PDF (0 = invalid)
+   float dist;      ///< Distance to sampled point (for shadow ray t_max)
+};
+
+/**
+ * @brief Sample a point on one of the scene lights for NEE.
+ *
+ * Selects a light proportionally to the area CDF stored in scene.light_cdfs,
+ * then samples a point on the selected geometry.
+ *
+ * @param u_sel  Uniform [0,1) for CDF light selection
+ * @param u1,u2  Uniform [0,1) for sampling a point on the chosen light
+ */
+__device__ __noinline__ LightSampleGPU sample_light_gpu(const CudaScene::Scene &scene,
+                                                        const f3 &shading_p,
+                                                        float u_sel, float u1, float u2)
+{
+   LightSampleGPU ls;
+   ls.pdf = 0.0f;
+
+   if (scene.num_lights == 0)
+      return ls;
+
+   // CDF-based light selection
+   int light_list_idx = 0;
+   for (int i = 0; i < scene.num_lights; ++i)
+   {
+      if (u_sel < scene.light_cdfs[i + 1])
+      {
+         light_list_idx = i;
+         break;
+      }
+      light_list_idx = i; // last light as fallback
+   }
+
+   int geom_idx = scene.light_indices[light_list_idx];
+   const CudaScene::Geometry &geom = scene.geometries[geom_idx];
+   const CudaScene::Material &mat  = scene.materials[geom.material_id];
+
+   // select_pdf = area_i / total_area = cdf[i+1] - cdf[i]
+   float select_pdf = scene.light_cdfs[light_list_idx + 1] - scene.light_cdfs[light_list_idx];
+   if (select_pdf < 1e-8f)
+      return ls;
+
+   if (geom.type == CudaScene::GeometryType::RECTANGLE)
+   {
+      f3 corner = geom.data.rectangle.corner;
+      f3 u_vec  = geom.data.rectangle.u;
+      f3 v_vec  = geom.data.rectangle.v;
+
+      f3 sampled_pt  = corner + u1 * u_vec + u2 * v_vec;
+      f3 light_norm  = normalize(cross(u_vec, v_vec));
+      f3 to_light    = sampled_pt - shading_p;
+      float dist     = length(to_light);
+      if (dist < 1e-5f)
+         return ls;
+
+      f3    dir      = to_light / dist;
+      float cos_l    = fabsf(dot(-dir, light_norm));
+      if (cos_l < 1e-6f)
+         return ls;
+
+      float area     = length(cross(u_vec, v_vec));
+      float area_pdf = 1.0f / fmaxf(area, 1e-8f);
+
+      ls.direction = dir;
+      ls.emission  = mat.emission * g_light_intensity;
+      ls.dist      = dist;
+      ls.pdf       = select_pdf * area_pdf * (dist * dist) / cos_l;
+   }
+   else if (geom.type == CudaScene::GeometryType::SPHERE)
+   {
+      f3    center    = geom.data.sphere.center;
+      float radius    = geom.data.sphere.radius;
+      f3    to_center = center - shading_p;
+      float dist_sq   = dot(to_center, to_center);
+
+      if (dist_sq <= radius * radius)
+         return ls; // inside sphere, skip
+
+      float dist          = sqrtf(dist_sq);
+      float cos_theta_max = sqrtf(fmaxf(0.0f, 1.0f - (radius * radius) / dist_sq));
+      float solid_angle   = 2.0f * CUDART_PI_F * (1.0f - cos_theta_max);
+      if (solid_angle < 1e-8f)
+         return ls;
+
+      f3 w = to_center / dist;
+      f3 u_basis, v_basis;
+      build_orthonormal_basis(w, u_basis, v_basis);
+
+      float cos_theta = 1.0f - u1 * (1.0f - cos_theta_max);
+      float sin_theta = sqrtf(fmaxf(0.0f, 1.0f - cos_theta * cos_theta));
+      float phi       = 2.0f * CUDART_PI_F * u2;
+
+      f3 dir = normalize(sin_theta * cosf(phi) * u_basis + sin_theta * sinf(phi) * v_basis + cos_theta * w);
+
+      ls.direction = dir;
+      ls.emission  = mat.emission * g_light_intensity;
+      ls.dist      = dist;
+      ls.pdf       = select_pdf / solid_angle;
+   }
+
+   return ls;
+}
+
+/**
+ * @brief Solid-angle PDF that the NEE light sampler would assign to direction @p dir
+ *        from @p prev_p toward a geometry hit at @p rec (with rec.geom_idx).
+ *
+ * Used to compute the MIS weight when a BSDF-sampled path hits an emissive surface.
+ */
+__device__ __noinline__ float light_dir_pdf_gpu(const CudaScene::Scene &scene,
+                                                int geom_idx, const f3 &prev_p,
+                                                const f3 &dir)
+{
+   if (geom_idx < 0 || scene.num_lights == 0)
+      return 0.0f;
+
+   // Find this geometry in the light list and get its select_pdf
+   float select_pdf = 0.0f;
+   for (int i = 0; i < scene.num_lights; ++i)
+   {
+      if (scene.light_indices[i] == geom_idx)
+      {
+         select_pdf = scene.light_cdfs[i + 1] - scene.light_cdfs[i];
+         break;
+      }
+   }
+   if (select_pdf < 1e-8f)
+      return 0.0f;
+
+   const CudaScene::Geometry &geom = scene.geometries[geom_idx];
+
+   if (geom.type == CudaScene::GeometryType::RECTANGLE)
+   {
+      f3 u_vec = geom.data.rectangle.u;
+      f3 v_vec = geom.data.rectangle.v;
+      f3 nrm   = normalize(cross(u_vec, v_vec));
+      float denom = dot(dir, nrm);
+      if (fabsf(denom) < 1e-8f)
+         return 0.0f;
+      float t = dot(geom.data.rectangle.corner - prev_p, nrm) / denom;
+      if (t < 0.0f)
+         return 0.0f;
+      float area     = length(cross(u_vec, v_vec));
+      float cos_l    = fabsf(dot(-dir, nrm));
+      if (cos_l < 1e-6f)
+         return 0.0f;
+      return select_pdf * (t * t) / (cos_l * fmaxf(area, 1e-8f));
+   }
+   else if (geom.type == CudaScene::GeometryType::SPHERE)
+   {
+      f3    to_center   = geom.data.sphere.center - prev_p;
+      float dist_sq     = dot(to_center, to_center);
+      float r           = geom.data.sphere.radius;
+      float cos_max     = sqrtf(fmaxf(0.0f, 1.0f - (r * r) / dist_sq));
+      float solid_angle = 2.0f * CUDART_PI_F * (1.0f - cos_max);
+      if (solid_angle < 1e-8f)
+         return 0.0f;
+      return select_pdf / solid_angle;
+   }
+
+   return 0.0f;
 }
 
 /**
@@ -917,6 +1175,10 @@ __device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scen
    f3 accumulated_attenuation(1.0f, 1.0f, 1.0f);
    ray_simple current_ray = r;
 
+   // MIS tracking: PDF and specular flag of the previous BSDF sample
+   float prev_bsdf_pdf  = 1.0f;
+   bool  prev_is_delta  = true; // treat camera ray as delta — no prior NEE could target bounce 0
+
    for (int bounce = 0; bounce < depth; bounce++)
    {
 #ifdef DIAGS
@@ -940,9 +1202,22 @@ __device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scen
          bool did_scatter = scatter_material(rec, current_ray, scattered_ray, attenuation, emitted, state,
                                               sample_n, pixel_hash, bounce);
 
+         // --- Emissive contribution with MIS weight ---
          if (emitted.length_squared() > 0.0f)
          {
-            accumulated_color = accumulated_color + accumulated_attenuation * emitted;
+            float w = 1.0f;
+            if (bounce > 0 && !prev_is_delta && scene.num_lights > 0)
+            {
+               f3 hit_dir = normalize(current_ray.dir);
+               float light_pdf = light_dir_pdf_gpu(scene, rec.geom_idx, current_ray.orig, hit_dir);
+               if (light_pdf > 0.0f)
+               {
+                  float a = prev_bsdf_pdf * prev_bsdf_pdf;
+                  float b = light_pdf * light_pdf;
+                  w = a / (a + b); // power heuristic
+               }
+            }
+            accumulated_color = accumulated_color + accumulated_attenuation * emitted * w;
          }
 
          if (!did_scatter)
@@ -950,10 +1225,55 @@ __device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scen
             return accumulated_color;
          }
 
+         // --- NEE: direct light sampling (Lambertian only) ---
+         bool is_delta = is_delta_material(rec.material);
+         if (!is_delta && scene.num_lights > 0)
+         {
+            // Fetch 3 stratified samples: 2D for light point, 1D for selection
+            float2 nee_uv  = rand_float2(state, sample_n, pixel_hash, (uint32_t)bounce, SOBOL_EFFECT_NEE_POINT);
+            float  nee_sel = rand_float2(state, sample_n, pixel_hash, (uint32_t)bounce, SOBOL_EFFECT_NEE_SELECT).x;
+
+            {
+               LightSampleGPU ls = sample_light_gpu(scene, rec.p, nee_sel, nee_uv.x, nee_uv.y);
+
+               if (ls.pdf > 0.0f)
+               {
+                  // Shadow ray — stop just before the light surface
+                  ray_simple shadow_ray(rec.p + 0.0001f * rec.normal, ls.direction);
+                  if (!hit_scene_shadow(scene, shadow_ray, 0.0001f, ls.dist - 0.002f))
+                  {
+                     f3    f_nee    = eval_bsdf_gpu(rec, ls.direction);
+                     float cos_th   = fmaxf(0.0f, dot(ls.direction, rec.normal));
+                     float p_mat    = scatter_pdf_gpu(rec, ls.direction);
+                     float a        = ls.pdf * ls.pdf;
+                     float b        = p_mat * p_mat;
+                     float w_nee    = (a + b > 0.0f) ? (a / (a + b)) : 1.0f;
+
+                     accumulated_color = accumulated_color +
+                         accumulated_attenuation * f_nee * ls.emission * cos_th * w_nee / ls.pdf;
+                  }
+               }
+            }
+         }
+
+         // --- Advance the path ---
          current_ray = scattered_ray;
          accumulated_attenuation =
-             f3(accumulated_attenuation.x * attenuation.x, accumulated_attenuation.y * attenuation.y,
+             f3(accumulated_attenuation.x * attenuation.x,
+                accumulated_attenuation.y * attenuation.y,
                 accumulated_attenuation.z * attenuation.z);
+
+         // Store BSDF PDF for MIS weighting at the next emissive hit
+         if (is_delta)
+         {
+            prev_bsdf_pdf = 1.0f;
+            prev_is_delta = true;
+         }
+         else
+         {
+            prev_bsdf_pdf = scatter_pdf_gpu(rec, normalize(scattered_ray.dir));
+            prev_is_delta = false;
+         }
 
          // Russian Roulette path termination (from bounce 1 for early path culling)
          if (bounce > 0)
