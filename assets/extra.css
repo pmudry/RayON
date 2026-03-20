@@ -503,3 +503,104 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ─── Image comparison slider (img-comparison-slider web component) ─── */
+
+.comparison-block {
+  margin: 2rem 0;
+}
+
+.comparison-block .comparison-caption {
+  font-size: 0.80rem;
+  text-align: center;
+  opacity: 0.75;
+  margin-top: 6px;
+  line-height: 1.5;
+}
+
+img-comparison-slider {
+  display: block;
+  width: 100%;
+  border-radius: 6px;
+  overflow: hidden;
+  --divider-color: rgba(175, 169, 236, 0.85);
+  --divider-width: 2px;
+  --handle-background-color: rgba(175, 169, 236, 0.9);
+  --handle-size: 40px;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.35);
+  cursor: col-resize;
+}
+
+[data-md-color-scheme="default"] img-comparison-slider {
+  --divider-color: rgba(106, 90, 205, 0.9);
+  --handle-background-color: rgba(106, 90, 205, 0.85);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+}
+
+img-comparison-slider img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* Technique label overlays */
+.comparison-wrap {
+  position: relative;
+}
+
+.comparison-wrap .label-left,
+.comparison-wrap .label-right {
+  position: absolute;
+  top: 10px;
+  z-index: 10;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 4px;
+  pointer-events: none;
+  user-select: none;
+}
+
+.comparison-wrap .label-left  { left: 10px; }
+.comparison-wrap .label-right { right: 10px; }
+
+[data-md-color-scheme="default"] .comparison-wrap .label-left,
+[data-md-color-scheme="default"] .comparison-wrap .label-right {
+  background: rgba(255, 255, 255, 0.7);
+  color: #1a1a2e;
+}
+
+/* Three-column comparison layout */
+.comparison-grid-3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+
+@media (max-width: 900px) {
+  .comparison-grid-3 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Scene header strip */
+.scene-header {
+  border-left: 4px solid var(--md-accent-fg-color);
+  padding-left: 0.9rem;
+  margin: 2.5rem 0 1.2rem;
+}
+
+.scene-header h3 {
+  margin: 0 0 0.2rem;
+}
+
+.scene-header .scene-meta {
+  font-size: 0.78rem;
+  opacity: 0.65;
+  margin: 0;
+}
