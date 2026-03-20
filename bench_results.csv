@@ -65,3 +65,6 @@ timestamp,commit,branch,gpu,resolution,samples,run,time_s
 2026-03-20T17:08:18+01:00,5c0ebb5,feature/mis-multiple-importance-sampling,NVIDIA GB10,720,1024,cuda(2),pcg,1,4.309
 2026-03-20T17:08:18+01:00,5c0ebb5,feature/mis-multiple-importance-sampling,NVIDIA GB10,720,1024,cuda(2),pcg,2,4.339
 2026-03-20T17:08:18+01:00,5c0ebb5,feature/mis-multiple-importance-sampling,NVIDIA GB10,720,1024,cuda(2),pcg,3,4.432
+2026-03-20T21:07:19+01:00,e093324,main,NVIDIA GB10,720,1024,cuda(2),pcg,1,4.852
+2026-03-20T21:07:19+01:00,e093324,main,NVIDIA GB10,720,1024,cuda(2),pcg,2,4.965
+2026-03-20T21:07:19+01:00,e093324,main,NVIDIA GB10,720,1024,cuda(2),pcg,3,5.059
