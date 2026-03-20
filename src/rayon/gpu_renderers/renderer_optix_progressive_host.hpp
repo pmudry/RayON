@@ -152,6 +152,7 @@ class RendererOptiXProgressive : public IRenderer
       bool motion_gate_mis       = settings_.motion_gate_mis;
       bool nee_first_bounce_only = settings_.nee_first_bounce_only;
       int  nee_stride            = settings_.nee_stride;
+      bool use_sobol             = true; // default: Sobol sampler
 
       // Motion detection
       bool is_camera_moving = false;
@@ -518,6 +519,7 @@ class RendererOptiXProgressive : public IRenderer
                   motion_gate_mis       = settings_.motion_gate_mis;
                   nee_first_bounce_only = settings_.nee_first_bounce_only;
                   nee_stride            = settings_.nee_stride;
+                  use_sobol             = true;
                   camera_changed = true;
                }
                else if (event.key.keysym.sym == SDLK_f)
@@ -706,6 +708,7 @@ class RendererOptiXProgressive : public IRenderer
          bool old_motion_gate_mis       = motion_gate_mis;
          bool old_nee_first_bounce_only = nee_first_bounce_only;
          int  old_nee_stride            = nee_stride;
+         bool old_use_sobol             = use_sobol;
 
          bool auto_orbit = camera_control.isAutoOrbitEnabled();
          float cam_pos[3] = {(float)look_from.x(), (float)look_from.y(), (float)look_from.z()};
@@ -731,7 +734,8 @@ class RendererOptiXProgressive : public IRenderer
                            &current_hdr_index,
                            hdr_count > 0 ? hdr_name_ptrs.data() : nullptr,
                            hdr_count,
-                           &mis_enabled, &motion_gate_mis, &nee_first_bounce_only, &nee_stride);
+                           &mis_enabled, &motion_gate_mis, &nee_first_bounce_only, &nee_stride,
+                           &use_sobol);
 
          if (auto_orbit != camera_control.isAutoOrbitEnabled())
             camera_control.setAutoOrbit(auto_orbit);
@@ -786,6 +790,11 @@ class RendererOptiXProgressive : public IRenderer
          }
          if (mis_enabled != old_mis_enabled || motion_gate_mis != old_motion_gate_mis)
             camera_changed = true;
+         if (use_sobol != old_use_sobol)
+         {
+            ::setOptiXSobolSampler(use_sobol);
+            camera_changed = true;
+         }
 
          // Arrow overlay settings changed — refresh display
          if (show_normal_arrows != old_show_normal_arrows || normal_arrow_count != old_normal_arrow_count ||

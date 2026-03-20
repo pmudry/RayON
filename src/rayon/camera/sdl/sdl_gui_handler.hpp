@@ -206,7 +206,8 @@ class SDLGuiHandler
                       int *hdr_env_index = nullptr, const char *const *hdr_env_names = nullptr,
                       int hdr_env_count = 0,
                       bool *mis_enabled = nullptr, bool *motion_gate_mis = nullptr,
-                      bool *nee_first_bounce_only = nullptr, int *nee_stride = nullptr)
+                      bool *nee_first_bounce_only = nullptr, int *nee_stride = nullptr,
+                      bool *use_sobol = nullptr)
    {
       SDL_UpdateTexture(texture, nullptr, image.data(), image_width * image_channels);
       SDL_RenderClear(renderer);
@@ -475,6 +476,14 @@ class SDLGuiHandler
                                           "1 = every sample (full quality), 2-4 = interactive sweet spot.");
                      ImGui::PopItemWidth();
                      if (!mis_ok) ImGui::EndDisabled();
+                  }
+
+                  if (use_sobol)
+                  {
+                     ImGui::Separator();
+                     ImGui::Checkbox("Sobol sampler##sobol_toggle", use_sobol);
+                     ImGui::SetItemTooltip("Use Sobol low-discrepancy sampler (better convergence).\n"
+                                          "Uncheck for classic PCG pseudo-random sampling.");
                   }
                }
             }

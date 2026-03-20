@@ -116,6 +116,7 @@ class RendererCUDAProgressive : public IRenderer
       bool motion_gate_mis       = settings_.motion_gate_mis;
       bool nee_first_bounce_only = settings_.nee_first_bounce_only;
       int  nee_stride            = settings_.nee_stride;
+      bool use_sobol             = true; // default: Sobol sampler
 
       // Motion detection for adaptive quality
       bool is_camera_moving = false;
@@ -597,6 +598,7 @@ class RendererCUDAProgressive : public IRenderer
                   motion_gate_mis       = settings_.motion_gate_mis;
                   nee_first_bounce_only = settings_.nee_first_bounce_only;
                   nee_stride            = settings_.nee_stride;
+                  use_sobol             = true;
                   camera_changed = true;
                   applySceneSettings();
                }
@@ -847,6 +849,7 @@ class RendererCUDAProgressive : public IRenderer
          bool old_motion_gate_mis       = motion_gate_mis;
          bool old_nee_first_bounce_only = nee_first_bounce_only;
          int  old_nee_stride            = nee_stride;
+         bool old_use_sobol             = use_sobol;
 
          // Draw ImGui UI — passes pointers so ImGui can modify values directly
          bool auto_orbit = camera_control.isAutoOrbitEnabled();
@@ -877,7 +880,8 @@ class RendererCUDAProgressive : public IRenderer
                            &current_hdr_index,
                            hdr_count > 0 ? hdr_name_ptrs.data() : nullptr,
                            hdr_count,
-                           &mis_enabled, &motion_gate_mis, &nee_first_bounce_only, &nee_stride);
+                           &mis_enabled, &motion_gate_mis, &nee_first_bounce_only, &nee_stride,
+                           &use_sobol);
 
          if (auto_orbit != camera_control.isAutoOrbitEnabled())
          {
@@ -939,6 +943,11 @@ class RendererCUDAProgressive : public IRenderer
          if (mis_enabled != old_mis_enabled || motion_gate_mis != old_motion_gate_mis)
          {
             // effective_mis is recalculated each frame before renderBatch; just restart accumulation
+            camera_changed = true;
+         }
+         if (use_sobol != old_use_sobol)
+         {
+            ::setSobolSampler(use_sobol);
             camera_changed = true;
          }
 
