@@ -693,8 +693,12 @@ __device__ inline bool hit_scene_shadow(const CudaScene::Scene &scene, const ray
          }
          else
          {
-            if (stack_ptr < 31) stack[stack_ptr++] = node.data.interior.left_child;
-            if (stack_ptr < 31) stack[stack_ptr++] = node.data.interior.right_child;
+            // If the stack is near capacity, conservatively treat as occluded
+            // to avoid silently dropping children that might block the light.
+            if (stack_ptr >= 30)
+               return true;
+            stack[stack_ptr++] = node.data.interior.left_child;
+            stack[stack_ptr++] = node.data.interior.right_child;
          }
       }
    }
@@ -821,28 +825,53 @@ static __device__ LightSampleGPU sample_light_gpu(const CudaScene::Scene &scene,
       float dist_sq   = dot(to_center, to_center);
 
       if (dist_sq <= radius * radius)
-         return ls; // inside sphere, skip
+      {
+         // Shading point is inside the sphere — sample a uniform direction
+         // over the full 4π steradians and find the hit point on the surface.
+         float z    = 1.0f - 2.0f * u1;
+         float r_xy = sqrtf(fmaxf(0.0f, 1.0f - z * z));
+         float phi  = 2.0f * CUDART_PI_F * u2;
+         f3    dir  = make_f3(r_xy * cosf(phi), r_xy * sinf(phi), z);
 
-      float dist          = sqrtf(dist_sq);
-      float cos_theta_max = sqrtf(fmaxf(0.0f, 1.0f - (radius * radius) / dist_sq));
-      float solid_angle   = 2.0f * CUDART_PI_F * (1.0f - cos_theta_max);
-      if (solid_angle < 1e-8f)
-         return ls;
+         // Ray-sphere intersection from interior: take the far root.
+         f3    oc           = shading_p - center;
+         float b            = dot(oc, dir);
+         float c            = dot(oc, oc) - radius * radius;
+         float discriminant = b * b - c;
+         if (discriminant <= 0.0f)
+            return ls;
+         float t = -b + sqrtf(discriminant);
+         if (t <= 1e-5f)
+            return ls;
 
-      f3 w = to_center / dist;
-      f3 u_basis, v_basis;
-      build_orthonormal_basis(w, u_basis, v_basis);
+         ls.direction = dir;
+         ls.emission  = mat.emission * g_light_intensity;
+         ls.dist      = t;
+         ls.pdf       = select_pdf / (4.0f * CUDART_PI_F);
+      }
+      else
+      {
+         float dist          = sqrtf(dist_sq);
+         float cos_theta_max = sqrtf(fmaxf(0.0f, 1.0f - (radius * radius) / dist_sq));
+         float solid_angle   = 2.0f * CUDART_PI_F * (1.0f - cos_theta_max);
+         if (solid_angle < 1e-8f)
+            return ls;
 
-      float cos_theta = 1.0f - u1 * (1.0f - cos_theta_max);
-      float sin_theta = sqrtf(fmaxf(0.0f, 1.0f - cos_theta * cos_theta));
-      float phi       = 2.0f * CUDART_PI_F * u2;
+         f3 w = to_center / dist;
+         f3 u_basis, v_basis;
+         build_orthonormal_basis(w, u_basis, v_basis);
 
-      f3 dir = normalize(sin_theta * cosf(phi) * u_basis + sin_theta * sinf(phi) * v_basis + cos_theta * w);
+         float cos_theta = 1.0f - u1 * (1.0f - cos_theta_max);
+         float sin_theta = sqrtf(fmaxf(0.0f, 1.0f - cos_theta * cos_theta));
+         float phi       = 2.0f * CUDART_PI_F * u2;
 
-      ls.direction = dir;
-      ls.emission  = mat.emission * g_light_intensity;
-      ls.dist      = dist;
-      ls.pdf       = select_pdf / solid_angle;
+         f3 dir = normalize(sin_theta * cosf(phi) * u_basis + sin_theta * sinf(phi) * v_basis + cos_theta * w);
+
+         ls.direction = dir;
+         ls.emission  = mat.emission * g_light_intensity;
+         ls.dist      = dist;
+         ls.pdf       = select_pdf / solid_angle;
+      }
    }
 
    return ls;
@@ -898,7 +927,15 @@ static __device__ float light_dir_pdf_gpu(const CudaScene::Scene &scene,
       f3    to_center   = geom.data.sphere.center - prev_p;
       float dist_sq     = dot(to_center, to_center);
       float r           = geom.data.sphere.radius;
-      float cos_max     = sqrtf(fmaxf(0.0f, 1.0f - (r * r) / dist_sq));
+
+      // If the shading point is inside (or on) the sphere, the visible solid
+      // angle is the full 4π steradians — use the uniform-sphere PDF.
+      const float r_sq      = r * r;
+      const float eps_dist2 = 1e-12f;
+      if (dist_sq <= r_sq + eps_dist2)
+         return select_pdf / (4.0f * CUDART_PI_F);
+
+      float cos_max     = sqrtf(fmaxf(0.0f, 1.0f - r_sq / dist_sq));
       float solid_angle = 2.0f * CUDART_PI_F * (1.0f - cos_max);
       if (solid_angle < 1e-8f)
          return 0.0f;
