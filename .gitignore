@@ -7,6 +7,7 @@ CMakeFiles/
 CMakeCache.txt
 cmake_install.cmake
 Makefile
+compile_commands.json
 
 # Ignore HDR environment maps (can be downloaded from script in resources/hdr/ and are large files)
 resources/hdri/*.hdr

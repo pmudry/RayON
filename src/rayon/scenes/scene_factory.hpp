@@ -92,7 +92,6 @@ class SceneFactory
       int mat_green = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(152 / 255.0, 199 / 255.0, 191 / 255.0)));
       int mat_light = scene_desc.addMaterial(MaterialDesc::light(Vec3(4.8, 4.1, 3.7)));
       int mat_torus_orange = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(1.0, 0.6, 0.2)));
-      int mat_normal = scene_desc.addMaterial(MaterialDesc::normal());
 
       // Anisotropic metal demo materials
       int mat_aniso_gold = scene_desc.addMaterial(MaterialDesc::anisotropicGold(0.3, 0.8));

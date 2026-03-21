@@ -123,9 +123,6 @@ class RendererCUDAProgressive : public IRenderer
       auto last_camera_change_time = std::chrono::high_resolution_clock::now();
       const float motion_cooldown_seconds = 0.5f;
 
-      // Adaptive sample rate
-      int adaptive_samples_per_batch = samples_per_batch;
-
       // Runtime-tweakable procedural pattern parameters (declared before applySceneSettings)
       bool scene_has_golf_ball      = false;
       int   golf_dimple_count       = 150;
@@ -617,7 +614,7 @@ class RendererCUDAProgressive : public IRenderer
             force_immediate_render = false;
 
             syncSamplesFromSlider();
-            adaptive_samples_per_batch = samples_per_batch;
+            int adaptive_samples_per_batch = samples_per_batch;
 
             // Option A: motion-gate MIS — auto-disable NEE/MIS while the camera is moving
             // so the GPU spends its budget on ray throughput rather than shadow rays.

@@ -159,8 +159,6 @@ class RendererOptiXProgressive : public IRenderer
       auto last_camera_change_time = std::chrono::high_resolution_clock::now();
       const float motion_cooldown_seconds = 0.5f;
 
-      int adaptive_samples_per_batch = samples_per_batch;
-
       // Overlay / visualization state (mirrors CUDA renderer)
       int visualization_mode = static_cast<int>(VisualizationMode::NORMAL);
       bool show_spps_counter = true;
@@ -557,7 +555,7 @@ class RendererOptiXProgressive : public IRenderer
          {
             force_immediate_render = false;
             syncSamplesFromSlider();
-            adaptive_samples_per_batch = samples_per_batch;
+            int adaptive_samples_per_batch = samples_per_batch;
 
             // Option A: motion-gate MIS — auto-disable NEE/MIS while the camera is moving
             bool effective_mis = mis_enabled && !(motion_gate_mis && is_camera_moving);
