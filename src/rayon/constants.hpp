@@ -20,6 +20,6 @@ namespace constants
     inline constexpr int MAX_DEPTH = 16;          // Maximum ray bounce depth
 
     // Interactive renderer defaults (mode 3)
-    inline constexpr int INTERACTIVE_SAMPLES_PER_BATCH = 10; // Fixed samples per batch in interactive mode
+    inline constexpr int INTERACTIVE_SAMPLES_PER_BATCH = 6;  // Fixed samples per batch in interactive mode
     inline constexpr int INTERACTIVE_MAX_SPP = 100000;       // Max SPP budget for interactive accumulation
 };
