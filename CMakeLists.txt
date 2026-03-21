@@ -20,7 +20,7 @@ endif()
 project(RAYON_RAYTRACER LANGUAGES CXX CUDA)
 
 # Option to enable diagnostic output
-option(ENABLE_DIAGS "Enable diagnostic output in CUDA and CPU renderers" OFF)
+option(ENABLE_DIAGS "Enable diagnostic output in renderers" OFF)
 
 # Ensure compile_commands.json is generated in the source directory
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -43,7 +43,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 if(ENABLE_CLANG_TIDY)
     find_program(CLANG_TIDY_EXE clang-tidy)
     if(CLANG_TIDY_EXE)
-        set(CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_EXE};-header-filter=^((?!src/external).)*$ --config")
+        set(CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_EXE};-header-filter=src/rayon")
         message(STATUS "clang-tidy found and enabled (ENABLE_CLANG_TIDY=ON)")
     else()
         message(WARNING "clang-tidy enabled via ENABLE_CLANG_TIDY but clang-tidy executable not found")
@@ -59,10 +59,8 @@ if(CMAKE_CUDA_COMPILER)
     set(CMAKE_CUDA_SEPARABLE_COMPILATION ON)
     set(CMAKE_CUDA_ARCHITECTURES "native") # Set CUDA architecture to the machine where it's built
     set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -t 0") # Enable parallel CUDA compilation for faster builds
-    set(CUDA_FOUND TRUE)
 else()
-    message(WARNING "CUDA not found. CUDA functionality will be disabled.")
-    set(CUDA_FOUND FALSE)
+    message(FATAL_ERROR "CUDA compiler not found. CUDA is required to build RayON.")
 endif()
 
 # Source
@@ -92,6 +90,9 @@ set(SOURCE_RAYON
     src/rayon/gpu_renderers/shaders/render_acc_kernel.cu
     src/rayon/gpu_renderers/shaders/shader_golf.cu
 )
+
+# Skip clang-tidy for all third-party external sources (CMake 3.27+)
+set_source_files_properties(${EXTERNAL} PROPERTIES SKIP_LINTING ON)
 
 # Note: optix_renderer.cu is added via target_sources() below, after find_path(OptiX_INCLUDE_DIR)
 
@@ -157,9 +158,9 @@ endif()
 # Find and link SDL2 for real-time display (optional)
 find_package(SDL2 QUIET)
 if(SDL2_FOUND)
-    include_directories(${SDL2_INCLUDE_DIRS})
+    target_include_directories(rayon PRIVATE ${SDL2_INCLUDE_DIRS})
     target_link_libraries(rayon ${SDL2_LIBRARIES})
-    add_definitions(-DSDL2_FOUND)
+    target_compile_definitions(rayon PRIVATE SDL2_FOUND)
     message(STATUS "SDL2 found and linked for real-time display")
 
     # Try to find SDL2_ttf for TrueType font rendering
@@ -167,9 +168,9 @@ if(SDL2_FOUND)
     if(PKG_CONFIG_FOUND)
         pkg_check_modules(SDL2_TTF QUIET SDL2_ttf)
         if(SDL2_TTF_FOUND)
-            include_directories(${SDL2_TTF_INCLUDE_DIRS})
+            target_include_directories(rayon PRIVATE ${SDL2_TTF_INCLUDE_DIRS})
             target_link_libraries(rayon ${SDL2_TTF_LIBRARIES})
-            add_definitions(-DSDL2_TTF_FOUND)
+            target_compile_definitions(rayon PRIVATE SDL2_TTF_FOUND)
             message(STATUS "SDL2_ttf found and linked for TrueType font rendering")
         else()
             message(WARNING "SDL2_ttf not found. TrueType font rendering will be disabled.")
@@ -188,23 +189,21 @@ endif()
 # Create an output directory for rendered images
 file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/rendered_images)
 
-if(CUDA_FOUND)
-    set_property(TARGET rayon PROPERTY CUDA_SEPARABLE_COMPILATION ON)
+set_property(TARGET rayon PROPERTY CUDA_SEPARABLE_COMPILATION ON)
     target_link_libraries(rayon curand)
 
     # CUDA compiler flags for optimization and warning suppression
     target_compile_options(rayon PRIVATE
         $<$<COMPILE_LANGUAGE:CUDA>:
-        -maxrregcount 80               # Profiled: 64 regs gave 67% occupancy but spill hurt at high res
-        -Xcompiler=-fno-strict-aliasing -rdynamic -lineinfo # Optimize memory access
-        --expt-relaxed-constexpr # Allow relaxed constexpr
-        --expt-extended-lambda # Enable extended lambda support
-        #-w                           # Suppress all CUDA warnings
-        $<$<CONFIG:Release>:-O3> # Maximum optimization for Release
-        $<$<CONFIG:Release>:--use_fast_math>  # Fast math for Release (fast rsqrtf, FMA, relaxed denormals)
-        $<$<CONFIG:Debug>:-O0> # No optimization for Debug
-        $<$<CONFIG:Debug>:-g> # Generate host debug info
-        $<$<CONFIG:Debug>:-lineinfo> # Generate line-number information (safer than -G)
+        -maxrregcount 80               # Profiled: 80 regs best balance of occupancy vs. spilling
+        -Xcompiler=-fno-strict-aliasing -rdynamic  # Relax aliasing rules, export symbols for backtrace
+        --expt-relaxed-constexpr       # Allow relaxed constexpr in device code
+        --expt-extended-lambda         # Enable extended lambda support
+        $<$<CONFIG:Release>:-O3>                 # Maximum optimization for Release
+        $<$<CONFIG:Release>:--use_fast_math>     # Fast math for Release (fast rsqrtf, FMA, relaxed denormals)
+        $<$<CONFIG:Debug>:-O0>                   # No optimization for Debug
+        $<$<CONFIG:Debug>:-g>                    # Generate host debug info
+        $<$<CONFIG:Debug>:-lineinfo>             # Generate line-number information (safer than -G)
         >
     )
 
@@ -212,10 +211,9 @@ if(CUDA_FOUND)
     set_target_properties(rayon PROPERTIES
         CUDA_RESOLVE_DEVICE_SYMBOLS ON
         CUDA_SEPARABLE_COMPILATION ON
-        CUDA_LINK_OPTIONS_INIT "-Xnvlink=--suppress-stack-size-warning,-w"
     )
 
-    # Additional nvlink flags to suppress all warnings
+    # Suppress nvlink stack-size and other warnings
     target_link_options(rayon PRIVATE
         $<DEVICE_LINK:-Xnvlink=--suppress-stack-size-warning,-w>
     )
@@ -259,8 +257,8 @@ if(CUDA_FOUND)
             COMMAND ${CMAKE_CUDA_COMPILER}
                 -ptx
                 -std=c++17
-                --use_fast_math
-                -O3
+                $<IF:$<CONFIG:Debug>,-O0,-O3>
+                $<$<CONFIG:Release>:--use_fast_math>
                 -I${OptiX_INCLUDE_DIR}
                 ${OPTIX_INCLUDE_FLAGS}
                 -o ${OPTIX_PTX_OUTPUT}
@@ -282,7 +280,6 @@ if(CUDA_FOUND)
         message(STATUS "OptiX SDK not found — OptiX renderer will be disabled")
         message(STATUS "Set OptiX_INSTALL_DIR or download from https://developer.nvidia.com/optix")
     endif()
-endif()
 
 # Generate .clangd with -I flags (done last so OptiX include is captured if found)
 # This updates the .clangd file's Add section with the current include directories

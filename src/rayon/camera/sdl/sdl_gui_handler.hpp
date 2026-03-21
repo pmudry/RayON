@@ -237,7 +237,7 @@ class SDLGuiHandler
          {
             auto pushSliderWidth = []()
             {
-               const float width_from_layout = ImGui::GetContentRegionAvail().x * 0.7f;
+               const float width_from_layout = ImGui::GetContentRegionAvail().x * 0.67f;
                const float clamped_width = std::clamp(width_from_layout, 120.0f, 240.0f);
                ImGui::PushItemWidth(clamped_width);
             };
@@ -262,7 +262,7 @@ class SDLGuiHandler
                if (samples_per_batch)
                {
                   pushSliderWidth();
-                  ImGui::SliderFloat("Samples/Batch", samples_per_batch, 1.0f, 100.0f, "%.0f");
+                  ImGui::SliderFloat("Samples/Batch", samples_per_batch, 1.0f, 80.0f, "%.0f");
                   ImGui::PopItemWidth();
                   ImGui::SetItemTooltip("Fixed samples per batch while the camera is still.");
                }
@@ -557,7 +557,7 @@ class SDLGuiHandler
                if (light_intensity && background_intensity && metal_fuzziness && glass_ior)
                {
                   pushSliderWidth();
-                  ImGui::SliderFloat("Light Intensity", light_intensity, 0.1f, 3.0f, "%.1f");
+                  ImGui::SliderFloat("Lights inten.", light_intensity, 0.1f, 3.0f, "%.1f");
                   ImGui::SliderFloat("Ambient Light", background_intensity, 0.0f, 5.0f, "%.2f");
                   ImGui::SliderFloat("Metal Fuzz", metal_fuzziness, 0.0f, 5.0f, "%.2f");
                   ImGui::SliderFloat("Glass IOR", glass_ior, 1.0f, 2.5f, "%.2f");

@@ -27,12 +27,9 @@ class SceneFactory
     * @return SceneDescription Loaded scene, or default scene if loading fails
     */
    static SceneDescription fromYAML(const std::string &filename, bool skip_cpu_bvh = false)
-   {      
-      std::cout << "Loading scene from: " << filename << std::endl;
-
+   {
       try
       {
-         std::cout << "Loading scene from: " << filename << std::endl;
          SceneDescription scene_desc;
          if (loadSceneFromYAML(filename.c_str(), scene_desc))
          {
@@ -63,28 +60,6 @@ class SceneFactory
          std::cerr << "Warning: Falling back to default scene" << std::endl;
          return createDefaultScene();
       }
-   }
-
-   /**
-    * @brief Create a simple scene with a single red sphere
-    *
-    * @return SceneDescription Simple scene with one sphere and ground
-    */
-   static SceneDescription singleObjectScene()
-   {
-      using namespace Scene;
-      SceneDescription scene_desc;
-
-      scene_desc.camera_position = Vec3(0, 0.6, 2);
-      scene_desc.camera_look_at = Vec3(0, 0.3, -1);
-      scene_desc.camera_up = Vec3(0, 1, 0);
-      scene_desc.camera_fov = 40.0f;
-
-      int mat_red = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(0.9, 0.1, 0.1)));
-      int mat_grey = scene_desc.addMaterial(MaterialDesc::lambertian(Vec3(0.3, 0.3, 0.3)));
-      scene_desc.addSphere(Vec3(0, 0.6, -1), 0.5, mat_red);
-      scene_desc.addSphere(Vec3(0, -10000, -1), 10000, mat_grey); // Ground
-      return scene_desc;
    }
 
    /**

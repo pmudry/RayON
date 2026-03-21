@@ -76,15 +76,6 @@ class Vec3
          return p;
       }
    }
-
-   static Vec3 random_in_hemisphere(const Vec3 &normal)
-   {
-      Vec3 in_unit_sphere = random_in_unit_sphere();
-      if (dot(in_unit_sphere, normal) > 0.0) // In the same hemisphere as the normal
-         return in_unit_sphere;
-      else
-         return -in_unit_sphere;
-   }
 };
 
 // Point3 is just an alias for vec3, but useful for geometric clarity in the code.

@@ -38,5 +38,5 @@ class Interval
    static const Interval empty, universe;
 };
 
-const Interval Interval::empty = Interval(+inf, -inf);
-const Interval Interval::universe = Interval(-inf, +inf);
+inline const Interval Interval::empty = Interval(+inf, -inf);
+inline const Interval Interval::universe = Interval(-inf, +inf);

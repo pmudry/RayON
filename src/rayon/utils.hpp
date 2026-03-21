@@ -46,30 +46,6 @@ class FileUtils
       }
    }
 
-   /**
-    * Just for the sake of putting a gradient in a file
-    */
-   static void fillGradientImage(vector<unsigned char> &image, int IMAGE_WIDTH, int IMAGE_HEIGHT, int CHANNELS)
-   {
-      // Generate a simple gradient
-      for (int y = 0; y < IMAGE_HEIGHT; ++y)
-      {
-         for (int x = 0; x < IMAGE_WIDTH; ++x)
-         {
-            int index = (y * IMAGE_WIDTH + x) * CHANNELS;
-            image[index] = static_cast<unsigned char>(255.0 * y / IMAGE_WIDTH);      // Red
-            image[index + 1] = static_cast<unsigned char>(255.0 * x / IMAGE_HEIGHT); // Green
-            image[index + 2] = 100;                                                  // Blue
-         }
-      }
-   }
-
-   static void dumpImageToFile(vector<unsigned char> &image, int image_width, int image_height, string name)
-   {
-      // Write image to file
-      writeImage(image, image_width, image_height, name);
-   }
-
    static string buildTimestampedOutputPath()
    {
       auto now = chrono::system_clock::now();

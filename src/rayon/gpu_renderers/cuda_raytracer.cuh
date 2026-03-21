@@ -124,12 +124,6 @@ __device__ __forceinline__ f3 reflect_fuzzy(const f3 &v, const f3 &n, float roug
    return reflect(v, perturbed_normal);
 }
 
-__device__ inline float smoothstep(float edge0, float edge1, float x)
-{
-   float t = fmaxf(0.0f, fminf(1.0f, (x - edge0) / (edge1 - edge0)));
-   return t * t * (3.0f - 2.0f * t);
-}
-
 /**
  * @brief Generate a random point in the unit disk for DOF
  * @param state Random state

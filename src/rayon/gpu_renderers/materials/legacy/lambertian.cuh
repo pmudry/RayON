@@ -13,7 +13,6 @@
 #include <cassert>
 #include <math_constants.h>
 
-#define COSINE_IMPLEMENTATION 1
 namespace Materials
 {
 
@@ -81,15 +80,6 @@ struct Lambertian : public MaterialBase<Lambertian>
       return f3(x, y, z);
    }
 
-   __device__ __forceinline__ f3 random_in_hemisphere(const f3 &normal, curandState *rng) const
-   {
-      f3 in_unit_sphere = randOnUnitSphere(rng);
-      if (dot(in_unit_sphere, normal) > 0.0) // In the same hemisphere as the normal
-         return in_unit_sphere;
-      else
-         return -in_unit_sphere;
-   }
-
    /**
     * @brief Scatter incident ray using cosine-weighted hemisphere sampling
     *
@@ -103,18 +93,13 @@ struct Lambertian : public MaterialBase<Lambertian>
    __device__ bool scatter(const ray_simple &r_in, const hit_record_simple &rec, f3 &attenuation, ray_simple &scattered,
                            curandState *state) const
    {
-#if COSINE_IMPLEMENTATION
       f3 u, v;
       f3 w = normalize(rec.normal);
       build_orthonormal_basis(w, u, v);
 
       f3 local_dir = sample_cosine_weighted_hemisphere(state);
 
-      f3 world_dir = local_dir.x * u + local_dir.y * v + local_dir.z * w;
-      f3 scatter_direction = world_dir;
-#else
-      f3 scatter_direction = rec.normal + random_in_hemisphere(rec.normal, state);
-#endif
+      f3 scatter_direction = local_dir.x * u + local_dir.y * v + local_dir.z * w;
 
       // The offset avoids self-intersection artifacts on large objects
       scattered = ray_simple(rec.p + 0.0001 * rec.normal, scatter_direction);

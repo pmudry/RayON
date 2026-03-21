@@ -1,0 +1,5 @@
+---
+# Disable all clang-tidy checks for third-party external sources.
+# InheritParentConfig: false stops cascade from the root .clang-tidy (clang-tidy 14+).
+InheritParentConfig: false
+Checks: '-*'

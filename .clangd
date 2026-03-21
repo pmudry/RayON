@@ -49,6 +49,16 @@ Index:
 # other OptiX-SDK types hidden behind #ifdef __CUDACC__ guards.
 # This section is preserved across CMake regenerations (CMake only rewrites Add:).
 ---
+# External / third-party sources: disable all clang-tidy checks and suppress
+# clangd diagnostics. This applies to files opened directly in the editor as
+# well as to headers from external/ included in project source files.
+If:
+  PathMatch: src/external/.*
+Diagnostics:
+  ClangTidy:
+    Remove: ['*']
+  Suppress: ['*']
+---
 If:
   PathMatch: src/rayon/gpu_renderers/optix/.*\.(h|hpp|cu|cuh)
 CompileFlags:

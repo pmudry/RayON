@@ -65,8 +65,8 @@ struct f3
    __host__ __device__ float length_squared() const { return x * x + y * y + z * z; }
 };
 
-const f3 f3_ZEROES(0.0f, 0.0f, 0.0f);
-const f3 f3_ONES(1.0f, 1.0f, 1.0f);
+inline const f3 f3_ZEROES(0.0f, 0.0f, 0.0f);
+inline const f3 f3_ONES(1.0f, 1.0f, 1.0f);
 
 /** @brief Scalar multiplication from left */
 __device__ __forceinline__ f3 operator*(float t, const f3 &v) { return v * t; }
@@ -82,16 +82,3 @@ __device__ __forceinline__ f3 cross(const f3 &a, const f3 &b)
 
 /** @brief Normalize a vector to unit length */
 __device__ __forceinline__ f3 normalize(const f3 &v) { return v / v.length(); }
-
-/** @brief Convert a normal to a debug RGB color */
-__device__ __forceinline__ f3 normal_to_color(const f3 &n)
-{
-   return f3(0.5f * (n.x + 1.0f), 0.5f * (n.y + 1.0f), 0.5f * (n.z + 1.0f));
-}
-
-/** @brief Create grayscale color from single value */
-__device__ __forceinline__ f3 grayscale(float v)
-{
-   v = fmaxf(0.0f, fminf(1.0f, v));
-   return f3(v, v, v);
-}

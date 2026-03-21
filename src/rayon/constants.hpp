@@ -4,23 +4,22 @@
 
 namespace constants
 {
-    const std::string ver_major = "1";
-    const std::string ver_minor = "6";
-    const std::string ver_patch = "0";
-    const std::string version = ver_major + "." + ver_minor + "." + ver_patch;
+    inline const std::string ver_major = "1";
+    inline const std::string ver_minor = "6";
+    inline const std::string ver_patch = "1";
+    inline const std::string version = ver_major + "." + ver_minor + "." + ver_patch;
 
     // Image specifics settings
-    const double ASPECT_RATIO = 16.0 / 9.0;
-    const int SET_IMAGE_HEIGHT = 720;
-    const int IMAGE_HEIGHT = SET_IMAGE_HEIGHT;
-    const int IMAGE_WIDTH = (int)(ASPECT_RATIO * SET_IMAGE_HEIGHT);
-    const int CHANNELS = 3; // RGB
+    inline constexpr double ASPECT_RATIO = 16.0 / 9.0;
+    inline constexpr int IMAGE_HEIGHT = 720;
+    inline constexpr int IMAGE_WIDTH = static_cast<int>(ASPECT_RATIO * IMAGE_HEIGHT);
+    inline constexpr int CHANNELS = 3; // RGB
 
     // Default renderer settings
-    const int SAMPLES_PER_PIXEL = 64; // Default samples per pixel for path tracing
-    const int MAX_DEPTH = 16;         // Maximum ray bounce depth
+    inline constexpr int SAMPLES_PER_PIXEL = 64; // Default samples per pixel for path tracing
+    inline constexpr int MAX_DEPTH = 16;          // Maximum ray bounce depth
 
     // Interactive renderer defaults (mode 3)
-    const int INTERACTIVE_SAMPLES_PER_BATCH = 10;  // Fixed samples per batch in interactive mode
-    const int INTERACTIVE_MAX_SPP = 100000;        // Max SPP budget for interactive accumulation
+    inline constexpr int INTERACTIVE_SAMPLES_PER_BATCH = 10; // Fixed samples per batch in interactive mode
+    inline constexpr int INTERACTIVE_MAX_SPP = 100000;       // Max SPP budget for interactive accumulation
 };

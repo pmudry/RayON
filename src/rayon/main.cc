@@ -286,7 +286,7 @@ ProgramArgs parseInput(int argc, char *argv[])
 int main(int argc, char *argv[])
 {
    // Enable colored error output (all cerr messages will be displayed in red)
-   ColoredStreamBuf cs(cout.rdbuf(), ansi_colors::BOLD_RED);
+   ColoredStreamBuf cs(cerr.rdbuf(), ansi_colors::BOLD_RED);
 
    cs.enable_colored_cerr();
 
@@ -376,7 +376,6 @@ int main(int argc, char *argv[])
    if (args.scene_file == nullptr)
    {
       cout << "No scene file provided, using default scene." << "\n";
-      // scene_desc = Scene::SceneFactory::singleObjectScene();
       scene_desc = Scene::SceneFactory::createDefaultScene();
    }
    else
@@ -484,8 +483,8 @@ int main(int argc, char *argv[])
 
    const string output_path = utils::FileUtils::buildTimestampedOutputPath();
 
-   utils::FileUtils::dumpImageToFile(localImage, camera.image_width, camera.image_height, "rendered_images/latest.png");
-   utils::FileUtils::dumpImageToFile(localImage, camera.image_width, camera.image_height, output_path);
+   utils::FileUtils::writeImage(localImage, camera.image_width, camera.image_height, "rendered_images/latest.png");
+   utils::FileUtils::writeImage(localImage, camera.image_width, camera.image_height, output_path);
 
    std::error_code file_size_ec;
    uintmax_t image_size_bytes = filesystem::file_size(output_path, file_size_ec);
