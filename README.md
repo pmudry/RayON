@@ -25,6 +25,9 @@ This project started as a hand-made reimplementation of the `InOneWeekend` ray t
 ## Quick start
 
 ```bash
+# Install build dependencies (ubuntu 24.04)
+sudo apt-get install cmake nvidia-cuda-toolkit clang libsdl2-dev libsdl2-ttf-dev doxygen
+
 mkdir -p build
 cd build
 cmake .. --fresh
@@ -115,5 +118,5 @@ PRs are welcome, please feel free to contribute.
 
 # Known issues
 
-- Compilation has been tested on DGX Spark, other platforms are untested yet.
+- Has been tested on DGX Spark and on x86_64 (Ubuntu 24.04). Other platforms are untested.
 - The code depends on a proper installation of [`libsdl`](https://www.libsdl.org/) for creating the real-time rendering context. It might work without it in non-interactive mode but this has not been tested. Use at your own risk (or create a PR).
