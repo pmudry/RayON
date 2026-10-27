@@ -26,36 +26,38 @@ enum class OptixMaterialType : unsigned char
    CLEAR_COAT         // Dielectric coat over diffuse base (Schlick Fresnel blend)
 };
 
-// Geometry types for intersection dispatch
+// Custom-primitive geometry types (triangles go through the built-in intersector)
 enum class OptixGeomType : unsigned char
 {
    SPHERE,
    RECTANGLE,
-   DISPLACED_SPHERE,
-   TRIANGLE
+   DISPLACED_SPHERE
 };
 
-// Per-geometry data stored in SBT hit group record
+// Per-geometry data stored in SBT hit group record (custom primitives only:
+// spheres, displaced spheres, rectangles). Triangles use the hardware triangle
+// intersector and a single shared SBT record; their per-primitive data lives in
+// OptixTriangleData, indexed by optixGetPrimitiveIndex().
 struct HitGroupData
 {
    OptixGeomType geom_type;
    int material_idx; // Index into materials array
 
-   // Geometry parameters (union-like, but flat for simplicity)
    float3 center;  // Sphere center / rectangle corner
    float radius;   // Sphere radius
    float3 u_vec;   // Rectangle edge u
    float3 v_vec;   // Rectangle edge v
    float3 normal;  // Precomputed rectangle normal
+};
 
-   // Triangle vertices and per-vertex normals
-   float3 tri_v0, tri_v1, tri_v2;
-   float3 tri_n0, tri_n1, tri_n2;
-   int    tri_has_normals; // 1 = interpolate per-vertex normals, 0 = use face normal
-
-   // Triangle per-vertex UV coordinates
-   float2 tri_uv0, tri_uv1, tri_uv2;
-   int    tri_has_uvs; // 1 = has UV coords, 0 = no UV
+// Per-triangle shading attributes (read once per closest hit, never during traversal)
+struct OptixTriangleData
+{
+   float3 n0, n1, n2;    // Per-vertex normals (valid when has_normals)
+   float2 uv0, uv1, uv2; // Per-vertex texture coordinates (valid when has_uvs)
+   int material_idx;
+   int has_normals; // 1 = interpolate per-vertex normals, 0 = use face normal
+   int has_uvs;     // 1 = has UV coords, 0 = no UV
 };
 
 // Material data (flat struct, uploaded as array)
@@ -174,35 +176,35 @@ struct OptixLaunchParams
    bool nee_first_bounce_only;  // Option B: NEE on first bounce only
    int  nee_stride;             // Option C: NEE every N samples
 
-   // Reverse lookup: SBT geometry index → light list index (-1 if not a light)
+   // Reverse lookup: custom-primitive index → light list index (-1 if not a light)
    int *geom_to_light_map;
    int  num_geom_entries;       // size of geom_to_light_map array
+
+   // Hardware triangles: vertex positions (3 per triangle, same order as the GAS build input)
+   // and per-triangle shading attributes, both indexed by optixGetPrimitiveIndex().
+   const float3            *tri_vertices;
+   const OptixTriangleData *tri_data;
+   int                      num_triangles;
 };
 
-// Per-ray data passed through payload pointer.
-// Kept minimal to reduce register pressure and stack spill — only fields
-// that must cross the trace() boundary (raygen ↔ closesthit/miss).
+// Miss SBT indices (see trace() / trace_shadow() in optix_programs.cu)
+enum : unsigned int
+{
+   OPTIX_MISS_RADIANCE = 0,
+   OPTIX_MISS_SHADOW   = 1
+};
+
+// Per-ray data passed through payload pointer — only what must cross the trace()
+// boundary (closesthit → raygen). Material parameters are looked up by raygen from
+// params.materials[material_idx]; RNG state never leaves raygen.
 struct PRDRadiance
 {
-   float3 hit_normal;
+   float3 hit_normal;  // Shading normal, flipped to face the ray
    float3 hit_point;
-   float3 hit_color;
-   float3 hit_emission;
-   float hit_roughness;
-   float hit_refractive_index;
-   float hit_film_thickness;   // THIN_FILM: film thickness in nm
-   float hit_film_ior;         // THIN_FILM: film refractive index
-   float2 hit_uv;              // Interpolated UV at hit point (for texture sampling)
-   float3 hit_tangent;         // Surface tangent (for anisotropic materials)
-   float3 hit_eta;             // ANISOTROPIC_METAL: complex IOR real part
-   float3 hit_k;               // ANISOTROPIC_METAL: complex IOR imaginary/extinction
-   float hit_anisotropy;       // ANISOTROPIC_METAL: anisotropy ratio
-   OptixMaterialType hit_material_type;
-   int hit_prim_idx;             ///< SBT primitive index (for light identification in MIS)
-   unsigned int seed;          ///< PCG seed (stateful fallback RNG)
-   uint32_t sobol_sample_idx;  ///< Gray-code sample index for Sobol path
-   uint32_t sobol_dim_idx;     ///< Dimension counter — incremented per rand_float call
-   uint32_t sobol_pixel_hash;  ///< Per-pixel stable hash for Owen scrambling
+   float3 hit_tangent; // Surface tangent (for anisotropic materials)
+   float3 hit_color;   // Albedo after texture / procedural pattern
+   int material_idx;   // -1 = invalid material (rendered magenta)
+   int hit_prim_idx;   // Custom-primitive index (for light identification in MIS), -1 for triangles
    bool hit;
    bool front_face;
 };

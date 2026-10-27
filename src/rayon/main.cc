@@ -426,6 +426,10 @@ int main(int argc, char *argv[])
    case 4:
    {
       cout << "Using OptiX GPU rendering (hardware RT cores)..." << "\n";
+      // Apply MIS/NEE settings to the OptiX renderer state before rendering.
+      ::setOptiXMISEnabled(args.mis_enabled);
+      ::setOptiXNEEFirstBounceOnly(args.nee_first_bounce_only);
+      ::setOptiXNEEStride(args.nee_stride);
       RendererOptiX renderer;
       coordinator.render(renderer, localImage);
       break;

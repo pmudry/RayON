@@ -37,25 +37,32 @@ __device__ __forceinline__ float rand_float(unsigned int &seed)
 //------------------------------------------------------------------------------
 // Sobol-aware rand_float for OptiX.
 // Routes through the scrambled Sobol sequence when params.use_sobol is true,
-// incrementing prd->sobol_dim_idx automatically.  Falls back to PCG when the
+// incrementing ss.dim_idx automatically.  Falls back to PCG when the
 // dimension budget is exceeded.
 //
-// Usage: replace rand_float(seed) with sobol_rand_float(prd, seed)
-//        in all OptiX material scatter code.
+// The Sobol state is raygen-local: it never crosses the optixTrace() boundary,
+// so it stays in registers instead of the payload struct in local memory.
 //------------------------------------------------------------------------------
-__device__ __forceinline__ float sobol_rand_float(PRDRadiance *prd, unsigned int &seed)
+struct SobolState
+{
+   uint32_t sample_idx; ///< Gray-code sample index for Sobol path
+   uint32_t dim_idx;    ///< Dimension counter — incremented per sobol_rand_float call
+   uint32_t pixel_hash; ///< Per-pixel stable hash for Owen scrambling
+};
+
+__device__ __forceinline__ float sobol_rand_float(SobolState &ss, unsigned int &seed)
 {
    if (params.use_sobol)
    {
-      if (prd->sobol_dim_idx < (uint32_t)SOBOL_MAX_DIM)
+      if (ss.dim_idx < (uint32_t)SOBOL_MAX_DIM)
       {
-         float v = sobol_float(prd->sobol_sample_idx, (int)prd->sobol_dim_idx, prd->sobol_pixel_hash);
-         prd->sobol_dim_idx++;
+         float v = sobol_float(ss.sample_idx, (int)ss.dim_idx, ss.pixel_hash);
+         ss.dim_idx++;
          return v;
       }
       // PCG fallback for dims beyond SOBOL_MAX_DIM
       seed = pcg_hash(seed);
-      prd->sobol_dim_idx++;
+      ss.dim_idx++;
       return (float)seed / (float)0xFFFFFFFFu;
    }
    return rand_float(seed);
@@ -246,37 +253,31 @@ __device__ __forceinline__ void trace(OptixTraversableHandle handle, float3 orig
    unsigned int p0 = static_cast<unsigned int>(uptr & 0xFFFFFFFFULL);
    unsigned int p1 = static_cast<unsigned int>(uptr >> 32);
    optixTrace(handle, origin, direction, tmin, tmax,
-              0.0f,                    // rayTime
-              OptixVisibilityMask(1),  // visibilityMask
-              OPTIX_RAY_FLAG_NONE,     // rayFlags
-              0,                       // SBT offset
-              1,                       // SBT stride
-              0,                       // missSBTIndex
+              0.0f,                         // rayTime
+              OptixVisibilityMask(1),       // visibilityMask
+              OPTIX_RAY_FLAG_DISABLE_ANYHIT, // no any-hit programs in this pipeline
+              0,                            // SBT offset
+              1,                            // SBT stride
+              OPTIX_MISS_RADIANCE,          // missSBTIndex
               p0, p1);
 }
 
 //==============================================================================
-// SHADOW RAY — uses the same GAS but terminates on first hit
+// SHADOW RAY — occlusion only. Closest-hit is disabled so a hit costs nothing
+// beyond traversal: the payload starts as "occluded" and only __miss__shadow
+// clears it.
 //==============================================================================
 
 __device__ __forceinline__ bool trace_shadow(OptixTraversableHandle handle, float3 origin,
                                               float3 direction, float tmin, float tmax)
 {
-   // Reuse a PRD just to test prd.hit. The closesthit will fill it.
-   PRDRadiance prd;
-   prd.hit = false;
-   prd.seed = 0;
-   prd.sobol_sample_idx = 0;
-   prd.sobol_dim_idx = 0;
-   prd.sobol_pixel_hash = 0;
-   const unsigned long long uptr = reinterpret_cast<unsigned long long>(&prd);
-   unsigned int p0 = static_cast<unsigned int>(uptr & 0xFFFFFFFFULL);
-   unsigned int p1 = static_cast<unsigned int>(uptr >> 32);
+   unsigned int occluded = 1u;
    optixTrace(handle, origin, direction, tmin, tmax,
               0.0f, OptixVisibilityMask(1),
-              OPTIX_RAY_FLAG_TERMINATE_ON_FIRST_HIT, // any-hit early exit
-              0, 1, 0, p0, p1);
-   return prd.hit;
+              OPTIX_RAY_FLAG_TERMINATE_ON_FIRST_HIT | OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT |
+                  OPTIX_RAY_FLAG_DISABLE_ANYHIT,
+              0, 1, OPTIX_MISS_SHADOW, occluded);
+   return occluded != 0u;
 }
 
 //==============================================================================
@@ -516,19 +517,18 @@ extern "C" __global__ void __raygen__rg()
       float prev_bsdf_pdf = 1.0f;
       bool  prev_is_delta = true; // camera ray treated as delta
 
-      uint32_t sobol_dim_idx = 4u; // dims 0-3 used for AA + DOF above; carried across bounces
+      // Sobol state is raygen-local; dim_idx persists across bounces (dims 0-3 used for AA + DOF above)
+      SobolState ss;
+      ss.sample_idx = sobol_sample_idx;
+      ss.dim_idx    = 4u;
+      ss.pixel_hash = pixel_hash;
+
       for (int bounce = 0; bounce < params.max_depth; ++bounce)
       {
          PRDRadiance prd;
-         prd.seed = seed;
          prd.hit = false;
-         // Sobol state passed through PRD; sobol_dim_idx persists across bounces (not reset each iteration)
-         prd.sobol_sample_idx  = sobol_sample_idx;
-         prd.sobol_dim_idx     = sobol_dim_idx;
-         prd.sobol_pixel_hash  = pixel_hash;
 
          trace(params.traversable, cur_origin, cur_direction, 0.001f, 1e16f, &prd);
-         seed = prd.seed; // Propagate RNG state
 
          if (!prd.hit)
          {
@@ -554,8 +554,16 @@ extern "C" __global__ void __raygen__rg()
             break;
          }
 
-         // Get material data
-         if (prd.hit_material_type == OptixMaterialType::LIGHT)
+         // Material parameters are read straight from the material table — only the
+         // index crosses the trace() boundary.
+         if (prd.material_idx < 0)
+         {
+            color = color + throughput * make_float3(1.0f, 0.0f, 1.0f); // Magenta = invalid material
+            break;
+         }
+         const OptixMaterialData &mat = params.materials[prd.material_idx];
+
+         if (mat.type == OptixMaterialType::LIGHT)
          {
             // MIS weight for BSDF-sampled emissive hit
             float w = 1.0f;
@@ -577,18 +585,18 @@ extern "C" __global__ void __raygen__rg()
                   }
                }
             }
-            color = color + throughput * prd.hit_emission * params.light_intensity * w;
+            color = color + throughput * mat.emission * params.light_intensity * w;
             break;
          }
 
-         if (prd.hit_material_type == OptixMaterialType::SHOW_NORMALS)
+         if (mat.type == OptixMaterialType::SHOW_NORMALS)
          {
             color = color + throughput * make_float3(0.5f * (prd.hit_normal.x + 1.0f), 0.5f * (prd.hit_normal.y + 1.0f),
                                                       0.5f * (prd.hit_normal.z + 1.0f));
             break;
          }
 
-         if (prd.hit_material_type == OptixMaterialType::CONSTANT)
+         if (mat.type == OptixMaterialType::CONSTANT)
          {
             color = color + throughput * prd.hit_color;
             break;
@@ -599,13 +607,21 @@ extern "C" __global__ void __raygen__rg()
          float3 attenuation;
          bool did_scatter = false;
 
-         if (prd.hit_material_type == OptixMaterialType::LAMBERTIAN ||
-             prd.hit_material_type == OptixMaterialType::SDF_MATERIAL)
+         // Lobe bookkeeping for NEE / MIS. NEE only ever estimates the cosine-weighted
+         // diffuse lobe, so it must use that lobe's true weight in the material's BSDF,
+         // and only a bounce that actually sampled the diffuse lobe gets MIS-weighted at
+         // the next emissive hit. Specular / coat bounces are treated as delta (weight 1,
+         // never covered by NEE) — the same split the CUDA renderer uses.
+         float diffuse_lobe   = 1.0f; // weight of the diffuse lobe in the BSDF (1 for Lambertian)
+         bool  sampled_diffuse = true; // this bounce's direction came from the diffuse lobe
+
+         if (mat.type == OptixMaterialType::LAMBERTIAN ||
+             mat.type == OptixMaterialType::SDF_MATERIAL)
          {
             // Lambertian: cosine-weighted hemisphere sampling
             // Uses 2 Sobol dims
-            float u1 = sobol_rand_float(&prd, seed);
-            float u2 = sobol_rand_float(&prd, seed);
+            float u1 = sobol_rand_float(ss, seed);
+            float u2 = sobol_rand_float(ss, seed);
             float z  = 2.0f * u1 - 1.0f;
             float r  = sqrtf(fmaxf(0.0f, 1.0f - z * z));
             float phi = 6.283185307f * u2;
@@ -617,21 +633,21 @@ extern "C" __global__ void __raygen__rg()
             attenuation = prd.hit_color;
             did_scatter = true;
          }
-         else if (prd.hit_material_type == OptixMaterialType::MIRROR ||
-                  prd.hit_material_type == OptixMaterialType::METAL)
+         else if (mat.type == OptixMaterialType::MIRROR ||
+                  mat.type == OptixMaterialType::METAL)
          {
             float3 unit_dir = normalize3(cur_direction);
             scatter_dir = reflect3(unit_dir, prd.hit_normal);
             attenuation = prd.hit_color;
             did_scatter = (dot3(scatter_dir, prd.hit_normal) > 0.0f);
          }
-         else if (prd.hit_material_type == OptixMaterialType::ROUGH_MIRROR)
+         else if (mat.type == OptixMaterialType::ROUGH_MIRROR)
          {
             float3 unit_dir = normalize3(cur_direction);
-            float eff_roughness = prd.hit_roughness * params.metal_fuzziness;
-            float u1 = sobol_rand_float(&prd, seed);
-            float u2 = sobol_rand_float(&prd, seed);
-            float u3 = sobol_rand_float(&prd, seed);  // cube root radial
+            float eff_roughness = mat.roughness * params.metal_fuzziness;
+            float u1 = sobol_rand_float(ss, seed);
+            float u2 = sobol_rand_float(ss, seed);
+            float u3 = sobol_rand_float(ss, seed);  // cube root radial
             float z  = 2.0f * u1 - 1.0f;
             float r  = sqrtf(fmaxf(0.0f, 1.0f - z * z));
             float phi = 6.283185307f * u2;
@@ -642,11 +658,11 @@ extern "C" __global__ void __raygen__rg()
             attenuation = prd.hit_color;
             did_scatter = (dot3(scatter_dir, prd.hit_normal) > 0.0f);
          }
-         else if (prd.hit_material_type == OptixMaterialType::GLASS ||
-                  prd.hit_material_type == OptixMaterialType::DIELECTRIC)
+         else if (mat.type == OptixMaterialType::GLASS ||
+                  mat.type == OptixMaterialType::DIELECTRIC)
          {
             attenuation = make_float3(1.0f, 1.0f, 1.0f);
-            float eff_ior = prd.hit_refractive_index * params.glass_ior_multiplier;
+            float eff_ior = mat.refractive_index * params.glass_ior_multiplier;
             float ri = prd.front_face ? (1.0f / eff_ior) : eff_ior;
 
             float3 unit_dir = normalize3(cur_direction);
@@ -654,7 +670,7 @@ extern "C" __global__ void __raygen__rg()
             float sin_theta = sqrtf(1.0f - cos_theta * cos_theta);
 
             bool cannot_refract = ri * sin_theta > 1.0f;
-            if (cannot_refract || reflectance(cos_theta, ri) > sobol_rand_float(&prd, seed))
+            if (cannot_refract || reflectance(cos_theta, ri) > sobol_rand_float(ss, seed))
             {
                scatter_dir = reflect3(unit_dir, prd.hit_normal);
             }
@@ -664,11 +680,11 @@ extern "C" __global__ void __raygen__rg()
             }
             did_scatter = true;
          }
-         else if (prd.hit_material_type == OptixMaterialType::ANISOTROPIC_METAL)
+         else if (mat.type == OptixMaterialType::ANISOTROPIC_METAL)
          {
             // Full anisotropic GGX microfacet conductor (PBR Book §9.6)
-            float aspect = sqrtf(fmaxf(1e-4f, 1.0f - 0.9f * prd.hit_anisotropy));
-            float r2 = prd.hit_roughness * prd.hit_roughness;
+            float aspect = sqrtf(fmaxf(1e-4f, 1.0f - 0.9f * mat.anisotropy));
+            float r2 = mat.roughness * mat.roughness;
             float alpha_x = fmaxf(1e-4f, r2 / aspect);
             float alpha_y = fmaxf(1e-4f, r2 * aspect);
 
@@ -680,7 +696,7 @@ extern "C" __global__ void __raygen__rg()
                float3 unit_dir = normalize3(cur_direction);
                scatter_dir = reflect3(unit_dir, N);
                float cos_i = fmaxf(dot3(-unit_dir, N), 0.0f);
-               attenuation = prd.hit_color * FrComplex_opt(cos_i, prd.hit_eta, prd.hit_k);
+               attenuation = prd.hit_color * FrComplex_opt(cos_i, mat.eta, mat.k);
                did_scatter = dot3(scatter_dir, N) > 0.0f;
             }
             else
@@ -696,7 +712,7 @@ extern "C" __global__ void __raygen__rg()
                if (wo_local.z > 0.0f)
                {
                   // Sample microfacet normal via VNDF
-                  float3 wm = Sample_wm_GGX_opt(wo_local, alpha_x, alpha_y, sobol_rand_float(&prd, seed), sobol_rand_float(&prd, seed));
+                  float3 wm = Sample_wm_GGX_opt(wo_local, alpha_x, alpha_y, sobol_rand_float(ss, seed), sobol_rand_float(ss, seed));
 
                   // Reflect incoming direction around microfacet normal to get wi
                   float3 wi_local = reflect3(make_float3(-wo_local.x, -wo_local.y, -wo_local.z), wm);
@@ -708,7 +724,7 @@ extern "C" __global__ void __raygen__rg()
 
                      // Fresnel + VNDF weighting: F * G / G1
                      float cos_theta_i = fmaxf(dot3(wo_local, wm), 0.0f);
-                     float3 F = FrComplex_opt(cos_theta_i, prd.hit_eta, prd.hit_k);
+                     float3 F = FrComplex_opt(cos_theta_i, mat.eta, mat.k);
                      float G = G_GGX_opt(wo_local, wi_local, alpha_x, alpha_y);
                      float G1 = G1_GGX_opt(wo_local, alpha_x, alpha_y);
 
@@ -719,16 +735,16 @@ extern "C" __global__ void __raygen__rg()
                }
             }
          }
-         else if (prd.hit_material_type == OptixMaterialType::THIN_FILM)
+         else if (mat.type == OptixMaterialType::THIN_FILM)
          {
             // Full Airy thin-film interference (soap bubbles / oil slicks).
             // Stochastic reflect/transmit sampled from per-wavelength reflectance.
             float3 unit_dir = normalize3(cur_direction);
             float cos_i = fmaxf(fabsf(dot3(-unit_dir, prd.hit_normal)), 0.001f);
 
-            float n0 = prd.hit_refractive_index; // exterior medium (air ≈ 1.0)
-            float n1 = prd.hit_film_ior;         // film (soap/water ≈ 1.33)
-            float d  = prd.hit_film_thickness;   // film thickness in nm
+            float n0 = mat.refractive_index; // exterior medium (air ≈ 1.0)
+            float n1 = mat.film_ior;         // film (soap/water ≈ 1.33)
+            float d  = mat.film_thickness;   // film thickness in nm
 
             float sin_i = sqrtf(fmaxf(0.0f, 1.0f - cos_i * cos_i));
             float sin_t_sq = (n0 / n1) * (n0 / n1) * (1.0f - cos_i * cos_i);
@@ -757,7 +773,7 @@ extern "C" __global__ void __raygen__rg()
             float Rr = airy(650.0f), Rg = airy(550.0f), Rb = airy(450.0f);
             float avg_R = (Rr + Rg + Rb) / 3.0f;
 
-            if (sobol_rand_float(&prd, seed) < avg_R)
+            if (sobol_rand_float(ss, seed) < avg_R)
             {
                // Reflect — carry iridescent color
                scatter_dir = reflect3(unit_dir, prd.hit_normal);
@@ -773,29 +789,31 @@ extern "C" __global__ void __raygen__rg()
                did_scatter = true;
             }
          }
-         else if (prd.hit_material_type == OptixMaterialType::CLEAR_COAT)
+         else if (mat.type == OptixMaterialType::CLEAR_COAT)
          {
             // Two-layer: Schlick Fresnel decides specular coat vs diffuse base
             float3 unit_dir = normalize3(cur_direction);
             float cos_theta = fminf(dot3(-unit_dir, prd.hit_normal), 1.0f);
-            float r0 = (1.0f - prd.hit_refractive_index) / (1.0f + prd.hit_refractive_index);
+            float r0 = (1.0f - mat.refractive_index) / (1.0f + mat.refractive_index);
             r0 = r0 * r0;
             float cx = 1.0f - cos_theta;
             float cx2 = cx * cx;
             float fresnel = r0 + (1.0f - r0) * (cx2 * cx2 * cx);
 
-            if (sobol_rand_float(&prd, seed) < fresnel)
+            diffuse_lobe = 1.0f - fresnel;
+            if (sobol_rand_float(ss, seed) < fresnel)
             {
                // Specular reflection through the coat
-               float u1 = sobol_rand_float(&prd, seed);
-               float u2 = sobol_rand_float(&prd, seed);
-               float u3 = sobol_rand_float(&prd, seed);
+               sampled_diffuse = false;
+               float u1 = sobol_rand_float(ss, seed);
+               float u2 = sobol_rand_float(ss, seed);
+               float u3 = sobol_rand_float(ss, seed);
                float z  = 2.0f * u1 - 1.0f;
                float r  = sqrtf(fmaxf(0.0f, 1.0f - z * z));
                float phi_r = 6.283185307f * u2;
                float t   = cbrtf(u3);
                float3 perturb = make_float3(r * __cosf(phi_r) * t, r * __sinf(phi_r) * t, z * t);
-               float3 perturbed_n = normalize3(prd.hit_normal + prd.hit_roughness * perturb);
+               float3 perturbed_n = normalize3(prd.hit_normal + mat.roughness * perturb);
                scatter_dir = reflect3(unit_dir, perturbed_n);
                attenuation = make_float3(1.0f, 1.0f, 1.0f); // coat is clear
                did_scatter = (dot3(scatter_dir, prd.hit_normal) > 0.0f);
@@ -803,8 +821,8 @@ extern "C" __global__ void __raygen__rg()
             else
             {
                // Diffuse base color
-               float u1 = sobol_rand_float(&prd, seed);
-               float u2 = sobol_rand_float(&prd, seed);
+               float u1 = sobol_rand_float(ss, seed);
+               float u2 = sobol_rand_float(ss, seed);
                float z  = 2.0f * u1 - 1.0f;
                float r  = sqrtf(fmaxf(0.0f, 1.0f - z * z));
                float phi_r = 6.283185307f * u2;
@@ -823,7 +841,7 @@ extern "C" __global__ void __raygen__rg()
          }
 
          // --- NEE: direct light sampling for non-delta materials ---
-         bool is_delta = is_delta_material_optix(prd.hit_material_type);
+         bool is_delta = is_delta_material_optix(mat.type);
          if (params.mis_enabled && !is_delta && params.num_lights > 0)
          {
             bool do_nee = (bounce == 0 || !params.nee_first_bounce_only);
@@ -839,8 +857,8 @@ extern "C" __global__ void __raygen__rg()
                float max_att = fmaxf(throughput.x, fmaxf(throughput.y, throughput.z));
                if (max_att > 1e-4f)
                {
-                  float nee_u1  = sobol_rand_float(&prd, seed);
-                  float nee_u2  = sobol_rand_float(&prd, seed);
+                  float nee_u1  = sobol_rand_float(ss, seed);
+                  float nee_u2  = sobol_rand_float(ss, seed);
                   float nee_sel = rand_float(seed);
 
                   OptiXLightSample ls = sample_light_optix(prd.hit_point, nee_sel, nee_u1, nee_u2);
@@ -850,10 +868,10 @@ extern "C" __global__ void __raygen__rg()
                      if (!trace_shadow(params.traversable, prd.hit_point + 0.0001f * prd.hit_normal,
                                        ls.direction, 0.0001f, ls.dist - 0.002f))
                      {
-                        // Lambertian BSDF: f = albedo / pi, pdf = cos(theta) / pi
-                        float3 f_nee = prd.hit_color * (1.0f / 3.14159265f);
+                        // Diffuse lobe only: f = w_d * albedo / pi, pdf = w_d * cos(theta) / pi
+                        float3 f_nee = prd.hit_color * (diffuse_lobe / 3.14159265f);
                         float cos_th = fmaxf(0.0f, dot3(ls.direction, prd.hit_normal));
-                        float p_mat  = cos_th / 3.14159265f;
+                        float p_mat  = diffuse_lobe * cos_th / 3.14159265f;
                         float a      = ls.pdf * ls.pdf;
                         float b      = p_mat * p_mat;
                         float w_nee  = (a + b > 0.0f) ? (a / (a + b)) : 1.0f;
@@ -869,14 +887,14 @@ extern "C" __global__ void __raygen__rg()
          cur_direction = scatter_dir;
 
          // Track BSDF PDF for MIS weighting at the next emissive hit
-         if (is_delta)
+         if (is_delta || !sampled_diffuse)
          {
             prev_bsdf_pdf = 1.0f;
             prev_is_delta = true;
          }
          else
          {
-            prev_bsdf_pdf = fmaxf(0.0f, dot3(normalize3(scatter_dir), prd.hit_normal)) / 3.14159265f;
+            prev_bsdf_pdf = diffuse_lobe * fmaxf(0.0f, dot3(normalize3(scatter_dir), prd.hit_normal)) / 3.14159265f;
             prev_is_delta = false;
          }
 
@@ -885,15 +903,12 @@ extern "C" __global__ void __raygen__rg()
          {
             float max_comp = fmaxf(throughput.x, fmaxf(throughput.y, throughput.z));
             float survival_prob = fminf(max_comp, 0.95f);
-            if (sobol_rand_float(&prd, seed) > survival_prob)
+            if (sobol_rand_float(ss, seed) > survival_prob)
             {
                break;
             }
             throughput = throughput / survival_prob;
          }
-
-         // Persist Sobol dimension counter so the next bounce continues from where this one left off
-         sobol_dim_idx = prd.sobol_dim_idx;
       }
 
       // Firefly rejection: clamp per-sample luminance to prevent single HDR texels
@@ -922,6 +937,9 @@ extern "C" __global__ void __miss__ms()
    PRDRadiance *prd = getPRD();
    prd->hit = false;
 }
+
+// Shadow rays carry a single "occluded" flag in payload 0; reaching miss clears it.
+extern "C" __global__ void __miss__shadow() { optixSetPayload_0(0u); }
 
 //==============================================================================
 // GOLF BALL DISPLACEMENT HELPERS (ported from shader_golf.cu)
@@ -968,9 +986,102 @@ __device__ __forceinline__ float hexagonalDimplePattern_optix(float3 p)
 }
 
 //==============================================================================
-// CLOSEST HIT — fill PRD with material/geometry info
+// CLOSEST HIT — fill PRD with geometry info + resolved albedo
 //==============================================================================
 
+// Azimuthal tangent matching the CUDA renderer: cross(up, N). Used for spheres and
+// triangles (an edge-based triangle tangent differs between triangles of the same
+// fan-triangulated polygon and splits flat faces visibly).
+__device__ __forceinline__ float3 azimuthal_tangent(const float3 &N)
+{
+   float3 T = cross3(make_float3(0.0f, 1.0f, 0.0f), N);
+   if (dot3(T, T) < 1e-6f)
+      T = make_float3(1.0f, 0.0f, 0.0f); // degenerate at poles
+   return normalize3(T);
+}
+
+// Resolve the material index and the albedo (texture / procedural pattern applied).
+// Everything else about the material is read by raygen from params.materials.
+__device__ __forceinline__ void resolve_material(PRDRadiance *prd, int mat_idx, const float2 &uv,
+                                                 const float3 &pattern_center)
+{
+   if (mat_idx < 0 || mat_idx >= params.num_materials)
+   {
+      prd->material_idx = -1;
+      prd->hit_color    = make_float3(1.0f, 0.0f, 1.0f);
+      return;
+   }
+   prd->material_idx = mat_idx;
+
+   const OptixMaterialData &mat = params.materials[mat_idx];
+   prd->hit_color = mat.albedo;
+
+   // Texture sampling: override diffuse color with texel if texture is bound
+   if (mat.texture_id >= 0 && mat.texture_id < params.num_textures && params.d_textures)
+   {
+      float4 texel = tex2D<float4>(params.d_textures[mat.texture_id], uv.x, 1.0f - uv.y);
+      prd->hit_color = make_float3(texel.x, texel.y, texel.z);
+   }
+
+   // Apply procedural pattern if present
+   if (mat.pattern == 1) // FIBONACCI_DOTS
+   {
+      float3 dir     = normalize3(prd->hit_point - pattern_center);
+      int    N       = (int)mat.pattern_param1;
+      float  dot_rad = mat.pattern_param2;
+      float  max_dp  = -1.0f;
+      for (int i = 0; i < N; ++i)
+      {
+         float3 c = fibonacci_point_optix(i, N);
+         float  d = dot3(dir, c);
+         if (d > max_dp)
+            max_dp = d;
+      }
+      max_dp = fmaxf(fminf(max_dp, 1.0f), -1.0f);
+      float ang  = acosf(max_dp);
+      float mask = ang < dot_rad ? 0.0f : 1.0f;
+      prd->hit_color = mask * mat.albedo + (1.0f - mask) * mat.pattern_color;
+   }
+}
+
+// Hardware-intersected triangles: no intersection program, attributes are the barycentrics.
+extern "C" __global__ void __closesthit__triangle()
+{
+   PRDRadiance *prd = getPRD();
+   prd->hit          = true;
+   prd->hit_prim_idx = -1; // triangles are never NEE lights
+
+   const unsigned int tri = optixGetPrimitiveIndex();
+   const float2 bary      = optixGetTriangleBarycentrics(); // (u, v) weights of v1, v2
+   const float  w         = 1.0f - bary.x - bary.y;
+   const OptixTriangleData &td = params.tri_data[tri];
+
+   float3 outward_normal;
+   if (td.has_normals)
+   {
+      outward_normal = normalize3(w * td.n0 + bary.x * td.n1 + bary.y * td.n2);
+   }
+   else
+   {
+      const float3 *v = params.tri_vertices + 3u * tri;
+      outward_normal  = normalize3(cross3(v[1] - v[0], v[2] - v[0]));
+   }
+
+   float2 uv = make_float2(0.0f, 0.0f);
+   if (td.has_uvs)
+      uv = make_float2(w * td.uv0.x + bary.x * td.uv1.x + bary.y * td.uv2.x,
+                       w * td.uv0.y + bary.x * td.uv1.y + bary.y * td.uv2.y);
+
+   const float3 ray_dir = optixGetWorldRayDirection();
+   prd->front_face = dot3(ray_dir, outward_normal) < 0.0f;
+   prd->hit_normal = prd->front_face ? outward_normal : -outward_normal;
+   prd->hit_point  = optixGetWorldRayOrigin() + optixGetRayTmax() * ray_dir;
+   prd->hit_tangent = azimuthal_tangent(prd->hit_normal);
+
+   resolve_material(prd, td.material_idx, uv, make_float3(0.0f, 0.0f, 0.0f));
+}
+
+// Custom primitives: spheres, displaced spheres, rectangles.
 extern "C" __global__ void __closesthit__ch()
 {
    PRDRadiance *prd = getPRD();
@@ -982,12 +1093,6 @@ extern "C" __global__ void __closesthit__ch()
    // Get hit normal from intersection program attributes
    prd->hit_normal = make_float3(__int_as_float(optixGetAttribute_0()), __int_as_float(optixGetAttribute_1()),
                                   __int_as_float(optixGetAttribute_2()));
-
-   // Get UV from attributes 3 and 4 (only valid for triangles, hit kind == 2)
-   if (optixGetHitKind() == 2)
-      prd->hit_uv = make_float2(__int_as_float(optixGetAttribute_3()), __int_as_float(optixGetAttribute_4()));
-   else
-      prd->hit_uv = make_float2(0.0f, 0.0f);
 
    // Front face test
    float3 ray_dir = optixGetWorldRayDirection();
@@ -1073,79 +1178,12 @@ extern "C" __global__ void __closesthit__ch()
       prd->hit_point = displaced_pt + surface_epsilon * final_normal;
    }
 
-   // Look up material from params array
-   int mat_idx = sbt_data->material_idx;
+   // Surface tangent for anisotropic materials (geometry-specific)
+   prd->hit_tangent = (sbt_data->geom_type == OptixGeomType::RECTANGLE) ? normalize3(sbt_data->u_vec)
+                                                                         : azimuthal_tangent(prd->hit_normal);
 
-   // Compute surface tangent for anisotropic materials (geometry-specific)
-   {
-      float3 N = prd->hit_normal;
-      float3 T;
-      if (sbt_data->geom_type == OptixGeomType::RECTANGLE)
-      {
-         T = normalize3(sbt_data->u_vec);
-      }
-      else // SPHERE, DISPLACED_SPHERE, TRIANGLE
-      {
-         // Triangles use the normal-only azimuthal tangent too: an edge-based tangent differs
-         // between triangles of the same fan-triangulated polygon and splits flat faces visibly.
-         // Azimuthal tangent matching CUDA renderer: cross(up, outward_normal)
-         float3 up = make_float3(0.0f, 1.0f, 0.0f);
-         T = cross3(up, N);
-         if (dot3(T, T) < 1e-6f)
-            T = make_float3(1.0f, 0.0f, 0.0f); // degenerate at poles
-         T = normalize3(T);
-      }
-      prd->hit_tangent = T;
-   }
-
-   if (mat_idx >= 0 && mat_idx < params.num_materials)
-   {
-      const OptixMaterialData &mat = params.materials[mat_idx];
-      prd->hit_material_type = mat.type;
-      prd->hit_color = mat.albedo;
-      prd->hit_emission = mat.emission;
-      prd->hit_roughness = mat.roughness;
-      prd->hit_refractive_index = mat.refractive_index;
-      prd->hit_film_thickness = mat.film_thickness;
-      prd->hit_film_ior = mat.film_ior;
-      prd->hit_anisotropy = mat.anisotropy;
-      prd->hit_eta = mat.eta;
-      prd->hit_k = mat.k;
-
-      // Texture sampling: override diffuse color with texel if texture is bound
-      if (mat.texture_id >= 0 && mat.texture_id < params.num_textures && params.d_textures)
-      {
-         float4 texel = tex2D<float4>(params.d_textures[mat.texture_id], prd->hit_uv.x, 1.0f - prd->hit_uv.y);
-         prd->hit_color = make_float3(texel.x, texel.y, texel.z);
-      }
-
-      // Apply procedural pattern if present
-      if (mat.pattern == 1) // FIBONACCI_DOTS
-      {
-         float3 local  = prd->hit_point - sbt_data->center;
-         float3 dir    = normalize3(local);
-         int    N      = (int)mat.pattern_param1;
-         float  dot_rad = mat.pattern_param2;
-         float  max_dp  = -1.0f;
-         for (int i = 0; i < N; ++i)
-         {
-            float3 c = fibonacci_point_optix(i, N);
-            float  d = dot3(dir, c);
-            if (d > max_dp)
-               max_dp = d;
-         }
-         max_dp = fmaxf(fminf(max_dp, 1.0f), -1.0f);
-         float ang  = acosf(max_dp);
-         float mask = ang < dot_rad ? 0.0f : 1.0f;
-         prd->hit_color = mask * mat.albedo + (1.0f - mask) * mat.pattern_color;
-      }
-   }
-   else
-   {
-      // Fallback
-      prd->hit_material_type = OptixMaterialType::LAMBERTIAN;
-      prd->hit_color = make_float3(1.0f, 0.0f, 1.0f); // Magenta = error
-   }
+   // Custom primitives carry no UVs; the Fibonacci-dot pattern is centred on the sphere.
+   resolve_material(prd, sbt_data->material_idx, make_float2(0.0f, 0.0f), sbt_data->center);
 }
 
 //==============================================================================
@@ -1195,75 +1233,6 @@ extern "C" __global__ void __intersection__sphere()
 //==============================================================================
 // INTERSECTION — rectangle
 //==============================================================================
-
-//==============================================================================
-// INTERSECTION — triangle (Möller–Trumbore)
-//==============================================================================
-
-extern "C" __global__ void __intersection__triangle()
-{
-   const HitGroupData *sbt_data = reinterpret_cast<const HitGroupData *>(optixGetSbtDataPointer());
-
-   const float3 v0 = sbt_data->tri_v0;
-   const float3 v1 = sbt_data->tri_v1;
-   const float3 v2 = sbt_data->tri_v2;
-
-   const float3 ray_orig = optixGetObjectRayOrigin();
-   const float3 ray_dir  = optixGetObjectRayDirection();
-   const float  tmin     = optixGetRayTmin();
-   const float  tmax     = optixGetRayTmax();
-
-   const float3 edge1 = v1 - v0;
-   const float3 edge2 = v2 - v0;
-   const float3 h = cross3(ray_dir, edge2);
-   const float  a = dot3(edge1, h);
-
-   if (fabsf(a) < 1e-8f)
-      return; // Ray parallel to triangle
-
-   const float  inv_a = 1.0f / a;
-   const float3 s = ray_orig - v0;
-   const float  u = inv_a * dot3(s, h);
-   if (u < 0.0f || u > 1.0f)
-      return;
-
-   const float3 q = cross3(s, edge1);
-   const float  v = inv_a * dot3(ray_dir, q);
-   if (v < 0.0f || u + v > 1.0f)
-      return;
-
-   const float t = inv_a * dot3(edge2, q);
-   if (t < tmin || t > tmax)
-      return;
-
-   // Compute normal: interpolate per-vertex normals or use face normal
-   float3 outward_normal;
-   if (sbt_data->tri_has_normals)
-   {
-      const float w = 1.0f - u - v;
-      outward_normal = normalize3(w * sbt_data->tri_n0 + u * sbt_data->tri_n1 + v * sbt_data->tri_n2);
-   }
-   else
-   {
-      outward_normal = normalize3(cross3(edge1, edge2));
-   }
-
-   // Compute UV: interpolate per-vertex UV coords using barycentric coordinates
-   float2 hit_uv = make_float2(0.0f, 0.0f);
-   if (sbt_data->tri_has_uvs)
-   {
-      const float w = 1.0f - u - v;
-      hit_uv.x = w * sbt_data->tri_uv0.x + u * sbt_data->tri_uv1.x + v * sbt_data->tri_uv2.x;
-      hit_uv.y = w * sbt_data->tri_uv0.y + u * sbt_data->tri_uv1.y + v * sbt_data->tri_uv2.y;
-   }
-
-   optixReportIntersection(t, 2, // hit kind = 2 for triangle
-                           __float_as_int(outward_normal.x),
-                           __float_as_int(outward_normal.y),
-                           __float_as_int(outward_normal.z),
-                           __float_as_int(hit_uv.x),
-                           __float_as_int(hit_uv.y));
-}
 
 extern "C" __global__ void __intersection__rectangle()
 {

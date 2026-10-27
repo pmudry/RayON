@@ -61,12 +61,20 @@ struct OptixState
 
    OptixProgramGroup raygen_pg = nullptr;
    OptixProgramGroup miss_pg = nullptr;
+   OptixProgramGroup miss_shadow_pg = nullptr;
    OptixProgramGroup hitgroup_sphere_pg = nullptr;
    OptixProgramGroup hitgroup_rect_pg = nullptr;
-   OptixProgramGroup hitgroup_triangle_pg = nullptr;
+   OptixProgramGroup hitgroup_triangle_pg = nullptr; // built-in triangles: closest-hit only
 
-   OptixTraversableHandle gas_handle = 0;
-   CUdeviceptr d_gas_output = 0;
+   // Scene traversable: a one-level IAS over (at most) two GASes, because OptiX
+   // cannot mix built-in triangles and custom primitives in a single GAS.
+   OptixTraversableHandle gas_handle = 0;        // IAS handle passed to optixTrace
+   CUdeviceptr d_ias_output = 0;
+   CUdeviceptr d_custom_gas_output = 0;          // spheres / displaced spheres / rectangles
+   CUdeviceptr d_triangle_gas_output = 0;        // hardware-intersected triangles
+   float3 *d_tri_vertices = nullptr;             // 3 vertices per triangle
+   OptixTriangleData *d_tri_data = nullptr;      // per-triangle normals / UVs / material
+   int num_triangles = 0;
 
    // Device buffers
    CUdeviceptr d_sbt_raygen = 0;
@@ -187,9 +195,9 @@ static void initializeOptiX()
 
    OptixPipelineCompileOptions pipeline_options = {};
    pipeline_options.usesMotionBlur = false;
-   pipeline_options.traversableGraphFlags = OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_GAS;
-   pipeline_options.numPayloadValues = 2; // PRD pointer (2 x uint32)
-   pipeline_options.numAttributeValues = 5; // Normal (3 x float) + UV (2 x float)
+   pipeline_options.traversableGraphFlags = OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING;
+   pipeline_options.numPayloadValues = 2;   // PRD pointer (2 x uint32); shadow rays use only payload 0
+   pipeline_options.numAttributeValues = 3; // Custom primitives report their normal (3 x float)
    pipeline_options.exceptionFlags = OPTIX_EXCEPTION_FLAG_NONE;
    pipeline_options.pipelineLaunchParamsVariableName = "params";
 
@@ -218,6 +226,15 @@ static void initializeOptiX()
    OPTIX_CHECK(
        optixProgramGroupCreate(g_state.context, &miss_desc, 1, &pg_options, optix_log, &optix_log_size, &g_state.miss_pg));
 
+   // Miss for shadow rays (clears the "occluded" payload flag)
+   OptixProgramGroupDesc miss_shadow_desc = {};
+   miss_shadow_desc.kind = OPTIX_PROGRAM_GROUP_KIND_MISS;
+   miss_shadow_desc.miss.module = g_state.module;
+   miss_shadow_desc.miss.entryFunctionName = "__miss__shadow";
+   optix_log_size = sizeof(optix_log);
+   OPTIX_CHECK(optixProgramGroupCreate(g_state.context, &miss_shadow_desc, 1, &pg_options, optix_log, &optix_log_size,
+                                        &g_state.miss_shadow_pg));
+
    // Hit group for spheres (custom intersection)
    OptixProgramGroupDesc hitgroup_sphere_desc = {};
    hitgroup_sphere_desc.kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
@@ -240,27 +257,27 @@ static void initializeOptiX()
    OPTIX_CHECK(optixProgramGroupCreate(g_state.context, &hitgroup_rect_desc, 1, &pg_options, optix_log, &optix_log_size,
                                         &g_state.hitgroup_rect_pg));
 
-   // Hit group for triangles (custom intersection — Möller-Trumbore)
+   // Hit group for triangles: built-in (RT core) intersection, so no IS program
    OptixProgramGroupDesc hitgroup_triangle_desc = {};
    hitgroup_triangle_desc.kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
    hitgroup_triangle_desc.hitgroup.moduleCH = g_state.module;
-   hitgroup_triangle_desc.hitgroup.entryFunctionNameCH = "__closesthit__ch";
-   hitgroup_triangle_desc.hitgroup.moduleIS = g_state.module;
-   hitgroup_triangle_desc.hitgroup.entryFunctionNameIS = "__intersection__triangle";
+   hitgroup_triangle_desc.hitgroup.entryFunctionNameCH = "__closesthit__triangle";
    optix_log_size = sizeof(optix_log);
    OPTIX_CHECK(optixProgramGroupCreate(g_state.context, &hitgroup_triangle_desc, 1, &pg_options, optix_log, &optix_log_size,
                                         &g_state.hitgroup_triangle_pg));
 
    // Create pipeline
    const uint32_t max_trace_depth = 1; // We loop in raygen, single trace per bounce
-   OptixProgramGroup program_groups[] = {g_state.raygen_pg, g_state.miss_pg, g_state.hitgroup_sphere_pg,
-                                          g_state.hitgroup_rect_pg, g_state.hitgroup_triangle_pg};
+   OptixProgramGroup program_groups[] = {g_state.raygen_pg,          g_state.miss_pg,
+                                          g_state.miss_shadow_pg,     g_state.hitgroup_sphere_pg,
+                                          g_state.hitgroup_rect_pg,   g_state.hitgroup_triangle_pg};
+   const unsigned int num_program_groups = sizeof(program_groups) / sizeof(program_groups[0]);
 
    OptixPipelineLinkOptions link_options = {};
    link_options.maxTraceDepth = max_trace_depth;
    optix_log_size = sizeof(optix_log);
-   OPTIX_CHECK(optixPipelineCreate(g_state.context, &pipeline_options, &link_options, program_groups, 5, optix_log,
-                                    &optix_log_size, &g_state.pipeline));
+   OPTIX_CHECK(optixPipelineCreate(g_state.context, &pipeline_options, &link_options, program_groups,
+                                    num_program_groups, optix_log, &optix_log_size, &g_state.pipeline));
 
    // Compute stack sizes
    OptixStackSizes stack_sizes = {};
@@ -270,7 +287,8 @@ static void initializeOptiX()
    uint32_t dc_from_traversal, dc_from_state, continuation;
    OPTIX_CHECK(optixUtilComputeStackSizes(&stack_sizes, max_trace_depth, 0, 0, &dc_from_traversal, &dc_from_state,
                                            &continuation));
-   OPTIX_CHECK(optixPipelineSetStackSize(g_state.pipeline, dc_from_traversal, dc_from_state, continuation, 1));
+   // Traversable graph depth 2: one IAS level over the GASes
+   OPTIX_CHECK(optixPipelineSetStackSize(g_state.pipeline, dc_from_traversal, dc_from_state, continuation, 2));
 
    // Create raygen SBT record
    RayGenRecord rg_record;
@@ -279,17 +297,18 @@ static void initializeOptiX()
    CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(g_state.d_sbt_raygen), &rg_record, sizeof(RayGenRecord),
                           cudaMemcpyHostToDevice));
 
-   // Create miss SBT record
-   MissRecord ms_record;
-   OPTIX_CHECK(optixSbtRecordPackHeader(g_state.miss_pg, &ms_record));
-   CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&g_state.d_sbt_miss), sizeof(MissRecord)));
-   CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(g_state.d_sbt_miss), &ms_record, sizeof(MissRecord),
+   // Create miss SBT records: [OPTIX_MISS_RADIANCE, OPTIX_MISS_SHADOW]
+   MissRecord ms_records[2];
+   OPTIX_CHECK(optixSbtRecordPackHeader(g_state.miss_pg, &ms_records[OPTIX_MISS_RADIANCE]));
+   OPTIX_CHECK(optixSbtRecordPackHeader(g_state.miss_shadow_pg, &ms_records[OPTIX_MISS_SHADOW]));
+   CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&g_state.d_sbt_miss), sizeof(ms_records)));
+   CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(g_state.d_sbt_miss), ms_records, sizeof(ms_records),
                           cudaMemcpyHostToDevice));
 
    g_state.sbt.raygenRecord = g_state.d_sbt_raygen;
    g_state.sbt.missRecordBase = g_state.d_sbt_miss;
    g_state.sbt.missRecordStrideInBytes = sizeof(MissRecord);
-   g_state.sbt.missRecordCount = 1;
+   g_state.sbt.missRecordCount = 2;
 
    // Create a dedicated CUDA stream for OptiX launches — enables stream-specific
    // synchronization instead of cudaDeviceSynchronize(), and allows overlap with
@@ -305,105 +324,19 @@ static void initializeOptiX()
 // One-time warning flag for unsupported geometry types in OptiX GAS build
 static bool g_optix_warned_unsupported_geometry = false;
 
-static void buildGAS(const Scene::SceneDescription &scene)
+static void freeDevicePtr(CUdeviceptr &p)
 {
-   // Free previous resources
-   if (g_state.d_gas_output)
+   if (p)
    {
-      CUDA_CHECK(cudaFree(reinterpret_cast<void *>(g_state.d_gas_output)));
-      g_state.d_gas_output = 0;
+      CUDA_CHECK(cudaFree(reinterpret_cast<void *>(p)));
+      p = 0;
    }
-   if (g_state.d_sbt_hitgroup)
-   {
-      CUDA_CHECK(cudaFree(reinterpret_cast<void *>(g_state.d_sbt_hitgroup)));
-      g_state.d_sbt_hitgroup = 0;
-   }
+}
 
-   // Filter to only geometry types that have OptiX intersection programs.
-   // This avoids adding unsupported primitives whose SBT records fall back
-   // to a dummy sphere, which would produce incorrect intersections.
-   std::vector<int> supported_indices;
-   for (int i = 0; i < static_cast<int>(scene.geometries.size()); ++i)
-   {
-      const auto &geom = scene.geometries[i];
-      bool supported = false;
-
-      switch (geom.type)
-      {
-      case Scene::GeometryType::SPHERE:
-      case Scene::GeometryType::RECTANGLE:
-      case Scene::GeometryType::TRIANGLE:
-      case Scene::GeometryType::DISPLACED_SPHERE:
-         // These are implemented by the OptiX hit programs.
-         supported = true;
-         break;
-      case Scene::GeometryType::SDF_PRIMITIVE:
-         // Explicitly unsupported in OptiX — handled by CUDA SDF renderer instead.
-         supported = false;
-         break;
-      default:
-         // Other geometry types (e.g., CUBE) are not yet implemented for OptiX.
-         supported = false;
-         break;
-      }
-
-      if (supported)
-      {
-         supported_indices.push_back(i);
-      }
-      else if (!g_optix_warned_unsupported_geometry)
-      {
-         std::cerr << "[OptiX] Warning: skipping unsupported geometry type(s) in GAS build. "
-                      "They will not be rendered by the OptiX backend.\n";
-         g_optix_warned_unsupported_geometry = true;
-      }
-   }
-
-   int num_geoms = static_cast<int>(supported_indices.size());
-   if (num_geoms == 0)
-      return;
-
-   // Build AABBs (only for supported geometry types)
-   std::vector<OptixAabb> aabbs(num_geoms);
-   for (int i = 0; i < num_geoms; ++i)
-   {
-      const auto &g = scene.geometries[supported_indices[i]];
-      aabbs[i].minX = static_cast<float>(g.bounds_min.x());
-      aabbs[i].minY = static_cast<float>(g.bounds_min.y());
-      aabbs[i].minZ = static_cast<float>(g.bounds_min.z());
-      aabbs[i].maxX = static_cast<float>(g.bounds_max.x());
-      aabbs[i].maxY = static_cast<float>(g.bounds_max.y());
-      aabbs[i].maxZ = static_cast<float>(g.bounds_max.z());
-   }
-
-   CUdeviceptr d_aabbs;
-   CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_aabbs), num_geoms * sizeof(OptixAabb)));
-   CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(d_aabbs), aabbs.data(), num_geoms * sizeof(OptixAabb),
-                          cudaMemcpyHostToDevice));
-
-   // Per-geometry SBT index (each geometry gets its own record for per-geom data)
-   std::vector<uint32_t> sbt_indices(num_geoms);
-   for (int i = 0; i < num_geoms; ++i)
-      sbt_indices[i] = i;
-
-   CUdeviceptr d_sbt_indices;
-   CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_sbt_indices), num_geoms * sizeof(uint32_t)));
-   CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(d_sbt_indices), sbt_indices.data(), num_geoms * sizeof(uint32_t),
-                          cudaMemcpyHostToDevice));
-
-   // One flag per SBT record (= per geometry)
-   std::vector<uint32_t> flags(num_geoms, OPTIX_GEOMETRY_FLAG_NONE);
-
-   OptixBuildInput build_input = {};
-   build_input.type = OPTIX_BUILD_INPUT_TYPE_CUSTOM_PRIMITIVES;
-   build_input.customPrimitiveArray.aabbBuffers = &d_aabbs;
-   build_input.customPrimitiveArray.numPrimitives = num_geoms;
-   build_input.customPrimitiveArray.flags = flags.data();
-   build_input.customPrimitiveArray.numSbtRecords = num_geoms;
-   build_input.customPrimitiveArray.sbtIndexOffsetBuffer = d_sbt_indices;
-   build_input.customPrimitiveArray.sbtIndexOffsetSizeInBytes = sizeof(uint32_t);
-   build_input.customPrimitiveArray.sbtIndexOffsetStrideInBytes = sizeof(uint32_t);
-
+// Build one GAS (with compaction) from a single build input. Returns the handle; the
+// output buffer is stored in `out_buffer`.
+static OptixTraversableHandle buildSingleGAS(const OptixBuildInput &build_input, CUdeviceptr &out_buffer)
+{
    OptixAccelBuildOptions accel_options = {};
    accel_options.buildFlags = OPTIX_BUILD_FLAG_ALLOW_COMPACTION | OPTIX_BUILD_FLAG_PREFER_FAST_TRACE;
    accel_options.operation = OPTIX_BUILD_OPERATION_BUILD;
@@ -422,8 +355,9 @@ static void buildGAS(const Scene::SceneDescription &scene)
    emit_desc.type = OPTIX_PROPERTY_TYPE_COMPACTED_SIZE;
    emit_desc.result = d_output + compacted_offset;
 
+   OptixTraversableHandle handle = 0;
    OPTIX_CHECK(optixAccelBuild(g_state.context, 0, &accel_options, &build_input, 1, d_temp, gas_sizes.tempSizeInBytes,
-                                d_output, gas_sizes.outputSizeInBytes, &g_state.gas_handle, &emit_desc, 1));
+                                d_output, gas_sizes.outputSizeInBytes, &handle, &emit_desc, 1));
    CUDA_CHECK(cudaDeviceSynchronize());
 
    // Compact
@@ -432,131 +366,277 @@ static void buildGAS(const Scene::SceneDescription &scene)
                           cudaMemcpyDeviceToHost));
    if (compacted_size < gas_sizes.outputSizeInBytes)
    {
-      CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&g_state.d_gas_output), compacted_size));
-      OPTIX_CHECK(
-          optixAccelCompact(g_state.context, 0, g_state.gas_handle, g_state.d_gas_output, compacted_size, &g_state.gas_handle));
+      CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&out_buffer), compacted_size));
+      OPTIX_CHECK(optixAccelCompact(g_state.context, 0, handle, out_buffer, compacted_size, &handle));
       CUDA_CHECK(cudaFree(reinterpret_cast<void *>(d_output)));
    }
    else
    {
-      g_state.d_gas_output = d_output;
+      out_buffer = d_output;
    }
 
    CUDA_CHECK(cudaFree(reinterpret_cast<void *>(d_temp)));
-   CUDA_CHECK(cudaFree(reinterpret_cast<void *>(d_aabbs)));
-   CUDA_CHECK(cudaFree(reinterpret_cast<void *>(d_sbt_indices)));
+   return handle;
+}
 
-   // Build per-geometry SBT hit group records (using filtered indices)
-   std::vector<HitGroupRecord> hitgroup_records(num_geoms);
-   for (int i = 0; i < num_geoms; ++i)
+static inline float3 toFloat3(const Vec3 &v)
+{
+   return make_float3(static_cast<float>(v.x()), static_cast<float>(v.y()), static_cast<float>(v.z()));
+}
+
+// Build the scene traversable from the scene description:
+//   * triangles  → one GAS with the built-in (RT core) triangle intersector, a single shared
+//                  SBT record, and per-triangle attributes in params.tri_data
+//   * spheres / displaced spheres / rectangles → one GAS of custom primitives, one SBT record each
+//   * both GASes are referenced by a one-level IAS (OptiX forbids mixing the two in one GAS)
+static void buildGAS(const Scene::SceneDescription &scene)
+{
+   // Free previous resources
+   freeDevicePtr(g_state.d_ias_output);
+   freeDevicePtr(g_state.d_custom_gas_output);
+   freeDevicePtr(g_state.d_triangle_gas_output);
+   freeDevicePtr(g_state.d_sbt_hitgroup);
+   if (g_state.d_tri_vertices) { CUDA_CHECK(cudaFree(g_state.d_tri_vertices)); g_state.d_tri_vertices = nullptr; }
+   if (g_state.d_tri_data)     { CUDA_CHECK(cudaFree(g_state.d_tri_data));     g_state.d_tri_data = nullptr; }
+   g_state.num_triangles = 0;
+   g_state.gas_handle = 0;
+
+   // Partition geometry: custom primitives (own SBT record each) vs. hardware triangles.
+   // Unsupported types (SDF, CUBE, ...) are skipped with a one-time warning.
+   std::vector<int> supported_indices; // custom primitives, in SBT order
+   std::vector<int> triangle_indices;
+   for (int i = 0; i < static_cast<int>(scene.geometries.size()); ++i)
    {
-      const auto &g = scene.geometries[supported_indices[i]];
-      HitGroupRecord &rec = hitgroup_records[i];
-
-      // Select program group based on geometry type
-      OptixProgramGroup pg;
-      if (g.type == Scene::GeometryType::RECTANGLE)
-         pg = g_state.hitgroup_rect_pg;
-      else if (g.type == Scene::GeometryType::TRIANGLE)
-         pg = g_state.hitgroup_triangle_pg;
-      else
-         pg = g_state.hitgroup_sphere_pg;
-      OPTIX_CHECK(optixSbtRecordPackHeader(pg, &rec));
-
-      rec.data.material_idx = g.material_id;
-
-      switch (g.type)
+      switch (scene.geometries[i].type)
       {
       case Scene::GeometryType::SPHERE:
-         rec.data.geom_type = OptixGeomType::SPHERE;
-         rec.data.center = make_float3(static_cast<float>(g.data.sphere.center.x()),
-                                        static_cast<float>(g.data.sphere.center.y()),
-                                        static_cast<float>(g.data.sphere.center.z()));
-         rec.data.radius = static_cast<float>(g.data.sphere.radius);
-         break;
-
-      case Scene::GeometryType::DISPLACED_SPHERE:
-         rec.data.geom_type = OptixGeomType::DISPLACED_SPHERE;
-         rec.data.center = make_float3(static_cast<float>(g.data.displaced_sphere.center.x()),
-                                        static_cast<float>(g.data.displaced_sphere.center.y()),
-                                        static_cast<float>(g.data.displaced_sphere.center.z()));
-         rec.data.radius = static_cast<float>(g.data.displaced_sphere.radius);
-         break;
-
       case Scene::GeometryType::RECTANGLE:
-      {
-         rec.data.geom_type = OptixGeomType::RECTANGLE;
-         rec.data.center = make_float3(static_cast<float>(g.data.rectangle.corner.x()),
-                                        static_cast<float>(g.data.rectangle.corner.y()),
-                                        static_cast<float>(g.data.rectangle.corner.z()));
-         float3 u = make_float3(static_cast<float>(g.data.rectangle.u.x()), static_cast<float>(g.data.rectangle.u.y()),
-                                 static_cast<float>(g.data.rectangle.u.z()));
-         float3 v = make_float3(static_cast<float>(g.data.rectangle.v.x()), static_cast<float>(g.data.rectangle.v.y()),
-                                 static_cast<float>(g.data.rectangle.v.z()));
-         rec.data.u_vec = u;
-         rec.data.v_vec = v;
-         // Precompute normal = normalize(u x v)
-         float3 n = make_float3(u.y * v.z - u.z * v.y, u.z * v.x - u.x * v.z, u.x * v.y - u.y * v.x);
-         float len = sqrtf(n.x * n.x + n.y * n.y + n.z * n.z);
-         rec.data.normal = (len > 1e-8f) ? make_float3(n.x / len, n.y / len, n.z / len) : make_float3(0, 1, 0);
+      case Scene::GeometryType::DISPLACED_SPHERE:
+         supported_indices.push_back(i);
          break;
-      }
-
       case Scene::GeometryType::TRIANGLE:
-         rec.data.geom_type = OptixGeomType::TRIANGLE;
-         rec.data.tri_v0 = make_float3(static_cast<float>(g.data.triangle.v0.x()),
-                                        static_cast<float>(g.data.triangle.v0.y()),
-                                        static_cast<float>(g.data.triangle.v0.z()));
-         rec.data.tri_v1 = make_float3(static_cast<float>(g.data.triangle.v1.x()),
-                                        static_cast<float>(g.data.triangle.v1.y()),
-                                        static_cast<float>(g.data.triangle.v1.z()));
-         rec.data.tri_v2 = make_float3(static_cast<float>(g.data.triangle.v2.x()),
-                                        static_cast<float>(g.data.triangle.v2.y()),
-                                        static_cast<float>(g.data.triangle.v2.z()));
-         rec.data.tri_n0 = make_float3(static_cast<float>(g.data.triangle.n0.x()),
-                                        static_cast<float>(g.data.triangle.n0.y()),
-                                        static_cast<float>(g.data.triangle.n0.z()));
-         rec.data.tri_n1 = make_float3(static_cast<float>(g.data.triangle.n1.x()),
-                                        static_cast<float>(g.data.triangle.n1.y()),
-                                        static_cast<float>(g.data.triangle.n1.z()));
-         rec.data.tri_n2 = make_float3(static_cast<float>(g.data.triangle.n2.x()),
-                                        static_cast<float>(g.data.triangle.n2.y()),
-                                        static_cast<float>(g.data.triangle.n2.z()));
-         rec.data.tri_has_normals = g.data.triangle.has_normals ? 1 : 0;
-         rec.data.tri_has_uvs = g.data.triangle.has_uvs ? 1 : 0;
-         if (g.data.triangle.has_uvs)
-         {
-            rec.data.tri_uv0 = make_float2(static_cast<float>(g.data.triangle.uv0.x()),
-                                            static_cast<float>(g.data.triangle.uv0.y()));
-            rec.data.tri_uv1 = make_float2(static_cast<float>(g.data.triangle.uv1.x()),
-                                            static_cast<float>(g.data.triangle.uv1.y()));
-            rec.data.tri_uv2 = make_float2(static_cast<float>(g.data.triangle.uv2.x()),
-                                            static_cast<float>(g.data.triangle.uv2.y()));
-         }
-         else
-         {
-            rec.data.tri_uv0 = make_float2(0.0f, 0.0f);
-            rec.data.tri_uv1 = make_float2(0.0f, 0.0f);
-            rec.data.tri_uv2 = make_float2(0.0f, 0.0f);
-         }
+         triangle_indices.push_back(i);
          break;
-
       default:
-         // Treat unknown as sphere at origin
-         rec.data.geom_type = OptixGeomType::SPHERE;
-         rec.data.center = make_float3(0, 0, 0);
-         rec.data.radius = 0.5f;
+         if (!g_optix_warned_unsupported_geometry)
+         {
+            std::cerr << "[OptiX] Warning: skipping unsupported geometry type(s) in GAS build. "
+                         "They will not be rendered by the OptiX backend.\n";
+            g_optix_warned_unsupported_geometry = true;
+         }
          break;
       }
    }
 
-   CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&g_state.d_sbt_hitgroup), num_geoms * sizeof(HitGroupRecord)));
+   const int num_geoms = static_cast<int>(supported_indices.size());
+   const int num_tris  = static_cast<int>(triangle_indices.size());
+   if (num_geoms == 0 && num_tris == 0)
+      return;
+
+   // SBT layout: [0, num_geoms) custom primitives, then one shared triangle record (if any).
+   const int num_hit_records = num_geoms + (num_tris > 0 ? 1 : 0);
+   std::vector<HitGroupRecord> hitgroup_records(num_hit_records);
+
+   // ── Custom-primitive GAS ──────────────────────────────────────────────────
+   OptixTraversableHandle custom_handle = 0;
+   if (num_geoms > 0)
+   {
+      std::vector<OptixAabb> aabbs(num_geoms);
+      std::vector<uint32_t> sbt_indices(num_geoms);
+      for (int i = 0; i < num_geoms; ++i)
+      {
+         const auto &g = scene.geometries[supported_indices[i]];
+         aabbs[i].minX = static_cast<float>(g.bounds_min.x());
+         aabbs[i].minY = static_cast<float>(g.bounds_min.y());
+         aabbs[i].minZ = static_cast<float>(g.bounds_min.z());
+         aabbs[i].maxX = static_cast<float>(g.bounds_max.x());
+         aabbs[i].maxY = static_cast<float>(g.bounds_max.y());
+         aabbs[i].maxZ = static_cast<float>(g.bounds_max.z());
+         sbt_indices[i] = static_cast<uint32_t>(i);
+      }
+
+      CUdeviceptr d_aabbs, d_sbt_indices;
+      CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_aabbs), num_geoms * sizeof(OptixAabb)));
+      CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(d_aabbs), aabbs.data(), num_geoms * sizeof(OptixAabb),
+                             cudaMemcpyHostToDevice));
+      CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_sbt_indices), num_geoms * sizeof(uint32_t)));
+      CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(d_sbt_indices), sbt_indices.data(),
+                             num_geoms * sizeof(uint32_t), cudaMemcpyHostToDevice));
+
+      std::vector<uint32_t> flags(num_geoms, OPTIX_GEOMETRY_FLAG_DISABLE_ANYHIT);
+
+      OptixBuildInput build_input = {};
+      build_input.type = OPTIX_BUILD_INPUT_TYPE_CUSTOM_PRIMITIVES;
+      build_input.customPrimitiveArray.aabbBuffers = &d_aabbs;
+      build_input.customPrimitiveArray.numPrimitives = num_geoms;
+      build_input.customPrimitiveArray.flags = flags.data();
+      build_input.customPrimitiveArray.numSbtRecords = num_geoms;
+      build_input.customPrimitiveArray.sbtIndexOffsetBuffer = d_sbt_indices;
+      build_input.customPrimitiveArray.sbtIndexOffsetSizeInBytes = sizeof(uint32_t);
+      build_input.customPrimitiveArray.sbtIndexOffsetStrideInBytes = sizeof(uint32_t);
+
+      custom_handle = buildSingleGAS(build_input, g_state.d_custom_gas_output);
+
+      CUDA_CHECK(cudaFree(reinterpret_cast<void *>(d_aabbs)));
+      CUDA_CHECK(cudaFree(reinterpret_cast<void *>(d_sbt_indices)));
+
+      // Per-geometry SBT hit group records
+      for (int i = 0; i < num_geoms; ++i)
+      {
+         const auto &g = scene.geometries[supported_indices[i]];
+         HitGroupRecord &rec = hitgroup_records[i];
+         OptixProgramGroup pg =
+             (g.type == Scene::GeometryType::RECTANGLE) ? g_state.hitgroup_rect_pg : g_state.hitgroup_sphere_pg;
+         OPTIX_CHECK(optixSbtRecordPackHeader(pg, &rec));
+
+         rec.data.material_idx = g.material_id;
+
+         switch (g.type)
+         {
+         case Scene::GeometryType::SPHERE:
+            rec.data.geom_type = OptixGeomType::SPHERE;
+            rec.data.center = toFloat3(g.data.sphere.center);
+            rec.data.radius = static_cast<float>(g.data.sphere.radius);
+            break;
+
+         case Scene::GeometryType::DISPLACED_SPHERE:
+            rec.data.geom_type = OptixGeomType::DISPLACED_SPHERE;
+            rec.data.center = toFloat3(g.data.displaced_sphere.center);
+            rec.data.radius = static_cast<float>(g.data.displaced_sphere.radius);
+            break;
+
+         case Scene::GeometryType::RECTANGLE:
+         {
+            rec.data.geom_type = OptixGeomType::RECTANGLE;
+            rec.data.center = toFloat3(g.data.rectangle.corner);
+            float3 u = toFloat3(g.data.rectangle.u);
+            float3 v = toFloat3(g.data.rectangle.v);
+            rec.data.u_vec = u;
+            rec.data.v_vec = v;
+            // Precompute normal = normalize(u x v)
+            float3 n = make_float3(u.y * v.z - u.z * v.y, u.z * v.x - u.x * v.z, u.x * v.y - u.y * v.x);
+            float len = sqrtf(n.x * n.x + n.y * n.y + n.z * n.z);
+            rec.data.normal = (len > 1e-8f) ? make_float3(n.x / len, n.y / len, n.z / len) : make_float3(0, 1, 0);
+            break;
+         }
+
+         default:
+            break; // unreachable: filtered above
+         }
+      }
+   }
+
+   // ── Triangle GAS (built-in intersection) ──────────────────────────────────
+   OptixTraversableHandle triangle_handle = 0;
+   if (num_tris > 0)
+   {
+      std::vector<float3> vertices(static_cast<size_t>(num_tris) * 3);
+      std::vector<OptixTriangleData> tri_data(num_tris);
+      for (int i = 0; i < num_tris; ++i)
+      {
+         const auto &t = scene.geometries[triangle_indices[i]].data.triangle;
+         vertices[3 * i + 0] = toFloat3(t.v0);
+         vertices[3 * i + 1] = toFloat3(t.v1);
+         vertices[3 * i + 2] = toFloat3(t.v2);
+
+         OptixTriangleData &td = tri_data[i];
+         td.material_idx = scene.geometries[triangle_indices[i]].material_id;
+         td.has_normals  = t.has_normals ? 1 : 0;
+         td.has_uvs      = t.has_uvs ? 1 : 0;
+         td.n0 = toFloat3(t.n0);
+         td.n1 = toFloat3(t.n1);
+         td.n2 = toFloat3(t.n2);
+         td.uv0 = make_float2(static_cast<float>(t.uv0.x()), static_cast<float>(t.uv0.y()));
+         td.uv1 = make_float2(static_cast<float>(t.uv1.x()), static_cast<float>(t.uv1.y()));
+         td.uv2 = make_float2(static_cast<float>(t.uv2.x()), static_cast<float>(t.uv2.y()));
+      }
+
+      CUDA_CHECK(cudaMalloc(&g_state.d_tri_vertices, vertices.size() * sizeof(float3)));
+      CUDA_CHECK(cudaMemcpy(g_state.d_tri_vertices, vertices.data(), vertices.size() * sizeof(float3),
+                             cudaMemcpyHostToDevice));
+      CUDA_CHECK(cudaMalloc(&g_state.d_tri_data, tri_data.size() * sizeof(OptixTriangleData)));
+      CUDA_CHECK(cudaMemcpy(g_state.d_tri_data, tri_data.data(), tri_data.size() * sizeof(OptixTriangleData),
+                             cudaMemcpyHostToDevice));
+      g_state.num_triangles = num_tris;
+
+      CUdeviceptr d_vertices = reinterpret_cast<CUdeviceptr>(g_state.d_tri_vertices);
+      uint32_t tri_flags = OPTIX_GEOMETRY_FLAG_DISABLE_ANYHIT;
+
+      OptixBuildInput build_input = {};
+      build_input.type = OPTIX_BUILD_INPUT_TYPE_TRIANGLES;
+      build_input.triangleArray.vertexFormat = OPTIX_VERTEX_FORMAT_FLOAT3;
+      build_input.triangleArray.vertexStrideInBytes = sizeof(float3);
+      build_input.triangleArray.numVertices = static_cast<unsigned int>(vertices.size());
+      build_input.triangleArray.vertexBuffers = &d_vertices;
+      build_input.triangleArray.indexFormat = OPTIX_INDICES_FORMAT_NONE; // non-indexed: 3 consecutive vertices
+      build_input.triangleArray.flags = &tri_flags;
+      build_input.triangleArray.numSbtRecords = 1; // one shared record; per-triangle data via primitive index
+
+      triangle_handle = buildSingleGAS(build_input, g_state.d_triangle_gas_output);
+
+      HitGroupRecord &rec = hitgroup_records[num_geoms];
+      OPTIX_CHECK(optixSbtRecordPackHeader(g_state.hitgroup_triangle_pg, &rec));
+      rec.data = HitGroupData{};
+      rec.data.material_idx = -1; // unused: triangles resolve their material from tri_data
+   }
+
+   // ── Instance acceleration structure over the two GASes ────────────────────
+   {
+      std::vector<OptixInstance> instances;
+      const float identity[12] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0};
+      auto add_instance = [&](OptixTraversableHandle handle, unsigned int sbt_offset) {
+         OptixInstance inst = {};
+         memcpy(inst.transform, identity, sizeof(identity));
+         inst.instanceId        = static_cast<unsigned int>(instances.size());
+         inst.sbtOffset         = sbt_offset;
+         inst.visibilityMask    = 255;
+         inst.flags             = OPTIX_INSTANCE_FLAG_NONE;
+         inst.traversableHandle = handle;
+         instances.push_back(inst);
+      };
+      if (custom_handle)
+         add_instance(custom_handle, 0);
+      if (triangle_handle)
+         add_instance(triangle_handle, static_cast<unsigned int>(num_geoms));
+
+      CUdeviceptr d_instances;
+      CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_instances), instances.size() * sizeof(OptixInstance)));
+      CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(d_instances), instances.data(),
+                             instances.size() * sizeof(OptixInstance), cudaMemcpyHostToDevice));
+
+      OptixBuildInput build_input = {};
+      build_input.type = OPTIX_BUILD_INPUT_TYPE_INSTANCES;
+      build_input.instanceArray.instances = d_instances;
+      build_input.instanceArray.numInstances = static_cast<unsigned int>(instances.size());
+
+      OptixAccelBuildOptions accel_options = {};
+      accel_options.buildFlags = OPTIX_BUILD_FLAG_PREFER_FAST_TRACE;
+      accel_options.operation = OPTIX_BUILD_OPERATION_BUILD;
+
+      OptixAccelBufferSizes ias_sizes;
+      OPTIX_CHECK(optixAccelComputeMemoryUsage(g_state.context, &accel_options, &build_input, 1, &ias_sizes));
+
+      CUdeviceptr d_temp;
+      CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_temp), ias_sizes.tempSizeInBytes));
+      CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&g_state.d_ias_output), ias_sizes.outputSizeInBytes));
+
+      OPTIX_CHECK(optixAccelBuild(g_state.context, 0, &accel_options, &build_input, 1, d_temp,
+                                   ias_sizes.tempSizeInBytes, g_state.d_ias_output, ias_sizes.outputSizeInBytes,
+                                   &g_state.gas_handle, nullptr, 0));
+      CUDA_CHECK(cudaDeviceSynchronize());
+
+      CUDA_CHECK(cudaFree(reinterpret_cast<void *>(d_temp)));
+      CUDA_CHECK(cudaFree(reinterpret_cast<void *>(d_instances)));
+   }
+
+   // ── Upload hit group SBT ──────────────────────────────────────────────────
+   CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&g_state.d_sbt_hitgroup), num_hit_records * sizeof(HitGroupRecord)));
    CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(g_state.d_sbt_hitgroup), hitgroup_records.data(),
-                          num_geoms * sizeof(HitGroupRecord), cudaMemcpyHostToDevice));
+                          num_hit_records * sizeof(HitGroupRecord), cudaMemcpyHostToDevice));
 
    g_state.sbt.hitgroupRecordBase = g_state.d_sbt_hitgroup;
    g_state.sbt.hitgroupRecordStrideInBytes = sizeof(HitGroupRecord);
-   g_state.sbt.hitgroupRecordCount = num_geoms;
+   g_state.sbt.hitgroupRecordCount = num_hit_records;
 
    // Upload materials
    if (g_state.d_materials)
@@ -599,7 +679,8 @@ static void buildGAS(const Scene::SceneDescription &scene)
                              cudaMemcpyHostToDevice));
    }
 
-   printf("OptiX GAS built: %d geometries, %d materials\n", num_geoms, num_materials);
+   printf("OptiX GAS built: %d custom primitives, %d hardware triangles, %d materials\n", num_geoms, num_tris,
+          num_materials);
 
    // Build CUDA texture objects from SceneDescription textures
    if (g_state.d_textures)
@@ -885,6 +966,11 @@ extern "C" unsigned long long optixRendererLaunch(int width, int height, int num
    launch_params.geom_to_light_map  = g_state.d_geom_to_light;
    launch_params.num_geom_entries   = g_state.num_geom_entries;
 
+   // Hardware triangles
+   launch_params.tri_vertices  = g_state.d_tri_vertices;
+   launch_params.tri_data      = g_state.d_tri_data;
+   launch_params.num_triangles = g_state.num_triangles;
+
    // Single memcpy to persistent device buffer — no malloc/free per batch.
    // Use the dedicated stream for async param upload + launch.
    cudaStream_t stream = getOptiXStream();
@@ -1123,8 +1209,13 @@ extern "C" void optixRendererCleanup()
       CUDA_CHECK(cudaFree(reinterpret_cast<void *>(g_state.d_sbt_miss)));
    if (g_state.d_sbt_hitgroup)
       CUDA_CHECK(cudaFree(reinterpret_cast<void *>(g_state.d_sbt_hitgroup)));
-   if (g_state.d_gas_output)
-      CUDA_CHECK(cudaFree(reinterpret_cast<void *>(g_state.d_gas_output)));
+   freeDevicePtr(g_state.d_ias_output);
+   freeDevicePtr(g_state.d_custom_gas_output);
+   freeDevicePtr(g_state.d_triangle_gas_output);
+   if (g_state.d_tri_vertices)
+      CUDA_CHECK(cudaFree(g_state.d_tri_vertices));
+   if (g_state.d_tri_data)
+      CUDA_CHECK(cudaFree(g_state.d_tri_data));
 
    // Clean up GPU display pipeline resources
    if (g_state.render_stream)
@@ -1140,6 +1231,8 @@ extern "C" void optixRendererCleanup()
       OPTIX_CHECK(optixProgramGroupDestroy(g_state.raygen_pg));
    if (g_state.miss_pg)
       OPTIX_CHECK(optixProgramGroupDestroy(g_state.miss_pg));
+   if (g_state.miss_shadow_pg)
+      OPTIX_CHECK(optixProgramGroupDestroy(g_state.miss_shadow_pg));
    if (g_state.hitgroup_sphere_pg)
       OPTIX_CHECK(optixProgramGroupDestroy(g_state.hitgroup_sphere_pg));
    if (g_state.hitgroup_rect_pg)

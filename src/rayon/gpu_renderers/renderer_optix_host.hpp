@@ -34,6 +34,9 @@ extern "C"
                                            int channels, int num_samples, float gamma);
    void optixRendererCleanup();
    void setOptiXSobolSampler(bool use_sobol);
+   void setOptiXMISEnabled(bool enabled);
+   void setOptiXNEEFirstBounceOnly(bool enabled);
+   void setOptiXNEEStride(int stride);
 }
 
 class RendererOptiX : public IRenderer
