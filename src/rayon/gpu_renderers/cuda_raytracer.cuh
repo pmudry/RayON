@@ -370,8 +370,11 @@ __device__ inline bool hit_triangle(const f3 &v0, const f3 &v1, const f3 &v2,
          rec.normal = rec.front_face ? geo_normal : f3(-geo_normal.x, -geo_normal.y, -geo_normal.z);
    }
 
-   // Compute tangent for anisotropic materials (along edge v0->v1)
-   rec.tangent = normalize(edge1);
+   // Compute tangent for anisotropic materials from the normal only (azimuthal, like spheres).
+   // Using a triangle edge would give each triangle of a fan-triangulated polygon a different
+   // tangent, visibly splitting flat faces (e.g. cube quads) along their diagonals.
+   const f3 tangent = cross(f3(0.0f, 1.0f, 0.0f), rec.normal);
+   rec.tangent = tangent.length_squared() < 1e-6f ? f3(1.0f, 0.0f, 0.0f) : normalize(tangent);
    return true;
 }
 

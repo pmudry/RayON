@@ -1084,19 +1084,10 @@ extern "C" __global__ void __closesthit__ch()
       {
          T = normalize3(sbt_data->u_vec);
       }
-      else if (sbt_data->geom_type == OptixGeomType::TRIANGLE)
+      else // SPHERE, DISPLACED_SPHERE, TRIANGLE
       {
-         float3 edge1 = sbt_data->tri_v1 - sbt_data->tri_v0;
-         T = normalize3(edge1 - dot3(edge1, N) * N);
-         // fallback if degenerate
-         if (dot3(T, T) < 1e-8f)
-         {
-            float3 helper = (fabsf(N.x) > 0.8f) ? make_float3(0.0f, 1.0f, 0.0f) : make_float3(1.0f, 0.0f, 0.0f);
-            T = normalize3(cross3(helper, N));
-         }
-      }
-      else // SPHERE, DISPLACED_SPHERE
-      {
+         // Triangles use the normal-only azimuthal tangent too: an edge-based tangent differs
+         // between triangles of the same fan-triangulated polygon and splits flat faces visibly.
          // Azimuthal tangent matching CUDA renderer: cross(up, outward_normal)
          float3 up = make_float3(0.0f, 1.0f, 0.0f);
          T = cross3(up, N);
