@@ -256,17 +256,29 @@ __device__ __forceinline__ uint32_t owen_scramble(uint32_t x, uint32_t seed)
 }
 
 //------------------------------------------------------------------------------
+// MurmurHash3 fmix32 — full avalanche finalizer.
+// Every output bit depends on every input bit; required for independent per-use seeds.
+//------------------------------------------------------------------------------
+__device__ __forceinline__ uint32_t fmix32(uint32_t h)
+{
+   h ^= h >> 16;
+   h *= 0x85ebca6bu;
+   h ^= h >> 13;
+   h *= 0xc2b2ae35u;
+   h ^= h >> 16;
+   return h;
+}
+
+//------------------------------------------------------------------------------
 // Per-dimension scramble seed derived from the pixel hash.
 // Different dimensions get different seeds to avoid correlated strata.
 //------------------------------------------------------------------------------
 __device__ __forceinline__ uint32_t dim_seed(uint32_t pixel_hash, int dim)
 {
-   // Mix pixel hash with dim index using a small hash to produce independent seeds.
-   uint32_t h = pixel_hash ^ (uint32_t)(dim * 0x9e3779b9u);
-   h ^= h >> 16;
-   h *= 0x45d9f3bu;
-   h ^= h >> 16;
-   return h;
+   // Needs a full-avalanche hash: owen_scramble's top output bits depend mostly on the seed's low bits,
+   // so weakly mixed seeds of different dims gave correlated values, leaving whole regions of the
+   // (dim, dim+1) square unsampled at low sample counts (dark patches until enough samples accumulate).
+   return fmix32(pixel_hash ^ fmix32((uint32_t)dim * 0x9e3779b9u + 0x7f4a7c15u));
 }
 
 //------------------------------------------------------------------------------
@@ -295,19 +307,6 @@ __device__ __forceinline__ float pcg_rand_float(uint32_t &seed)
    return result * (1.0f / 4294967296.0f);
 }
 
-//------------------------------------------------------------------------------
-// MurmurHash3 fmix32 — full avalanche finalizer.
-// Every output bit depends on every input bit; required for independent per-use seeds.
-//------------------------------------------------------------------------------
-__device__ __forceinline__ uint32_t fmix32(uint32_t h)
-{
-   h ^= h >> 16;
-   h *= 0x85ebca6bu;
-   h ^= h >> 13;
-   h *= 0xc2b2ae35u;
-   h ^= h >> 16;
-   return h;
-}
 
 //------------------------------------------------------------------------------
 // Owen-scrambled 2D (0,2)-sequence Sobol sample.

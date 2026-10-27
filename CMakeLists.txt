@@ -265,6 +265,7 @@ set_property(TARGET rayon PROPERTY CUDA_SEPARABLE_COMPILATION ON)
                 ${OPTIX_PTX_SOURCE}
             DEPENDS ${OPTIX_PTX_SOURCE}
                     "${CMAKE_SOURCE_DIR}/src/rayon/gpu_renderers/optix/optix_params.h"
+                    "${CMAKE_SOURCE_DIR}/src/rayon/gpu_renderers/sobol_sampler.cuh"
             COMMENT "Compiling OptiX PTX: optix_programs.cu -> optix_programs.ptx"
             VERBATIM
         )
