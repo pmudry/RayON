@@ -80,7 +80,7 @@ class RendererOptiX : public IRenderer
              static_cast<float>(frame.pixel_delta_v.y()), static_cast<float>(frame.pixel_delta_v.z()),
              static_cast<float>(frame.u.x()), static_cast<float>(frame.u.y()), static_cast<float>(frame.u.z()),
              static_cast<float>(frame.v.x()), static_cast<float>(frame.v.y()), static_cast<float>(frame.v.z()),
-             1.0f,    // background_intensity
+             request.scene.background_intensity,
              false,   // dof_enabled
              0.0f,    // dof_aperture
              10.0f,   // dof_focus_distance
