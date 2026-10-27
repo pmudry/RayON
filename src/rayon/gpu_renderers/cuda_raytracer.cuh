@@ -15,6 +15,7 @@ extern __constant__ float g_light_intensity;
 extern __constant__ float g_background_intensity;
 extern __constant__ float g_metal_fuzziness;
 extern __constant__ float g_glass_refraction_index;
+extern __constant__ uint32_t g_sobol_sequence_seed;
 
 // HDR environment map (equirectangular lat-long)
 extern __constant__ cudaTextureObject_t g_hdr_env_tex;

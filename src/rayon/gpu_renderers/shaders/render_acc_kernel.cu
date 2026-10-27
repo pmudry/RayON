@@ -200,7 +200,7 @@ __global__ void __launch_bounds__(256) renderAccKernel(float4 *accum_buffer, con
    if (g_use_sobol)
    {
       SobolSamplerState *ss = reinterpret_cast<SobolSamplerState *>(local_rand_state);
-      pixel_hash = ss->pixel_hash;
+      pixel_hash = fmix32(ss->pixel_hash ^ (g_sobol_sequence_seed * 0x9e3779b9u));
    }
 
    f3 camera_center(cam_center_x, cam_center_y, cam_center_z);

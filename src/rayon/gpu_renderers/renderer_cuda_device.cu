@@ -22,6 +22,8 @@ __constant__ float g_light_intensity = 1.0f;
 __constant__ float g_background_intensity = 1.0f;
 __constant__ float g_metal_fuzziness = 0.8f;
 __constant__ float g_glass_refraction_index = 1.5f; // Default glass index
+// Sobol scramble seed, changed on every accumulation restart so the noise pattern changes when the camera moves
+__constant__ uint32_t g_sobol_sequence_seed = 0u;
 
 // Depth of Field constants
 __constant__ bool g_dof_enabled = false;
@@ -442,6 +444,15 @@ extern "C" unsigned long long renderPixelsCUDAAccumulative(
                 total_threads, prop.maxThreadsPerBlock);
       }
       block_size_verified = true;
+   }
+
+   // New accumulation (first batch, or reset after camera move): pick a fresh Sobol scramble,
+   // otherwise every restart replays exactly the same per-pixel sample pattern.
+   if (total_samples_so_far == 0)
+   {
+      static uint32_t sequence_seed = 0u;
+      ++sequence_seed;
+      cudaMemcpyToSymbol(g_sobol_sequence_seed, &sequence_seed, sizeof(uint32_t));
    }
 
    if (need_rand_init)

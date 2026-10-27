@@ -449,7 +449,7 @@ extern "C" __global__ void __raygen__rg()
    const unsigned int pixel_idx = y * params.width + x;
 
    // Per-pixel stable hash for Sobol scrambling (computed once, reused every sample).
-   const uint32_t pixel_hash = pcg_hash(pixel_idx ^ (0xdeadbeef + params.frame_seed));
+   const uint32_t pixel_hash = pcg_hash(pixel_idx ^ (0xdeadbeef + params.sobol_sequence_seed * 0x9e3779b9u));
 
    // Initialize seed based on pixel and frame
    unsigned int seed = pcg_hash(pixel_idx ^ (params.frame_seed * 1099511628211u));
