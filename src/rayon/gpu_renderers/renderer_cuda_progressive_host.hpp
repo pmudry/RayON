@@ -41,9 +41,8 @@ class RendererCUDAProgressive : public IRenderer
       GuiTheme theme = GuiTheme::NORD;
       // MIS / NEE options
       bool mis_enabled          = true;  ///< Master MIS toggle
-      bool motion_gate_mis      = true;  ///< Option A: auto-disable MIS during camera motion
-      bool nee_first_bounce_only = false; ///< Option B: NEE on first bounce only
-      int  nee_stride           = 1;     ///< Option C: do NEE every N samples (1 = always)
+      bool motion_gate_mis      = false; ///< Auto-disable MIS during camera motion
+      int  nee_stride           = 3;     ///< Do NEE every N samples (1 = always)
    };
 
    RendererCUDAProgressive() = default;
@@ -114,7 +113,6 @@ class RendererCUDAProgressive : public IRenderer
       // MIS / NEE options (Options A–C)
       bool mis_enabled           = settings_.mis_enabled;
       bool motion_gate_mis       = settings_.motion_gate_mis;
-      bool nee_first_bounce_only = settings_.nee_first_bounce_only;
       int  nee_stride            = settings_.nee_stride;
       bool use_sobol             = true; // default: Sobol sampler
 
@@ -144,7 +142,6 @@ class RendererCUDAProgressive : public IRenderer
          ::setGolfDimpleCount(golf_dimple_count);
          ::setGolfDimpleRadius(golf_dimple_radius);
          ::setGolfDimpleDepth(golf_dimple_depth);
-         ::setNEEFirstBounceOnly(nee_first_bounce_only);
          ::setNEEStride(nee_stride);
       };
 
@@ -452,7 +449,6 @@ class RendererCUDAProgressive : public IRenderer
                   // Reset MIS options to settings_ defaults
                   mis_enabled           = settings_.mis_enabled;
                   motion_gate_mis       = settings_.motion_gate_mis;
-                  nee_first_bounce_only = settings_.nee_first_bounce_only;
                   nee_stride            = settings_.nee_stride;
                   use_sobol             = true;
                   camera_changed = true;
@@ -693,7 +689,6 @@ class RendererCUDAProgressive : public IRenderer
          // MIS option snapshots
          bool old_mis_enabled           = mis_enabled;
          bool old_motion_gate_mis       = motion_gate_mis;
-         bool old_nee_first_bounce_only = nee_first_bounce_only;
          int  old_nee_stride            = nee_stride;
          bool old_use_sobol             = use_sobol;
 
@@ -725,7 +720,7 @@ class RendererCUDAProgressive : public IRenderer
                            &current_hdr_index,
                            hdr_count > 0 ? hdr_name_ptrs.data() : nullptr,
                            hdr_count,
-                           &mis_enabled, &motion_gate_mis, &nee_first_bounce_only, &nee_stride,
+                           &mis_enabled, &motion_gate_mis, &nee_stride,
                            &use_sobol);
 
          if (auto_orbit != camera_control.isAutoOrbitEnabled())
@@ -779,10 +774,9 @@ class RendererCUDAProgressive : public IRenderer
          }
 
          // MIS option changes — push updated constants to GPU and restart accumulation
-         if (nee_first_bounce_only != old_nee_first_bounce_only || nee_stride != old_nee_stride)
+         if (nee_stride != old_nee_stride)
          {
-            ::setNEEFirstBounceOnly(nee_first_bounce_only);
-            ::setNEEStride(nee_stride);
+               ::setNEEStride(nee_stride);
             camera_changed = true;
          }
          if (mis_enabled != old_mis_enabled || motion_gate_mis != old_motion_gate_mis)

@@ -440,6 +440,8 @@ __device__ __forceinline__ bool is_delta_material_optix(OptixMaterialType mat)
 
 extern "C" __global__ void __raygen__rg()
 {
+   // One thread per pixel, looping over the batch's samples. (A width x height x spp launch with
+   // one path per thread and atomic accumulation was measured 15-20% slower, so the loop stays.)
    const uint3 idx = optixGetLaunchIndex();
    const unsigned int x = idx.x;
    const unsigned int y = idx.y;
@@ -448,6 +450,10 @@ extern "C" __global__ void __raygen__rg()
       return;
 
    const unsigned int pixel_idx = y * params.width + x;
+
+   // Adaptive sampling: converged pixels (negative count) take no more samples
+   if (params.pixel_sample_counts && params.pixel_sample_counts[pixel_idx] < 0)
+      return;
 
    // Per-pixel stable hash for Sobol scrambling (computed once, reused every sample).
    const uint32_t pixel_hash = pcg_hash(pixel_idx ^ (0xdeadbeef + params.sobol_sequence_seed * 0x9e3779b9u));
@@ -461,8 +467,7 @@ extern "C" __global__ void __raygen__rg()
 
    for (int s = 0; s < params.samples_per_launch; ++s)
    {
-      // Reset Sobol dimension counter and advance sample index each iteration.
-      // total_samples_so_far + s gives the global sample number; Gray-code encoding
+      // total_samples_so_far + s is the global sample number; Gray-code encoding
       // improves progressive convergence (each successive index flips one bit).
       const uint32_t abs_sample = (uint32_t)(params.total_samples_so_far + s);
       const uint32_t sobol_sample_idx = sobol_gray(abs_sample);
@@ -844,9 +849,12 @@ extern "C" __global__ void __raygen__rg()
          bool is_delta = is_delta_material_optix(mat.type);
          if (params.mis_enabled && !is_delta && params.num_lights > 0)
          {
-            bool do_nee = (bounce == 0 || !params.nee_first_bounce_only);
+            // The first bounce carries most of the direct light and always gets NEE; deeper
+            // bounces do it on 1 of every nee_stride samples (contribution x stride, unbiased).
+            // Applying the stride at bounce 0 shows up as bright speckle at low sample counts.
+            bool do_nee = true;
             float nee_scale = 1.0f;
-            if (do_nee && params.nee_stride > 1)
+            if (bounce > 0 && params.nee_stride > 1)
             {
                do_nee = ((abs_sample % (uint32_t)params.nee_stride) == 0u);
                nee_scale = (float)params.nee_stride;
@@ -945,25 +953,17 @@ extern "C" __global__ void __miss__shadow() { optixSetPayload_0(0u); }
 // GOLF BALL DISPLACEMENT HELPERS (ported from shader_golf.cu)
 //==============================================================================
 
-__device__ __forceinline__ float3 fibonacci_point_optix(int i, int n)
-{
-   const float ga = 2.39996323f;
-   float k = (float)i + 0.5f;
-   float phi = acosf(1.0f - 2.0f * k / (float)n);
-   float theta = ga * k;
-   float s = sinf(phi);
-   return make_float3(cosf(theta) * s, sinf(theta) * s, cosf(phi));
-}
-
 __device__ __forceinline__ float distanceToNearestDimple_optix(float3 p)
 {
+   // Dimple directions are precomputed on the host (params.golf_points): the loop is
+   // N dot products instead of N sin/cos/acos evaluations, and it runs 4x per hit.
    float3 q = normalize3(p);
-   int N = params.golf_dimple_count;
+   const int N = params.golf_dimple_count;
+   const float3 *__restrict__ pts = params.golf_points;
    float max_dot = -1.0f;
    for (int i = 0; i < N; ++i)
    {
-      float3 c = fibonacci_point_optix(i, N);
-      float d = dot3(q, c);
+      float d = dot3(q, pts[i]);
       if (d > max_dot)
          max_dot = d;
    }
@@ -1030,10 +1030,10 @@ __device__ __forceinline__ void resolve_material(PRDRadiance *prd, int mat_idx, 
       int    N       = (int)mat.pattern_param1;
       float  dot_rad = mat.pattern_param2;
       float  max_dp  = -1.0f;
+      const float3 *__restrict__ pts = params.pattern_points + mat.pattern_table_offset; // precomputed on host
       for (int i = 0; i < N; ++i)
       {
-         float3 c = fibonacci_point_optix(i, N);
-         float  d = dot3(dir, c);
+         float  d = dot3(dir, pts[i]);
          if (d > max_dp)
             max_dp = d;
       }

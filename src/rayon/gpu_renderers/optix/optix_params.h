@@ -83,6 +83,7 @@ struct OptixMaterialData
    float film_ior;       // THIN_FILM: film refractive index
 
    int texture_id; // Diffuse texture index (-1 = none)
+   int pattern_table_offset; // FIBONACCI_DOTS: first entry of this material's dot directions in params.pattern_points
 };
 
 // Light geometry data for Next Event Estimation (NEE)
@@ -111,9 +112,12 @@ struct OptixLightData
 struct OptixLaunchParams
 {
    // Output
-   float4 *accum_buffer;  // Accumulation buffer (float4 per pixel)
-   unsigned int width;
+   float4 *accum_buffer;  // Accumulation buffer (float4 per pixel), render resolution
+   unsigned int width;    // Render resolution (may be lower than the display while the camera moves)
    unsigned int height;
+
+   // Adaptive sampling: per-pixel sample counts, negative = converged (skip). Null when disabled.
+   const int *pixel_sample_counts;
 
    // Camera
    float3 camera_center;
@@ -161,6 +165,8 @@ struct OptixLaunchParams
    int   golf_dimple_count;  // Number of dimples (Fibonacci sphere distribution)
    float golf_dimple_radius; // Angular radius of each dimple (radians)
    float golf_dimple_depth;  // Depth of each dimple (displacement factor)
+   const float3 *golf_points;    // Precomputed unit dimple directions [golf_dimple_count]
+   const float3 *pattern_points; // Precomputed FIBONACCI_DOTS directions for all materials (see pattern_table_offset)
 
    // Textures
    cudaTextureObject_t *d_textures; // Device array of CUDA texture objects
@@ -173,8 +179,7 @@ struct OptixLaunchParams
 
    // MIS / NEE runtime controls
    bool mis_enabled;            // Master MIS toggle
-   bool nee_first_bounce_only;  // Option B: NEE on first bounce only
-   int  nee_stride;             // Option C: NEE every N samples
+   int  nee_stride;             // NEE on 1 of every N samples (contribution x N)
 
    // Reverse lookup: custom-primitive index → light list index (-1 if not a light)
    int *geom_to_light_map;

@@ -61,7 +61,6 @@ extern "C"
 
      // MIS / NEE controls
      void setMISEnabled(bool enabled);           ///< Global toggle — disables NEE + emissive MIS weight
-     void setNEEFirstBounceOnly(bool enabled);   ///< Restrict NEE to the first path bounce only
      void setNEEStride(int stride);              ///< Do NEE every N samples (contribution × N); 1 = always
    // rgba16: packed float16×4 (R, G, B, A) row-major — faster for repeated/cached loads
    bool uploadHdrEnvironmentHalf(const uint16_t *rgba16, int w, int h);

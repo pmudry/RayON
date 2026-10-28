@@ -12,6 +12,7 @@
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
 #include <math_constants.h>
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
@@ -93,8 +94,26 @@ struct OptixState
 
    // MIS / NEE runtime settings (cached between launches)
    bool  mis_enabled          = true;
-   bool  nee_first_bounce_only = false;
-   int   nee_stride           = 1;
+   int   nee_stride           = 3;
+
+   // Adaptive sampling (converged-pixel skipping): per-pixel sample counts (negative = converged)
+   // and the per-pixel mean luminance at the last convergence check.
+   bool   adaptive_enabled     = false;
+   int    adaptive_min_samples = 32;
+   float  adaptive_threshold   = 3.16e-5f;
+   int   *d_pixel_sample_counts = nullptr;
+   float *d_prev_lum            = nullptr;
+   int   *d_converged_count     = nullptr;
+
+   // Resolution of the last launch (the display may be larger while the camera moves)
+   int render_width  = 0;
+   int render_height = 0;
+   // Hand-over prior: when a reduced-resolution motion pass ends, its upscaled mean image is kept
+   // here and blended into the display with a weight that fades to zero as new samples arrive.
+   // Display-only: the accumulation buffer itself stays unbiased.
+   float4 *d_prior        = nullptr;
+   bool    prior_active   = false;
+   float   prior_strength = 0.0f; // weight in "samples" at the start of the fade
 
    // Persistent device accumulation buffer — stays on GPU across batches
    // to avoid costly per-batch host↔device float3↔float4 round-trips
@@ -109,6 +128,11 @@ struct OptixState
    int   golf_dimple_count  = 150;
    float golf_dimple_radius = 0.24f;
    float golf_dimple_depth  = 0.35f;
+   float3 *d_golf_points    = nullptr; // precomputed unit dimple directions [golf_dimple_count]
+   int     golf_points_count = 0;
+
+   // Precomputed FIBONACCI_DOTS directions for every patterned material (offsets in OptixMaterialData)
+   float3 *d_pattern_points = nullptr;
 
    // HDR environment map managed outside the scene textures to survive scene rebuilds
    cudaArray_t         hdr_cuda_array = nullptr;
@@ -131,6 +155,35 @@ static OptixState g_state;
 
 // Helper: return the dedicated render stream, or the default stream (0) if not initialized.
 static inline cudaStream_t getOptiXStream() { return g_state.render_stream ? g_state.render_stream : 0; }
+
+// Host-side Fibonacci sphere point i of n (same formula the device programs used to evaluate per hit)
+static float3 fibonacciPoint(int i, int n)
+{
+   const float ga = 2.39996323f;
+   float k = (float)i + 0.5f;
+   float phi = acosf(1.0f - 2.0f * k / (float)n);
+   float theta = ga * k;
+   float s = sinf(phi);
+   return make_float3(cosf(theta) * s, sinf(theta) * s, cosf(phi));
+}
+
+// (Re)build the device table of golf dimple directions when the count changes
+static void uploadGolfPointTable()
+{
+   const int n = std::max(1, g_state.golf_dimple_count);
+   if (g_state.d_golf_points && g_state.golf_points_count == n)
+      return;
+   if (g_state.d_golf_points)
+      CUDA_CHECK(cudaFree(g_state.d_golf_points));
+   std::vector<float3> pts(static_cast<size_t>(n));
+   for (int i = 0; i < n; ++i)
+      pts[i] = fibonacciPoint(i, n);
+   CUDA_CHECK(cudaMalloc(&g_state.d_golf_points, pts.size() * sizeof(float3)));
+   CUDA_CHECK(cudaMemcpy(g_state.d_golf_points, pts.data(), pts.size() * sizeof(float3), cudaMemcpyHostToDevice));
+   g_state.golf_points_count = n;
+   // Launches run on a non-blocking stream that does not wait for legacy-stream DMA: fence here.
+   CUDA_CHECK(cudaDeviceSynchronize());
+}
 
 // Load PTX from file
 static std::string loadPTXFromFile(const char *filename)
@@ -649,9 +702,18 @@ static void buildGAS(const Scene::SceneDescription &scene)
    if (num_materials > 0)
    {
       std::vector<OptixMaterialData> materials(num_materials);
+      std::vector<float3> pattern_points; // FIBONACCI_DOTS directions, all materials concatenated
       for (int i = 0; i < num_materials; ++i)
       {
          const auto &m = scene.materials[i];
+         materials[i].pattern_table_offset = 0;
+         if (static_cast<int>(m.pattern) == 1) // FIBONACCI_DOTS: precompute the dot directions once
+         {
+            const int n = std::max(1, static_cast<int>(m.pattern_param1));
+            materials[i].pattern_table_offset = static_cast<int>(pattern_points.size());
+            for (int k = 0; k < n; ++k)
+               pattern_points.push_back(fibonacciPoint(k, n));
+         }
          materials[i].type = static_cast<OptixMaterialType>(static_cast<uint8_t>(m.type));
          materials[i].albedo = make_float3(static_cast<float>(m.albedo.x()), static_cast<float>(m.albedo.y()),
                                             static_cast<float>(m.albedo.z()));
@@ -677,6 +739,18 @@ static void buildGAS(const Scene::SceneDescription &scene)
       CUDA_CHECK(cudaMalloc(&g_state.d_materials, num_materials * sizeof(OptixMaterialData)));
       CUDA_CHECK(cudaMemcpy(g_state.d_materials, materials.data(), num_materials * sizeof(OptixMaterialData),
                              cudaMemcpyHostToDevice));
+
+      if (g_state.d_pattern_points)
+      {
+         CUDA_CHECK(cudaFree(g_state.d_pattern_points));
+         g_state.d_pattern_points = nullptr;
+      }
+      if (!pattern_points.empty())
+      {
+         CUDA_CHECK(cudaMalloc(&g_state.d_pattern_points, pattern_points.size() * sizeof(float3)));
+         CUDA_CHECK(cudaMemcpy(g_state.d_pattern_points, pattern_points.data(),
+                                pattern_points.size() * sizeof(float3), cudaMemcpyHostToDevice));
+      }
    }
 
    printf("OptiX GAS built: %d custom primitives, %d hardware triangles, %d materials\n", num_geoms, num_tris,
@@ -845,6 +919,11 @@ static void buildGAS(const Scene::SceneDescription &scene)
          printf("OptiX NEE: %d lights uploaded (total area %.2f)\n", g_state.num_lights, total_area);
       }
    }
+
+   // All uploads above use the legacy default stream. Pageable cudaMemcpy returns before the DMA
+   // has necessarily landed, and the render stream is non-blocking (it does not synchronise with
+   // the legacy stream), so fence here before the first launch can read any of these buffers.
+   CUDA_CHECK(cudaDeviceSynchronize());
 } // end buildGAS()
 
 //==============================================================================
@@ -857,8 +936,15 @@ static bool g_optix_use_sobol = true;
 extern "C" void setOptiXSobolSampler(bool use_sobol) { g_optix_use_sobol = use_sobol; }
 
 extern "C" void setOptiXMISEnabled(bool enabled)          { g_state.mis_enabled = enabled; }
-extern "C" void setOptiXNEEFirstBounceOnly(bool enabled)   { g_state.nee_first_bounce_only = enabled; }
 extern "C" void setOptiXNEEStride(int stride)              { g_state.nee_stride = (stride < 1) ? 1 : stride; }
+
+/// Converged-pixel skipping. Buffers are (re)allocated by optixRendererResetAccum().
+extern "C" void setOptiXAdaptiveSampling(bool enabled, int min_samples, float threshold)
+{
+   g_state.adaptive_enabled     = enabled;
+   g_state.adaptive_min_samples = std::max(1, min_samples);
+   g_state.adaptive_threshold   = threshold;
+}
 
 extern "C" void optixRendererInit() { initializeOptiX(); }
 
@@ -891,18 +977,133 @@ extern "C" void optixRendererResetAccum(int width, int height)
       CUDA_CHECK(cudaMalloc(&g_state.d_accum_buffer, accum_size));
       g_state.accum_width = width;
       g_state.accum_height = height;
-   }
 
-   // Zero the buffer on the render stream so the memset is ordered before the next optixLaunch.
+      // Adaptive sampling buffers follow the accumulation buffer size
+      if (g_state.d_pixel_sample_counts) CUDA_CHECK(cudaFree(g_state.d_pixel_sample_counts));
+      if (g_state.d_prev_lum)            CUDA_CHECK(cudaFree(g_state.d_prev_lum));
+      CUDA_CHECK(cudaMalloc(&g_state.d_pixel_sample_counts, (size_t)width * height * sizeof(int)));
+      CUDA_CHECK(cudaMalloc(&g_state.d_prev_lum, (size_t)width * height * sizeof(float)));
+      if (g_state.d_prior) CUDA_CHECK(cudaFree(g_state.d_prior));
+      CUDA_CHECK(cudaMalloc(&g_state.d_prior, (size_t)width * height * sizeof(float4)));
+   }
+   g_state.prior_active = false;
+
+   // Zero the buffers on the render stream so the memsets are ordered before the next optixLaunch.
    // cudaMemset on the default stream (0) races with optixLaunch on the non-blocking render stream.
-   CUDA_CHECK(cudaMemsetAsync(g_state.d_accum_buffer, 0, (size_t)width * height * sizeof(float4), getOptiXStream()));
+   const size_t n_pixels = (size_t)g_state.accum_width * g_state.accum_height;
+   CUDA_CHECK(cudaMemsetAsync(g_state.d_accum_buffer, 0, n_pixels * sizeof(float4), getOptiXStream()));
+   CUDA_CHECK(cudaMemsetAsync(g_state.d_pixel_sample_counts, 0, n_pixels * sizeof(int), getOptiXStream()));
+   CUDA_CHECK(cudaMemsetAsync(g_state.d_prev_lum, 0, n_pixels * sizeof(float), getOptiXStream()));
 
    // Allocate persistent launch params buffer (once)
    if (g_state.d_launch_params == 0)
       CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&g_state.d_launch_params), sizeof(OptixLaunchParams)));
 }
 
-// Launch a batch of samples. Accumulation buffer stays on device — no host transfer per batch.
+//==============================================================================
+// Per-pixel sample bookkeeping, run after every launch: advance the per-pixel sample counts
+// and, when adaptive sampling is enabled, mark pixels whose mean luminance barely changed
+// (relative to the previous check) as converged (negative count). The counts are kept
+// accurate even while adaptive sampling is off, so it can be toggled mid-accumulation
+// without restarting (the display always normalises by the per-pixel count).
+// Mirrors the test in the CUDA renderAccKernel as a separate pass so the OptiX raygen
+// program only has to read the per-pixel flag.
+//==============================================================================
+__global__ void optixAdaptiveUpdateKernel(const float4 *__restrict__ accum, int *pixel_sample_counts,
+                                          float *prev_lum, int num_pixels, int samples_added, bool adaptive,
+                                          int min_samples, float threshold)
+{
+   int idx = blockIdx.x * blockDim.x + threadIdx.x;
+   if (idx >= num_pixels)
+      return;
+   int count = pixel_sample_counts[idx];
+   if (adaptive && count < 0)
+      return; // converged: raygen skipped it, nothing was added
+
+   // A pixel flagged converged earlier still received samples while adaptive sampling was off
+   int new_count = abs(count) + samples_added;
+   float4 acc    = accum[idx];
+   float inv     = 1.0f / (float)new_count;
+   float lum     = (0.299f * acc.x + 0.587f * acc.y + 0.114f * acc.z) * inv;
+
+   if (adaptive && new_count >= min_samples)
+   {
+      float relative_change = fabsf(lum - prev_lum[idx]) / fmaxf(lum, 0.001f);
+      if (relative_change < threshold)
+         new_count = -new_count; // sign bit = converged
+   }
+   prev_lum[idx]            = lum;
+   pixel_sample_counts[idx] = new_count;
+}
+
+//==============================================================================
+// Coarse-to-fine hand-over: when the camera stops, the reduced-resolution motion image is
+// bilinearly upscaled into a separate "prior" image. The display blends it with the fresh
+// full-resolution accumulation using a weight that starts at `strength` samples and fades
+// linearly to zero once that many real samples have arrived, so the picture refines smoothly
+// instead of snapping to noise. The accumulation itself is never touched by the prior.
+//==============================================================================
+__global__ void optixHandoverPriorKernel(const float4 *__restrict__ src, const int *__restrict__ src_counts,
+                                         int src_w, int src_h, float4 *prior, int dst_w, int dst_h)
+{
+   int x = blockIdx.x * blockDim.x + threadIdx.x;
+   int y = blockIdx.y * blockDim.y + threadIdx.y;
+   if (x >= dst_w || y >= dst_h)
+      return;
+
+   // Bilinear sample of the source at the destination pixel centre
+   float fx = ((float)x + 0.5f) * (float)src_w / (float)dst_w - 0.5f;
+   float fy = ((float)y + 0.5f) * (float)src_h / (float)dst_h - 0.5f;
+   fx = fminf(fmaxf(fx, 0.0f), (float)(src_w - 1));
+   fy = fminf(fmaxf(fy, 0.0f), (float)(src_h - 1));
+   int x0 = (int)fx, y0 = (int)fy;
+   int x1 = min(x0 + 1, src_w - 1), y1 = min(y0 + 1, src_h - 1);
+   float tx = fx - (float)x0, ty = fy - (float)y0;
+
+   // Source texels are sums; divide by their own sample counts to get means
+   int i00 = y0 * src_w + x0, i10 = y0 * src_w + x1, i01 = y1 * src_w + x0, i11 = y1 * src_w + x1;
+   float n00 = (float)max(abs(src_counts[i00]), 1), n10 = (float)max(abs(src_counts[i10]), 1);
+   float n01 = (float)max(abs(src_counts[i01]), 1), n11 = (float)max(abs(src_counts[i11]), 1);
+   float4 a = src[i00], b = src[i10], c = src[i01], d = src[i11];
+   float w00 = (1.0f - tx) * (1.0f - ty) / n00, w10 = tx * (1.0f - ty) / n10;
+   float w01 = (1.0f - tx) * ty / n01, w11 = tx * ty / n11;
+   prior[y * dst_w + x] = make_float4(a.x * w00 + b.x * w10 + c.x * w01 + d.x * w11,
+                                      a.y * w00 + b.y * w10 + c.y * w01 + d.y * w11,
+                                      a.z * w00 + b.z * w10 + c.z * w01 + d.z * w11, 0.0f);
+}
+
+// Take the current accumulation (render_width x render_height) as the display prior for a new
+// new_width x new_height pass, then clear the accumulation for that pass. `strength` is the
+// prior's initial weight in samples; it fades out linearly as real samples arrive.
+// Returns false (and leaves the caller to do a plain reset) if there is nothing to hand over.
+extern "C" bool optixRendererHandoverPrior(int new_width, int new_height, float strength)
+{
+   const int src_w = g_state.render_width, src_h = g_state.render_height;
+   if (!g_state.d_accum_buffer || !g_state.d_prior || src_w <= 0 || src_h <= 0 || strength <= 0.0f ||
+       new_width > g_state.accum_width || new_height > g_state.accum_height)
+      return false;
+
+   cudaStream_t stream = getOptiXStream();
+   dim3 threads(32, 8);
+   dim3 blocks((new_width + threads.x - 1) / threads.x, (new_height + threads.y - 1) / threads.y);
+   optixHandoverPriorKernel<<<blocks, threads, 0, stream>>>(g_state.d_accum_buffer, g_state.d_pixel_sample_counts,
+                                                            src_w, src_h, g_state.d_prior, new_width, new_height);
+
+   // Fresh accumulation for the new pass (same stream, so ordered after the prior kernel)
+   const size_t n_pixels = (size_t)g_state.accum_width * g_state.accum_height;
+   CUDA_CHECK(cudaMemsetAsync(g_state.d_accum_buffer, 0, n_pixels * sizeof(float4), stream));
+   CUDA_CHECK(cudaMemsetAsync(g_state.d_pixel_sample_counts, 0, n_pixels * sizeof(int), stream));
+   CUDA_CHECK(cudaMemsetAsync(g_state.d_prev_lum, 0, n_pixels * sizeof(float), stream));
+
+   g_state.render_width   = new_width;
+   g_state.render_height  = new_height;
+   g_state.prior_active   = true;
+   g_state.prior_strength = strength;
+   return true;
+}
+
+// Launch a batch of samples (one thread per pixel, looping over the batch).
+// Accumulation buffer stays on device — no host transfer per batch.
 // Uses persistent device launch params buffer to avoid cudaMalloc/cudaFree overhead per batch.
 extern "C" unsigned long long optixRendererLaunch(int width, int height, int num_materials, int samples_to_add,
                                                    int total_samples_so_far, int max_depth, float cam_cx, float cam_cy,
@@ -914,14 +1115,23 @@ extern "C" unsigned long long optixRendererLaunch(int width, int height, int num
                                                    float light_intensity, float metal_fuzziness,
                                                    float glass_ior_multiplier)
 {
-   if (!g_state.initialized)
+   if (!g_state.initialized || samples_to_add <= 0)
       return 0;
+   if (width > g_state.accum_width || height > g_state.accum_height)
+   {
+      printf("OptiX error: launch %dx%d exceeds accumulation buffer %dx%d (call optixRendererResetAccum first)\n",
+             width, height, g_state.accum_width, g_state.accum_height);
+      return 0;
+   }
+   g_state.render_width  = width;
+   g_state.render_height = height;
 
    // Fill launch params on host stack, then single cudaMemcpy to persistent device buffer
    OptixLaunchParams launch_params = {};
    launch_params.accum_buffer = g_state.d_accum_buffer;
    launch_params.width = width;
    launch_params.height = height;
+   launch_params.pixel_sample_counts = g_state.adaptive_enabled ? g_state.d_pixel_sample_counts : nullptr;
    launch_params.camera_center = make_float3(cam_cx, cam_cy, cam_cz);
    launch_params.pixel00_loc = make_float3(p00x, p00y, p00z);
    launch_params.pixel_delta_u = make_float3(dux, duy, duz);
@@ -953,6 +1163,9 @@ extern "C" unsigned long long optixRendererLaunch(int width, int height, int num
    launch_params.golf_dimple_count  = g_state.golf_dimple_count;
    launch_params.golf_dimple_radius = g_state.golf_dimple_radius;
    launch_params.golf_dimple_depth  = g_state.golf_dimple_depth;
+   uploadGolfPointTable();
+   launch_params.golf_points        = g_state.d_golf_points;
+   launch_params.pattern_points     = g_state.d_pattern_points;
    launch_params.hdr_env_tex        = g_state.hdr_tex_obj;
    launch_params.use_hdr_env        = (g_state.hdr_tex_obj != 0);
 
@@ -961,7 +1174,6 @@ extern "C" unsigned long long optixRendererLaunch(int width, int height, int num
    launch_params.num_lights         = g_state.num_lights;
    launch_params.light_cdfs         = g_state.d_light_cdfs;
    launch_params.mis_enabled        = g_state.mis_enabled;
-   launch_params.nee_first_bounce_only = g_state.nee_first_bounce_only;
    launch_params.nee_stride         = g_state.nee_stride;
    launch_params.geom_to_light_map  = g_state.d_geom_to_light;
    launch_params.num_geom_entries   = g_state.num_geom_entries;
@@ -979,6 +1191,14 @@ extern "C" unsigned long long optixRendererLaunch(int width, int height, int num
 
    OPTIX_CHECK(optixLaunch(g_state.pipeline, stream, g_state.d_launch_params, sizeof(OptixLaunchParams), &g_state.sbt,
                             width, height, 1));
+
+   {
+      const int num_pixels = width * height;
+      const int threads = 256;
+      optixAdaptiveUpdateKernel<<<(num_pixels + threads - 1) / threads, threads, 0, stream>>>(
+          g_state.d_accum_buffer, g_state.d_pixel_sample_counts, g_state.d_prev_lum, num_pixels, samples_to_add,
+          g_state.adaptive_enabled, g_state.adaptive_min_samples, g_state.adaptive_threshold);
+   }
 
    // Stream-specific sync instead of cudaDeviceSynchronize() — only waits for
    // this stream, allowing other work (display pipeline) to proceed.
@@ -1019,6 +1239,7 @@ extern "C" void optixRendererSetGolfDimples(int count, float radius, float depth
    g_state.golf_dimple_count  = count;
    g_state.golf_dimple_radius = radius;
    g_state.golf_dimple_depth  = depth;
+   // The direction table is refreshed lazily at the next launch (uploadGolfPointTable)
 }
 
 //==============================================================================
@@ -1027,7 +1248,13 @@ extern "C" void optixRendererSetGolfDimples(int count, float radius, float depth
 // then async-copies via pinned memory. Avoids the expensive float4 D2H transfer
 // + host-side conversion that the original optixRendererDownloadAccum() used.
 //==============================================================================
-__global__ void optixGammaCorrectKernel(const float4 *__restrict__ accum_buffer, unsigned char *display_image,
+// The accumulation buffer may be smaller than the display (reduced resolution while the
+// camera moves): each display pixel reads its nearest render pixel. With adaptive sampling
+// each pixel is normalised by its own sample count.
+__global__ void optixGammaCorrectKernel(const float4 *__restrict__ accum_buffer,
+                                         const int *__restrict__ pixel_sample_counts,
+                                         const float4 *__restrict__ prior, float prior_strength,
+                                         unsigned char *display_image, int render_width, int render_height,
                                          int width, int height, int num_samples, int channels, float gamma)
 {
    int x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -1035,15 +1262,34 @@ __global__ void optixGammaCorrectKernel(const float4 *__restrict__ accum_buffer,
    if (x >= width || y >= height)
       return;
 
+   int rx = (render_width == width) ? x : min(x * render_width / width, render_width - 1);
+   int ry = (render_height == height) ? y : min(y * render_height / height, render_height - 1);
    int pixel_idx = y * width + x;
-   float4 acc = accum_buffer[pixel_idx];
+   float4 acc = accum_buffer[ry * render_width + rx];
 
-   float inv_samples = 1.0f / (float)num_samples;
+   // Converged pixels store a negative count (sign bit = converged flag), so use abs().
+   int samples = pixel_sample_counts ? abs(pixel_sample_counts[ry * render_width + rx]) : num_samples;
+   float n = (float)max(samples, 0);
+   float3 mean;
+   if (prior)
+   {
+      // Hand-over blend: the prior counts as max(0, strength - n) samples, so it dominates the
+      // first frames after a resolution switch and is gone once `strength` samples have arrived.
+      float w = fmaxf(prior_strength - n, 0.0f);
+      float4 p = prior[ry * render_width + rx];
+      float inv = (n + w > 0.0f) ? 1.0f / (n + w) : 0.0f;
+      mean = make_float3((acc.x + p.x * w) * inv, (acc.y + p.y * w) * inv, (acc.z + p.z * w) * inv);
+   }
+   else
+   {
+      float inv_samples = (n > 0.0f) ? 1.0f / n : 0.0f;
+      mean = make_float3(acc.x * inv_samples, acc.y * inv_samples, acc.z * inv_samples);
+   }
    float inv_gamma = 1.0f / gamma;
 
-   float r = fminf(powf(fmaxf(acc.x * inv_samples, 0.0f), inv_gamma), 0.999f);
-   float g = fminf(powf(fmaxf(acc.y * inv_samples, 0.0f), inv_gamma), 0.999f);
-   float b = fminf(powf(fmaxf(acc.z * inv_samples, 0.0f), inv_gamma), 0.999f);
+   float r = fminf(powf(fmaxf(mean.x, 0.0f), inv_gamma), 0.999f);
+   float g = fminf(powf(fmaxf(mean.y, 0.0f), inv_gamma), 0.999f);
+   float b = fminf(powf(fmaxf(mean.z, 0.0f), inv_gamma), 0.999f);
 
    int image_idx = pixel_idx * channels;
    display_image[image_idx + 0] = (unsigned char)(256.0f * r);
@@ -1053,15 +1299,9 @@ __global__ void optixGammaCorrectKernel(const float4 *__restrict__ accum_buffer,
       display_image[image_idx + 3] = 255;
 }
 
-extern "C" void optixRendererConvertAccumToDisplay(unsigned char *display_image, int width, int height,
-                                                    int channels, int num_samples, float gamma)
+// Allocate (or resize) the device display buffer and the pinned host staging buffer
+static void ensureDisplayBuffers(size_t display_size)
 {
-   if (!g_state.d_accum_buffer || !display_image || num_samples <= 0)
-      return;
-
-   size_t display_size = (size_t)width * height * channels * sizeof(unsigned char);
-
-   // Allocate/resize device display buffer (persistent across calls)
    if (g_state.d_display == nullptr || g_state.d_display_size != display_size)
    {
       if (g_state.d_display != nullptr)
@@ -1069,8 +1309,6 @@ extern "C" void optixRendererConvertAccumToDisplay(unsigned char *display_image,
       cudaMalloc(&g_state.d_display, display_size);
       g_state.d_display_size = display_size;
    }
-
-   // Allocate/resize pinned host staging buffer for async D2H copy
    if (g_state.pinned_display == nullptr || g_state.pinned_display_size != display_size)
    {
       if (g_state.pinned_display != nullptr)
@@ -1078,16 +1316,115 @@ extern "C" void optixRendererConvertAccumToDisplay(unsigned char *display_image,
       cudaMallocHost(&g_state.pinned_display, display_size);
       g_state.pinned_display_size = display_size;
    }
+}
+
+// Convert the accumulation buffer (at the resolution of the last launch) into a width x height
+// 8-bit display image. num_samples is the normalisation when adaptive sampling is off.
+extern "C" void optixRendererConvertAccumToDisplay(unsigned char *display_image, int width, int height,
+                                                    int channels, int num_samples, float gamma)
+{
+   if (!g_state.d_accum_buffer || !display_image || num_samples <= 0)
+      return;
+
+   const int render_width  = g_state.render_width > 0 ? g_state.render_width : width;
+   const int render_height = g_state.render_height > 0 ? g_state.render_height : height;
+   size_t display_size = (size_t)width * height * channels * sizeof(unsigned char);
+   ensureDisplayBuffers(display_size);
 
    dim3 threads(32, 8);
    dim3 blocks((width + threads.x - 1) / threads.x, (height + threads.y - 1) / threads.y);
 
    cudaStream_t stream = getOptiXStream();
 
-   optixGammaCorrectKernel<<<blocks, threads, 0, stream>>>(
-       g_state.d_accum_buffer, g_state.d_display, width, height, num_samples, channels, gamma);
+   // Per-pixel counts are maintained after every launch, so they are always the right normalisation
+   const int *counts = g_state.d_pixel_sample_counts;
+   const float4 *prior = g_state.prior_active ? g_state.d_prior : nullptr;
+   optixGammaCorrectKernel<<<blocks, threads, 0, stream>>>(g_state.d_accum_buffer, counts, prior,
+                                                            g_state.prior_strength, g_state.d_display, render_width,
+                                                            render_height, width, height, num_samples, channels,
+                                                            gamma);
 
    // Async D2H copy via pinned memory, then single stream sync
+   cudaMemcpyAsync(g_state.pinned_display, g_state.d_display, display_size, cudaMemcpyDeviceToHost, stream);
+   cudaStreamSynchronize(stream);
+   memcpy(display_image, g_state.pinned_display, display_size);
+}
+
+//==============================================================================
+// Adaptive sampling diagnostics: converged-pixel count and sample-count heatmap
+//==============================================================================
+__global__ void optixCountConvergedKernel(const int *__restrict__ pixel_sample_counts, int num_pixels,
+                                          int *d_converged_count)
+{
+   int idx = blockIdx.x * blockDim.x + threadIdx.x;
+   int converged = (idx < num_pixels && pixel_sample_counts[idx] < 0) ? 1 : 0;
+   for (int offset = 16; offset > 0; offset >>= 1)
+      converged += __shfl_down_sync(0xFFFFFFFF, converged, offset);
+   if ((threadIdx.x & 31) == 0 && converged > 0)
+      atomicAdd(d_converged_count, converged);
+}
+
+// Returns the number of converged pixels at the resolution of the last launch (-1 if unavailable)
+extern "C" int optixRendererCountConvergedPixels()
+{
+   if (!g_state.adaptive_enabled || !g_state.d_pixel_sample_counts || g_state.render_width <= 0)
+      return -1;
+   if (!g_state.d_converged_count)
+      CUDA_CHECK(cudaMalloc(&g_state.d_converged_count, sizeof(int)));
+
+   cudaStream_t stream = getOptiXStream();
+   const int num_pixels = g_state.render_width * g_state.render_height;
+   CUDA_CHECK(cudaMemsetAsync(g_state.d_converged_count, 0, sizeof(int), stream));
+   const int threads = 256;
+   optixCountConvergedKernel<<<(num_pixels + threads - 1) / threads, threads, 0, stream>>>(
+       g_state.d_pixel_sample_counts, num_pixels, g_state.d_converged_count);
+   int converged = 0;
+   CUDA_CHECK(cudaMemcpyAsync(&converged, g_state.d_converged_count, sizeof(int), cudaMemcpyDeviceToHost, stream));
+   CUDA_CHECK(cudaStreamSynchronize(stream));
+   return converged;
+}
+
+__device__ void plasmaColormap(float t, float &r, float &g, float &b); // shaders/render_acc_kernel.cu
+
+__global__ void optixSampleHeatmapKernel(const int *__restrict__ pixel_sample_counts, unsigned char *display_image,
+                                         int render_width, int render_height, int width, int height, int channels,
+                                         int max_samples_for_scale)
+{
+   int x = blockIdx.x * blockDim.x + threadIdx.x;
+   int y = blockIdx.y * blockDim.y + threadIdx.y;
+   if (x >= width || y >= height)
+      return;
+   int rx = (render_width == width) ? x : min(x * render_width / width, render_width - 1);
+   int ry = (render_height == height) ? y : min(y * render_height / height, render_height - 1);
+
+   int sample_count = abs(pixel_sample_counts[ry * render_width + rx]);
+   float t = (max_samples_for_scale > 0) ? fminf((float)sample_count / (float)max_samples_for_scale, 1.0f) : 0.0f;
+   float r, g, b;
+   plasmaColormap(t, r, g, b);
+
+   int image_idx = (y * width + x) * channels;
+   display_image[image_idx + 0] = (unsigned char)(255.0f * r);
+   display_image[image_idx + 1] = (unsigned char)(255.0f * g);
+   display_image[image_idx + 2] = (unsigned char)(255.0f * b);
+   if (channels == 4)
+      display_image[image_idx + 3] = 255;
+}
+
+// Replace the display image with the per-pixel sample-count heatmap (dark = converged early)
+extern "C" void optixRendererRenderSampleHeatmap(unsigned char *display_image, int width, int height, int channels,
+                                                 int max_samples_for_scale)
+{
+   if (!g_state.d_pixel_sample_counts || !display_image || g_state.render_width <= 0)
+      return;
+   size_t display_size = (size_t)width * height * channels * sizeof(unsigned char);
+   ensureDisplayBuffers(display_size);
+
+   dim3 threads(32, 8);
+   dim3 blocks((width + threads.x - 1) / threads.x, (height + threads.y - 1) / threads.y);
+   cudaStream_t stream = getOptiXStream();
+   optixSampleHeatmapKernel<<<blocks, threads, 0, stream>>>(g_state.d_pixel_sample_counts, g_state.d_display,
+                                                             g_state.render_width, g_state.render_height, width,
+                                                             height, channels, max_samples_for_scale);
    cudaMemcpyAsync(g_state.pinned_display, g_state.d_display, display_size, cudaMemcpyDeviceToHost, stream);
    cudaStreamSynchronize(stream);
    memcpy(display_image, g_state.pinned_display, display_size);
@@ -1151,6 +1488,7 @@ extern "C" bool optixRendererUploadHdrEnvHalf(const uint16_t *rgba16, int w, int
       return false;
    }
 
+   CUDA_CHECK(cudaDeviceSynchronize()); // fence the array upload before the render stream reads it
    return true;
 }
 
@@ -1176,6 +1514,18 @@ extern "C" void optixRendererCleanup()
    optixRendererClearHdrEnv();
    if (g_state.d_accum_buffer)
       CUDA_CHECK(cudaFree(g_state.d_accum_buffer));
+   if (g_state.d_pixel_sample_counts)
+      CUDA_CHECK(cudaFree(g_state.d_pixel_sample_counts));
+   if (g_state.d_prev_lum)
+      CUDA_CHECK(cudaFree(g_state.d_prev_lum));
+   if (g_state.d_converged_count)
+      CUDA_CHECK(cudaFree(g_state.d_converged_count));
+   if (g_state.d_prior)
+      CUDA_CHECK(cudaFree(g_state.d_prior));
+   if (g_state.d_golf_points)
+      CUDA_CHECK(cudaFree(g_state.d_golf_points));
+   if (g_state.d_pattern_points)
+      CUDA_CHECK(cudaFree(g_state.d_pattern_points));
    if (g_state.d_launch_params)
       CUDA_CHECK(cudaFree(reinterpret_cast<void *>(g_state.d_launch_params)));
    if (g_state.d_materials)

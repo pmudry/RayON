@@ -13,6 +13,10 @@
  *  - Per-frame render → optixRendererLaunch() + optixRendererDownloadAccum().
  *  - light_intensity / metal_fuzziness / glass_refraction_index sliders are visible in the UI
  *    but have no effect (OptiX bakes those into the SBT at scene-build time).
+ *  - While the camera moves, quality is traded for framerate (MotionQualitySettings): reduced
+ *    resolution (upscaled for display), one sample per frame, PCG sampler, capped depth.
+ *  - Converged-pixel skipping (adaptive sampling) is implemented on the OptiX side with a
+ *    per-pixel sample-count buffer; the GUI heatmap and convergence readout use it.
  */
 #pragma once
 
@@ -62,8 +66,12 @@ extern "C"
    void optixRendererClearHdrEnv();
    void setOptiXSobolSampler(bool use_sobol);
    void setOptiXMISEnabled(bool enabled);
-   void setOptiXNEEFirstBounceOnly(bool enabled);
    void setOptiXNEEStride(int stride);
+   void setOptiXAdaptiveSampling(bool enabled, int min_samples, float threshold);
+   bool optixRendererHandoverPrior(int new_width, int new_height, float strength);
+   int  optixRendererCountConvergedPixels();
+   void optixRendererRenderSampleHeatmap(unsigned char *display_image, int width, int height, int channels,
+                                         int max_samples_for_scale);
 }
 
 class RendererOptiXProgressive : public IRenderer
@@ -73,13 +81,13 @@ class RendererOptiXProgressive : public IRenderer
    {
       int samples_per_batch = constants::INTERACTIVE_SAMPLES_PER_BATCH;
       bool auto_accumulate = true;
-      bool adaptive_sampling = true; // no-op for OptiX; kept for UI parity
+      bool adaptive_sampling = true; ///< converged-pixel skipping
       bool hdr_cache = true; ///< use .hdrcache sidecar to speed up repeated HDR loads
       GuiTheme theme = GuiTheme::NORD;
       bool mis_enabled           = true;
-      bool motion_gate_mis       = true;
-      bool nee_first_bounce_only = false;
-      int  nee_stride            = 1;
+      bool motion_gate_mis       = false;
+      int  nee_stride            = 3;
+      MotionQualitySettings motion_quality{}; ///< quality reductions while the camera moves
    };
 
    RendererOptiXProgressive() = default;
@@ -147,25 +155,45 @@ class RendererOptiXProgressive : public IRenderer
       float current_ms_per_sample = 0.0f;
       float current_fps = 0.0f;
 
-      // MIS / NEE options (Options A–C)
+      // MIS / NEE options
       bool mis_enabled           = settings_.mis_enabled;
       bool motion_gate_mis       = settings_.motion_gate_mis;
-      bool nee_first_bounce_only = settings_.nee_first_bounce_only;
       int  nee_stride            = settings_.nee_stride;
       bool use_sobol             = true; // default: Sobol sampler
+      MotionQualitySettings motion_quality = settings_.motion_quality;
 
       // Motion detection
       bool is_camera_moving = false;
       auto last_camera_change_time = std::chrono::high_resolution_clock::now();
-      const float motion_cooldown_seconds = 0.5f;
+      const float motion_cooldown_seconds = 0.3f;
 
       // Overlay / visualization state (mirrors CUDA renderer)
       int visualization_mode = static_cast<int>(VisualizationMode::NORMAL);
       bool show_spps_counter = true;
-      bool show_heatmap = false; // no-op for OptiX (kept for UI parity)
-      bool adaptive_sampling_enabled = false; // no-op for OptiX
-      float adaptive_threshold = 3.16e-5f;    // no-op for OptiX
+      bool show_heatmap = false;
+      bool adaptive_sampling_enabled = settings_.adaptive_sampling;
+      const int min_adaptive_samples = 32;  // Don't check convergence before this many samples
+      float adaptive_threshold = 3.16e-5f;  // Relative luminance change threshold (~10^-4.5)
       float convergence_pct = 0.0f;
+      int frames_since_convergence_check = 0;
+
+      // Per-frame render configuration. A change of resolution, sampler or depth between frames
+      // invalidates the accumulation (such samples must not be mixed). Adaptive sampling and MIS
+      // can be toggled mid-accumulation: the per-pixel sample counts are always maintained and
+      // both estimators are unbiased, so no restart is needed for those.
+      struct FrameConfig
+      {
+         int  width = 0, height = 0;
+         int  depth = 0;
+         bool sobol = true;
+         bool adaptive = false;
+         bool invalidates(const FrameConfig &o) const
+         {
+            return width != o.width || height != o.height || depth != o.depth || sobol != o.sobol;
+         }
+         bool operator!=(const FrameConfig &o) const { return invalidates(o) || adaptive != o.adaptive; }
+      };
+      FrameConfig last_config{};
 
       // Runtime-tweakable golf ball dimple parameters
       bool scene_has_golf_ball = false;
@@ -365,7 +393,6 @@ class RendererOptiXProgressive : public IRenderer
       // Scan scene initially (after active_scene is set)
       scanProceduralPatterns();
       ::optixRendererSetGolfDimples(golf_dimple_count, golf_dimple_radius, golf_dimple_depth);
-      ::setOptiXNEEFirstBounceOnly(nee_first_bounce_only);
       ::setOptiXNEEStride(nee_stride);
 
       // Rendering buffers
@@ -427,12 +454,13 @@ class RendererOptiXProgressive : public IRenderer
                   gui.setLogoVisible(true);
                   samples_per_batch_float = static_cast<float>(settings_.samples_per_batch);
                   camera_control.setAutoOrbit(false);
-                  // Reset MIS options to settings_ defaults
+                  // Reset MIS / motion options to settings_ defaults
                   mis_enabled           = settings_.mis_enabled;
                   motion_gate_mis       = settings_.motion_gate_mis;
-                  nee_first_bounce_only = settings_.nee_first_bounce_only;
                   nee_stride            = settings_.nee_stride;
                   use_sobol             = true;
+                  motion_quality        = settings_.motion_quality;
+                  adaptive_sampling_enabled = settings_.adaptive_sampling;
                   camera_changed = true;
                }
                else if (event.key.keysym.sym == SDLK_f)
@@ -524,17 +552,56 @@ class RendererOptiXProgressive : public IRenderer
          std::chrono::duration<float> time_since_last_change = now - last_camera_change_time;
          is_camera_moving = (time_since_last_change.count() < motion_cooldown_seconds);
 
-         // Camera changed → reset accumulation
+         // Camera changed → the camera is moving; the accumulation restarts below
+         bool restart_accumulation = camera_changed;
          if (camera_changed)
          {
             camera_changed = false;
-            current_samples = 0;
-            force_immediate_render = true;
-            std::fill(accum_buffer.begin(), accum_buffer.end(), 0.0f);
             last_camera_change_time = now;
             is_camera_moving = true;
-            optixRendererResetAccum(image_width, image_height);
             refreshCameraFrame();
+         }
+
+         // Per-frame configuration: trade quality for framerate while the camera moves
+         FrameConfig config;
+         const bool reduce = is_camera_moving;
+         config.width    = (reduce && motion_quality.half_resolution) ? std::max(1, image_width / 2) : image_width;
+         config.height   = (reduce && motion_quality.half_resolution) ? std::max(1, image_height / 2) : image_height;
+         config.depth    = (reduce && motion_quality.limit_depth) ? std::max(1, motion_quality.motion_max_depth)
+                                                                  : frame.max_depth;
+         config.sobol    = use_sobol && !(reduce && motion_quality.fast_sampler);
+         config.adaptive = adaptive_sampling_enabled && !reduce;
+         const int frame_spp = (reduce && motion_quality.single_sample) ? 1 : samples_per_batch;
+
+         // Configuration changed (e.g. motion cooldown elapsed → back to full resolution): the
+         // accumulated samples were taken under a different setup, so start over. This is not
+         // camera motion, so it must not touch the motion timer.
+         const bool config_upgrade = config.invalidates(last_config) && !restart_accumulation &&
+                                     current_samples > 0 && config.width >= last_config.width &&
+                                     config.height >= last_config.height && config.depth >= last_config.depth;
+         if (config.invalidates(last_config) && current_samples > 0)
+            restart_accumulation = true;
+
+         if (restart_accumulation)
+         {
+            convergence_pct = 0.0f;
+            force_immediate_render = true;
+            std::fill(accum_buffer.begin(), accum_buffer.end(), 0.0f);
+            // Hand the motion image over as a display prior that fades out over the first
+            // handover_fade_samples samples, so the switch to full quality refines the picture
+            // instead of snapping to a fresh, noisy one.
+            constexpr float handover_fade_samples = 48.0f;
+            bool handed_over = config_upgrade &&
+                               ::optixRendererHandoverPrior(config.width, config.height, handover_fade_samples);
+            if (!handed_over)
+               optixRendererResetAccum(image_width, image_height);
+            current_samples = 0;
+         }
+         if (config != last_config)
+         {
+            ::setOptiXSobolSampler(config.sobol);
+            ::setOptiXAdaptiveSampling(config.adaptive, min_adaptive_samples, adaptive_threshold);
+            last_config = config;
          }
 
          // Redisplay after overlay/settings change without adding new samples
@@ -548,35 +615,51 @@ class RendererOptiXProgressive : public IRenderer
             needs_rerender = false;
          }
 
-         bool should_render = (current_samples < max_samples && !camera_changed && running) || force_immediate_render;
+         // Stop rendering when max SPP reached, OR when adaptive sampling reports 100% convergence
+         bool all_converged = config.adaptive && convergence_pct >= 100.0f;
+         bool should_render = (current_samples < max_samples && !all_converged && !camera_changed && running) ||
+                              force_immediate_render;
          bool needs_initial_render = current_samples == 0 && !accumulation_enabled;
 
          if (should_render && (accumulation_enabled || needs_initial_render || force_immediate_render))
          {
             force_immediate_render = false;
             syncSamplesFromSlider();
-            int adaptive_samples_per_batch = samples_per_batch;
 
-            // Option A: motion-gate MIS — auto-disable NEE/MIS while the camera is moving
+            // Motion-gate MIS — auto-disable NEE/MIS while the camera is moving
             bool effective_mis = mis_enabled && !(motion_gate_mis && is_camera_moving);
             ::setOptiXMISEnabled(effective_mis);
 
             auto frame_start = std::chrono::high_resolution_clock::now();
 
             const int num_materials_active = static_cast<int>(active_scene.materials.size());
-            renderBatch(frame, accum_buffer, display_view, current_samples, max_samples,
-                        adaptive_samples_per_batch, gamma, is_camera_moving, context,
-                        num_materials_active, background_intensity, dof_enabled, dof_aperture, dof_focus_distance,
-                        light_intensity, metal_fuzziness, glass_refraction_index);
+            renderBatch(frame, config.width, config.height, config.depth, display_view, current_samples,
+                        max_samples, frame_spp, gamma, context, num_materials_active, background_intensity,
+                        dof_enabled, dof_aperture, dof_focus_distance, light_intensity, metal_fuzziness,
+                        glass_refraction_index);
 
             auto frame_end = std::chrono::high_resolution_clock::now();
             std::chrono::duration<float, std::milli> frame_time = frame_end - frame_start;
             if (frame_time.count() > 0.0f)
             {
-               float total_samples = static_cast<float>(adaptive_samples_per_batch) * image_width * image_height;
+               float total_samples = static_cast<float>(frame_spp) * config.width * config.height;
                current_sps = (total_samples * 1000.0f) / frame_time.count();
-               current_ms_per_sample = frame_time.count() / static_cast<float>(adaptive_samples_per_batch);
+               current_ms_per_sample = frame_time.count() / static_cast<float>(frame_spp);
             }
+
+            // Convergence readout for the GUI (every few frames: it costs a small kernel + sync)
+            if (config.adaptive && ++frames_since_convergence_check >= 8)
+            {
+               frames_since_convergence_check = 0;
+               int converged = ::optixRendererCountConvergedPixels();
+               if (converged >= 0)
+                  convergence_pct = 100.0f * (float)converged / (float)(config.width * config.height);
+            }
+
+            // Heatmap overlay replaces the image with the per-pixel sample counts
+            if (show_heatmap && config.adaptive)
+               ::optixRendererRenderSampleHeatmap(display_image.data(), image_width, image_height, image_channels,
+                                                  std::max(1, current_samples));
 
             base_display_image = display_image;
             display_image = base_display_image;
@@ -608,7 +691,6 @@ class RendererOptiXProgressive : public IRenderer
          // MIS option snapshots
          bool old_mis_enabled           = mis_enabled;
          bool old_motion_gate_mis       = motion_gate_mis;
-         bool old_nee_first_bounce_only = nee_first_bounce_only;
          int  old_nee_stride            = nee_stride;
          bool old_use_sobol             = use_sobol;
 
@@ -636,8 +718,8 @@ class RendererOptiXProgressive : public IRenderer
                            &current_hdr_index,
                            hdr_count > 0 ? hdr_name_ptrs.data() : nullptr,
                            hdr_count,
-                           &mis_enabled, &motion_gate_mis, &nee_first_bounce_only, &nee_stride,
-                           &use_sobol);
+                           &mis_enabled, &motion_gate_mis, &nee_stride,
+                           &use_sobol, &motion_quality);
 
          if (auto_orbit != camera_control.isAutoOrbitEnabled())
             camera_control.setAutoOrbit(auto_orbit);
@@ -684,19 +766,15 @@ class RendererOptiXProgressive : public IRenderer
             camera_changed = true;
 
          // MIS option changes — push updated constants to GPU and restart accumulation
-         if (nee_first_bounce_only != old_nee_first_bounce_only || nee_stride != old_nee_stride)
+         if (nee_stride != old_nee_stride)
          {
-            ::setOptiXNEEFirstBounceOnly(nee_first_bounce_only);
             ::setOptiXNEEStride(nee_stride);
             camera_changed = true;
          }
          if (mis_enabled != old_mis_enabled || motion_gate_mis != old_motion_gate_mis)
             camera_changed = true;
          if (use_sobol != old_use_sobol)
-         {
-            ::setOptiXSobolSampler(use_sobol);
-            camera_changed = true;
-         }
+            camera_changed = true; // applied through FrameConfig on the next frame
 
          // Arrow overlay removed (CPU renderer archived on legacy/cpu-renderer branch)
       }
@@ -711,11 +789,13 @@ class RendererOptiXProgressive : public IRenderer
  private:
    Settings settings_{};
 
-   void renderBatch(const CameraFrame &frame, std::vector<float> &accum_buffer, RenderTargetView display_target,
-                    int &current_samples, int max_samples, int samples_per_batch, float gamma,
-                    bool is_moving, RenderContext &context, int num_materials,
-                    float background_intensity, bool dof_enabled, float dof_aperture, float dof_focus_distance,
-                    float light_intensity, float metal_fuzziness, float glass_ior_multiplier)
+   /// Trace one batch at render_width x render_height (may be smaller than the display while the
+   /// camera moves) and convert the accumulation buffer into the full-size display image.
+   void renderBatch(const CameraFrame &frame, int render_width, int render_height, int depth,
+                    RenderTargetView display_target, int &current_samples, int max_samples, int samples_per_batch,
+                    float gamma, RenderContext &context, int num_materials, float background_intensity,
+                    bool dof_enabled, float dof_aperture, float dof_focus_distance, float light_intensity,
+                    float metal_fuzziness, float glass_ior_multiplier)
    {
       // If we've already reached or exceeded the maximum, do not render more samples.
       if (current_samples >= max_samples) return;
@@ -725,26 +805,30 @@ class RendererOptiXProgressive : public IRenderer
       const int samples_before_batch = current_samples; // total BEFORE adding this batch
       const int new_total_samples   = current_samples + actual_samples;
 
-      const int depth = frame.max_depth;
+      // Re-grid the camera's pixel lattice for the render resolution: same viewport, coarser
+      // pixels. pixel00 is the centre of pixel (0,0); the viewport corner is pixel00 - (du+dv)/2.
+      const double sx = static_cast<double>(frame.image_width) / render_width;
+      const double sy = static_cast<double>(frame.image_height) / render_height;
+      const Vec3 du = frame.pixel_delta_u * sx;
+      const Vec3 dv = frame.pixel_delta_v * sy;
+      const Vec3 corner = frame.pixel00_loc - 0.5 * frame.pixel_delta_u - 0.5 * frame.pixel_delta_v;
+      const Vec3 pixel00 = corner + 0.5 * du + 0.5 * dv;
 
       unsigned long long ray_count = optixRendererLaunch(
-          frame.image_width, frame.image_height, num_materials,
+          render_width, render_height, num_materials,
           actual_samples, samples_before_batch, depth,
           static_cast<float>(frame.camera_center.x()), static_cast<float>(frame.camera_center.y()),
           static_cast<float>(frame.camera_center.z()),
-          static_cast<float>(frame.pixel00_loc.x()), static_cast<float>(frame.pixel00_loc.y()),
-          static_cast<float>(frame.pixel00_loc.z()),
-          static_cast<float>(frame.pixel_delta_u.x()), static_cast<float>(frame.pixel_delta_u.y()),
-          static_cast<float>(frame.pixel_delta_u.z()),
-          static_cast<float>(frame.pixel_delta_v.x()), static_cast<float>(frame.pixel_delta_v.y()),
-          static_cast<float>(frame.pixel_delta_v.z()),
+          static_cast<float>(pixel00.x()), static_cast<float>(pixel00.y()), static_cast<float>(pixel00.z()),
+          static_cast<float>(du.x()), static_cast<float>(du.y()), static_cast<float>(du.z()),
+          static_cast<float>(dv.x()), static_cast<float>(dv.y()), static_cast<float>(dv.z()),
           static_cast<float>(frame.u.x()), static_cast<float>(frame.u.y()), static_cast<float>(frame.u.z()),
           static_cast<float>(frame.v.x()), static_cast<float>(frame.v.y()), static_cast<float>(frame.v.z()),
           background_intensity, dof_enabled, dof_aperture, dof_focus_distance,
           light_intensity, metal_fuzziness, glass_ior_multiplier);
 
-      // GPU-side gamma correction: directly converts float4 accum buffer to uint8
-      // display image on the GPU, avoiding the expensive float4 D2H + host conversion.
+      // GPU-side gamma correction (and upscale when rendering at reduced resolution): converts the
+      // float4 accum buffer straight to the uint8 display image, no float4 D2H + host conversion.
       optixRendererConvertAccumToDisplay(display_target.pixels->data(), frame.image_width, frame.image_height,
                                          display_target.channels, new_total_samples, gamma);
 

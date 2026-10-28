@@ -33,7 +33,6 @@ extern __constant__ float g_golf_dimple_depth;
 
 // MIS / NEE runtime controls
 extern __constant__ bool g_mis_enabled;           ///< Global MIS toggle
-extern __constant__ bool g_nee_first_bounce_only;  ///< Option B: NEE on first bounce only
 extern __constant__ int  g_nee_stride;             ///< Option C: NEE every N samples
 
 // Forward declarations for golf-ball helpers implemented in shader_golf.cu
@@ -1272,12 +1271,11 @@ __device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scen
          bool is_delta = is_delta_material(rec.material);
          if (g_mis_enabled && !is_delta && scene.num_lights > 0)
          {
-            // Option B: restrict NEE to the first path bounce
-            bool do_nee = (bounce == 0 || !g_nee_first_bounce_only);
-
-            // Option C: NEE every g_nee_stride samples; scale contribution to stay unbiased
+            // First bounce always does NEE; deeper bounces 1 of every g_nee_stride samples
+            // (contribution x stride, unbiased). Striding bounce 0 shows as speckle at low spp.
+            bool do_nee = true;
             float nee_scale = 1.0f;
-            if (do_nee && g_nee_stride > 1)
+            if (bounce > 0 && g_nee_stride > 1)
             {
                do_nee = ((sample_n % (uint32_t)g_nee_stride) == 0u);
                nee_scale = (float)g_nee_stride;

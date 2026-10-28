@@ -35,7 +35,6 @@ extern "C"
    void optixRendererCleanup();
    void setOptiXSobolSampler(bool use_sobol);
    void setOptiXMISEnabled(bool enabled);
-   void setOptiXNEEFirstBounceOnly(bool enabled);
    void setOptiXNEEStride(int stride);
 }
 

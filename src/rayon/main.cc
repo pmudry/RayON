@@ -75,9 +75,8 @@ struct ProgramArgs
    bool use_sobol = true; // Sobol' quasi-random sampler (false = classic PCG)
    // MIS / NEE options
    bool mis_enabled           = true;
-   bool motion_gate_mis       = true;
-   bool nee_first_bounce_only = false;
-   int  nee_stride            = 1;
+   bool motion_gate_mis       = false;
+   int  nee_stride            = 3;
    const char *scene_file = nullptr;
    const char *theme = nullptr;
 };
@@ -86,7 +85,8 @@ void dumpHelp()
 {
    cout << "Options:\n";
    cout << "  -h, --help, /?         Show this help message\n";
-   cout << "  -m <method>            Rendering method: 2=CUDA offline, 3=CUDA interactive (default: 3)\n";
+   cout << "  -m <method>            Rendering method: 2=CUDA offline, 3=CUDA interactive,\n"
+           "                         4=OptiX offline, 5=OptiX interactive (default: 5 when built with OptiX, else 3)\n";
    cout << "                         4=OptiX offline, 5=OptiX interactive (if built with OptiX)\n";
    cout << "  --menu                 Show interactive method selection menu\n";
    cout << "  -r <WxH>               Arbitrary resolution, e.g. 1920x1080 or 800x600\n";
@@ -107,9 +107,9 @@ void dumpHelp()
    cout << "  --theme <name>            GUI theme: light, classic, nord, dracula, gruvbox, catppuccin\n";
    cout << "MIS / NEE options (GPU modes 2, 3, 5):\n";
    cout << "  --no-mis                  Disable Multiple-Importance Sampling (max throughput, noisier)\n";
-   cout << "  --no-motion-gate-mis      Keep MIS on during camera motion (disable Option A auto-gate; interactive only)\n";
-   cout << "  --nee-first-bounce        Restrict NEE shadow rays to the first path bounce (Option B)\n";
-   cout << "  --nee-stride <N>          Do NEE on 1 of every N samples, contribution \xc3\x97N (Option C; 1=always)\n";
+   cout << "  --motion-gate-mis         Auto-disable MIS while the camera moves (interactive only; off by default)\n";
+   cout << "  --nee-stride <N>          Beyond the first bounce, do NEE on 1 of every N samples, contribution \xc3\x97N\n"
+           "                            (default: 3; 1=every sample). The first bounce always does NEE.\n";
 }
 
 ProgramArgs parseInput(int argc, char *argv[])
@@ -211,13 +211,9 @@ ProgramArgs parseInput(int argc, char *argv[])
       {
          args.mis_enabled = false;
       }
-      else if (strcmp(argv[i], "--no-motion-gate-mis") == 0)
+      else if (strcmp(argv[i], "--motion-gate-mis") == 0)
       {
-         args.motion_gate_mis = false;
-      }
-      else if (strcmp(argv[i], "--nee-first-bounce") == 0)
-      {
-         args.nee_first_bounce_only = true;
+         args.motion_gate_mis = true;
       }
       else if (strcmp(argv[i], "--nee-stride") == 0 && i + 1 < argc)
       {
@@ -323,7 +319,7 @@ int main(int argc, char *argv[])
    {
       // Choose rendering method
       cout << "Choose rendering method:" << "\n";
-      cout << "\t2. CUDA GPU (default)" << "\n";
+      cout << "\t2. CUDA GPU" << "\n";
 #ifdef SDL2_FOUND
       cout << "\t3. CUDA GPU with interactive SDL display" << "\n";
 #endif
@@ -331,7 +327,7 @@ int main(int argc, char *argv[])
       cout << "\t4. OptiX GPU (hardware RT cores)" << "\n";
 #endif
 #if defined(SDL2_FOUND) && defined(OPTIX_FOUND)
-      cout << "\t5. OptiX GPU with interactive SDL display" << "\n";
+      cout << "\t5. OptiX GPU with interactive SDL display (default)" << "\n";
 #endif
       cout << "Enter choice (2"
 #ifdef SDL2_FOUND
@@ -354,8 +350,12 @@ int main(int argc, char *argv[])
    }
    else
    {
-      // Default: interactive when SDL2 is available, offline CUDA otherwise
-#ifdef SDL2_FOUND
+      // Default: OptiX when built with it (interactive when SDL2 is available), CUDA otherwise
+#if defined(SDL2_FOUND) && defined(OPTIX_FOUND)
+      renderType = 5;
+#elif defined(OPTIX_FOUND)
+      renderType = 4;
+#elif defined(SDL2_FOUND)
       renderType = 3;
 #else
       renderType = 2;
@@ -415,7 +415,6 @@ int main(int argc, char *argv[])
       settings.theme = parseThemeName(args.theme);
       settings.mis_enabled           = args.mis_enabled;
       settings.motion_gate_mis       = args.motion_gate_mis;
-      settings.nee_first_bounce_only = args.nee_first_bounce_only;
       settings.nee_stride            = args.nee_stride;
       renderer.setSettings(settings);
       coordinator.render(renderer, localImage);
@@ -428,7 +427,6 @@ int main(int argc, char *argv[])
       cout << "Using OptiX GPU rendering (hardware RT cores)..." << "\n";
       // Apply MIS/NEE settings to the OptiX renderer state before rendering.
       ::setOptiXMISEnabled(args.mis_enabled);
-      ::setOptiXNEEFirstBounceOnly(args.nee_first_bounce_only);
       ::setOptiXNEEStride(args.nee_stride);
       RendererOptiX renderer;
       coordinator.render(renderer, localImage);
@@ -449,7 +447,6 @@ int main(int argc, char *argv[])
       settings.theme = parseThemeName(args.theme);
       settings.mis_enabled           = args.mis_enabled;
       settings.motion_gate_mis       = args.motion_gate_mis;
-      settings.nee_first_bounce_only = args.nee_first_bounce_only;
       settings.nee_stride            = args.nee_stride;
       renderer.setSettings(settings);
       coordinator.render(renderer, localImage);
@@ -461,7 +458,6 @@ int main(int argc, char *argv[])
       cout << "Using CUDA GPU rendering..." << "\n";
       // Apply MIS/NEE settings to the CUDA global constants before rendering.
       ::setMISEnabled(args.mis_enabled);
-      ::setNEEFirstBounceOnly(args.nee_first_bounce_only);
       ::setNEEStride(args.nee_stride);
       RendererCUDA renderer;
       coordinator.render(renderer, localImage);

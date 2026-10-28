@@ -26,6 +26,7 @@
 #define STB_IMAGE_RESIZE_IMPLEMENTATION
 #include "external/stb_image_resize2.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <cstdio>
@@ -62,6 +63,17 @@ enum class VisualizationMode : int
 
 static const char *visualizationModeNames[] = {"Normal Render", "Show Normals"};
 
+/// Quality reductions applied while the camera is moving (interactive OptiX renderer).
+/// Accumulation restarts on every camera change, so none of these affect the converged image.
+struct MotionQualitySettings
+{
+   bool half_resolution  = true; ///< Render at half width/height and upscale for display (~4x fewer paths)
+   bool single_sample    = false; ///< One sample per frame instead of the batch size
+   bool fast_sampler     = false; ///< PCG instead of Sobol (cheaper per sample)
+   bool limit_depth      = false; ///< Cap the bounce depth at motion_max_depth (slightly darkens indirect light)
+   int  motion_max_depth = 4;
+};
+
 class SDLGuiHandler
 {
  public:
@@ -85,8 +97,9 @@ class SDLGuiHandler
 
       std::string window_title =
           "RayON v" + std::string(constants::version) + (backend_name.empty() ? "" : " [" + backend_name + "]");
+      // Resizable: the render keeps its pixel count, the image is scaled (letterboxed) to the window
       window = SDL_CreateWindow(window_title.c_str(), SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, image_width,
-                                image_height, SDL_WINDOW_SHOWN);
+                                image_height, SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
       if (!window)
       {
          cerr << "Window creation failed: " << SDL_GetError() << "\n";
@@ -206,12 +219,13 @@ class SDLGuiHandler
                       int *hdr_env_index = nullptr, const char *const *hdr_env_names = nullptr,
                       int hdr_env_count = 0,
                       bool *mis_enabled = nullptr, bool *motion_gate_mis = nullptr,
-                      bool *nee_first_bounce_only = nullptr, int *nee_stride = nullptr,
-                      bool *use_sobol = nullptr)
+                      int *nee_stride = nullptr, bool *use_sobol = nullptr,
+                      MotionQualitySettings *motion_quality = nullptr)
    {
       SDL_UpdateTexture(texture, nullptr, image.data(), image_width * image_channels);
       SDL_RenderClear(renderer);
-      SDL_RenderCopy(renderer, texture, nullptr, nullptr);
+      const SDL_Rect image_rect = imageDestRect();
+      SDL_RenderCopy(renderer, texture, nullptr, &image_rect);
 
       // Begin ImGui frame
       ImGui_ImplSDLRenderer2_NewFrame();
@@ -224,7 +238,7 @@ class SDLGuiHandler
          // Keep a stable panel width so opening sections doesn't cause horizontal jitter.
          const float panel_width = 300.0f;
          // Cap height so the panel never overlaps the SPP/s counter at page bottom.
-         const float max_panel_height = static_cast<float>(image_height) - 80.0f;
+         const float max_panel_height = ImGui::GetIO().DisplaySize.y - 80.0f;
          ImGui::SetNextWindowSizeConstraints(ImVec2(panel_width, 0.0f), ImVec2(panel_width, max_panel_height));
          if (window_collapse_requested)
          {
@@ -464,26 +478,47 @@ class SDLGuiHandler
                            if (!mis_ok) ImGui::EndDisabled();
                         }
 
-                        if (nee_first_bounce_only)
-                        {
-                           if (!mis_ok) ImGui::BeginDisabled();
-                           ImGui::Checkbox("NEE first bounce only##nee_b0", nee_first_bounce_only);
-                           ImGui::SetItemTooltip("Option B: restrict shadow rays to the first path bounce.\n"
-                                                "Cuts shadow-ray cost ~50%% with little quality loss\n"
-                                                "in most scenes.");
-                           if (!mis_ok) ImGui::EndDisabled();
-                        }
-
                         if (nee_stride)
                         {
                            if (!mis_ok) ImGui::BeginDisabled();
                            pushSliderWidth();
                            ImGui::SliderInt("NEE stride##nee_stride", nee_stride, 1, 8);
-                           ImGui::SetItemTooltip("Option C: perform NEE on 1 out of every N samples\n"
-                                                "(contribution \xc3\x97 N to stay unbiased).\n"
-                                                "1 = every sample (full quality), 2-4 = interactive sweet spot.");
+                           ImGui::SetItemTooltip("The first bounce always traces a shadow ray; deeper bounces\n"
+                                                "do it on 1 out of every N samples (contribution \xc3\x97 N, unbiased).\n"
+                                                "1 = every sample (lowest noise), 3 = default, higher = faster.");
                            ImGui::PopItemWidth();
                            if (!mis_ok) ImGui::EndDisabled();
+                        }
+                        ImGui::TreePop();
+                     }
+                  }
+
+                  // --- Quality reductions while the camera moves (OptiX interactive) ---
+                  if (motion_quality)
+                  {
+                     ImGui::Separator();
+                     ImGui::SetNextItemOpen(true, ImGuiCond_Once);
+                     if (ImGui::TreeNode("During camera motion"))
+                     {
+                        ImGui::TextDisabled("Accumulation restarts on every move, so these never affect the final image.");
+                        ImGui::Checkbox("Half resolution##mq_res", &motion_quality->half_resolution);
+                        ImGui::SetItemTooltip("Render at half width and height while moving and upscale\n"
+                                             "for display: about 4x fewer paths per frame.");
+                        ImGui::Checkbox("One sample per frame##mq_spp", &motion_quality->single_sample);
+                        ImGui::SetItemTooltip("Trace a single sample per pixel per frame instead of the\n"
+                                             "batch size while moving.");
+                        ImGui::Checkbox("Fast sampler (PCG)##mq_pcg", &motion_quality->fast_sampler);
+                        ImGui::SetItemTooltip("Use the cheaper PCG random sampler instead of Sobol while moving.");
+                        ImGui::Checkbox("Limit bounce depth##mq_depth", &motion_quality->limit_depth);
+                        ImGui::SetItemTooltip("Cap the number of bounces while moving (~10%% faster).\n"
+                                             "Indirect light is slightly darker until the camera stops,\n"
+                                             "which shows as a small brightness step.");
+                        if (motion_quality->limit_depth)
+                        {
+                           ImGui::SameLine();
+                           pushSliderWidth();
+                           ImGui::SliderInt("##mq_depth_val", &motion_quality->motion_max_depth, 1, 8);
+                           ImGui::PopItemWidth();
                         }
                         ImGui::TreePop();
                      }
@@ -710,8 +745,39 @@ class SDLGuiHandler
    {
       if (show_logo && logo_texture)
       {
+         updateLogoLayout();
          SDL_RenderCopy(renderer, logo_texture, nullptr, &logo_rect);
       }
+   }
+
+   /// Current size of the drawable area (follows window resizes)
+   void outputSize(int &w, int &h) const
+   {
+      w = image_width;
+      h = image_height;
+      if (renderer)
+         SDL_GetRendererOutputSize(renderer, &w, &h);
+   }
+
+   /// Largest centred rectangle with the image's aspect ratio that fits in the window
+   SDL_Rect imageDestRect() const
+   {
+      int out_w, out_h;
+      outputSize(out_w, out_h);
+      SDL_Rect r;
+      if ((long long)out_w * image_height <= (long long)out_h * image_width)
+      {
+         r.w = out_w;
+         r.h = std::max(1, (int)((long long)out_w * image_height / image_width));
+      }
+      else
+      {
+         r.h = out_h;
+         r.w = std::max(1, (int)((long long)out_h * image_width / image_height));
+      }
+      r.x = (out_w - r.w) / 2;
+      r.y = (out_h - r.h) / 2;
+      return r;
    }
 
    void present() { SDL_RenderPresent(renderer); }
@@ -950,8 +1016,10 @@ class SDLGuiHandler
          return;
 
       const int margin = 10;
-      logo_rect.x = image_width - logo_rect.w - margin;
-      logo_rect.y = image_height - logo_rect.h - margin;
+      int out_w, out_h;
+      outputSize(out_w, out_h);
+      logo_rect.x = out_w - logo_rect.w - margin;
+      logo_rect.y = out_h - logo_rect.h - margin;
    }
 
    // Draw a stable SPP/s counter in the bottom-left using the foreground draw list.
@@ -1006,7 +1074,7 @@ class SDLGuiHandler
       const float box_w  = spps_box_w;
       const float box_h  = spps_box_h;
       const float box_x     = margin;
-      const float box_y     = static_cast<float>(image_height) - box_h - margin;
+      const float box_y     = ImGui::GetIO().DisplaySize.y - box_h - margin;
 
       // --- hover tooltip: show description when mouse is over the box ---
       const ImVec2 mouse = ImGui::GetIO().MousePos;
