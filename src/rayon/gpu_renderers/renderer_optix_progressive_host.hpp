@@ -172,7 +172,7 @@ class RendererOptiXProgressive : public IRenderer
       bool show_spps_counter = true;
       bool show_heatmap = false;
       bool adaptive_sampling_enabled = settings_.adaptive_sampling;
-      const int min_adaptive_samples = 32;  // Don't check convergence before this many samples
+      const int min_adaptive_samples = 64;  // Don't check convergence before this many samples
       float adaptive_threshold = 3.16e-5f;  // Relative luminance change threshold (~10^-4.5)
       float convergence_pct = 0.0f;
       int frames_since_convergence_check = 0;
