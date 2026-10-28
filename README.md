@@ -97,6 +97,17 @@ make -j && ./rayon -m 2
 
 Rendered frames are written to `rendered_images/` with timestamped filenames such as `output_2025-11-15_14-22-09.png`. Each run produces a new PNG (timestamp uses local time, second precision), so you can sort files chronologically without overwriting previous renders.
 
+### Interactive mode on a remote GPU server
+
+The interactive window does not work through `ssh -X` (SDL needs a local OpenGL context, and its software fallback trips on MIT-SHM over the network). Use a VNC session on the server instead:
+
+```bash
+sudo apt install tigervnc-standalone-server openbox   # once, on the server
+scripts/rayon_vnc.sh                                  # 1080p by default, extra args go to rayon
+```
+
+The script starts a headless VNC server sized to the render resolution, runs `rayon` inside it and prints the `vncviewer -via user@host localhost:N` command to connect from your machine (TigerVNC viewer tunnels through SSH itself). `Ctrl-C` stops rayon and the VNC server together.
+
 ## Within VSCode
 
 Install extension `clangd` from `LLVM`. To make `clangd` work, ensure `compile_commands.json` is present (generated automatically from `CMakeLists.txt` during the `cmake` phase above). This project uses `.hpp` for C++ headers as a convention; keeping that convention helps tooling and includes stay consistent.
