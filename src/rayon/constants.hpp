@@ -31,5 +31,10 @@ namespace constants
     // are touched; uniformly bright regions keep their value, and the accumulation is untouched.
     inline constexpr float MOTION_DESPECKLE_RATIO = 2.0f;
     inline constexpr float MOTION_DESPECKLE_FLOOR = 0.02f;
+    // Resolution stages around camera motion (OptiX interactive): 1/motion_scale while moving, then
+    // half resolution until MOTION_REFINE_SAMPLES have accumulated, then full. Each step hands its
+    // image over as a display prior that fades out over MOTION_HANDOVER_FADE_SAMPLES samples.
+    inline constexpr int   MOTION_REFINE_SAMPLES         = 32;
+    inline constexpr float MOTION_HANDOVER_FADE_SAMPLES  = 64.0f;
     inline constexpr int INTERACTIVE_MAX_SPP = 100000;       // Max SPP budget for interactive accumulation
 };

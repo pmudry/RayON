@@ -113,6 +113,7 @@ struct OptixState
    // here and blended into the display with a weight that fades to zero as new samples arrive.
    // Display-only: the accumulation buffer itself stays unbiased.
    float4 *d_prior        = nullptr;
+   float4 *d_resolved     = nullptr; // display pass 1 output (render resolution, linear)
    bool    prior_active   = false;
    float   prior_strength = 0.0f; // weight in "samples" at the start of the fade
 
@@ -992,6 +993,8 @@ extern "C" void optixRendererResetAccum(int width, int height)
       CUDA_CHECK(cudaMalloc(&g_state.d_conv_streak, (size_t)width * height));
       if (g_state.d_prior) CUDA_CHECK(cudaFree(g_state.d_prior));
       CUDA_CHECK(cudaMalloc(&g_state.d_prior, (size_t)width * height * sizeof(float4)));
+      if (g_state.d_resolved) CUDA_CHECK(cudaFree(g_state.d_resolved));
+      CUDA_CHECK(cudaMalloc(&g_state.d_resolved, (size_t)width * height * sizeof(float4)));
    }
    g_state.prior_active = false;
 
@@ -1365,27 +1368,25 @@ __device__ __forceinline__ float3 optixAccumPixelMean(const float4 *__restrict__
 
 __device__ __forceinline__ float optixLuminance601(float3 c) { return 0.299f * c.x + 0.587f * c.y + 0.114f * c.z; }
 
-__global__ void optixGammaCorrectKernel(const float4 *__restrict__ accum_buffer,
-                                         const int *__restrict__ pixel_sample_counts,
-                                         const float4 *__restrict__ prior, float prior_strength,
-                                         unsigned char *display_image, int render_width, int render_height,
-                                         int width, int height, int num_samples, int channels, float gamma,
-                                         bool despeckle, float despeckle_ratio, float despeckle_floor)
+// Pass 1 (render resolution): mean radiance per pixel with the hand-over prior blended in and,
+// for motion frames, the despeckle applied. Writes linear float4 so the display pass can upscale.
+__global__ void optixResolveKernel(const float4 *__restrict__ accum_buffer,
+                                   const int *__restrict__ pixel_sample_counts,
+                                   const float4 *__restrict__ prior, float prior_strength, float4 *resolved,
+                                   int render_width, int render_height, int num_samples, bool despeckle,
+                                   float despeckle_ratio, float despeckle_floor)
 {
-   int x = blockIdx.x * blockDim.x + threadIdx.x;
-   int y = blockIdx.y * blockDim.y + threadIdx.y;
-   if (x >= width || y >= height)
+   int rx = blockIdx.x * blockDim.x + threadIdx.x;
+   int ry = blockIdx.y * blockDim.y + threadIdx.y;
+   if (rx >= render_width || ry >= render_height)
       return;
 
-   int rx = (render_width == width) ? x : min(x * render_width / width, render_width - 1);
-   int ry = (render_height == height) ? y : min(y * render_height / height, render_height - 1);
-   int pixel_idx = y * width + x;
    float3 mean = optixAccumPixelMean(accum_buffer, pixel_sample_counts, prior, prior_strength,
                                      ry * render_width + rx, num_samples);
 
    // Motion-frame despeckle: a frame shown on its own holds only a few samples per pixel, so one
    // sample of a few units is a bright dot. Scale a pixel down when it is far brighter than its
-   // neighbourhood (in render pixels); genuinely bright regions have bright neighbours and are left alone.
+   // neighbourhood; genuinely bright regions have bright neighbours and are left alone.
    if (despeckle)
    {
       float lum = optixLuminance601(mean);
@@ -1406,13 +1407,49 @@ __global__ void optixGammaCorrectKernel(const float4 *__restrict__ accum_buffer,
          mean = make_float3(mean.x * s, mean.y * s, mean.z * s);
       }
    }
+   resolved[ry * render_width + rx] = make_float4(mean.x, mean.y, mean.z, 0.0f);
+}
+
+// Pass 2 (display resolution): gamma-encode to 8 bit. When the render resolution is lower than the
+// display, sample the resolved image bilinearly so reduced-resolution frames look soft rather than
+// blocky and the step to the next resolution stage is less visible.
+__global__ void optixGammaCorrectKernel(const float4 *__restrict__ resolved, unsigned char *display_image,
+                                         int render_width, int render_height, int width, int height,
+                                         int channels, float gamma)
+{
+   int x = blockIdx.x * blockDim.x + threadIdx.x;
+   int y = blockIdx.y * blockDim.y + threadIdx.y;
+   if (x >= width || y >= height)
+      return;
+
+   float3 mean;
+   if (render_width == width && render_height == height)
+   {
+      float4 v = resolved[y * width + x];
+      mean = make_float3(v.x, v.y, v.z);
+   }
+   else
+   {
+      float fx = ((float)x + 0.5f) * (float)render_width / (float)width - 0.5f;
+      float fy = ((float)y + 0.5f) * (float)render_height / (float)height - 0.5f;
+      fx = fminf(fmaxf(fx, 0.0f), (float)(render_width - 1));
+      fy = fminf(fmaxf(fy, 0.0f), (float)(render_height - 1));
+      int x0 = (int)fx, y0 = (int)fy;
+      int x1 = min(x0 + 1, render_width - 1), y1 = min(y0 + 1, render_height - 1);
+      float tx = fx - (float)x0, ty = fy - (float)y0;
+      float4 a = resolved[y0 * render_width + x0], b = resolved[y0 * render_width + x1];
+      float4 c = resolved[y1 * render_width + x0], d = resolved[y1 * render_width + x1];
+      float w00 = (1.0f - tx) * (1.0f - ty), w10 = tx * (1.0f - ty), w01 = (1.0f - tx) * ty, w11 = tx * ty;
+      mean = make_float3(a.x * w00 + b.x * w10 + c.x * w01 + d.x * w11, a.y * w00 + b.y * w10 + c.y * w01 + d.y * w11,
+                         a.z * w00 + b.z * w10 + c.z * w01 + d.z * w11);
+   }
    float inv_gamma = 1.0f / gamma;
 
    float r = fminf(powf(fmaxf(mean.x, 0.0f), inv_gamma), 0.999f);
    float g = fminf(powf(fmaxf(mean.y, 0.0f), inv_gamma), 0.999f);
    float b = fminf(powf(fmaxf(mean.z, 0.0f), inv_gamma), 0.999f);
 
-   int image_idx = pixel_idx * channels;
+   int image_idx = (y * width + x) * channels;
    display_image[image_idx + 0] = (unsigned char)(256.0f * r);
    display_image[image_idx + 1] = (unsigned char)(256.0f * g);
    display_image[image_idx + 2] = (unsigned char)(256.0f * b);
@@ -1455,6 +1492,7 @@ extern "C" void optixRendererConvertAccumToDisplay(unsigned char *display_image,
    ensureDisplayBuffers(display_size);
 
    dim3 threads(32, 8);
+   dim3 rblocks((render_width + threads.x - 1) / threads.x, (render_height + threads.y - 1) / threads.y);
    dim3 blocks((width + threads.x - 1) / threads.x, (height + threads.y - 1) / threads.y);
 
    cudaStream_t stream = getOptiXStream();
@@ -1462,10 +1500,11 @@ extern "C" void optixRendererConvertAccumToDisplay(unsigned char *display_image,
    // Per-pixel counts are maintained after every launch, so they are always the right normalisation
    const int *counts = g_state.d_pixel_sample_counts;
    const float4 *prior = g_state.prior_active ? g_state.d_prior : nullptr;
-   optixGammaCorrectKernel<<<blocks, threads, 0, stream>>>(g_state.d_accum_buffer, counts, prior,
-                                                            g_state.prior_strength, g_state.d_display, render_width,
-                                                            render_height, width, height, num_samples, channels,
-                                                            gamma, despeckle, despeckle_ratio, despeckle_floor);
+   optixResolveKernel<<<rblocks, threads, 0, stream>>>(g_state.d_accum_buffer, counts, prior, g_state.prior_strength,
+                                                       g_state.d_resolved, render_width, render_height, num_samples,
+                                                       despeckle, despeckle_ratio, despeckle_floor);
+   optixGammaCorrectKernel<<<blocks, threads, 0, stream>>>(g_state.d_resolved, g_state.d_display, render_width,
+                                                            render_height, width, height, channels, gamma);
 
    // Async D2H copy via pinned memory, then single stream sync
    cudaMemcpyAsync(g_state.pinned_display, g_state.d_display, display_size, cudaMemcpyDeviceToHost, stream);
@@ -1647,6 +1686,8 @@ extern "C" void optixRendererCleanup()
       CUDA_CHECK(cudaFree(g_state.d_converged_count));
    if (g_state.d_prior)
       CUDA_CHECK(cudaFree(g_state.d_prior));
+   if (g_state.d_resolved)
+      CUDA_CHECK(cudaFree(g_state.d_resolved));
    if (g_state.d_golf_points)
       CUDA_CHECK(cudaFree(g_state.d_golf_points));
    if (g_state.d_pattern_points)

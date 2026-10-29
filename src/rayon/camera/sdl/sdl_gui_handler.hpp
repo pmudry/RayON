@@ -67,7 +67,8 @@ static const char *visualizationModeNames[] = {"Normal Render", "Show Normals"};
 /// Accumulation restarts on every camera change, so none of these affect the converged image.
 struct MotionQualitySettings
 {
-   bool half_resolution  = true; ///< Render at half width/height and upscale for display (~4x fewer paths)
+   int  motion_scale     = 4;    ///< Render at 1/motion_scale width and height while moving (1, 2 or 4)
+   bool refine_half      = true; ///< After the motion, accumulate at half resolution before going full
    bool single_sample    = false; ///< One sample per frame instead of the batch size
    bool fast_sampler     = false; ///< PCG instead of Sobol (cheaper per sample)
    bool limit_depth      = false; ///< Cap the bounce depth at motion_max_depth (slightly darkens indirect light)
@@ -525,9 +526,22 @@ class SDLGuiHandler
                      if (ImGui::TreeNode("During camera motion"))
                      {
                         ImGui::TextDisabled("Accumulation restarts on every move, so these never affect the final image.");
-                        ImGui::Checkbox("Half resolution##mq_res", &motion_quality->half_resolution);
-                        ImGui::SetItemTooltip("Render at half width and height while moving and upscale\n"
-                                             "for display: about 4x fewer paths per frame.");
+                        {
+                           int res_idx = motion_quality->motion_scale >= 4 ? 2 : (motion_quality->motion_scale == 2 ? 1 : 0);
+                           pushSliderWidth();
+                           if (ImGui::Combo("Resolution##mq_res", &res_idx, "Full\0Half\0Quarter\0"))
+                              motion_quality->motion_scale = (res_idx == 2) ? 4 : (res_idx == 1 ? 2 : 1);
+                           ImGui::PopItemWidth();
+                           ImGui::SetItemTooltip("Render at this fraction of the width and height while moving\n"
+                                                 "(quarter = 16x fewer paths per frame), upscaled for display.");
+                           if (motion_quality->motion_scale >= 4)
+                           {
+                              ImGui::Checkbox("Refine at half before full##mq_refine", &motion_quality->refine_half);
+                              ImGui::SetItemTooltip("When the camera stops, accumulate a few samples at half\n"
+                                                    "resolution before switching to full, so the picture sharpens\n"
+                                                    "in two steps. Each step fades in over the previous one.");
+                           }
+                        }
                         ImGui::Checkbox("One sample per frame##mq_spp", &motion_quality->single_sample);
                         ImGui::SetItemTooltip("Trace a single sample per pixel per frame instead of the\n"
                                              "batch size while moving.");
