@@ -496,15 +496,6 @@ class SDLGuiHandler
 
                         bool mis_ok = *mis_enabled;
 
-                        if (motion_gate_mis)
-                        {
-                           if (!mis_ok) ImGui::BeginDisabled();
-                           ImGui::Checkbox("Auto-disable during motion##mgm", motion_gate_mis);
-                           ImGui::SetItemTooltip("Option A: automatically disable MIS while the camera\n"
-                                                "is moving to maximise interactive FPS.\n"
-                                                "MIS resumes as soon as the camera stops.");
-                           if (!mis_ok) ImGui::EndDisabled();
-                        }
 
                         if (nee_stride)
                         {
@@ -520,68 +511,78 @@ class SDLGuiHandler
                         ImGui::TreePop();
                      }
                   }
+               }
+            }
 
-                  // --- Quality reductions while the camera moves (OptiX interactive) ---
+            // --- Camera Motion ---
+            // Everything that only applies while the camera moves (and the steps back to full
+            // quality once it stops). The accumulation restarts on every move, so none of this
+            // ever affects the final image.
+            if (motion_quality || motion_despeckle || motion_gate_mis)
+            {
+               if (reset_headers)
+                  ImGui::SetNextItemOpen(!collapse_headers);
+               if (ImGui::CollapsingHeader("Camera Motion"))
+               {
+                  ImGui::TextDisabled("Accumulation restarts on every move: none of this affects the final image.");
                   if (motion_quality)
                   {
-                     ImGui::Separator();
-                     ImGui::SetNextItemOpen(true, ImGuiCond_Once);
-                     if (ImGui::TreeNode("During camera motion"))
+                     ImGui::SeparatorText("Resolution");
+                     int res_idx = motion_quality->motion_scale >= 4 ? 2 : (motion_quality->motion_scale == 2 ? 1 : 0);
+                     pushSliderWidth();
+                     if (ImGui::Combo("While moving##mq_res", &res_idx, "Full\0Half\0Quarter\0"))
+                        motion_quality->motion_scale = (res_idx == 2) ? 4 : (res_idx == 1 ? 2 : 1);
+                     ImGui::PopItemWidth();
+                     ImGui::SetItemTooltip("Render at this fraction of the width and height while moving\n"
+                                           "(quarter = 16x fewer paths per frame), upscaled for display.");
+                     ImGui::Checkbox("Intermediate stages (1/2, 3/4)##mq_refine", &motion_quality->refine_stages);
+                     ImGui::SetItemTooltip("When the camera stops, climb through the standard resolutions\n"
+                                           "above the motion one (1/2 and 3/4) before going full, each\n"
+                                           "stage fading into the previous image.");
+                     pushSliderWidth();
+                     ImGui::SliderFloat("Stage length##mq_stage", &motion_quality->stage_seconds, 0.1f, 1.5f, "%.2f s");
+                     ImGui::SetItemTooltip("How long each intermediate resolution stage lasts.");
+                     ImGui::SliderFloat("Fade##mq_fade", &motion_quality->fade_seconds, 0.1f, 2.0f, "%.2f s");
+                     ImGui::SetItemTooltip("How long the previous image stays blended in after a stage change.");
+                     ImGui::SliderFloat("Motion cooldown##mq_cool", &motion_quality->cooldown_seconds, 0.05f, 0.5f, "%.2f s");
+                     ImGui::SetItemTooltip("Time after the last camera event before the camera counts as still.\n"
+                                           "Bridges the gaps between mouse or key-repeat events.");
+                     ImGui::PopItemWidth();
+
+                     ImGui::SeparatorText("Sampling while moving");
+                     ImGui::Checkbox("One sample per frame##mq_spp", &motion_quality->single_sample);
+                     ImGui::SetItemTooltip("Trace a single sample per pixel per frame instead of the\n"
+                                           "batch size while moving.");
+                     ImGui::Checkbox("Fast sampler (PCG)##mq_pcg", &motion_quality->fast_sampler);
+                     ImGui::SetItemTooltip("Use the cheaper PCG random sampler instead of Sobol while moving.");
+                     ImGui::Checkbox("Limit bounce depth##mq_depth", &motion_quality->limit_depth);
+                     ImGui::SetItemTooltip("Cap the number of bounces while moving (~10%% faster).\n"
+                                           "Indirect light is slightly darker until the camera stops,\n"
+                                           "which shows as a small brightness step.");
+                     if (motion_quality->limit_depth)
                      {
-                        ImGui::TextDisabled("Accumulation restarts on every move, so these never affect the final image.");
-                        {
-                           int res_idx = motion_quality->motion_scale >= 4 ? 2 : (motion_quality->motion_scale == 2 ? 1 : 0);
-                           pushSliderWidth();
-                           if (ImGui::Combo("Resolution##mq_res", &res_idx, "Full\0Half\0Quarter\0"))
-                              motion_quality->motion_scale = (res_idx == 2) ? 4 : (res_idx == 1 ? 2 : 1);
-                           ImGui::PopItemWidth();
-                           ImGui::SetItemTooltip("Render at this fraction of the width and height while moving\n"
-                                                 "(quarter = 16x fewer paths per frame), upscaled for display.");
-                           ImGui::Checkbox("Intermediate stages (1/2, 3/4)##mq_refine", &motion_quality->refine_stages);
-                           ImGui::SetItemTooltip("When the camera stops, climb through the standard resolutions\n"
-                                                 "above the motion one (1/2 and 3/4) before going full, each\n"
-                                                 "stage fading into the previous image.");
-                           pushSliderWidth();
-                           ImGui::SliderFloat("Stage length##mq_stage", &motion_quality->stage_seconds, 0.1f, 1.5f, "%.2f s");
-                           ImGui::SetItemTooltip("How long each intermediate resolution stage lasts.");
-                           ImGui::SliderFloat("Fade##mq_fade", &motion_quality->fade_seconds, 0.1f, 2.0f, "%.2f s");
-                           ImGui::SetItemTooltip("How long the previous image stays blended in after a stage change.");
-                           ImGui::SliderFloat("Motion cooldown##mq_cool", &motion_quality->cooldown_seconds, 0.05f, 0.5f, "%.2f s");
-                           ImGui::SetItemTooltip("Time after the last camera event before the camera counts as still.\n"
-                                                 "Bridges the gaps between mouse or key-repeat events.");
-                           ImGui::PopItemWidth();
-                        }
-                        ImGui::Checkbox("One sample per frame##mq_spp", &motion_quality->single_sample);
-                        ImGui::SetItemTooltip("Trace a single sample per pixel per frame instead of the\n"
-                                             "batch size while moving.");
-                        ImGui::Checkbox("Fast sampler (PCG)##mq_pcg", &motion_quality->fast_sampler);
-                        ImGui::SetItemTooltip("Use the cheaper PCG random sampler instead of Sobol while moving.");
-                        ImGui::Checkbox("Limit bounce depth##mq_depth", &motion_quality->limit_depth);
-                        ImGui::SetItemTooltip("Cap the number of bounces while moving (~10%% faster).\n"
-                                             "Indirect light is slightly darker until the camera stops,\n"
-                                             "which shows as a small brightness step.");
-                        if (motion_quality->limit_depth)
-                        {
-                           ImGui::SameLine();
-                           pushSliderWidth();
-                           ImGui::SliderInt("##mq_depth_val", &motion_quality->motion_max_depth, 1, 8);
-                           ImGui::PopItemWidth();
-                        }
-                        drawMotionDespeckle(motion_despeckle, motion_despeckle_ratio);
-                        ImGui::TreePop();
+                        ImGui::SameLine();
+                        pushSliderWidth();
+                        ImGui::SliderInt("##mq_depth_val", &motion_quality->motion_max_depth, 1, 8);
+                        ImGui::PopItemWidth();
                      }
                   }
-                  else if (motion_despeckle)
+                  if (motion_gate_mis)
                   {
-                     // CUDA interactive: no motion-quality block, show the despeckle controls on their own
-                     ImGui::Separator();
-                     ImGui::SetNextItemOpen(true, ImGuiCond_Once);
-                     if (ImGui::TreeNode("During camera motion"))
-                     {
-                        ImGui::TextDisabled("Display-only: the final image is never filtered.");
-                        drawMotionDespeckle(motion_despeckle, motion_despeckle_ratio);
-                        ImGui::TreePop();
-                     }
+                     if (!motion_quality)
+                        ImGui::SeparatorText("Sampling while moving");
+                     const bool mis_ok = mis_enabled ? *mis_enabled : true;
+                     if (!mis_ok) ImGui::BeginDisabled();
+                     ImGui::Checkbox("Disable MIS / NEE while moving##mgm", motion_gate_mis);
+                     ImGui::SetItemTooltip("Skip the shadow rays of next event estimation while the camera\n"
+                                           "moves, to spend the budget on throughput. MIS resumes as soon\n"
+                                           "as the camera stops.");
+                     if (!mis_ok) ImGui::EndDisabled();
+                  }
+                  if (motion_despeckle)
+                  {
+                     ImGui::SeparatorText("Display while moving");
+                     drawMotionDespeckle(motion_despeckle, motion_despeckle_ratio);
                   }
                }
             }
