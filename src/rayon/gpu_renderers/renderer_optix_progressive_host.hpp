@@ -170,13 +170,17 @@ class RendererOptiXProgressive : public IRenderer
       bool is_camera_moving = false;
       int  stage_index      = 0; // resolution stage after a motion (index into the stage fractions)
       // Frame-rate regulator state (motion frames only)
-      float dyn_fraction        = 0.5f;  // render fraction currently used while moving
+      float dyn_fraction        = 0.75f; // render fraction currently used while moving
       int   dyn_spp             = 0;     // samples per frame currently used while moving (0 = unset)
-      float motion_frame_ms     = 0.0f;  // smoothed whole-frame time of motion frames
+      float motion_k_ms         = 0.0f;  // smoothed render cost in ms per pixel-sample (motion frames)
       float motion_overhead_ms  = 0.0f;  // smoothed (frame - render) time: GUI, upload, present
       float last_render_ms      = 0.0f;  // render time of the previous frame
+      int   last_motion_pixels  = 0;     // pixels and samples of the previous motion frame (for k)
+      int   last_motion_spp     = 0;
       bool  last_frame_motion   = false; // the previous frame was a motion frame (its timing is usable)
       int   headroom_frames     = 0;     // consecutive motion frames with spare time
+      auto  last_raise_time     = std::chrono::high_resolution_clock::now() - std::chrono::seconds(10);
+      auto  raise_block_until   = last_raise_time;
       auto last_camera_change_time = std::chrono::high_resolution_clock::now();
       auto stage_start_time        = last_camera_change_time; // when the current render config was applied
 
@@ -587,49 +591,72 @@ class RendererOptiXProgressive : public IRenderer
          int   motion_spp  = motion_quality.single_sample ? 1 : samples_per_batch;
          if (motion_quality.hold_target_fps)
          {
-            // Regulator: hold target_fps while moving. Two levers, samples per frame first (noise is
-            // cheaper to look at than blur, and the despeckle handles the dots), then the render
-            // fraction in steps of 1/8; on the way up the fraction comes back first. The measured
-            // frame time is smoothed, corrections are damped, and a raise needs several frames of
-            // headroom, otherwise the loop hunts between two sizes and the noise texture flickers.
+            // Regulator: hold target_fps while moving. The cost of a motion frame is modelled as
+            // overhead + k x pixels x samples, with k (ms per pixel-sample) and the overhead (GUI,
+            // upload, present) measured on the previous motion frame and smoothed. Each frame the
+            // best (fraction, samples) pair is chosen for the budget, adapting the resolution
+            // first: with the full motion sample count, the highest fraction (in steps of 1/8
+            // between min and max) that fits; only when even the floor does not fit are the
+            // samples reduced, again with the highest fraction that fits. Going down is immediate;
+            // going up needs several frames of headroom, and a raise that had to be undone blocks
+            // further raises for a while, so the loop does not hunt when the model is optimistic
+            // (a small frame under-uses the GPU, so k grows as the frame shrinks).
             const float min_frac = std::clamp(motion_quality.min_fraction, 0.1f, motion_frac);
             if (dyn_spp <= 0)
                dyn_spp = motion_spp;
             dyn_fraction = std::clamp(dyn_fraction, min_frac, motion_frac);
             dyn_spp      = std::clamp(dyn_spp, 1, std::max(1, motion_spp));
-            if (is_camera_moving && last_frame_motion && delta.count() > 0.0f)
+            if (is_camera_moving && last_frame_motion && delta.count() > 0.0f && last_motion_pixels > 0)
             {
-               // A hitch (scene load, shader compile) must not throw the loop to the floor: cap
-               // one frame's weight at a few times the target before smoothing.
                const float target_ms = 1000.0f / std::max(1.0f, motion_quality.target_fps);
+               // A hitch (scene load, shader compile) must not throw the loop to the floor: cap one
+               // frame's weight at a few times the target before smoothing.
                const float frame_ms  = std::min(delta.count() * 1000.0f, 4.0f * target_ms);
                const float over_ms   = std::max(0.0f, frame_ms - last_render_ms);
-               motion_frame_ms    = (motion_frame_ms > 0.0f) ? 0.7f * motion_frame_ms + 0.3f * frame_ms : frame_ms;
+               const float k_sample  = last_render_ms / (float)std::max(1, last_motion_pixels * last_motion_spp);
+               motion_k_ms        = (motion_k_ms > 0.0f) ? 0.8f * motion_k_ms + 0.2f * k_sample : k_sample;
                motion_overhead_ms = (motion_overhead_ms > 0.0f) ? 0.9f * motion_overhead_ms + 0.1f * over_ms : over_ms;
-               const float ratio = target_ms / std::max(motion_frame_ms, 0.1f); // > 1: headroom
-               auto quantize = [](float f) { return std::round(f * 8.0f) / 8.0f; };
-               if (ratio < 0.9f)
+               const float budget_ms = std::max(0.5f, target_ms - motion_overhead_ms);
+
+               auto pixels_at = [&](float f) {
+                  return std::max(1, (int)std::lround(image_width * f)) * std::max(1, (int)std::lround(image_height * f));
+               };
+               float best_frac = min_frac;
+               int   best_spp  = 1;
+               bool  found     = false;
+               for (int spp = std::max(1, motion_spp); spp >= 1 && !found; --spp)
+                  for (float f = motion_frac; f >= min_frac - 1e-3f; f -= 0.125f)
+                     if (motion_k_ms * (float)pixels_at(f) * (float)spp <= budget_ms)
+                     {
+                        best_frac = std::max(f, min_frac);
+                        best_spp  = spp;
+                        found     = true;
+                        break;
+                     }
+               const bool same_frac = std::fabs(best_frac - dyn_fraction) < 1e-3f;
+               const bool better    = best_frac > dyn_fraction + 1e-3f || (same_frac && best_spp > dyn_spp);
+               const bool worse     = best_frac < dyn_fraction - 1e-3f || (same_frac && best_spp < dyn_spp);
+               if (worse)
                {
-                  // Too slow: cut samples first, then the fraction. The render part is what we
-                  // control, so scale it by what the render would need to shrink by.
-                  const float render_ms = std::max(0.1f, motion_frame_ms - motion_overhead_ms);
-                  const float need      = std::clamp((target_ms - motion_overhead_ms) / render_ms, 0.2f, 0.95f);
-                  if (dyn_spp > 1)
-                     dyn_spp = std::max(1, std::min(dyn_spp - 1, (int)std::floor(dyn_spp * need)));
-                  else
-                     dyn_fraction = std::max(min_frac, std::min(dyn_fraction - 0.125f, quantize(dyn_fraction * std::sqrt(need))));
+                  // Undoing a recent raise: the model was optimistic, hold off further raises
+                  if (std::chrono::duration<float>(now - last_raise_time).count() < 1.0f)
+                     raise_block_until = now + std::chrono::milliseconds(2000);
+                  dyn_fraction = best_frac;
+                  dyn_spp      = best_spp;
                   headroom_frames = 0;
                }
-               else if (ratio > 1.3f && ++headroom_frames >= 6)
+               else if (better)
                {
-                  // Headroom for a while: bring the fraction back first, then the samples
-                  if (dyn_fraction < motion_frac - 1e-3f)
-                     dyn_fraction = std::min(motion_frac, dyn_fraction + 0.125f);
-                  else if (dyn_spp < motion_spp)
-                     dyn_spp += 1;
-                  headroom_frames = 0;
+                  const float predicted = motion_k_ms * (float)pixels_at(best_frac) * (float)best_spp;
+                  if (predicted <= 0.85f * budget_ms && now >= raise_block_until && ++headroom_frames >= 6)
+                  {
+                     dyn_fraction    = best_frac;
+                     dyn_spp         = best_spp;
+                     last_raise_time = now;
+                     headroom_frames = 0;
+                  }
                }
-               else if (ratio <= 1.3f)
+               else
                   headroom_frames = 0;
             }
             motion_frac = dyn_fraction;
@@ -757,6 +784,8 @@ class RendererOptiXProgressive : public IRenderer
                current_sps = (total_samples * 1000.0f) / frame_time.count();
                current_ms_per_sample = frame_time.count() / static_cast<float>(frame_spp);
                last_render_ms = frame_time.count();
+               last_motion_pixels = config.width * config.height;
+               last_motion_spp    = frame_spp;
             }
 
             // Convergence readout for the GUI (every few frames: it costs a small kernel + sync)

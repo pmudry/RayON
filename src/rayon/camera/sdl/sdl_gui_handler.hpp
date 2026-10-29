@@ -67,13 +67,13 @@ static const char *visualizationModeNames[] = {"Normal Render", "Show Normals"};
 /// Accumulation restarts on every camera change, so none of these affect the converged image.
 struct MotionQualitySettings
 {
-   float motion_fraction  = 0.5f;  ///< Fraction of the width and height rendered while moving (1, 3/4, 1/2, 1/4)
+   float motion_fraction  = 0.75f; ///< Fraction of the width and height rendered while moving (1, 3/4, 1/2, 1/4)
    // Frame-rate regulation while moving: samples per frame first, then the render fraction, are
    // lowered to hold target_fps and raised back when there is headroom (see the OptiX host).
    bool  hold_target_fps  = true;  ///< Regulate samples and resolution to hold target_fps while moving
    float target_fps       = 60.0f; ///< Frame rate to hold while moving
    float min_fraction     = 0.25f; ///< Lowest render fraction the regulator may use
-   float current_fraction = 0.5f;  ///< Readout: fraction used by the last motion frame
+   float current_fraction = 0.75f; ///< Readout: fraction used by the last motion frame
    int   current_spp      = 0;     ///< Readout: samples per pixel of the last motion frame
    bool  refine_stages    = true;  ///< After the motion, climb through 1/2 and 3/4 resolution before full
    float stage_seconds    = 0.1f;  ///< Duration of each intermediate resolution stage
@@ -541,25 +541,30 @@ class SDLGuiHandler
                         if (std::fabs(motion_quality->motion_fraction - fractions[i]) < 0.01f)
                            res_idx = i;
                      pushSliderWidth();
-                     if (ImGui::Combo("While moving##mq_res", &res_idx, "Full\0Three quarters\0Half\0Quarter\0"))
+                     if (ImGui::Combo(motion_quality->hold_target_fps ? "Max while moving##mq_res" : "While moving##mq_res",
+                                      &res_idx, "Full\0Three quarters\0Half\0Quarter\0"))
                         motion_quality->motion_fraction = fractions[res_idx];
                      ImGui::PopItemWidth();
+                     // The floor can never exceed the ceiling: keep the slider range and the value inside it
+                     motion_quality->min_fraction = std::min(motion_quality->min_fraction, motion_quality->motion_fraction);
                      ImGui::SetItemTooltip(motion_quality->hold_target_fps
                                                ? "Highest fraction of the width and height the regulator may use\n"
                                                  "while moving."
                                                : "Render at this fraction of the width and height while moving\n"
                                                  "(quarter = 16x fewer paths per frame), upscaled for display.");
                      ImGui::Checkbox("Hold a target frame rate##mq_hold", &motion_quality->hold_target_fps);
-                     ImGui::SetItemTooltip("While moving, lower the samples per frame first, then the render\n"
-                                           "fraction, until the frame rate holds; raise them back when there is\n"
+                     ImGui::SetItemTooltip("While moving, lower the render fraction first, then the samples per\n"
+                                           "frame, until the frame rate holds; raise them back when there is\n"
                                            "headroom. The fraction above is the ceiling, the one below the floor.");
                      if (motion_quality->hold_target_fps)
                      {
                         pushSliderWidth();
                         ImGui::SliderFloat("Target##mq_fps", &motion_quality->target_fps, 20.0f, 144.0f, "%.0f fps");
-                        ImGui::SliderFloat("Min fraction##mq_minfrac", &motion_quality->min_fraction, 0.125f, 1.0f, "%.3f");
+                        ImGui::SliderFloat("Min while moving##mq_minfrac", &motion_quality->min_fraction, 0.125f,
+                                           motion_quality->motion_fraction, "%.3f", ImGuiSliderFlags_AlwaysClamp);
                         ImGui::PopItemWidth();
-                        ImGui::SetItemTooltip("Lowest render fraction the regulator may go down to.");
+                        ImGui::SetItemTooltip("Lowest render fraction the regulator may go down to (the\n"
+                                              "\"Max while moving\" choice above is its ceiling).");
                         if (motion_quality->current_spp > 0)
                            ImGui::TextDisabled("Last motion frame: %.0f%% x %d spp", 100.0f * motion_quality->current_fraction,
                                                motion_quality->current_spp);
