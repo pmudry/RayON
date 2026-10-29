@@ -169,6 +169,14 @@ class RendererOptiXProgressive : public IRenderer
       // Motion detection
       bool is_camera_moving = false;
       int  stage_index      = 0; // resolution stage after a motion (index into the stage fractions)
+      // Frame-rate regulator state (motion frames only)
+      float dyn_fraction        = 0.5f;  // render fraction currently used while moving
+      int   dyn_spp             = 0;     // samples per frame currently used while moving (0 = unset)
+      float motion_frame_ms     = 0.0f;  // smoothed whole-frame time of motion frames
+      float motion_overhead_ms  = 0.0f;  // smoothed (frame - render) time: GUI, upload, present
+      float last_render_ms      = 0.0f;  // render time of the previous frame
+      bool  last_frame_motion   = false; // the previous frame was a motion frame (its timing is usable)
+      int   headroom_frames     = 0;     // consecutive motion frames with spare time
       auto last_camera_change_time = std::chrono::high_resolution_clock::now();
       auto stage_start_time        = last_camera_change_time; // when the current render config was applied
 
@@ -575,7 +583,64 @@ class RendererOptiXProgressive : public IRenderer
          // fraction above it (1/2, 3/4) for stage_seconds each, then full. Every step is a config
          // upgrade, so the previous image is handed over as a display prior that fades out over
          // fade_seconds and the picture sharpens in place.
-         const float motion_frac = std::clamp(motion_quality.motion_fraction, 0.1f, 1.0f);
+         float motion_frac = std::clamp(motion_quality.motion_fraction, 0.1f, 1.0f);
+         int   motion_spp  = motion_quality.single_sample ? 1 : samples_per_batch;
+         if (motion_quality.hold_target_fps)
+         {
+            // Regulator: hold target_fps while moving. Two levers, samples per frame first (noise is
+            // cheaper to look at than blur, and the despeckle handles the dots), then the render
+            // fraction in steps of 1/8; on the way up the fraction comes back first. The measured
+            // frame time is smoothed, corrections are damped, and a raise needs several frames of
+            // headroom, otherwise the loop hunts between two sizes and the noise texture flickers.
+            const float min_frac = std::clamp(motion_quality.min_fraction, 0.1f, motion_frac);
+            if (dyn_spp <= 0)
+               dyn_spp = motion_spp;
+            dyn_fraction = std::clamp(dyn_fraction, min_frac, motion_frac);
+            dyn_spp      = std::clamp(dyn_spp, 1, std::max(1, motion_spp));
+            if (is_camera_moving && last_frame_motion && delta.count() > 0.0f)
+            {
+               // A hitch (scene load, shader compile) must not throw the loop to the floor: cap
+               // one frame's weight at a few times the target before smoothing.
+               const float target_ms = 1000.0f / std::max(1.0f, motion_quality.target_fps);
+               const float frame_ms  = std::min(delta.count() * 1000.0f, 4.0f * target_ms);
+               const float over_ms   = std::max(0.0f, frame_ms - last_render_ms);
+               motion_frame_ms    = (motion_frame_ms > 0.0f) ? 0.7f * motion_frame_ms + 0.3f * frame_ms : frame_ms;
+               motion_overhead_ms = (motion_overhead_ms > 0.0f) ? 0.9f * motion_overhead_ms + 0.1f * over_ms : over_ms;
+               const float ratio = target_ms / std::max(motion_frame_ms, 0.1f); // > 1: headroom
+               auto quantize = [](float f) { return std::round(f * 8.0f) / 8.0f; };
+               if (ratio < 0.9f)
+               {
+                  // Too slow: cut samples first, then the fraction. The render part is what we
+                  // control, so scale it by what the render would need to shrink by.
+                  const float render_ms = std::max(0.1f, motion_frame_ms - motion_overhead_ms);
+                  const float need      = std::clamp((target_ms - motion_overhead_ms) / render_ms, 0.2f, 0.95f);
+                  if (dyn_spp > 1)
+                     dyn_spp = std::max(1, std::min(dyn_spp - 1, (int)std::floor(dyn_spp * need)));
+                  else
+                     dyn_fraction = std::max(min_frac, std::min(dyn_fraction - 0.125f, quantize(dyn_fraction * std::sqrt(need))));
+                  headroom_frames = 0;
+               }
+               else if (ratio > 1.3f && ++headroom_frames >= 6)
+               {
+                  // Headroom for a while: bring the fraction back first, then the samples
+                  if (dyn_fraction < motion_frac - 1e-3f)
+                     dyn_fraction = std::min(motion_frac, dyn_fraction + 0.125f);
+                  else if (dyn_spp < motion_spp)
+                     dyn_spp += 1;
+                  headroom_frames = 0;
+               }
+               else if (ratio <= 1.3f)
+                  headroom_frames = 0;
+            }
+            motion_frac = dyn_fraction;
+            motion_spp  = dyn_spp;
+         }
+         if (is_camera_moving)
+         {
+            motion_quality.current_fraction = motion_frac;
+            motion_quality.current_spp      = motion_spp;
+         }
+         last_frame_motion = is_camera_moving;
          float stages[3];
          int   n_stages = 0;
          if (motion_quality.refine_stages)
@@ -597,7 +662,7 @@ class RendererOptiXProgressive : public IRenderer
                                                                   : frame.max_depth;
          config.sobol    = use_sobol && !(reduce && motion_quality.fast_sampler);
          config.adaptive = adaptive_sampling_enabled && !reduce;
-         const int frame_spp = (reduce && motion_quality.single_sample) ? 1 : samples_per_batch;
+         const int frame_spp = reduce ? motion_spp : samples_per_batch;
 
          // Configuration changed (e.g. motion cooldown elapsed → back to full resolution): the
          // accumulated samples were taken under a different setup, so start over. This is not
@@ -691,6 +756,7 @@ class RendererOptiXProgressive : public IRenderer
                float total_samples = static_cast<float>(frame_spp) * active_pixels;
                current_sps = (total_samples * 1000.0f) / frame_time.count();
                current_ms_per_sample = frame_time.count() / static_cast<float>(frame_spp);
+               last_render_ms = frame_time.count();
             }
 
             // Convergence readout for the GUI (every few frames: it costs a small kernel + sync)
