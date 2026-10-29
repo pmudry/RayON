@@ -8,9 +8,23 @@
 // With adaptive sampling (pixel_sample_counts != nullptr), each pixel divides by
 // its own sample count rather than the global num_samples.
 //==============================================================================
+// Mean radiance of one accumulated pixel (per-pixel count under adaptive sampling, abs() because
+// converged pixels store a negative count).
+__device__ __forceinline__ float3 accumPixelMean(const float4 *__restrict__ accum_buffer,
+                                                 const int *pixel_sample_counts, int pixel_idx, int num_samples)
+{
+   float4 acc = accum_buffer[pixel_idx];
+   int samples = (pixel_sample_counts != nullptr) ? abs(pixel_sample_counts[pixel_idx]) : num_samples;
+   float inv_samples = 1.0f / (float)max(samples, 1);
+   return make_float3(acc.x * inv_samples, acc.y * inv_samples, acc.z * inv_samples);
+}
+
+__device__ __forceinline__ float luminance601(float3 c) { return 0.299f * c.x + 0.587f * c.y + 0.114f * c.z; }
+
 __global__ void gammaCorrectKernel(const float4 *__restrict__ accum_buffer, unsigned char *display_image, int width,
                                    int height, int num_samples, int channels, float gamma,
-                                   const int *pixel_sample_counts)
+                                   const int *pixel_sample_counts, bool despeckle, float despeckle_ratio,
+                                   float despeckle_floor)
 {
    int x = blockIdx.x * blockDim.x + threadIdx.x;
    int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -19,21 +33,37 @@ __global__ void gammaCorrectKernel(const float4 *__restrict__ accum_buffer, unsi
       return;
 
    int pixel_idx = y * width + x;
-   float4 acc = accum_buffer[pixel_idx];
+   float3 mean = accumPixelMean(accum_buffer, pixel_sample_counts, pixel_idx, num_samples);
 
-   // Use per-pixel sample count when adaptive sampling is active.
-   // Converged pixels store a negative count (sign bit = converged flag), so use abs().
-   int samples = (pixel_sample_counts != nullptr) ? abs(pixel_sample_counts[pixel_idx]) : num_samples;
-   if (samples <= 0)
-      samples = 1;
+   // Motion-frame despeckle: a frame shown on its own holds only a few samples per pixel, so one
+   // sample of a few units is a bright dot. Scale a pixel down when it is far brighter than its
+   // neighbourhood; genuinely bright regions have bright neighbours and are left alone.
+   if (despeckle)
+   {
+      float lum = luminance601(mean);
+      float sum_nb = 0.0f;
+      for (int dy = -1; dy <= 1; dy++)
+         for (int dx = -1; dx <= 1; dx++)
+         {
+            if (dx == 0 && dy == 0)
+               continue;
+            int nx = min(max(x + dx, 0), width - 1), ny = min(max(y + dy, 0), height - 1);
+            sum_nb += luminance601(accumPixelMean(accum_buffer, pixel_sample_counts, ny * width + nx, num_samples));
+         }
+      float ceiling = despeckle_ratio * (sum_nb * 0.125f) + despeckle_floor;
+      if (lum > ceiling)
+      {
+         float s = ceiling / lum;
+         mean = make_float3(mean.x * s, mean.y * s, mean.z * s);
+      }
+   }
 
-   float inv_samples = 1.0f / (float)samples;
    float inv_gamma = 1.0f / gamma;
 
    // Gamma correction + tone mapping
-   float r = fminf(powf(fmaxf(acc.x * inv_samples, 0.0f), inv_gamma), 0.999f);
-   float g = fminf(powf(fmaxf(acc.y * inv_samples, 0.0f), inv_gamma), 0.999f);
-   float b = fminf(powf(fmaxf(acc.z * inv_samples, 0.0f), inv_gamma), 0.999f);
+   float r = fminf(powf(fmaxf(mean.x, 0.0f), inv_gamma), 0.999f);
+   float g = fminf(powf(fmaxf(mean.y, 0.0f), inv_gamma), 0.999f);
+   float b = fminf(powf(fmaxf(mean.z, 0.0f), inv_gamma), 0.999f);
 
    int image_idx = pixel_idx * channels;
    display_image[image_idx + 0] = (unsigned char)(256.0f * r);

@@ -884,7 +884,8 @@ class RendererCUDAProgressive : public IRenderer
       // Pass per-pixel sample counts so each pixel divides by its own count
       auto &display_image = *display_target.pixels;
       ::convertAccumToDisplayCUDA(d_accum_buffer, display_image.data(), display_target.width, display_target.height,
-                                  display_target.channels, current_samples, gamma, d_pixel_sample_counts);
+                                  display_target.channels, current_samples, gamma, d_pixel_sample_counts, is_moving,
+                                  constants::MOTION_DESPECKLE_RATIO, constants::MOTION_DESPECKLE_FLOOR);
    }
 };
 

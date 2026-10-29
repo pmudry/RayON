@@ -58,7 +58,8 @@ extern "C"
                                           float glass_ior_multiplier);
    void optixRendererDownloadAccum(float *host_accum_buffer, int width, int height);
    void optixRendererConvertAccumToDisplay(unsigned char *display_image, int width, int height,
-                                           int channels, int num_samples, float gamma);
+                                           int channels, int num_samples, float gamma, bool despeckle,
+                                           float despeckle_ratio, float despeckle_floor);
    void optixRendererCleanup();
    void optixRendererSetGolfDimples(int count, float radius, float depth);
    bool optixRendererUploadHdrEnv(const float *rgba_data, int w, int h);
@@ -642,7 +643,7 @@ class RendererOptiXProgressive : public IRenderer
             renderBatch(frame, config.width, config.height, config.depth, display_view, current_samples,
                         max_samples, frame_spp, gamma, context, num_materials_active, background_intensity,
                         dof_enabled, dof_aperture, dof_focus_distance, light_intensity, metal_fuzziness,
-                        glass_refraction_index);
+                        glass_refraction_index, reduce);
 
             auto frame_end = std::chrono::high_resolution_clock::now();
             std::chrono::duration<float, std::milli> frame_time = frame_end - frame_start;
@@ -808,7 +809,7 @@ class RendererOptiXProgressive : public IRenderer
                     RenderTargetView display_target, int &current_samples, int max_samples, int samples_per_batch,
                     float gamma, RenderContext &context, int num_materials, float background_intensity,
                     bool dof_enabled, float dof_aperture, float dof_focus_distance, float light_intensity,
-                    float metal_fuzziness, float glass_ior_multiplier)
+                    float metal_fuzziness, float glass_ior_multiplier, bool motion_frame)
    {
       // If we've already reached or exceeded the maximum, do not render more samples.
       if (current_samples >= max_samples) return;
@@ -843,7 +844,8 @@ class RendererOptiXProgressive : public IRenderer
       // GPU-side gamma correction (and upscale when rendering at reduced resolution): converts the
       // float4 accum buffer straight to the uint8 display image, no float4 D2H + host conversion.
       optixRendererConvertAccumToDisplay(display_target.pixels->data(), frame.image_width, frame.image_height,
-                                         display_target.channels, new_total_samples, gamma);
+                                         display_target.channels, new_total_samples, gamma, motion_frame,
+                                         constants::MOTION_DESPECKLE_RATIO, constants::MOTION_DESPECKLE_FLOOR);
 
       context.ray_counter.fetch_add(ray_count, std::memory_order_relaxed);
 

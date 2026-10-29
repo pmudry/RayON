@@ -1340,11 +1340,37 @@ extern "C" void optixRendererSetGolfDimples(int count, float radius, float depth
 // The accumulation buffer may be smaller than the display (reduced resolution while the
 // camera moves): each display pixel reads its nearest render pixel. With adaptive sampling
 // each pixel is normalised by its own sample count.
+// Mean radiance of one accumulated render pixel, with the hand-over prior blended in when active.
+__device__ __forceinline__ float3 optixAccumPixelMean(const float4 *__restrict__ accum_buffer,
+                                                      const int *__restrict__ pixel_sample_counts,
+                                                      const float4 *__restrict__ prior, float prior_strength,
+                                                      int idx, int num_samples)
+{
+   float4 acc = accum_buffer[idx];
+   // Converged pixels store a negative count (sign bit = converged flag), so use abs().
+   int samples = pixel_sample_counts ? abs(pixel_sample_counts[idx]) : num_samples;
+   float n = (float)max(samples, 0);
+   if (prior)
+   {
+      // Hand-over blend: the prior counts as max(0, strength - n) samples, so it dominates the
+      // first frames after a resolution switch and is gone once `strength` samples have arrived.
+      float w = fmaxf(prior_strength - n, 0.0f);
+      float4 p = prior[idx];
+      float inv = (n + w > 0.0f) ? 1.0f / (n + w) : 0.0f;
+      return make_float3((acc.x + p.x * w) * inv, (acc.y + p.y * w) * inv, (acc.z + p.z * w) * inv);
+   }
+   float inv_samples = (n > 0.0f) ? 1.0f / n : 0.0f;
+   return make_float3(acc.x * inv_samples, acc.y * inv_samples, acc.z * inv_samples);
+}
+
+__device__ __forceinline__ float optixLuminance601(float3 c) { return 0.299f * c.x + 0.587f * c.y + 0.114f * c.z; }
+
 __global__ void optixGammaCorrectKernel(const float4 *__restrict__ accum_buffer,
                                          const int *__restrict__ pixel_sample_counts,
                                          const float4 *__restrict__ prior, float prior_strength,
                                          unsigned char *display_image, int render_width, int render_height,
-                                         int width, int height, int num_samples, int channels, float gamma)
+                                         int width, int height, int num_samples, int channels, float gamma,
+                                         bool despeckle, float despeckle_ratio, float despeckle_floor)
 {
    int x = blockIdx.x * blockDim.x + threadIdx.x;
    int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -1354,25 +1380,31 @@ __global__ void optixGammaCorrectKernel(const float4 *__restrict__ accum_buffer,
    int rx = (render_width == width) ? x : min(x * render_width / width, render_width - 1);
    int ry = (render_height == height) ? y : min(y * render_height / height, render_height - 1);
    int pixel_idx = y * width + x;
-   float4 acc = accum_buffer[ry * render_width + rx];
+   float3 mean = optixAccumPixelMean(accum_buffer, pixel_sample_counts, prior, prior_strength,
+                                     ry * render_width + rx, num_samples);
 
-   // Converged pixels store a negative count (sign bit = converged flag), so use abs().
-   int samples = pixel_sample_counts ? abs(pixel_sample_counts[ry * render_width + rx]) : num_samples;
-   float n = (float)max(samples, 0);
-   float3 mean;
-   if (prior)
+   // Motion-frame despeckle: a frame shown on its own holds only a few samples per pixel, so one
+   // sample of a few units is a bright dot. Scale a pixel down when it is far brighter than its
+   // neighbourhood (in render pixels); genuinely bright regions have bright neighbours and are left alone.
+   if (despeckle)
    {
-      // Hand-over blend: the prior counts as max(0, strength - n) samples, so it dominates the
-      // first frames after a resolution switch and is gone once `strength` samples have arrived.
-      float w = fmaxf(prior_strength - n, 0.0f);
-      float4 p = prior[ry * render_width + rx];
-      float inv = (n + w > 0.0f) ? 1.0f / (n + w) : 0.0f;
-      mean = make_float3((acc.x + p.x * w) * inv, (acc.y + p.y * w) * inv, (acc.z + p.z * w) * inv);
-   }
-   else
-   {
-      float inv_samples = (n > 0.0f) ? 1.0f / n : 0.0f;
-      mean = make_float3(acc.x * inv_samples, acc.y * inv_samples, acc.z * inv_samples);
+      float lum = optixLuminance601(mean);
+      float sum_nb = 0.0f;
+      for (int dy = -1; dy <= 1; dy++)
+         for (int dx = -1; dx <= 1; dx++)
+         {
+            if (dx == 0 && dy == 0)
+               continue;
+            int nx = min(max(rx + dx, 0), render_width - 1), ny = min(max(ry + dy, 0), render_height - 1);
+            sum_nb += optixLuminance601(optixAccumPixelMean(accum_buffer, pixel_sample_counts, prior, prior_strength,
+                                                            ny * render_width + nx, num_samples));
+         }
+      float ceiling = despeckle_ratio * (sum_nb * 0.125f) + despeckle_floor;
+      if (lum > ceiling)
+      {
+         float s = ceiling / lum;
+         mean = make_float3(mean.x * s, mean.y * s, mean.z * s);
+      }
    }
    float inv_gamma = 1.0f / gamma;
 
@@ -1409,8 +1441,10 @@ static void ensureDisplayBuffers(size_t display_size)
 
 // Convert the accumulation buffer (at the resolution of the last launch) into a width x height
 // 8-bit display image. num_samples is the normalisation when adaptive sampling is off.
+// despeckle: scale down pixels brighter than ratio x (mean of the 8 neighbours) + floor (motion frames).
 extern "C" void optixRendererConvertAccumToDisplay(unsigned char *display_image, int width, int height,
-                                                    int channels, int num_samples, float gamma)
+                                                    int channels, int num_samples, float gamma, bool despeckle,
+                                                    float despeckle_ratio, float despeckle_floor)
 {
    if (!g_state.d_accum_buffer || !display_image || num_samples <= 0)
       return;
@@ -1431,7 +1465,7 @@ extern "C" void optixRendererConvertAccumToDisplay(unsigned char *display_image,
    optixGammaCorrectKernel<<<blocks, threads, 0, stream>>>(g_state.d_accum_buffer, counts, prior,
                                                             g_state.prior_strength, g_state.d_display, render_width,
                                                             render_height, width, height, num_samples, channels,
-                                                            gamma);
+                                                            gamma, despeckle, despeckle_ratio, despeckle_floor);
 
    // Async D2H copy via pinned memory, then single stream sync
    cudaMemcpyAsync(g_state.pinned_display, g_state.d_display, display_size, cudaMemcpyDeviceToHost, stream);

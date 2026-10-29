@@ -21,9 +21,15 @@ namespace constants
 
     // Interactive renderer defaults (mode 3)
     inline constexpr int INTERACTIVE_SAMPLES_PER_BATCH = 6;  // Fixed samples per batch in interactive mode
-    // Per-sample luminance ceiling while the camera moves. Each motion frame is displayed on its
-    // own with only a few samples per pixel, so any sample of a few units shows as a bright dot;
-    // the still image uses a ceiling that grows with the sample count instead (unbiased in the limit).
-    inline constexpr float MOTION_FIREFLY_CLAMP = 1.0f;
+    // Per-sample luminance ceiling while the camera moves (the still image uses a ceiling that
+    // grows with the sample count instead, unbiased in the limit). Kept at the historical level:
+    // a low ceiling darkens bright regions noticeably between motion and rest. Isolated bright
+    // dots of the motion preview are handled at display time instead, see MOTION_DESPECKLE_*.
+    inline constexpr float MOTION_FIREFLY_CLAMP = 20.0f;
+    // Display-time despeckle of motion frames: a pixel whose luminance exceeds
+    // RATIO x (mean of its 8 neighbours) + FLOOR is scaled down to that level. Only isolated dots
+    // are touched; uniformly bright regions keep their value, and the accumulation is untouched.
+    inline constexpr float MOTION_DESPECKLE_RATIO = 3.0f;
+    inline constexpr float MOTION_DESPECKLE_FLOOR = 0.02f;
     inline constexpr int INTERACTIVE_MAX_SPP = 100000;       // Max SPP budget for interactive accumulation
 };

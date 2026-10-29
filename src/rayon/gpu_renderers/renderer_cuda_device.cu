@@ -550,7 +550,8 @@ extern "C" unsigned long long renderPixelsCUDAAccumulative(
  * @param gamma Gamma correction value
  */
 extern "C" void convertAccumToDisplayCUDA(void *d_accum_buffer, unsigned char *display_image, int width, int height,
-                                          int channels, int num_samples, float gamma, void *d_pixel_sample_counts)
+                                          int channels, int num_samples, float gamma, void *d_pixel_sample_counts,
+                                          bool despeckle, float despeckle_ratio, float despeckle_floor)
 {
    if (d_accum_buffer == nullptr || display_image == nullptr || num_samples <= 0)
       return;
@@ -587,7 +588,7 @@ extern "C" void convertAccumToDisplayCUDA(void *d_accum_buffer, unsigned char *d
 
    gammaCorrectKernel<<<blocks, threads, 0, stream>>>(
        static_cast<float4 *>(d_accum_buffer), d_display, width, height, num_samples,
-       channels, gamma, static_cast<const int *>(d_pixel_sample_counts));
+       channels, gamma, static_cast<const int *>(d_pixel_sample_counts), despeckle, despeckle_ratio, despeckle_floor);
 
    if (s_display_stream && s_pinned_display)
    {

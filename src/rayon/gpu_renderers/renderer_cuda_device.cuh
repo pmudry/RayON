@@ -68,9 +68,11 @@ extern "C"
    void clearHdrEnvironment();
 
    // GPU-side gamma correction: reads device accum buffer, writes uint8 display image to host
-   // When d_pixel_sample_counts is non-null, uses per-pixel sample counts (adaptive sampling)
+   // When d_pixel_sample_counts is non-null, uses per-pixel sample counts (adaptive sampling).
+   // despeckle: scale down pixels brighter than ratio x (mean of the 8 neighbours) + floor (motion frames).
    void convertAccumToDisplayCUDA(void *d_accum_buffer, unsigned char *display_image, int width, int height, int channels,
-                                  int num_samples, float gamma, void *d_pixel_sample_counts = nullptr);
+                                  int num_samples, float gamma, void *d_pixel_sample_counts = nullptr,
+                                  bool despeckle = false, float despeckle_ratio = 3.0f, float despeckle_floor = 0.02f);
 
    // Adaptive sampling: per-pixel sample count buffer management
    void allocateAdaptiveBuffer(void **d_pixel_sample_counts, int num_pixels);
