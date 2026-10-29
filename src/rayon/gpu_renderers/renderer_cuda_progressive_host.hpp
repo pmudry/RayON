@@ -118,6 +118,8 @@ class RendererCUDAProgressive : public IRenderer
 
       // Motion detection for adaptive quality
       bool is_camera_moving = false;
+      bool  motion_despeckle       = true;                             // display-time despeckle of motion frames
+      float motion_despeckle_ratio = constants::MOTION_DESPECKLE_RATIO; // vs the mean of the 8 neighbours
       auto last_camera_change_time = std::chrono::high_resolution_clock::now();
       const float motion_cooldown_seconds = 0.5f;
 
@@ -633,7 +635,7 @@ class RendererCUDAProgressive : public IRenderer
             renderBatch(frame, display_view, current_samples, max_samples, adaptive_samples_per_batch, gamma,
                         d_rand_states, d_accum_buffer, gpu_scene, is_camera_moving, context,
                         adaptive_sampling_enabled ? d_pixel_sample_counts : nullptr,
-                        min_adaptive_samples, adaptive_threshold);
+                        min_adaptive_samples, adaptive_threshold, motion_despeckle, motion_despeckle_ratio);
 
             auto frame_end = std::chrono::high_resolution_clock::now();
             std::chrono::duration<float, std::milli> frame_time = frame_end - frame_start;
@@ -731,7 +733,7 @@ class RendererCUDAProgressive : public IRenderer
                            hdr_count > 0 ? hdr_name_ptrs.data() : nullptr,
                            hdr_count,
                            &mis_enabled, &motion_gate_mis, &nee_stride,
-                           &use_sobol);
+                           &use_sobol, nullptr, &motion_despeckle, &motion_despeckle_ratio);
 
          if (auto_orbit != camera_control.isAutoOrbitEnabled())
          {
@@ -857,7 +859,8 @@ class RendererCUDAProgressive : public IRenderer
                     int samples_per_batch, float gamma, void *&d_rand_states, void *&d_accum_buffer,
                     CudaScene::Scene *gpu_scene, bool is_moving, RenderContext &context,
                     void *d_pixel_sample_counts = nullptr, int min_adaptive_samples = 32,
-                    float adaptive_threshold = 0.01f)
+                    float adaptive_threshold = 0.01f, bool despeckle = false,
+                    float despeckle_ratio = constants::MOTION_DESPECKLE_RATIO)
    {
       int samples_before_batch = current_samples; // total accumulated BEFORE this batch
       current_samples += samples_per_batch;
@@ -884,8 +887,8 @@ class RendererCUDAProgressive : public IRenderer
       // Pass per-pixel sample counts so each pixel divides by its own count
       auto &display_image = *display_target.pixels;
       ::convertAccumToDisplayCUDA(d_accum_buffer, display_image.data(), display_target.width, display_target.height,
-                                  display_target.channels, current_samples, gamma, d_pixel_sample_counts, is_moving,
-                                  constants::MOTION_DESPECKLE_RATIO, constants::MOTION_DESPECKLE_FLOOR);
+                                  display_target.channels, current_samples, gamma, d_pixel_sample_counts,
+                                  is_moving && despeckle, despeckle_ratio, constants::MOTION_DESPECKLE_FLOOR);
    }
 };
 

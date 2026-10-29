@@ -201,6 +201,26 @@ class SDLGuiHandler
     * All UI controls are drawn here using ImGui. Parameters are passed as pointers
     * so ImGui can modify them directly.
     */
+   /// Despeckle controls for motion frames (toggle + ratio). Either pointer may be null.
+   void drawMotionDespeckle(bool *enabled, float *ratio)
+   {
+      if (!enabled)
+         return;
+      ImGui::Checkbox("Despeckle motion frames##mq_despeckle", enabled);
+      ImGui::SetItemTooltip("While moving, a pixel far brighter than its 8 neighbours is scaled\n"
+                            "down at display time. Isolated bright dots disappear; bright regions\n"
+                            "and the accumulation itself are untouched.");
+      if (*enabled && ratio)
+      {
+         ImGui::SameLine();
+         ImGui::PushItemWidth(std::clamp(ImGui::GetContentRegionAvail().x * 0.67f, 120.0f, 240.0f));
+         ImGui::SliderFloat("##mq_despeckle_ratio", ratio, 1.5f, 8.0f, "x%.1f");
+         ImGui::PopItemWidth();
+         ImGui::SetItemTooltip("A pixel is scaled down when it exceeds this multiple of the mean of\n"
+                               "its neighbours. Lower = more aggressive.");
+      }
+   }
+
    void updateDisplay(const vector<unsigned char> &image, int image_channels, float sps, float ms_per_sample, float fps, int spp,
                       bool *dof_enabled, float *aperture, float *focus_dist, float *light_intensity,
                       float *background_intensity, float *metal_fuzziness, float *glass_ior,
@@ -220,7 +240,8 @@ class SDLGuiHandler
                       int hdr_env_count = 0,
                       bool *mis_enabled = nullptr, bool *motion_gate_mis = nullptr,
                       int *nee_stride = nullptr, bool *use_sobol = nullptr,
-                      MotionQualitySettings *motion_quality = nullptr)
+                      MotionQualitySettings *motion_quality = nullptr,
+                      bool *motion_despeckle = nullptr, float *motion_despeckle_ratio = nullptr)
    {
       SDL_UpdateTexture(texture, nullptr, image.data(), image_width * image_channels);
       SDL_RenderClear(renderer);
@@ -523,6 +544,19 @@ class SDLGuiHandler
                            ImGui::SliderInt("##mq_depth_val", &motion_quality->motion_max_depth, 1, 8);
                            ImGui::PopItemWidth();
                         }
+                        drawMotionDespeckle(motion_despeckle, motion_despeckle_ratio);
+                        ImGui::TreePop();
+                     }
+                  }
+                  else if (motion_despeckle)
+                  {
+                     // CUDA interactive: no motion-quality block, show the despeckle controls on their own
+                     ImGui::Separator();
+                     ImGui::SetNextItemOpen(true, ImGuiCond_Once);
+                     if (ImGui::TreeNode("During camera motion"))
+                     {
+                        ImGui::TextDisabled("Display-only: the final image is never filtered.");
+                        drawMotionDespeckle(motion_despeckle, motion_despeckle_ratio);
                         ImGui::TreePop();
                      }
                   }

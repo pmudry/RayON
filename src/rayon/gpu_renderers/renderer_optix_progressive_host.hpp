@@ -163,6 +163,8 @@ class RendererOptiXProgressive : public IRenderer
       int  nee_stride            = settings_.nee_stride;
       bool use_sobol             = true; // default: Sobol sampler
       MotionQualitySettings motion_quality = settings_.motion_quality;
+      bool  motion_despeckle       = true;                             // display-time despeckle of motion frames
+      float motion_despeckle_ratio = constants::MOTION_DESPECKLE_RATIO; // vs the mean of the 8 neighbours
 
       // Motion detection
       bool is_camera_moving = false;
@@ -643,7 +645,7 @@ class RendererOptiXProgressive : public IRenderer
             renderBatch(frame, config.width, config.height, config.depth, display_view, current_samples,
                         max_samples, frame_spp, gamma, context, num_materials_active, background_intensity,
                         dof_enabled, dof_aperture, dof_focus_distance, light_intensity, metal_fuzziness,
-                        glass_refraction_index, reduce);
+                        glass_refraction_index, reduce && motion_despeckle, motion_despeckle_ratio);
 
             auto frame_end = std::chrono::high_resolution_clock::now();
             std::chrono::duration<float, std::milli> frame_time = frame_end - frame_start;
@@ -733,7 +735,7 @@ class RendererOptiXProgressive : public IRenderer
                            hdr_count > 0 ? hdr_name_ptrs.data() : nullptr,
                            hdr_count,
                            &mis_enabled, &motion_gate_mis, &nee_stride,
-                           &use_sobol, &motion_quality);
+                           &use_sobol, &motion_quality, &motion_despeckle, &motion_despeckle_ratio);
 
          if (auto_orbit != camera_control.isAutoOrbitEnabled())
             camera_control.setAutoOrbit(auto_orbit);
@@ -809,7 +811,7 @@ class RendererOptiXProgressive : public IRenderer
                     RenderTargetView display_target, int &current_samples, int max_samples, int samples_per_batch,
                     float gamma, RenderContext &context, int num_materials, float background_intensity,
                     bool dof_enabled, float dof_aperture, float dof_focus_distance, float light_intensity,
-                    float metal_fuzziness, float glass_ior_multiplier, bool motion_frame)
+                    float metal_fuzziness, float glass_ior_multiplier, bool despeckle, float despeckle_ratio)
    {
       // If we've already reached or exceeded the maximum, do not render more samples.
       if (current_samples >= max_samples) return;
@@ -844,8 +846,8 @@ class RendererOptiXProgressive : public IRenderer
       // GPU-side gamma correction (and upscale when rendering at reduced resolution): converts the
       // float4 accum buffer straight to the uint8 display image, no float4 D2H + host conversion.
       optixRendererConvertAccumToDisplay(display_target.pixels->data(), frame.image_width, frame.image_height,
-                                         display_target.channels, new_total_samples, gamma, motion_frame,
-                                         constants::MOTION_DESPECKLE_RATIO, constants::MOTION_DESPECKLE_FLOOR);
+                                         display_target.channels, new_total_samples, gamma, despeckle,
+                                         despeckle_ratio, constants::MOTION_DESPECKLE_FLOOR);
 
       context.ray_counter.fetch_add(ray_count, std::memory_order_relaxed);
 
