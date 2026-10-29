@@ -12,7 +12,7 @@
 __global__ void gammaCorrectKernel(const float4 *__restrict__ accum_buffer, unsigned char *display_image, int width,
                                    int height, int num_samples, int channels, float gamma,
                                    const int *pixel_sample_counts = nullptr, bool despeckle = false,
-                                   float despeckle_ratio = 1.0f, float despeckle_floor = 0.02f);
+                                   float despeckle_ratio = 2.0f, float despeckle_floor = 0.02f);
 
 //==============================================================================
 // Sample count heatmap: visualizes per-pixel sample counts using the Plasma
