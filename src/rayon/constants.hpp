@@ -29,7 +29,7 @@ namespace constants
     // Display-time despeckle of motion frames: a pixel whose luminance exceeds
     // RATIO x (mean of its 8 neighbours) + FLOOR is scaled down to that level. Only isolated dots
     // are touched; uniformly bright regions keep their value, and the accumulation is untouched.
-    inline constexpr float MOTION_DESPECKLE_RATIO = 3.0f;
+    inline constexpr float MOTION_DESPECKLE_RATIO = 1.0f;
     inline constexpr float MOTION_DESPECKLE_FLOOR = 0.02f;
     inline constexpr int INTERACTIVE_MAX_SPP = 100000;       // Max SPP budget for interactive accumulation
 };

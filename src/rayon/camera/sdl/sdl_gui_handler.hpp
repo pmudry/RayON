@@ -212,9 +212,9 @@ class SDLGuiHandler
                             "and the accumulation itself are untouched.");
       if (*enabled && ratio)
       {
-         ImGui::SameLine();
+         // Own line: next to the checkbox label the slider would run past the panel edge
          ImGui::PushItemWidth(std::clamp(ImGui::GetContentRegionAvail().x * 0.67f, 120.0f, 240.0f));
-         ImGui::SliderFloat("##mq_despeckle_ratio", ratio, 1.5f, 8.0f, "x%.1f");
+         ImGui::SliderFloat("Ratio##mq_despeckle_ratio", ratio, 1.0f, 8.0f, "x%.1f");
          ImGui::PopItemWidth();
          ImGui::SetItemTooltip("A pixel is scaled down when it exceeds this multiple of the mean of\n"
                                "its neighbours. Lower = more aggressive.");

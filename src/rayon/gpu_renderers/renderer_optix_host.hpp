@@ -32,7 +32,7 @@ extern "C"
    void optixRendererDownloadAccum(float *host_accum_buffer, int width, int height);
    void optixRendererConvertAccumToDisplay(unsigned char *display_image, int width, int height,
                                            int channels, int num_samples, float gamma, bool despeckle = false,
-                                           float despeckle_ratio = 3.0f, float despeckle_floor = 0.02f);
+                                           float despeckle_ratio = 1.0f, float despeckle_floor = 0.02f);
    void optixRendererCleanup();
    void setOptiXSobolSampler(bool use_sobol);
    void setOptiXMISEnabled(bool enabled);
