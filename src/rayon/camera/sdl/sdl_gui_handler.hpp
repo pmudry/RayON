@@ -67,11 +67,11 @@ static const char *visualizationModeNames[] = {"Normal Render", "Show Normals"};
 /// Accumulation restarts on every camera change, so none of these affect the converged image.
 struct MotionQualitySettings
 {
-   int   motion_scale     = 2;     ///< Render at 1/motion_scale width and height while moving (1, 2 or 4)
+   float motion_fraction  = 0.5f;  ///< Fraction of the width and height rendered while moving (1, 3/4, 1/2, 1/4)
    bool  refine_stages    = true;  ///< After the motion, climb through 1/2 and 3/4 resolution before full
-   float stage_seconds    = 0.4f;  ///< Duration of each intermediate resolution stage
-   float fade_seconds     = 0.6f;  ///< Duration of the fade from one stage's image into the next
-   float cooldown_seconds = 0.15f; ///< Time after the last camera event before the camera counts as still
+   float stage_seconds    = 0.1f;  ///< Duration of each intermediate resolution stage
+   float fade_seconds     = 0.1f;  ///< Duration of the fade from one stage's image into the next
+   float cooldown_seconds = 0.05f; ///< Time after the last camera event before the camera counts as still
    bool single_sample    = false; ///< One sample per frame instead of the batch size
    bool fast_sampler     = false; ///< PCG instead of Sobol (cheaper per sample)
    bool limit_depth      = false; ///< Cap the bounce depth at motion_max_depth (slightly darkens indirect light)
@@ -528,10 +528,14 @@ class SDLGuiHandler
                   if (motion_quality)
                   {
                      ImGui::SeparatorText("Resolution");
-                     int res_idx = motion_quality->motion_scale >= 4 ? 2 : (motion_quality->motion_scale == 2 ? 1 : 0);
+                     static const float fractions[] = {1.0f, 0.75f, 0.5f, 0.25f};
+                     int res_idx = 2;
+                     for (int i = 0; i < 4; i++)
+                        if (std::fabs(motion_quality->motion_fraction - fractions[i]) < 0.01f)
+                           res_idx = i;
                      pushSliderWidth();
-                     if (ImGui::Combo("While moving##mq_res", &res_idx, "Full\0Half\0Quarter\0"))
-                        motion_quality->motion_scale = (res_idx == 2) ? 4 : (res_idx == 1 ? 2 : 1);
+                     if (ImGui::Combo("While moving##mq_res", &res_idx, "Full\0Three quarters\0Half\0Quarter\0"))
+                        motion_quality->motion_fraction = fractions[res_idx];
                      ImGui::PopItemWidth();
                      ImGui::SetItemTooltip("Render at this fraction of the width and height while moving\n"
                                            "(quarter = 16x fewer paths per frame), upscaled for display.");

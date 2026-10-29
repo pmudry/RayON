@@ -571,11 +571,11 @@ class RendererOptiXProgressive : public IRenderer
          // Per-frame configuration: trade quality for framerate while the camera moves
          FrameConfig config;
          const bool reduce = is_camera_moving;
-         // Resolution stages: 1/motion_scale while moving; once the camera stops, every standard
+         // Resolution stages: motion_fraction while moving; once the camera stops, every standard
          // fraction above it (1/2, 3/4) for stage_seconds each, then full. Every step is a config
          // upgrade, so the previous image is handed over as a display prior that fades out over
          // fade_seconds and the picture sharpens in place.
-         const float motion_frac = 1.0f / (float)std::max(1, motion_quality.motion_scale);
+         const float motion_frac = std::clamp(motion_quality.motion_fraction, 0.1f, 1.0f);
          float stages[3];
          int   n_stages = 0;
          if (motion_quality.refine_stages)
