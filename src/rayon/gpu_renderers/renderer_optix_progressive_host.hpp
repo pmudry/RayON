@@ -66,6 +66,7 @@ extern "C"
    void optixRendererClearHdrEnv();
    void setOptiXSobolSampler(bool use_sobol);
    void setOptiXMISEnabled(bool enabled);
+   void setOptiXFireflyFixedClamp(bool fixed);
    void setOptiXNEEStride(int stride);
    void setOptiXAdaptiveSampling(bool enabled, int min_samples, float threshold);
    bool optixRendererHandoverPrior(int new_width, int new_height, float strength);
@@ -632,6 +633,8 @@ class RendererOptiXProgressive : public IRenderer
             // Motion-gate MIS — auto-disable NEE/MIS while the camera is moving
             bool effective_mis = mis_enabled && !(motion_gate_mis && is_camera_moving);
             ::setOptiXMISEnabled(effective_mis);
+            // Fixed firefly ceiling while moving: each frame is displayed on its own
+            ::setOptiXFireflyFixedClamp(reduce);
 
             auto frame_start = std::chrono::high_resolution_clock::now();
 

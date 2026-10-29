@@ -619,6 +619,8 @@ class RendererCUDAProgressive : public IRenderer
             // so the GPU spends its budget on ray throughput rather than shadow rays.
             bool effective_mis = mis_enabled && !(motion_gate_mis && is_camera_moving);
             ::setMISEnabled(effective_mis);
+            // Fixed firefly ceiling while moving: each frame is displayed on its own
+            ::setFireflyFixedClamp(is_camera_moving);
 
             auto frame_start = std::chrono::high_resolution_clock::now();
 

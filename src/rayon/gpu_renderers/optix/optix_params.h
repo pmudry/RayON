@@ -145,6 +145,7 @@ struct OptixLaunchParams
    unsigned int frame_seed;
    unsigned int sobol_sequence_seed; ///< Sobol scramble seed, constant within one accumulation
    bool use_sobol;  ///< Use Sobol' quasi-random sampler instead of PCG (default: true)
+   bool firefly_fixed_clamp; ///< Fixed firefly ceiling (camera moving) instead of growing with samples
 
    // Scene
    OptixMaterialData *materials;

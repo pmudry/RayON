@@ -942,8 +942,12 @@ extern "C" __global__ void __raygen__rg()
       // the first samples are clamped hard (clean interactive preview), then the clamp relaxes as
       // the mean settles, so the estimator stays consistent. A fixed ceiling would freeze in a
       // bias — with a 12 cm light and no NEE the image converged to a value 30x too dark.
+      // While the camera moves each frame is its own short accumulation, so the clamp stays at
+      // the base level: a relaxed ceiling there is displayed as a firefly right away.
       // Hue-preserving scale: only the luminance is reduced.
-      const float firefly_clamp = FIREFLY_CLAMP_BASE * sqrtf((float)(pixel_samples_before + s + 1));
+      const float firefly_clamp =
+          params.firefly_fixed_clamp ? FIREFLY_CLAMP_BASE
+                                     : FIREFLY_CLAMP_BASE * sqrtf((float)(pixel_samples_before + s + 1));
       float sample_lum = 0.2126f * color.x + 0.7152f * color.y + 0.0722f * color.z;
       if (sample_lum > firefly_clamp)
       {

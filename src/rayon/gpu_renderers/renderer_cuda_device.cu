@@ -42,6 +42,9 @@ __constant__ float g_golf_dimple_depth  = 0.35f;
 // MIS / NEE runtime controls
 __constant__ bool g_mis_enabled          = true;  ///< Global MIS on/off (disables NEE + emissive MIS weight)
 __constant__ int  g_nee_stride           = 3;      ///< Do NEE every N samples (contribution × N)
+// Firefly clamp: fixed ceiling while the camera moves (the batch is the whole image, so a
+// relaxed clamp shows up directly), growing with the sample count otherwise.
+__constant__ bool g_firefly_fixed_clamp  = false;
 
 //==================== CUDA STREAM & PINNED MEMORY ====================
 // Display stream: gamma-correct kernel + async D2H copy pipeline.
@@ -129,6 +132,16 @@ extern "C" void setGolfDimpleRadius(float radius)
 extern "C" void setMISEnabled(bool enabled)
 {
    cudaMemcpyToSymbol(g_mis_enabled, &enabled, sizeof(bool));
+}
+
+extern "C" void setFireflyFixedClamp(bool fixed)
+{
+   static bool current = false;
+   if (fixed != current)
+   {
+      current = fixed;
+      cudaMemcpyToSymbol(g_firefly_fixed_clamp, &fixed, sizeof(bool));
+   }
 }
 
 extern "C" void setNEEStride(int stride)

@@ -34,6 +34,7 @@ extern __constant__ float g_golf_dimple_depth;
 // MIS / NEE runtime controls
 extern __constant__ bool g_mis_enabled;           ///< Global MIS toggle
 extern __constant__ int  g_nee_stride;             ///< Option C: NEE every N samples
+extern __constant__ bool g_firefly_fixed_clamp;    ///< Fixed firefly ceiling while the camera moves
 
 // Forward declarations for golf-ball helpers implemented in shader_golf.cu
 struct ray_simple;
