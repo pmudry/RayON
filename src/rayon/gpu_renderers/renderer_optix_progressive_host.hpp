@@ -168,9 +168,9 @@ class RendererOptiXProgressive : public IRenderer
 
       // Motion detection
       bool is_camera_moving = false;
-      bool refine_stage     = false; // after a motion: accumulate at half resolution before going full
+      int  stage_index      = 0; // resolution stage after a motion (index into the stage fractions)
       auto last_camera_change_time = std::chrono::high_resolution_clock::now();
-      const float motion_cooldown_seconds = 0.3f;
+      auto stage_start_time        = last_camera_change_time; // when the current render config was applied
 
       // Overlay / visualization state (mirrors CUDA renderer)
       int visualization_mode = static_cast<int>(VisualizationMode::NORMAL);
@@ -556,7 +556,7 @@ class RendererOptiXProgressive : public IRenderer
          // Motion detection
          auto now = std::chrono::high_resolution_clock::now();
          std::chrono::duration<float> time_since_last_change = now - last_camera_change_time;
-         is_camera_moving = (time_since_last_change.count() < motion_cooldown_seconds);
+         is_camera_moving = (time_since_last_change.count() < motion_quality.cooldown_seconds);
 
          // Camera changed → the camera is moving; the accumulation restarts below
          bool restart_accumulation = camera_changed;
@@ -571,17 +571,28 @@ class RendererOptiXProgressive : public IRenderer
          // Per-frame configuration: trade quality for framerate while the camera moves
          FrameConfig config;
          const bool reduce = is_camera_moving;
-         // Resolution stages: 1/motion_scale while moving; once the camera stops, half resolution
-         // until MOTION_REFINE_SAMPLES have accumulated, then full. Every step is a config upgrade,
-         // so the previous image is handed over as a display prior and the picture sharpens in place.
+         // Resolution stages: 1/motion_scale while moving; once the camera stops, every standard
+         // fraction above it (1/2, 3/4) for stage_seconds each, then full. Every step is a config
+         // upgrade, so the previous image is handed over as a display prior that fades out over
+         // fade_seconds and the picture sharpens in place.
+         const float motion_frac = 1.0f / (float)std::max(1, motion_quality.motion_scale);
+         float stages[3];
+         int   n_stages = 0;
+         if (motion_quality.refine_stages)
+            for (float f : {0.5f, 0.75f})
+               if (f > motion_frac + 1e-3f)
+                  stages[n_stages++] = f;
+         stages[n_stages++] = 1.0f;
+         auto stage_size = [&](float frac, int full) { return std::max(1, (int)std::lround(full * frac)); };
          if (is_camera_moving)
-            refine_stage = motion_quality.refine_half && motion_quality.motion_scale > 2;
-         else if (refine_stage && last_config.width == std::max(1, image_width / 2) &&
-                  current_samples >= constants::MOTION_REFINE_SAMPLES)
-            refine_stage = false; // enough samples at half resolution: go full
-         const int res_scale = is_camera_moving ? std::max(1, motion_quality.motion_scale) : (refine_stage ? 2 : 1);
-         config.width    = std::max(1, image_width / res_scale);
-         config.height   = std::max(1, image_height / res_scale);
+            stage_index = 0; // first stage after the motion
+         else if (stage_index < n_stages - 1 && last_config.width == stage_size(stages[stage_index], image_width) &&
+                  std::chrono::duration<float>(now - stage_start_time).count() >= motion_quality.stage_seconds)
+            ++stage_index; // the current stage has run its time: next one
+         stage_index = std::min(stage_index, n_stages - 1);
+         const float res_frac = is_camera_moving ? motion_frac : stages[stage_index];
+         config.width    = stage_size(res_frac, image_width);
+         config.height   = stage_size(res_frac, image_height);
          config.depth    = (reduce && motion_quality.limit_depth) ? std::max(1, motion_quality.motion_max_depth)
                                                                   : frame.max_depth;
          config.sobol    = use_sobol && !(reduce && motion_quality.fast_sampler);
@@ -602,15 +613,25 @@ class RendererOptiXProgressive : public IRenderer
             convergence_pct = 0.0f;
             force_immediate_render = true;
             std::fill(accum_buffer.begin(), accum_buffer.end(), 0.0f);
-            // Hand the previous image over as a display prior that fades out over the first
-            // MOTION_HANDOVER_FADE_SAMPLES samples, so each step to a higher quality refines the
-            // picture instead of snapping to a fresh, noisy one.
+            // Hand the previous image over as a display prior that fades out over fade_seconds, so
+            // each step to a higher quality refines the picture instead of snapping to a fresh, noisy
+            // one. The prior's weight is a sample count: estimate the samples the new stage will
+            // accumulate in fade_seconds from the measured frame rate, scaled by the pixel-count
+            // ratio since a larger frame renders proportionally slower.
+            float fade_samples = 48.0f;
+            if (config_upgrade && current_fps > 0.0f)
+            {
+               const float pixel_ratio = (float)(last_config.width * last_config.height) /
+                                         (float)std::max(1, config.width * config.height);
+               fade_samples = motion_quality.fade_seconds * current_fps * pixel_ratio * (float)std::max(1, frame_spp);
+               fade_samples = std::clamp(fade_samples, 16.0f, 100000.0f);
+            }
             bool handed_over = config_upgrade &&
-                               ::optixRendererHandoverPrior(config.width, config.height,
-                                                            constants::MOTION_HANDOVER_FADE_SAMPLES);
+                               ::optixRendererHandoverPrior(config.width, config.height, fade_samples);
             if (!handed_over)
                optixRendererResetAccum(image_width, image_height);
-            current_samples = 0;
+            current_samples  = 0;
+            stage_start_time = now;
          }
          if (config != last_config)
          {

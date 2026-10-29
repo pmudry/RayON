@@ -67,8 +67,11 @@ static const char *visualizationModeNames[] = {"Normal Render", "Show Normals"};
 /// Accumulation restarts on every camera change, so none of these affect the converged image.
 struct MotionQualitySettings
 {
-   int  motion_scale     = 4;    ///< Render at 1/motion_scale width and height while moving (1, 2 or 4)
-   bool refine_half      = true; ///< After the motion, accumulate at half resolution before going full
+   int   motion_scale     = 2;     ///< Render at 1/motion_scale width and height while moving (1, 2 or 4)
+   bool  refine_stages    = true;  ///< After the motion, climb through 1/2 and 3/4 resolution before full
+   float stage_seconds    = 0.4f;  ///< Duration of each intermediate resolution stage
+   float fade_seconds     = 0.6f;  ///< Duration of the fade from one stage's image into the next
+   float cooldown_seconds = 0.15f; ///< Time after the last camera event before the camera counts as still
    bool single_sample    = false; ///< One sample per frame instead of the batch size
    bool fast_sampler     = false; ///< PCG instead of Sobol (cheaper per sample)
    bool limit_depth      = false; ///< Cap the bounce depth at motion_max_depth (slightly darkens indirect light)
@@ -534,13 +537,19 @@ class SDLGuiHandler
                            ImGui::PopItemWidth();
                            ImGui::SetItemTooltip("Render at this fraction of the width and height while moving\n"
                                                  "(quarter = 16x fewer paths per frame), upscaled for display.");
-                           if (motion_quality->motion_scale >= 4)
-                           {
-                              ImGui::Checkbox("Refine at half before full##mq_refine", &motion_quality->refine_half);
-                              ImGui::SetItemTooltip("When the camera stops, accumulate a few samples at half\n"
-                                                    "resolution before switching to full, so the picture sharpens\n"
-                                                    "in two steps. Each step fades in over the previous one.");
-                           }
+                           ImGui::Checkbox("Intermediate stages (1/2, 3/4)##mq_refine", &motion_quality->refine_stages);
+                           ImGui::SetItemTooltip("When the camera stops, climb through the standard resolutions\n"
+                                                 "above the motion one (1/2 and 3/4) before going full, each\n"
+                                                 "stage fading into the previous image.");
+                           pushSliderWidth();
+                           ImGui::SliderFloat("Stage length##mq_stage", &motion_quality->stage_seconds, 0.1f, 1.5f, "%.2f s");
+                           ImGui::SetItemTooltip("How long each intermediate resolution stage lasts.");
+                           ImGui::SliderFloat("Fade##mq_fade", &motion_quality->fade_seconds, 0.1f, 2.0f, "%.2f s");
+                           ImGui::SetItemTooltip("How long the previous image stays blended in after a stage change.");
+                           ImGui::SliderFloat("Motion cooldown##mq_cool", &motion_quality->cooldown_seconds, 0.05f, 0.5f, "%.2f s");
+                           ImGui::SetItemTooltip("Time after the last camera event before the camera counts as still.\n"
+                                                 "Bridges the gaps between mouse or key-repeat events.");
+                           ImGui::PopItemWidth();
                         }
                         ImGui::Checkbox("One sample per frame##mq_spp", &motion_quality->single_sample);
                         ImGui::SetItemTooltip("Trace a single sample per pixel per frame instead of the\n"
