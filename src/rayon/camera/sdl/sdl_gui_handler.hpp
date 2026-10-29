@@ -425,17 +425,20 @@ class SDLGuiHandler
                   {
                      if (adaptive_threshold)
                      {
-                        // Display threshold as power of 10 for readability
-                        // Slider works in log10 space: -4.0 = 10^-4 = 0.0001, -1.3 = 10^-1.3 = 0.05
+                        // Threshold = standard error of the pixel mean, in display space (fraction
+                        // of full scale), at which a pixel stops sampling. Slider works in log10
+                        // space: -2.0 = 10^-2 = 0.01 ≈ 2.5 levels of 255.
                         float log_val = log10f(*adaptive_threshold);
                         char label[32];
-                        snprintf(label, sizeof(label), "10^%.1f", log_val);
+                        snprintf(label, sizeof(label), "10^%.1f (%.1f/255)", log_val, 255.0f * *adaptive_threshold);
                         pushSliderWidth();
-                        if (ImGui::SliderFloat("Threshold", &log_val, -6.0f, -1.0f, label))
+                        if (ImGui::SliderFloat("Threshold", &log_val, -3.0f, -1.0f, label))
                         {
                            *adaptive_threshold = powf(10.0f, log_val);
                         }
                         ImGui::PopItemWidth();
+                        ImGui::SetItemTooltip("Standard error of a pixel's displayed value (in levels of 255)\n"
+                                              "below which it stops taking samples. Lower = cleaner, slower.");
                      }
                      if (show_heatmap)
                         ImGui::Checkbox("Show Sample Heatmap", show_heatmap);

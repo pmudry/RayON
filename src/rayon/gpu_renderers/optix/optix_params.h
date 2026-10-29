@@ -109,6 +109,10 @@ struct OptixLightData
 };
 
 // Launch parameters — passed to all OptiX programs via __constant__ memory
+// Streak value that marks a converged pixel as "being re-checked" (sampled again for one
+// checkpoint). Shared by raygen and the adaptive bookkeeping kernel.
+constexpr unsigned char ADAPTIVE_RECHECK_MARK = 255u;
+
 struct OptixLaunchParams
 {
    // Output
@@ -118,6 +122,13 @@ struct OptixLaunchParams
 
    // Adaptive sampling: per-pixel sample counts, negative = converged (skip). Null when disabled.
    const int *pixel_sample_counts;
+   // Per-pixel convergence streak (see optixAdaptiveUpdateKernel). A converged pixel whose streak
+   // equals ADAPTIVE_RECHECK_MARK is being re-checked and must be sampled despite its negative
+   // count. Null when adaptive sampling is disabled.
+   const unsigned char *conv_streak;
+   // Per-pixel running sum of squared sample luminance, kept by raygen so the adaptive pass can
+   // estimate each pixel's variance. Always valid (counts stay accurate while adaptive is off).
+   float *lum_sq_buffer;
 
    // Camera
    float3 camera_center;

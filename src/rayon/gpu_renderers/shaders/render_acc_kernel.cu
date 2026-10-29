@@ -210,21 +210,22 @@ __global__ void __launch_bounds__(256) renderAccKernel(float4 *accum_buffer, con
    f3 cam_u(cam_u_x, cam_u_y, cam_u_z);
    f3 cam_v(cam_v_x, cam_v_y, cam_v_z);
 
-   // Single coalesced float4 read instead of 3 separate float reads
+   // Single coalesced float4 read instead of 3 separate float reads. The w component holds the
+   // running sum of squared sample luminance, from which the convergence test estimates variance.
    float4 acc = accum_buffer[pixel_idx];
    f3 accumulated_color(acc.x, acc.y, acc.z);
-
-   // Snapshot the accumulated luminance BEFORE this batch (for convergence check)
-   float lum_before = 0.0f;
-   if (adaptive_enabled && pixel_samples > 0)
-   {
-      float inv_s = 1.0f / (float)pixel_samples;
-      lum_before = 0.299f * acc.x * inv_s + 0.587f * acc.y * inv_s + 0.114f * acc.z * inv_s;
-   }
+   float accumulated_lum_sq = acc.w;
 
 #ifdef DIAGS
    int local_ray_count = 0;
 #endif
+
+   // Firefly rejection base level (see the clamp inside the sample loop). Mirrored in
+   // optix_programs.cu — keep both in sync.
+   constexpr float FIREFLY_CLAMP_BASE = 20.0f;
+   // Samples this pixel already holds: its own count under adaptive sampling (converged pixels
+   // skip batches, so it lags the global count), the global count otherwise.
+   const int pixel_samples_before = adaptive_enabled ? pixel_samples : total_samples_so_far;
 
    // --- Trace new samples ---
    for (int s = 0; s < samples_to_add; s++)
@@ -271,15 +272,21 @@ __global__ void __launch_bounds__(256) renderAccKernel(float4 *accum_buffer, con
 #endif
       );
 
-      // Firefly rejection: clamp per-sample luminance to prevent single HDR texels
-      // (e.g., sun disk in outdoor environment maps) from causing permanent white dots.
-      // Uses a luminance-preserving scale so hue is maintained.
-      constexpr float FIREFLY_CLAMP = 20.0f;
+      // Firefly rejection: clamp per-sample luminance so that one very bright path (a sun texel
+      // in an HDRI, a small light hit by chance from a diffuse surface) cannot leave a permanent
+      // white dot. The ceiling grows with the square root of the samples the pixel already holds:
+      // the first samples are clamped hard (clean interactive preview), then the clamp relaxes as
+      // the mean settles, so the estimator stays consistent. A fixed ceiling would freeze in a
+      // bias — with a 12 cm light and no NEE the image converged to a value 30x too dark.
+      // Hue-preserving scale: only the luminance is reduced.
+      const float firefly_clamp = FIREFLY_CLAMP_BASE * sqrtf((float)(pixel_samples_before + s + 1));
       float sample_lum = 0.2126f * sample_color.x + 0.7152f * sample_color.y + 0.0722f * sample_color.z;
-      if (sample_lum > FIREFLY_CLAMP)
-         sample_color = sample_color * (FIREFLY_CLAMP / sample_lum);
+      if (sample_lum > firefly_clamp)
+         sample_color = sample_color * (firefly_clamp / sample_lum);
 
       accumulated_color = accumulated_color + sample_color;
+      const float lum601 = 0.299f * sample_color.x + 0.587f * sample_color.y + 0.114f * sample_color.z;
+      accumulated_lum_sq += lum601 * lum601;
    }
 
 #ifdef DIAGS
@@ -288,7 +295,8 @@ __global__ void __launch_bounds__(256) renderAccKernel(float4 *accum_buffer, con
 #endif
 
    // Single coalesced float4 write instead of 3 separate float writes
-   accum_buffer[pixel_idx] = make_float4(accumulated_color.x, accumulated_color.y, accumulated_color.z, 0.0f);
+   accum_buffer[pixel_idx] =
+       make_float4(accumulated_color.x, accumulated_color.y, accumulated_color.z, accumulated_lum_sq);
 
    // --- Adaptive sampling: check convergence after this batch ---
    if (adaptive_enabled)
@@ -297,17 +305,25 @@ __global__ void __launch_bounds__(256) renderAccKernel(float4 *accum_buffer, con
 
       if (new_sample_count >= min_adaptive_samples)
       {
-         // Compare average luminance before and after this batch
-         float inv_s = 1.0f / (float)new_sample_count;
-         float lum_after = 0.299f * accumulated_color.x * inv_s
-                         + 0.587f * accumulated_color.y * inv_s
-                         + 0.114f * accumulated_color.z * inv_s;
+         // Standard error of the pixel mean, from the running sums:
+         //   mean = sum(lum) / n,  var = (sum(lum^2) / n - mean^2) * n / (n - 1),  se = sqrt(var / n)
+         // expressed in display space: with gamma 2 an error `se` on the linear mean is an error
+         // of se / (2 sqrt(mean)) on the displayed value in [0, 1]. A pixel is done when that is
+         // below adaptive_threshold (0.01 ≈ 2.5 levels of 255). Dark pixels, whose noise the
+         // display cannot show, converge early; a relative test would keep silhouette-edge pixels
+         // (mostly background, rarely geometry) open forever.
+         // (An earlier version compared the mean before and after the batch; that difference
+         // shrinks like 1/n whatever the noise, so the threshold was only reached after ~10^5
+         // samples on indirectly lit pixels.)
+         const float inv_s = 1.0f / (float)new_sample_count;
+         const float mean  = (0.299f * accumulated_color.x + 0.587f * accumulated_color.y +
+                              0.114f * accumulated_color.z) * inv_s;
+         float var = fmaxf(accumulated_lum_sq * inv_s - mean * mean, 0.0f);
+         if (new_sample_count > 1)
+            var *= (float)new_sample_count / (float)(new_sample_count - 1);
+         const float se_display = sqrtf(var * inv_s) / (2.0f * sqrtf(fmaxf(mean, 1e-4f)));
 
-         // Relative change in luminance — if adding more samples barely changes
-         // the pixel's appearance, it has converged
-         float relative_change = fabsf(lum_after - lum_before) / fmaxf(lum_after, 0.001f);
-
-         if (relative_change < adaptive_threshold)
+         if (se_display < adaptive_threshold)
          {
             // Mark as converged: store negative sample count (sign bit = converged flag)
             pixel_sample_counts[pixel_idx] = -new_sample_count;

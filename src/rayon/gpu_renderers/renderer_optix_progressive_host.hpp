@@ -173,7 +173,8 @@ class RendererOptiXProgressive : public IRenderer
       bool show_heatmap = false;
       bool adaptive_sampling_enabled = settings_.adaptive_sampling;
       const int min_adaptive_samples = 64;  // Don't check convergence before this many samples
-      float adaptive_threshold = 3.16e-5f;  // Relative luminance change threshold (~10^-4.5)
+      float adaptive_threshold = 0.01f;     // Std. error of the pixel mean in display space (~2.5/255)
+      const float ADAPTIVE_STOP_PCT = 99.9f; // Stop when this share of pixels has converged
       float convergence_pct = 0.0f;
       int frames_since_convergence_check = 0;
 
@@ -615,8 +616,10 @@ class RendererOptiXProgressive : public IRenderer
             needs_rerender = false;
          }
 
-         // Stop rendering when max SPP reached, OR when adaptive sampling reports 100% convergence
-         bool all_converged = config.adaptive && convergence_pct >= 100.0f;
+         // Stop rendering when max SPP reached, or when adaptive sampling reports that (almost) every
+         // pixel has converged. The last few pixels of a scene lit by caustics can keep an enormous
+         // variance for a very long time; waiting for them keeps the GPU busy for no visible gain.
+         bool all_converged = config.adaptive && convergence_pct >= ADAPTIVE_STOP_PCT;
          bool should_render = (current_samples < max_samples && !all_converged && !camera_changed && running) ||
                               force_immediate_render;
          bool needs_initial_render = current_samples == 0 && !accumulation_enabled;
@@ -642,7 +645,13 @@ class RendererOptiXProgressive : public IRenderer
             std::chrono::duration<float, std::milli> frame_time = frame_end - frame_start;
             if (frame_time.count() > 0.0f)
             {
-               float total_samples = static_cast<float>(frame_spp) * config.width * config.height;
+               // Converged pixels are skipped by the kernel, so count only the pixels still being
+               // sampled (from the last convergence readout) or the throughput balloons as the
+               // image converges.
+               float active_pixels = static_cast<float>(config.width) * config.height;
+               if (config.adaptive)
+                  active_pixels *= std::max(0.0f, 1.0f - convergence_pct / 100.0f);
+               float total_samples = static_cast<float>(frame_spp) * active_pixels;
                current_sps = (total_samples * 1000.0f) / frame_time.count();
                current_ms_per_sample = frame_time.count() / static_cast<float>(frame_spp);
             }
@@ -668,6 +677,7 @@ class RendererOptiXProgressive : public IRenderer
          }
          else
          {
+            current_sps = 0.0f; // idle: nothing is being sampled
             SDL_Delay(16);
          }
 

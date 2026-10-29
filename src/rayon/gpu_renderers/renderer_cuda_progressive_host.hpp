@@ -168,7 +168,8 @@ class RendererCUDAProgressive : public IRenderer
       void *d_pixel_sample_counts = nullptr; // Per-pixel sample counts (null = disabled)
       bool adaptive_sampling_enabled = scene.adaptive_sampling;
       int min_adaptive_samples = 32;         // Don't check convergence before this many samples
-      float adaptive_threshold = 3.16e-5f;   // Relative luminance change threshold (default ~10^-4.5)
+      float adaptive_threshold = 0.01f;      // Std. error of the pixel mean in display space (~2.5/255)
+      const float ADAPTIVE_STOP_PCT = 99.9f; // Stop when this share of pixels has converged
       float convergence_pct = 0.0f;          // % of pixels that have converged (for display)
       bool show_heatmap = false;              // Toggle to display sample count heatmap
       int visualization_mode = static_cast<int>(VisualizationMode::NORMAL); // Visualization mode (normal vs show normals)
@@ -600,8 +601,10 @@ class RendererCUDAProgressive : public IRenderer
          }
 
          // Render logic
-         // Stop rendering when max SPP reached, OR when adaptive sampling reports 100% convergence
-         bool all_converged = adaptive_sampling_enabled && convergence_pct >= 100.0f;
+         // Stop rendering when max SPP reached, or when adaptive sampling reports that (almost) every
+         // pixel has converged. The last few pixels of a scene lit by caustics can keep an enormous
+         // variance for a very long time; waiting for them keeps the GPU busy for no visible gain.
+         bool all_converged = adaptive_sampling_enabled && convergence_pct >= ADAPTIVE_STOP_PCT;
          bool should_render = (current_samples < max_samples && !all_converged && !camera_changed && running) || force_immediate_render;
          bool needs_initial_render = current_samples == 0 && !accumulation_enabled;
 
@@ -635,8 +638,12 @@ class RendererCUDAProgressive : public IRenderer
 
             if (frame_time.count() > 0.0f)
             {
-               // SPS = total samples computed per second (samples_per_pixel * pixel_count / time)
-               float total_samples = static_cast<float>(adaptive_samples_per_batch) * image_width * image_height;
+               // SPS = samples computed per second. Converged pixels are skipped by the kernel, so
+               // count only the pixels still being sampled (from the last convergence readout).
+               float active_pixels = static_cast<float>(image_width) * image_height;
+               if (adaptive_sampling_enabled)
+                  active_pixels *= std::max(0.0f, 1.0f - convergence_pct / 100.0f);
+               float total_samples = static_cast<float>(adaptive_samples_per_batch) * active_pixels;
                current_sps = (total_samples * 1000.0f) / frame_time.count();
                // ms per sample-pass (one pass = all pixels get one more sample)
                current_ms_per_sample = frame_time.count() / static_cast<float>(adaptive_samples_per_batch);
@@ -665,7 +672,8 @@ class RendererCUDAProgressive : public IRenderer
          }
          else
          {
-            SDL_Delay(16); // Cap CPU usage when not rendering
+            current_sps = 0.0f; // idle: nothing is being sampled
+            SDL_Delay(16);      // Cap CPU usage when not rendering
          }
 
          // Snapshot current values to detect ImGui changes

@@ -451,8 +451,10 @@ extern "C" __global__ void __raygen__rg()
 
    const unsigned int pixel_idx = y * params.width + x;
 
-   // Adaptive sampling: converged pixels (negative count) take no more samples
-   if (params.pixel_sample_counts && params.pixel_sample_counts[pixel_idx] < 0)
+   // Adaptive sampling: converged pixels (negative count) take no more samples, except while
+   // they are being re-checked (streak == ADAPTIVE_RECHECK_MARK, see optixAdaptiveUpdateKernel)
+   if (params.pixel_sample_counts && params.pixel_sample_counts[pixel_idx] < 0 &&
+       !(params.conv_streak && params.conv_streak[pixel_idx] == ADAPTIVE_RECHECK_MARK))
       return;
 
    // Per-pixel stable hash for Sobol scrambling (computed once, reused every sample).
@@ -461,9 +463,21 @@ extern "C" __global__ void __raygen__rg()
    // Initialize seed based on pixel and frame
    unsigned int seed = pcg_hash(pixel_idx ^ (params.frame_seed * 1099511628211u));
 
-   // Load accumulated color
+   // Load accumulated color. The w component counts the samples whose primary ray hit any
+   // geometry: the adaptive-sampling pass uses it to tell a pixel that only ever sees the
+   // (possibly black) background from one whose light simply has not been found yet.
    float4 acc = params.accum_buffer[pixel_idx];
    float3 accumulated = make_float3(acc.x, acc.y, acc.z);
+   float  primary_hits = acc.w;
+   float  lum_sq_added = 0.0f; // sum of squared sample luminance for this launch (variance estimate)
+
+   // Firefly rejection base level (see the clamp at the end of the sample loop). Mirrored in
+   // render_acc_kernel.cu — keep both in sync.
+   constexpr float FIREFLY_CLAMP_BASE = 20.0f;
+   // Samples this pixel already holds: its own count under adaptive sampling (converged pixels
+   // skip launches, so it lags the global count), the global count otherwise.
+   const int pixel_samples_before =
+       params.pixel_sample_counts ? abs(params.pixel_sample_counts[pixel_idx]) : params.total_samples_so_far;
 
    for (int s = 0; s < params.samples_per_launch; ++s)
    {
@@ -534,6 +548,9 @@ extern "C" __global__ void __raygen__rg()
          prd.hit = false;
 
          trace(params.traversable, cur_origin, cur_direction, 0.001f, 1e16f, &prd);
+
+         if (bounce == 0 && prd.hit)
+            primary_hits += 1.0f;
 
          if (!prd.hit)
          {
@@ -919,21 +936,29 @@ extern "C" __global__ void __raygen__rg()
          }
       }
 
-      // Firefly rejection: clamp per-sample luminance to prevent single HDR texels
-      // (e.g., sun disk in outdoor environment maps) from causing permanent white dots.
-      // Uses a luminance-preserving scale so hue is maintained.
-      constexpr float FIREFLY_CLAMP = 20.0f;
+      // Firefly rejection: clamp per-sample luminance so that one very bright path (a sun texel
+      // in an HDRI, a small light hit by chance from a diffuse surface) cannot leave a permanent
+      // white dot. The ceiling grows with the square root of the samples the pixel already holds:
+      // the first samples are clamped hard (clean interactive preview), then the clamp relaxes as
+      // the mean settles, so the estimator stays consistent. A fixed ceiling would freeze in a
+      // bias — with a 12 cm light and no NEE the image converged to a value 30x too dark.
+      // Hue-preserving scale: only the luminance is reduced.
+      const float firefly_clamp = FIREFLY_CLAMP_BASE * sqrtf((float)(pixel_samples_before + s + 1));
       float sample_lum = 0.2126f * color.x + 0.7152f * color.y + 0.0722f * color.z;
-      if (sample_lum > FIREFLY_CLAMP)
+      if (sample_lum > firefly_clamp)
       {
-         float scale = FIREFLY_CLAMP / sample_lum;
+         float scale = firefly_clamp / sample_lum;
          color = color * scale;
       }
 
       accumulated = accumulated + color;
+      const float lum601 = 0.299f * color.x + 0.587f * color.y + 0.114f * color.z;
+      lum_sq_added += lum601 * lum601;
    }
 
-   params.accum_buffer[pixel_idx] = make_float4(accumulated.x, accumulated.y, accumulated.z, 0.0f);
+   params.accum_buffer[pixel_idx] = make_float4(accumulated.x, accumulated.y, accumulated.z, primary_hits);
+   if (params.lum_sq_buffer)
+      params.lum_sq_buffer[pixel_idx] += lum_sq_added;
 }
 
 //==============================================================================

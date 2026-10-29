@@ -97,12 +97,12 @@ struct OptixState
    int   nee_stride           = 3;
 
    // Adaptive sampling (converged-pixel skipping): per-pixel sample counts (negative = converged)
-   // and the per-pixel mean luminance at the last convergence check.
+   // and the per-pixel sum of squared sample luminance for the convergence test.
    bool   adaptive_enabled     = false;
    int    adaptive_min_samples = 32;
    float  adaptive_threshold   = 3.16e-5f;
    int   *d_pixel_sample_counts = nullptr;
-   float *d_prev_lum            = nullptr; // mean luminance at the last convergence check
+   float *d_lum_sq              = nullptr; // per-pixel sum of squared sample luminance (variance)
    unsigned char *d_conv_streak = nullptr; // consecutive checks that passed the stability test
    int   *d_converged_count     = nullptr;
 
@@ -981,10 +981,10 @@ extern "C" void optixRendererResetAccum(int width, int height)
 
       // Adaptive sampling buffers follow the accumulation buffer size
       if (g_state.d_pixel_sample_counts) CUDA_CHECK(cudaFree(g_state.d_pixel_sample_counts));
-      if (g_state.d_prev_lum)            CUDA_CHECK(cudaFree(g_state.d_prev_lum));
+      if (g_state.d_lum_sq)              CUDA_CHECK(cudaFree(g_state.d_lum_sq));
       if (g_state.d_conv_streak)         CUDA_CHECK(cudaFree(g_state.d_conv_streak));
       CUDA_CHECK(cudaMalloc(&g_state.d_pixel_sample_counts, (size_t)width * height * sizeof(int)));
-      CUDA_CHECK(cudaMalloc(&g_state.d_prev_lum, (size_t)width * height * sizeof(float)));
+      CUDA_CHECK(cudaMalloc(&g_state.d_lum_sq, (size_t)width * height * sizeof(float)));
       CUDA_CHECK(cudaMalloc(&g_state.d_conv_streak, (size_t)width * height));
       if (g_state.d_prior) CUDA_CHECK(cudaFree(g_state.d_prior));
       CUDA_CHECK(cudaMalloc(&g_state.d_prior, (size_t)width * height * sizeof(float4)));
@@ -996,7 +996,7 @@ extern "C" void optixRendererResetAccum(int width, int height)
    const size_t n_pixels = (size_t)g_state.accum_width * g_state.accum_height;
    CUDA_CHECK(cudaMemsetAsync(g_state.d_accum_buffer, 0, n_pixels * sizeof(float4), getOptiXStream()));
    CUDA_CHECK(cudaMemsetAsync(g_state.d_pixel_sample_counts, 0, n_pixels * sizeof(int), getOptiXStream()));
-   CUDA_CHECK(cudaMemsetAsync(g_state.d_prev_lum, 0, n_pixels * sizeof(float), getOptiXStream()));
+   CUDA_CHECK(cudaMemsetAsync(g_state.d_lum_sq, 0, n_pixels * sizeof(float), getOptiXStream()));
    CUDA_CHECK(cudaMemsetAsync(g_state.d_conv_streak, 0, n_pixels, getOptiXStream()));
 
    // Allocate persistent launch params buffer (once)
@@ -1006,67 +1006,112 @@ extern "C" void optixRendererResetAccum(int width, int height)
 
 //==============================================================================
 // Per-pixel sample bookkeeping, run after every launch: advance the per-pixel sample counts
-// and, when adaptive sampling is enabled, mark pixels whose mean luminance barely changed
-// (relative to the previous check) as converged (negative count). The counts are kept
-// accurate even while adaptive sampling is off, so it can be toggled mid-accumulation
+// and, when adaptive sampling is enabled, mark pixels whose mean is known precisely enough
+// (standard error in display space below `threshold`) as converged (negative count). The counts are
+// kept accurate even while adaptive sampling is off, so it can be toggled mid-accumulation
 // without restarting (the display always normalises by the per-pixel count).
 // Mirrors the test in the CUDA renderAccKernel as a separate pass so the OptiX raygen
 // program only has to read the per-pixel flag.
 //==============================================================================
 // Convergence test details, chosen so that pixels lit mostly by rare bright paths (caustics
 // through glass, light arriving through soap bubbles) are not frozen at a wrong value:
-//   * the mean is compared only at checkpoints every ADAPTIVE_CHECK_INTERVAL samples, and the
-//     pixel must pass ADAPTIVE_STREAK consecutive checkpoints after min_samples;
-//   * a pixel that has received no energy at all is never considered converged, since a
-//     stable zero just means its contribution has not been found yet;
-//   * every ADAPTIVE_REFRESH_INTERVAL samples (of the whole image), converged pixels are
-//     reopened for one more check cycle, so a late bright path can still correct them.
+//   * the standard error is tested only at checkpoints every ADAPTIVE_CHECK_INTERVAL samples,
+//     and the pixel must pass ADAPTIVE_STREAK consecutive checkpoints after min_samples. (An
+//     earlier version compared the running mean between checkpoints instead; that change
+//     shrinks like 1/n whatever the noise, so the 10^-4.5 threshold was reached only after
+//     ~10^5 samples on indirectly lit pixels and the image never reported 100 % converged.);
+//   * a pixel that has received no energy at all is not considered converged before
+//     ADAPTIVE_ZERO_SAMPLES, since a stable zero may just mean its contribution has not been
+//     found yet. Two kinds of pixel are legitimately black for ever and must still converge:
+//     one whose primary rays never hit geometry (accum.w == 0, maintained by raygen) only sees
+//     the background and converges as soon as it is stable; one that sees geometry but no light
+//     (a mirror or glass sphere reflecting a black sky, 3 % of default_scene_no_ambient) waits
+//     for ADAPTIVE_ZERO_SAMPLES. A bright path found during a later re-check reopens it;
+//   * once per ADAPTIVE_REFRESH_INTERVAL samples (of the whole image), each converged pixel is
+//     re-checked for one checkpoint, so a late bright path can still correct it. The re-checks
+//     are spread over the interval by pixel index and do not clear the converged flag.
 constexpr int ADAPTIVE_CHECK_INTERVAL   = 16;
 constexpr int ADAPTIVE_STREAK           = 2;
 constexpr int ADAPTIVE_REFRESH_INTERVAL = 256;
+constexpr int ADAPTIVE_ZERO_SAMPLES     = 512; // samples a lit-geometry pixel may stay at zero before converging
 
 __global__ void optixAdaptiveUpdateKernel(const float4 *__restrict__ accum, int *pixel_sample_counts,
-                                          float *prev_lum, unsigned char *conv_streak, int num_pixels,
-                                          int samples_added, int total_samples_after, bool adaptive,
-                                          int min_samples, float threshold)
+                                          const float *__restrict__ lum_sq, unsigned char *conv_streak,
+                                          int num_pixels, int samples_added, int total_samples_after,
+                                          bool adaptive, int min_samples, float threshold)
 {
    int idx = blockIdx.x * blockDim.x + threadIdx.x;
    if (idx >= num_pixels)
       return;
-   int count = pixel_sample_counts[idx];
-   if (adaptive && count < 0)
+   const int count   = pixel_sample_counts[idx];
+   unsigned char streak = conv_streak[idx];
+   const bool rechecking = adaptive && count < 0 && streak == ADAPTIVE_RECHECK_MARK;
+
+   if (adaptive && count < 0 && !rechecking)
    {
-      // Converged: raygen skipped it. Periodically reopen it for a re-check.
-      const int before = total_samples_after - samples_added;
-      if (before / ADAPTIVE_REFRESH_INTERVAL != total_samples_after / ADAPTIVE_REFRESH_INTERVAL)
-      {
-         pixel_sample_counts[idx] = -count;
-         conv_streak[idx]         = 0;
-      }
+      // Converged: raygen skipped it. Once per ADAPTIVE_REFRESH_INTERVAL samples the pixel is
+      // marked for a re-check, in a slot derived from its index so that only ~1/16 of the
+      // converged pixels are re-checked at any checkpoint. The count keeps its sign meanwhile, so
+      // the converged percentage stays steady and the per-launch cost stays smooth (reopening
+      // every converged pixel at once made the readout fall to 0 % and the frame time spike every
+      // 256 samples).
+      constexpr int slots = ADAPTIVE_REFRESH_INTERVAL / ADAPTIVE_CHECK_INTERVAL;
+      const int before      = total_samples_after - samples_added;
+      const int slot_before = before / ADAPTIVE_CHECK_INTERVAL;
+      const int slot_after  = total_samples_after / ADAPTIVE_CHECK_INTERVAL;
+      const int crossed     = slot_after - slot_before; // checkpoints crossed by this launch
+      const int phase       = (int)(((unsigned)idx * 2654435761u) >> 16) % slots;
+      const int wait        = ((phase - slot_before - 1) % slots + slots) % slots; // slots until this pixel's turn
+      if (crossed > 0 && (crossed >= slots || wait < crossed))
+         conv_streak[idx] = ADAPTIVE_RECHECK_MARK;
       return;
    }
 
-   // A pixel flagged converged earlier still received samples while adaptive sampling was off
+   // Open pixel, or converged pixel under re-check: it received samples_added samples.
+   // (A pixel flagged converged earlier also lands here while adaptive sampling is off.)
    const int old_count = abs(count);
    const int new_count = old_count + samples_added;
-   float4 acc = accum[idx];
-   float  lum = (0.299f * acc.x + 0.587f * acc.y + 0.114f * acc.z) / (float)new_count;
 
-   int result = new_count;
+   int result = rechecking ? -new_count : new_count;
    if (adaptive && old_count / ADAPTIVE_CHECK_INTERVAL != new_count / ADAPTIVE_CHECK_INTERVAL)
    {
-      // Checkpoint: compare with the mean at the previous checkpoint
-      float relative_change = fabsf(lum - prev_lum[idx]) / fmaxf(lum, 0.001f);
-      unsigned char streak  = conv_streak[idx];
-      streak = (relative_change < threshold && lum > 0.0f) ? (unsigned char)min(streak + 1, 255) : (unsigned char)0;
-      if (new_count >= min_samples && streak >= ADAPTIVE_STREAK)
-         result = -new_count; // sign bit = converged
+      // Checkpoint: standard error of the pixel mean, from the running sums
+      //   mean = sum(lum) / n,  var = (sum(lum^2) / n - mean^2) * n / (n - 1),  se = sqrt(var / n)
+      // expressed in display space: the image is shown with gamma 2, so an error `se` on the
+      // linear mean is an error of se / (2 sqrt(mean)) on the displayed value in [0, 1]. The
+      // threshold is therefore a fraction of full scale (0.01 ≈ 2.5 levels of 255), which lets
+      // dark pixels, whose noise the display cannot show, converge without a relative test
+      // that silhouette-edge pixels (mostly background, rarely geometry) would never pass.
+      const float4 acc  = accum[idx];
+      const float  inv  = 1.0f / (float)new_count;
+      const float  mean = (0.299f * acc.x + 0.587f * acc.y + 0.114f * acc.z) * inv;
+      float        var  = fmaxf(lum_sq[idx] * inv - mean * mean, 0.0f);
+      if (new_count > 1)
+         var *= (float)new_count / (float)(new_count - 1);
+      const float se_display = sqrtf(var * inv) / (2.0f * sqrtf(fmaxf(mean, 1e-4f)));
+      // Background-only pixel: no primary ray ever hit geometry, so its value cannot change.
+      const bool background_only = (acc.w == 0.0f);
+      const bool stable = se_display < threshold &&
+                          (mean > 0.0f || background_only || new_count >= ADAPTIVE_ZERO_SAMPLES);
+
+      if (rechecking)
+      {
+         // Re-check done: still converged, or reopened because the new samples moved the estimate
+         if (stable)
+            streak = ADAPTIVE_STREAK;
+         else
+         {
+            result = new_count;
+            streak = 0;
+         }
+      }
+      else
+      {
+         streak = stable ? (unsigned char)min(streak + 1, (int)ADAPTIVE_RECHECK_MARK - 1) : (unsigned char)0;
+         if (new_count >= min_samples && streak >= ADAPTIVE_STREAK)
+            result = -new_count; // sign bit = converged
+      }
       conv_streak[idx] = streak;
-      prev_lum[idx]    = lum;
-   }
-   else if (!adaptive)
-   {
-      prev_lum[idx] = lum; // keep the reference fresh so enabling adaptive later starts cleanly
    }
    pixel_sample_counts[idx] = result;
 }
@@ -1128,7 +1173,7 @@ extern "C" bool optixRendererHandoverPrior(int new_width, int new_height, float 
    const size_t n_pixels = (size_t)g_state.accum_width * g_state.accum_height;
    CUDA_CHECK(cudaMemsetAsync(g_state.d_accum_buffer, 0, n_pixels * sizeof(float4), stream));
    CUDA_CHECK(cudaMemsetAsync(g_state.d_pixel_sample_counts, 0, n_pixels * sizeof(int), stream));
-   CUDA_CHECK(cudaMemsetAsync(g_state.d_prev_lum, 0, n_pixels * sizeof(float), stream));
+   CUDA_CHECK(cudaMemsetAsync(g_state.d_lum_sq, 0, n_pixels * sizeof(float), stream));
    CUDA_CHECK(cudaMemsetAsync(g_state.d_conv_streak, 0, n_pixels, stream));
 
    g_state.render_width   = new_width;
@@ -1168,6 +1213,8 @@ extern "C" unsigned long long optixRendererLaunch(int width, int height, int num
    launch_params.width = width;
    launch_params.height = height;
    launch_params.pixel_sample_counts = g_state.adaptive_enabled ? g_state.d_pixel_sample_counts : nullptr;
+   launch_params.lum_sq_buffer = g_state.d_lum_sq;
+   launch_params.conv_streak = g_state.adaptive_enabled ? g_state.d_conv_streak : nullptr;
    launch_params.camera_center = make_float3(cam_cx, cam_cy, cam_cz);
    launch_params.pixel00_loc = make_float3(p00x, p00y, p00z);
    launch_params.pixel_delta_u = make_float3(dux, duy, duz);
@@ -1232,7 +1279,7 @@ extern "C" unsigned long long optixRendererLaunch(int width, int height, int num
       const int num_pixels = width * height;
       const int threads = 256;
       optixAdaptiveUpdateKernel<<<(num_pixels + threads - 1) / threads, threads, 0, stream>>>(
-          g_state.d_accum_buffer, g_state.d_pixel_sample_counts, g_state.d_prev_lum, g_state.d_conv_streak,
+          g_state.d_accum_buffer, g_state.d_pixel_sample_counts, g_state.d_lum_sq, g_state.d_conv_streak,
           num_pixels, samples_to_add, total_samples_so_far + samples_to_add, g_state.adaptive_enabled,
           g_state.adaptive_min_samples, g_state.adaptive_threshold);
    }
@@ -1553,8 +1600,8 @@ extern "C" void optixRendererCleanup()
       CUDA_CHECK(cudaFree(g_state.d_accum_buffer));
    if (g_state.d_pixel_sample_counts)
       CUDA_CHECK(cudaFree(g_state.d_pixel_sample_counts));
-   if (g_state.d_prev_lum)
-      CUDA_CHECK(cudaFree(g_state.d_prev_lum));
+   if (g_state.d_lum_sq)
+      CUDA_CHECK(cudaFree(g_state.d_lum_sq));
    if (g_state.d_conv_streak)
       CUDA_CHECK(cudaFree(g_state.d_conv_streak));
    if (g_state.d_converged_count)
