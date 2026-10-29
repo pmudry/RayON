@@ -937,9 +937,10 @@ static bool g_optix_use_sobol = true;
 extern "C" void setOptiXSobolSampler(bool use_sobol) { g_optix_use_sobol = use_sobol; }
 
 extern "C" void setOptiXMISEnabled(bool enabled)          { g_state.mis_enabled = enabled; }
-/// Fixed firefly ceiling while the camera moves (each frame is displayed on its own).
-static bool g_optix_firefly_fixed_clamp = false;
-extern "C" void setOptiXFireflyFixedClamp(bool fixed)   { g_optix_firefly_fixed_clamp = fixed; }
+/// > 0: fixed per-sample luminance ceiling (camera moving: each frame is displayed on its own);
+/// 0: the ceiling grows with the sample count.
+static float g_optix_firefly_clamp_ceiling = 0.0f;
+extern "C" void setOptiXFireflyClampCeiling(float ceiling) { g_optix_firefly_clamp_ceiling = ceiling; }
 extern "C" void setOptiXNEEStride(int stride)              { g_state.nee_stride = (stride < 1) ? 1 : stride; }
 
 /// Converged-pixel skipping. Buffers are (re)allocated by optixRendererResetAccum().
@@ -1234,7 +1235,7 @@ extern "C" unsigned long long optixRendererLaunch(int width, int height, int num
       ++sobol_sequence_seed;
    launch_params.sobol_sequence_seed = sobol_sequence_seed;
    launch_params.use_sobol  = g_optix_use_sobol;
-   launch_params.firefly_fixed_clamp = g_optix_firefly_fixed_clamp;
+   launch_params.firefly_clamp_ceiling = g_optix_firefly_clamp_ceiling;
    launch_params.materials = g_state.d_materials;
    launch_params.num_materials = num_materials;
    launch_params.d_textures = g_state.d_textures;

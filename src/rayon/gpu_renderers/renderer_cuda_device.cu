@@ -42,9 +42,9 @@ __constant__ float g_golf_dimple_depth  = 0.35f;
 // MIS / NEE runtime controls
 __constant__ bool g_mis_enabled          = true;  ///< Global MIS on/off (disables NEE + emissive MIS weight)
 __constant__ int  g_nee_stride           = 3;      ///< Do NEE every N samples (contribution × N)
-// Firefly clamp: fixed ceiling while the camera moves (the batch is the whole image, so a
-// relaxed clamp shows up directly), growing with the sample count otherwise.
-__constant__ bool g_firefly_fixed_clamp  = false;
+// Firefly clamp: > 0 = fixed per-sample luminance ceiling (camera moving: the batch is the whole
+// displayed image, so a relaxed clamp shows up directly); 0 = ceiling grows with the sample count.
+__constant__ float g_firefly_clamp_ceiling = 0.0f;
 
 //==================== CUDA STREAM & PINNED MEMORY ====================
 // Display stream: gamma-correct kernel + async D2H copy pipeline.
@@ -134,13 +134,13 @@ extern "C" void setMISEnabled(bool enabled)
    cudaMemcpyToSymbol(g_mis_enabled, &enabled, sizeof(bool));
 }
 
-extern "C" void setFireflyFixedClamp(bool fixed)
+extern "C" void setFireflyClampCeiling(float ceiling)
 {
-   static bool current = false;
-   if (fixed != current)
+   static float current = 0.0f;
+   if (ceiling != current)
    {
-      current = fixed;
-      cudaMemcpyToSymbol(g_firefly_fixed_clamp, &fixed, sizeof(bool));
+      current = ceiling;
+      cudaMemcpyToSymbol(g_firefly_clamp_ceiling, &ceiling, sizeof(float));
    }
 }
 
