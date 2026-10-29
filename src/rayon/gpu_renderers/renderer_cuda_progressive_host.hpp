@@ -123,9 +123,9 @@ class RendererCUDAProgressive : public IRenderer
 
       // Runtime-tweakable procedural pattern parameters (declared before applySceneSettings)
       bool scene_has_golf_ball      = false;
-      int   golf_dimple_count       = 150;
-      float golf_dimple_radius      = 0.24f;
-      float golf_dimple_depth       = 0.35f;
+      int   golf_dimple_count       = 128;
+      float golf_dimple_radius      = 0.155f;
+      float golf_dimple_depth       = 0.25f;
 
       auto syncSamplesFromSlider = [&]()
       { samples_per_batch = std::max(1, static_cast<int>(samples_per_batch_float)); };

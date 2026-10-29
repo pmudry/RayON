@@ -31,13 +31,13 @@ __constant__ float g_dof_aperture = 0.1f;
 __constant__ float g_dof_focus_distance = 10.0f;
 
 // Golf ball dimple constants (runtime-adjustable)
-__constant__ int   g_golf_dimple_count  = 150;
-__constant__ float g_golf_dimple_radius = 0.24f;
+__constant__ int   g_golf_dimple_count  = 128;
+__constant__ float g_golf_dimple_radius = 0.155f;
 
 // HDR Environment Map (equirectangular lat-long)
 __constant__ cudaTextureObject_t g_hdr_env_tex = 0;
 __constant__ bool                g_use_hdr_env = false;
-__constant__ float g_golf_dimple_depth  = 0.35f;
+__constant__ float g_golf_dimple_depth  = 0.25f;
 
 // MIS / NEE runtime controls
 __constant__ bool g_mis_enabled          = true;  ///< Global MIS on/off (disables NEE + emissive MIS weight)

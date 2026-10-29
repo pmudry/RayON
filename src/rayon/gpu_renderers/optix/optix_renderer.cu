@@ -126,9 +126,9 @@ struct OptixState
    CUdeviceptr d_launch_params = 0;
 
    // Golf ball dimple parameters (cached between launches, set via optixRendererSetGolfDimples)
-   int   golf_dimple_count  = 150;
-   float golf_dimple_radius = 0.24f;
-   float golf_dimple_depth  = 0.35f;
+   int   golf_dimple_count  = 128;
+   float golf_dimple_radius = 0.155f;
+   float golf_dimple_depth  = 0.25f;
    float3 *d_golf_points    = nullptr; // precomputed unit dimple directions [golf_dimple_count]
    int     golf_points_count = 0;
 
