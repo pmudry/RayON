@@ -79,6 +79,10 @@ struct MotionQualitySettings
    float stage_seconds    = 0.1f;  ///< Duration of each intermediate resolution stage
    float fade_seconds     = 0.1f;  ///< Duration of the fade from one stage's image into the next
    float cooldown_seconds = 0.05f; ///< Time after the last camera event before the camera counts as still
+   // OptiX AI denoiser: applied to every motion frame, then faded out over the first still frames
+   bool  denoise               = false; ///< Denoise motion frames (OptiX backend only), off by default
+   int   denoise_until_samples = 64;    ///< Once still, keep denoising with a weight fading to 0 at this many samples
+   float denoise_ms            = 0.0f;  ///< Readout: denoiser time of the last denoised frame (ms)
    bool single_sample    = false; ///< One sample per frame instead of the batch size
    bool fast_sampler     = false; ///< PCG instead of Sobol (cheaper per sample)
    bool limit_depth      = false; ///< Cap the bounce depth at motion_max_depth (slightly darkens indirect light)
@@ -617,6 +621,25 @@ class SDLGuiHandler
                   {
                      ImGui::SeparatorText("Display while moving");
                      drawMotionDespeckle(motion_despeckle, motion_despeckle_ratio);
+                  }
+                  if (motion_quality)
+                  {
+                     ImGui::Checkbox("AI denoiser (OptiX)##mq_denoise", &motion_quality->denoise);
+                     ImGui::SetItemTooltip("Run the OptiX neural denoiser on each motion frame, guided by the\n"
+                                           "albedo and normal of the first surface each sample sees. Display\n"
+                                           "only: the accumulation stays unbiased.");
+                     if (motion_quality->denoise)
+                     {
+                        ImGui::PushItemWidth(std::clamp(ImGui::GetContentRegionAvail().x * 0.67f, 120.0f, 240.0f));
+                        ImGui::SliderInt("Fade out until##mq_denoise_until", &motion_quality->denoise_until_samples, 0,
+                                         512, "%d spp");
+                        ImGui::PopItemWidth();
+                        ImGui::SetItemTooltip("Once the camera is still, keep denoising with a weight that fades\n"
+                                              "to zero when the accumulation reaches this many samples, so the\n"
+                                              "image does not snap from smooth to noisy. 0 = motion frames only.");
+                        if (motion_quality->denoise_ms > 0.0f)
+                           ImGui::Text("Denoiser: %.1f ms", motion_quality->denoise_ms);
+                     }
                   }
                }
             }

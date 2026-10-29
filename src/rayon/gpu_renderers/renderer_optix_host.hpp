@@ -30,9 +30,13 @@ extern "C"
                                           float dof_focus_dist, float light_intensity, float metal_fuzziness,
                                           float glass_ior_multiplier);
    void optixRendererDownloadAccum(float *host_accum_buffer, int width, int height);
+   // denoise: run the OptiX AI denoiser on the resolved image; denoise_blend 0 = fully denoised,
+   // 1 = untouched (used to fade the denoiser out as real samples accumulate).
    void optixRendererConvertAccumToDisplay(unsigned char *display_image, int width, int height,
                                            int channels, int num_samples, float gamma, bool despeckle = false,
-                                           float despeckle_ratio = 2.0f, float despeckle_floor = 0.02f);
+                                           float despeckle_ratio = 2.0f, float despeckle_floor = 0.02f,
+                                           bool denoise = false, float denoise_blend = 0.0f);
+   float optixRendererLastDenoiseMs();
    void optixRendererCleanup();
    void setOptiXSobolSampler(bool use_sobol);
    void setOptiXMISEnabled(bool enabled);

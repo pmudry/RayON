@@ -470,6 +470,10 @@ extern "C" __global__ void __raygen__rg()
    float3 accumulated = make_float3(acc.x, acc.y, acc.z);
    float  primary_hits = acc.w;
    float  lum_sq_added = 0.0f; // sum of squared sample luminance for this launch (variance estimate)
+   // Denoiser guides for this launch: sums of the albedo and camera-space normal seen by each sample
+   // (see the guide capture in the bounce loop).
+   float3 guide_albedo = make_float3(0.0f, 0.0f, 0.0f);
+   float3 guide_normal = make_float3(0.0f, 0.0f, 0.0f);
 
    // Firefly rejection base level (see the clamp at the end of the sample loop). Mirrored in
    // render_acc_kernel.cu — keep both in sync.
@@ -542,6 +546,8 @@ extern "C" __global__ void __raygen__rg()
       ss.dim_idx    = 4u;
       ss.pixel_hash = pixel_hash;
 
+      bool guide_done = false; // this sample's denoiser guide has been recorded
+
       for (int bounce = 0; bounce < params.max_depth; ++bounce)
       {
          PRDRadiance prd;
@@ -573,6 +579,13 @@ extern "C" __global__ void __raygen__rg()
                sky = (1.0f - t) * make_float3(1.0f, 1.0f, 1.0f) + t * make_float3(0.5f, 0.7f, 1.0f);
             }
             color = color + throughput * sky * params.background_intensity;
+            if (!guide_done)
+            {
+               // Background seen directly (or through specular surfaces): the sky colour is the
+               // albedo guide, there is no surface so the normal guide stays zero.
+               guide_albedo = guide_albedo + make_float3(fminf(sky.x, 1.0f), fminf(sky.y, 1.0f), fminf(sky.z, 1.0f));
+               guide_done   = true;
+            }
             break;
          }
 
@@ -584,6 +597,24 @@ extern "C" __global__ void __raygen__rg()
             break;
          }
          const OptixMaterialData &mat = params.materials[prd.material_idx];
+
+         // Denoiser guide: the albedo and normal of the first surface that is not a perfect
+         // specular (mirror / glass) — what shows through a window or a mirror is what the
+         // denoiser must preserve, not the pane itself. After two specular bounces the surface
+         // is recorded anyway so every sample contributes a guide.
+         if (!guide_done)
+         {
+            const bool specular = mat.type == OptixMaterialType::MIRROR || mat.type == OptixMaterialType::GLASS ||
+                                  mat.type == OptixMaterialType::DIELECTRIC || mat.type == OptixMaterialType::THIN_FILM;
+            if (!specular || bounce >= 2)
+            {
+               const float3 n = prd.hit_normal;
+               guide_albedo = guide_albedo + make_float3(fminf(prd.hit_color.x, 1.0f), fminf(prd.hit_color.y, 1.0f),
+                                                         fminf(prd.hit_color.z, 1.0f));
+               guide_normal = guide_normal + make_float3(dot3(n, params.cam_u), dot3(n, params.cam_v), dot3(n, params.cam_w));
+               guide_done   = true;
+            }
+         }
 
          if (mat.type == OptixMaterialType::LIGHT)
          {
@@ -963,6 +994,13 @@ extern "C" __global__ void __raygen__rg()
    params.accum_buffer[pixel_idx] = make_float4(accumulated.x, accumulated.y, accumulated.z, primary_hits);
    if (params.lum_sq_buffer)
       params.lum_sq_buffer[pixel_idx] += lum_sq_added;
+   if (params.albedo_buffer)
+   {
+      float4 ga = params.albedo_buffer[pixel_idx];
+      params.albedo_buffer[pixel_idx] = make_float4(ga.x + guide_albedo.x, ga.y + guide_albedo.y, ga.z + guide_albedo.z, 0.0f);
+      float4 gn = params.normal_buffer[pixel_idx];
+      params.normal_buffer[pixel_idx] = make_float4(gn.x + guide_normal.x, gn.y + guide_normal.y, gn.z + guide_normal.z, 0.0f);
+   }
 }
 
 //==============================================================================

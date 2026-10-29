@@ -117,6 +117,27 @@ struct OptixState
    bool    prior_active   = false;
    float   prior_strength = 0.0f; // weight in "samples" at the start of the fade
 
+   // OptiX AI denoiser (motion frames and the first frames after the camera stops). The guides are
+   // accumulated by raygen at accumulation resolution (sums), resolved to per-pixel means at render
+   // resolution by the resolve pass, then the denoiser reads d_resolved + guides and writes
+   // d_denoised, which the gamma pass displays instead of d_resolved.
+   float4 *d_albedo_accum = nullptr; // sum of per-sample albedo guides (accum resolution)
+   float4 *d_normal_accum = nullptr; // sum of per-sample camera-space normals (accum resolution)
+   float4 *d_guide_albedo = nullptr; // per-pixel mean albedo (render resolution)
+   float4 *d_guide_normal = nullptr; // per-pixel mean normal (render resolution)
+   float4 *d_denoised     = nullptr; // denoiser output (render resolution, linear)
+   OptixDenoiser denoiser = nullptr;
+   CUdeviceptr d_denoiser_state     = 0;
+   CUdeviceptr d_denoiser_scratch   = 0;
+   CUdeviceptr d_denoiser_intensity = 0; // one float: log-average intensity of the input (auto-exposure)
+   size_t denoiser_state_size   = 0;
+   size_t denoiser_scratch_size = 0;
+   int  denoiser_max_w   = 0, denoiser_max_h   = 0; // dimensions the state/scratch were sized for
+   int  denoiser_setup_w = 0, denoiser_setup_h = 0; // dimensions of the last optixDenoiserSetup
+   bool denoiser_failed  = false;                   // creation failed: denoising is skipped
+   cudaEvent_t denoise_start = nullptr, denoise_end = nullptr;
+   float last_denoise_ms = 0.0f;
+
    // Persistent device accumulation buffer — stays on GPU across batches
    // to avoid costly per-batch host↔device float3↔float4 round-trips
    float4 *d_accum_buffer = nullptr;
@@ -995,6 +1016,14 @@ extern "C" void optixRendererResetAccum(int width, int height)
       CUDA_CHECK(cudaMalloc(&g_state.d_prior, (size_t)width * height * sizeof(float4)));
       if (g_state.d_resolved) CUDA_CHECK(cudaFree(g_state.d_resolved));
       CUDA_CHECK(cudaMalloc(&g_state.d_resolved, (size_t)width * height * sizeof(float4)));
+      // Denoiser guides and output follow the accumulation buffer size
+      float4 **denoise_bufs[] = {&g_state.d_albedo_accum, &g_state.d_normal_accum, &g_state.d_guide_albedo,
+                                 &g_state.d_guide_normal, &g_state.d_denoised};
+      for (float4 **buf : denoise_bufs)
+      {
+         if (*buf) CUDA_CHECK(cudaFree(*buf));
+         CUDA_CHECK(cudaMalloc(buf, (size_t)width * height * sizeof(float4)));
+      }
    }
    g_state.prior_active = false;
 
@@ -1005,6 +1034,8 @@ extern "C" void optixRendererResetAccum(int width, int height)
    CUDA_CHECK(cudaMemsetAsync(g_state.d_pixel_sample_counts, 0, n_pixels * sizeof(int), getOptiXStream()));
    CUDA_CHECK(cudaMemsetAsync(g_state.d_lum_sq, 0, n_pixels * sizeof(float), getOptiXStream()));
    CUDA_CHECK(cudaMemsetAsync(g_state.d_conv_streak, 0, n_pixels, getOptiXStream()));
+   CUDA_CHECK(cudaMemsetAsync(g_state.d_albedo_accum, 0, n_pixels * sizeof(float4), getOptiXStream()));
+   CUDA_CHECK(cudaMemsetAsync(g_state.d_normal_accum, 0, n_pixels * sizeof(float4), getOptiXStream()));
 
    // Allocate persistent launch params buffer (once)
    if (g_state.d_launch_params == 0)
@@ -1182,6 +1213,8 @@ extern "C" bool optixRendererHandoverPrior(int new_width, int new_height, float 
    CUDA_CHECK(cudaMemsetAsync(g_state.d_pixel_sample_counts, 0, n_pixels * sizeof(int), stream));
    CUDA_CHECK(cudaMemsetAsync(g_state.d_lum_sq, 0, n_pixels * sizeof(float), stream));
    CUDA_CHECK(cudaMemsetAsync(g_state.d_conv_streak, 0, n_pixels, stream));
+   CUDA_CHECK(cudaMemsetAsync(g_state.d_albedo_accum, 0, n_pixels * sizeof(float4), stream));
+   CUDA_CHECK(cudaMemsetAsync(g_state.d_normal_accum, 0, n_pixels * sizeof(float4), stream));
 
    g_state.render_width   = new_width;
    g_state.render_height  = new_height;
@@ -1221,6 +1254,8 @@ extern "C" unsigned long long optixRendererLaunch(int width, int height, int num
    launch_params.height = height;
    launch_params.pixel_sample_counts = g_state.adaptive_enabled ? g_state.d_pixel_sample_counts : nullptr;
    launch_params.lum_sq_buffer = g_state.d_lum_sq;
+   launch_params.albedo_buffer = g_state.d_albedo_accum;
+   launch_params.normal_buffer = g_state.d_normal_accum;
    launch_params.conv_streak = g_state.adaptive_enabled ? g_state.d_conv_streak : nullptr;
    launch_params.camera_center = make_float3(cam_cx, cam_cy, cam_cz);
    launch_params.pixel00_loc = make_float3(p00x, p00y, p00z);
@@ -1228,6 +1263,14 @@ extern "C" unsigned long long optixRendererLaunch(int width, int height, int num
    launch_params.pixel_delta_v = make_float3(dvx, dvy, dvz);
    launch_params.cam_u = make_float3(cam_ux, cam_uy, cam_uz);
    launch_params.cam_v = make_float3(cam_vx, cam_vy, cam_vz);
+   {
+      // w = u x v (the camera basis is right-handed, w points towards the viewer)
+      float wx = cam_uy * cam_vz - cam_uz * cam_vy, wy = cam_uz * cam_vx - cam_ux * cam_vz,
+            wz = cam_ux * cam_vy - cam_uy * cam_vx;
+      float len = sqrtf(wx * wx + wy * wy + wz * wz);
+      len = len > 0.0f ? 1.0f / len : 0.0f;
+      launch_params.cam_w = make_float3(wx * len, wy * len, wz * len);
+   }
    launch_params.samples_per_launch = samples_to_add;
    launch_params.total_samples_so_far = total_samples_so_far;
    launch_params.max_depth = max_depth;
@@ -1374,15 +1417,31 @@ __global__ void optixResolveKernel(const float4 *__restrict__ accum_buffer,
                                    const int *__restrict__ pixel_sample_counts,
                                    const float4 *__restrict__ prior, float prior_strength, float4 *resolved,
                                    int render_width, int render_height, int num_samples, bool despeckle,
-                                   float despeckle_ratio, float despeckle_floor)
+                                   float despeckle_ratio, float despeckle_floor,
+                                   const float4 *__restrict__ albedo_accum, const float4 *__restrict__ normal_accum,
+                                   float4 *guide_albedo, float4 *guide_normal)
 {
    int rx = blockIdx.x * blockDim.x + threadIdx.x;
    int ry = blockIdx.y * blockDim.y + threadIdx.y;
    if (rx >= render_width || ry >= render_height)
       return;
 
-   float3 mean = optixAccumPixelMean(accum_buffer, pixel_sample_counts, prior, prior_strength,
-                                     ry * render_width + rx, num_samples);
+   const int idx = ry * render_width + rx;
+   float3 mean = optixAccumPixelMean(accum_buffer, pixel_sample_counts, prior, prior_strength, idx, num_samples);
+
+   // Denoiser guides: per-pixel mean albedo and unit mean normal (zero where only the background
+   // was seen). The hand-over prior is display-only colour, so it does not enter the guides.
+   if (guide_albedo)
+   {
+      const int   samples = pixel_sample_counts ? abs(pixel_sample_counts[idx]) : num_samples;
+      const float inv_n   = samples > 0 ? 1.0f / (float)samples : 0.0f;
+      float4 a = albedo_accum[idx];
+      guide_albedo[idx] = make_float4(a.x * inv_n, a.y * inv_n, a.z * inv_n, 0.0f);
+      float4 n = normal_accum[idx];
+      float  len = sqrtf(n.x * n.x + n.y * n.y + n.z * n.z);
+      float  inv = len > 1e-6f ? 1.0f / len : 0.0f;
+      guide_normal[idx] = make_float4(n.x * inv, n.y * inv, n.z * inv, 0.0f);
+   }
 
    // Motion-frame despeckle: a frame shown on its own holds only a few samples per pixel, so one
    // sample of a few units is a bright dot. Scale a pixel down when it is far brighter than its
@@ -1479,10 +1538,117 @@ static void ensureDisplayBuffers(size_t display_size)
 // Convert the accumulation buffer (at the resolution of the last launch) into a width x height
 // 8-bit display image. num_samples is the normalisation when adaptive sampling is off.
 // despeckle: scale down pixels brighter than ratio x (mean of the 8 neighbours) + floor (motion frames).
+//------------------------------------------------------------------------------
+// OptiX AI denoiser. HDR model with albedo + normal guides; the normal guide is in camera space
+// as that model expects. State and scratch are sized once for the accumulation buffer (the
+// largest input), optixDenoiserSetup is redone whenever the render resolution changes.
+//------------------------------------------------------------------------------
+static bool ensureDenoiser(int w, int h)
+{
+   if (g_state.denoiser_failed || !g_state.context)
+      return false;
+   if (!g_state.denoiser)
+   {
+      OptixDenoiserOptions options = {};
+      options.guideAlbedo  = 1;
+      options.guideNormal  = 1;
+      options.denoiseAlpha = OPTIX_DENOISER_ALPHA_MODE_COPY;
+      OptixResult res = optixDenoiserCreate(g_state.context, OPTIX_DENOISER_MODEL_KIND_HDR, &options, &g_state.denoiser);
+      if (res != OPTIX_SUCCESS)
+      {
+         printf("OptiX denoiser unavailable: %s\n", optixGetErrorString(res));
+         g_state.denoiser_failed = true;
+         return false;
+      }
+      CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&g_state.d_denoiser_intensity), sizeof(float)));
+      CUDA_CHECK(cudaEventCreate(&g_state.denoise_start));
+      CUDA_CHECK(cudaEventCreate(&g_state.denoise_end));
+   }
+   // Memory for the largest input this accumulation can produce
+   const int max_w = std::max(w, g_state.accum_width), max_h = std::max(h, g_state.accum_height);
+   if (max_w > g_state.denoiser_max_w || max_h > g_state.denoiser_max_h)
+   {
+      OptixDenoiserSizes sizes = {};
+      OptixResult res = optixDenoiserComputeMemoryResources(g_state.denoiser, max_w, max_h, &sizes);
+      if (res != OPTIX_SUCCESS)
+      {
+         printf("OptiX denoiser: memory query failed: %s\n", optixGetErrorString(res));
+         g_state.denoiser_failed = true;
+         return false;
+      }
+      if (g_state.d_denoiser_state)   CUDA_CHECK(cudaFree(reinterpret_cast<void *>(g_state.d_denoiser_state)));
+      if (g_state.d_denoiser_scratch) CUDA_CHECK(cudaFree(reinterpret_cast<void *>(g_state.d_denoiser_scratch)));
+      g_state.denoiser_state_size   = sizes.stateSizeInBytes;
+      g_state.denoiser_scratch_size = sizes.withoutOverlapScratchSizeInBytes;
+      CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&g_state.d_denoiser_state), g_state.denoiser_state_size));
+      CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&g_state.d_denoiser_scratch), g_state.denoiser_scratch_size));
+      g_state.denoiser_max_w   = max_w;
+      g_state.denoiser_max_h   = max_h;
+      g_state.denoiser_setup_w = g_state.denoiser_setup_h = 0;
+   }
+   if (w != g_state.denoiser_setup_w || h != g_state.denoiser_setup_h)
+   {
+      OptixResult res = optixDenoiserSetup(g_state.denoiser, getOptiXStream(), w, h, g_state.d_denoiser_state,
+                                           g_state.denoiser_state_size, g_state.d_denoiser_scratch,
+                                           g_state.denoiser_scratch_size);
+      if (res != OPTIX_SUCCESS)
+      {
+         printf("OptiX denoiser: setup failed: %s\n", optixGetErrorString(res));
+         g_state.denoiser_failed = true;
+         return false;
+      }
+      g_state.denoiser_setup_w = w;
+      g_state.denoiser_setup_h = h;
+   }
+   return true;
+}
+
+static OptixImage2D denoiserImage(float4 *data, int w, int h)
+{
+   OptixImage2D img = {};
+   img.data               = reinterpret_cast<CUdeviceptr>(data);
+   img.width              = (unsigned int)w;
+   img.height             = (unsigned int)h;
+   img.rowStrideInBytes   = (unsigned int)(w * sizeof(float4));
+   img.pixelStrideInBytes = sizeof(float4);
+   img.format             = OPTIX_PIXEL_FORMAT_FLOAT4;
+   return img;
+}
+
+// Denoise d_resolved (w x h) into d_denoised. blend: 0 = fully denoised, 1 = untouched input.
+static bool denoiseResolved(int w, int h, float blend, cudaStream_t stream)
+{
+   if (!ensureDenoiser(w, h))
+      return false;
+   cudaEventRecord(g_state.denoise_start, stream);
+   OptixImage2D input = denoiserImage(g_state.d_resolved, w, h);
+   OPTIX_CHECK(optixDenoiserComputeIntensity(g_state.denoiser, stream, &input, g_state.d_denoiser_intensity,
+                                             g_state.d_denoiser_scratch, g_state.denoiser_scratch_size));
+   OptixDenoiserParams params = {};
+   params.hdrIntensity = g_state.d_denoiser_intensity;
+   params.blendFactor  = blend;
+   OptixDenoiserGuideLayer guide = {};
+   guide.albedo = denoiserImage(g_state.d_guide_albedo, w, h);
+   guide.normal = denoiserImage(g_state.d_guide_normal, w, h);
+   OptixDenoiserLayer layer = {};
+   layer.input  = input;
+   layer.output = denoiserImage(g_state.d_denoised, w, h);
+   OPTIX_CHECK(optixDenoiserInvoke(g_state.denoiser, stream, &params, g_state.d_denoiser_state,
+                                   g_state.denoiser_state_size, &guide, &layer, 1, 0, 0, g_state.d_denoiser_scratch,
+                                   g_state.denoiser_scratch_size));
+   cudaEventRecord(g_state.denoise_end, stream);
+   return true;
+}
+
+// Denoiser time of the last display conversion (0 when it did not denoise)
+extern "C" float optixRendererLastDenoiseMs() { return g_state.last_denoise_ms; }
+
 extern "C" void optixRendererConvertAccumToDisplay(unsigned char *display_image, int width, int height,
                                                     int channels, int num_samples, float gamma, bool despeckle,
-                                                    float despeckle_ratio, float despeckle_floor)
+                                                    float despeckle_ratio, float despeckle_floor, bool denoise,
+                                                    float denoise_blend)
 {
+   g_state.last_denoise_ms = 0.0f;
    if (!g_state.d_accum_buffer || !display_image || num_samples <= 0)
       return;
 
@@ -1502,13 +1668,22 @@ extern "C" void optixRendererConvertAccumToDisplay(unsigned char *display_image,
    const float4 *prior = g_state.prior_active ? g_state.d_prior : nullptr;
    optixResolveKernel<<<rblocks, threads, 0, stream>>>(g_state.d_accum_buffer, counts, prior, g_state.prior_strength,
                                                        g_state.d_resolved, render_width, render_height, num_samples,
-                                                       despeckle, despeckle_ratio, despeckle_floor);
-   optixGammaCorrectKernel<<<blocks, threads, 0, stream>>>(g_state.d_resolved, g_state.d_display, render_width,
+                                                       despeckle, despeckle_ratio, despeckle_floor,
+                                                       g_state.d_albedo_accum, g_state.d_normal_accum,
+                                                       denoise ? g_state.d_guide_albedo : nullptr,
+                                                       denoise ? g_state.d_guide_normal : nullptr);
+   const float4 *display_src = g_state.d_resolved;
+   const bool denoised = denoise && denoiseResolved(render_width, render_height, denoise_blend, stream);
+   if (denoised)
+      display_src = g_state.d_denoised;
+   optixGammaCorrectKernel<<<blocks, threads, 0, stream>>>(display_src, g_state.d_display, render_width,
                                                             render_height, width, height, channels, gamma);
 
    // Async D2H copy via pinned memory, then single stream sync
    cudaMemcpyAsync(g_state.pinned_display, g_state.d_display, display_size, cudaMemcpyDeviceToHost, stream);
    cudaStreamSynchronize(stream);
+   if (denoised)
+      cudaEventElapsedTime(&g_state.last_denoise_ms, g_state.denoise_start, g_state.denoise_end);
    memcpy(display_image, g_state.pinned_display, display_size);
 }
 
@@ -1688,6 +1863,22 @@ extern "C" void optixRendererCleanup()
       CUDA_CHECK(cudaFree(g_state.d_prior));
    if (g_state.d_resolved)
       CUDA_CHECK(cudaFree(g_state.d_resolved));
+   for (float4 *buf : {g_state.d_albedo_accum, g_state.d_normal_accum, g_state.d_guide_albedo,
+                       g_state.d_guide_normal, g_state.d_denoised})
+      if (buf)
+         CUDA_CHECK(cudaFree(buf));
+   if (g_state.denoiser)
+      OPTIX_CHECK(optixDenoiserDestroy(g_state.denoiser));
+   if (g_state.d_denoiser_state)
+      CUDA_CHECK(cudaFree(reinterpret_cast<void *>(g_state.d_denoiser_state)));
+   if (g_state.d_denoiser_scratch)
+      CUDA_CHECK(cudaFree(reinterpret_cast<void *>(g_state.d_denoiser_scratch)));
+   if (g_state.d_denoiser_intensity)
+      CUDA_CHECK(cudaFree(reinterpret_cast<void *>(g_state.d_denoiser_intensity)));
+   if (g_state.denoise_start)
+      CUDA_CHECK(cudaEventDestroy(g_state.denoise_start));
+   if (g_state.denoise_end)
+      CUDA_CHECK(cudaEventDestroy(g_state.denoise_end));
    if (g_state.d_golf_points)
       CUDA_CHECK(cudaFree(g_state.d_golf_points));
    if (g_state.d_pattern_points)

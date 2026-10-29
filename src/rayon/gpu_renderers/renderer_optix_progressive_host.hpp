@@ -59,7 +59,9 @@ extern "C"
    void optixRendererDownloadAccum(float *host_accum_buffer, int width, int height);
    void optixRendererConvertAccumToDisplay(unsigned char *display_image, int width, int height,
                                            int channels, int num_samples, float gamma, bool despeckle,
-                                           float despeckle_ratio, float despeckle_floor);
+                                           float despeckle_ratio, float despeckle_floor, bool denoise,
+                                           float denoise_blend);
+   float optixRendererLastDenoiseMs();
    void optixRendererCleanup();
    void optixRendererSetGolfDimples(int count, float radius, float depth);
    bool optixRendererUploadHdrEnv(const float *rgba_data, int w, int h);
@@ -173,6 +175,8 @@ class RendererOptiXProgressive : public IRenderer
       float dyn_fraction        = 0.75f; // render fraction currently used while moving
       int   dyn_spp             = 0;     // samples per frame currently used while moving (0 = unset)
       float motion_k_ms         = 0.0f;  // smoothed render cost in ms per pixel-sample (motion frames)
+      float motion_d_ms         = 0.0f;  // smoothed denoiser cost in ms per pixel (motion frames)
+      float last_denoise_ms     = 0.0f;  // denoiser time of the previous frame (0 when it was not denoised)
       float motion_overhead_ms  = 0.0f;  // smoothed (frame - render) time: GUI, upload, present
       float last_render_ms      = 0.0f;  // render time of the previous frame
       int   last_motion_pixels  = 0;     // pixels and samples of the previous motion frame (for k)
@@ -613,20 +617,31 @@ class RendererOptiXProgressive : public IRenderer
                // frame's weight at a few times the target before smoothing.
                const float frame_ms  = std::min(delta.count() * 1000.0f, 4.0f * target_ms);
                const float over_ms   = std::max(0.0f, frame_ms - last_render_ms);
-               const float k_sample  = last_render_ms / (float)std::max(1, last_motion_pixels * last_motion_spp);
+               // The denoiser's time scales with pixels only, so it is modelled apart from the
+               // per-sample tracing cost (or lowering the sample count would look cheaper than it is)
+               const float trace_ms  = std::max(0.0f, last_render_ms - last_denoise_ms);
+               const float k_sample  = trace_ms / (float)std::max(1, last_motion_pixels * last_motion_spp);
+               const float d_pixel   = last_denoise_ms / (float)std::max(1, last_motion_pixels);
                motion_k_ms        = (motion_k_ms > 0.0f) ? 0.8f * motion_k_ms + 0.2f * k_sample : k_sample;
+               motion_d_ms        = (motion_d_ms > 0.0f) ? 0.8f * motion_d_ms + 0.2f * d_pixel : d_pixel;
+               if (last_denoise_ms <= 0.0f)
+                  motion_d_ms = 0.0f;
                motion_overhead_ms = (motion_overhead_ms > 0.0f) ? 0.9f * motion_overhead_ms + 0.1f * over_ms : over_ms;
                const float budget_ms = std::max(0.5f, target_ms - motion_overhead_ms);
 
                auto pixels_at = [&](float f) {
                   return std::max(1, (int)std::lround(image_width * f)) * std::max(1, (int)std::lround(image_height * f));
                };
+               auto cost_at = [&](float f, int spp) {
+                  const float px = (float)pixels_at(f);
+                  return motion_k_ms * px * (float)spp + motion_d_ms * px;
+               };
                float best_frac = min_frac;
                int   best_spp  = 1;
                bool  found     = false;
                for (int spp = std::max(1, motion_spp); spp >= 1 && !found; --spp)
                   for (float f = motion_frac; f >= min_frac - 1e-3f; f -= 0.125f)
-                     if (motion_k_ms * (float)pixels_at(f) * (float)spp <= budget_ms)
+                     if (cost_at(f, spp) <= budget_ms)
                      {
                         best_frac = std::max(f, min_frac);
                         best_spp  = spp;
@@ -647,7 +662,7 @@ class RendererOptiXProgressive : public IRenderer
                }
                else if (better)
                {
-                  const float predicted = motion_k_ms * (float)pixels_at(best_frac) * (float)best_spp;
+                  const float predicted = cost_at(best_frac, best_spp);
                   if (predicted <= 0.85f * budget_ms && now >= raise_block_until && ++headroom_frames >= 6)
                   {
                      dyn_fraction    = best_frac;
@@ -732,11 +747,33 @@ class RendererOptiXProgressive : public IRenderer
             last_config = config;
          }
 
+         // Denoiser schedule: every motion frame is fully denoised; once still, the denoiser fades out
+         // (blend 0 -> 1) as the accumulation approaches denoise_until_samples, then stops.
+         auto denoiseFor = [&](int samples, bool moving, bool &denoise_out, float &blend_out)
+         {
+            denoise_out = false;
+            blend_out   = 0.0f;
+            if (!motion_quality.denoise)
+               return;
+            if (moving)
+               denoise_out = true;
+            else if (motion_quality.denoise_until_samples > 0 && samples < motion_quality.denoise_until_samples)
+            {
+               denoise_out = true;
+               blend_out   = (float)samples / (float)motion_quality.denoise_until_samples;
+            }
+         };
+
          // Redisplay after overlay/settings change without adding new samples
          if (needs_rerender && current_samples > 0)
          {
-            optixRendererConvertAccumToDisplay(display_image.data(), image_width, image_height,
-                                               image_channels, current_samples, gamma);
+            bool  denoise_now;
+            float denoise_blend;
+            denoiseFor(current_samples, reduce, denoise_now, denoise_blend);
+            optixRendererConvertAccumToDisplay(display_image.data(), image_width, image_height, image_channels,
+                                               current_samples, gamma, reduce && motion_despeckle,
+                                               motion_despeckle_ratio, constants::MOTION_DESPECKLE_FLOOR,
+                                               denoise_now, denoise_blend);
             base_display_image = display_image;
             display_image = base_display_image;
             if (target.pixels) *target.pixels = display_image;
@@ -765,10 +802,17 @@ class RendererOptiXProgressive : public IRenderer
             auto frame_start = std::chrono::high_resolution_clock::now();
 
             const int num_materials_active = static_cast<int>(active_scene.materials.size());
+            bool  denoise_now;
+            float denoise_blend;
+            denoiseFor(current_samples + frame_spp, reduce, denoise_now, denoise_blend);
             renderBatch(frame, config.width, config.height, config.depth, display_view, current_samples,
                         max_samples, frame_spp, gamma, context, num_materials_active, background_intensity,
                         dof_enabled, dof_aperture, dof_focus_distance, light_intensity, metal_fuzziness,
-                        glass_refraction_index, reduce && motion_despeckle, motion_despeckle_ratio);
+                        glass_refraction_index, reduce && motion_despeckle, motion_despeckle_ratio, denoise_now,
+                        denoise_blend);
+            last_denoise_ms = denoise_now ? ::optixRendererLastDenoiseMs() : 0.0f;
+            if (denoise_now)
+               motion_quality.denoise_ms = last_denoise_ms;
 
             auto frame_end = std::chrono::high_resolution_clock::now();
             std::chrono::duration<float, std::milli> frame_time = frame_end - frame_start;
@@ -937,7 +981,8 @@ class RendererOptiXProgressive : public IRenderer
                     RenderTargetView display_target, int &current_samples, int max_samples, int samples_per_batch,
                     float gamma, RenderContext &context, int num_materials, float background_intensity,
                     bool dof_enabled, float dof_aperture, float dof_focus_distance, float light_intensity,
-                    float metal_fuzziness, float glass_ior_multiplier, bool despeckle, float despeckle_ratio)
+                    float metal_fuzziness, float glass_ior_multiplier, bool despeckle, float despeckle_ratio,
+                    bool denoise, float denoise_blend)
    {
       // If we've already reached or exceeded the maximum, do not render more samples.
       if (current_samples >= max_samples) return;
@@ -973,7 +1018,7 @@ class RendererOptiXProgressive : public IRenderer
       // float4 accum buffer straight to the uint8 display image, no float4 D2H + host conversion.
       optixRendererConvertAccumToDisplay(display_target.pixels->data(), frame.image_width, frame.image_height,
                                          display_target.channels, new_total_samples, gamma, despeckle,
-                                         despeckle_ratio, constants::MOTION_DESPECKLE_FLOOR);
+                                         despeckle_ratio, constants::MOTION_DESPECKLE_FLOOR, denoise, denoise_blend);
 
       context.ray_counter.fetch_add(ray_count, std::memory_order_relaxed);
 
