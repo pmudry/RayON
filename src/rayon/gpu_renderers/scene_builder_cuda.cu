@@ -9,6 +9,7 @@
 #include "cuda_scene.cuh"
 #include "cuda_utils.cuh"
 #include "scene_description.hpp"
+#include "volume_sdf.cuh"
 #include <cmath>
 #include <cuda_runtime.h>
 #include <math_constants.h>
@@ -22,6 +23,7 @@ class CudaSceneBuilder
  public:
    static CudaScene::Scene *buildGPUScene(const SceneDescription &desc);
    static void freeGPUScene(CudaScene::Scene *scene);
+   static void updateMaterial(CudaScene::Scene *scene, int idx, const MaterialDesc &desc);
 };
 
 /**
@@ -62,6 +64,19 @@ static CudaScene::Material convertMaterial(const MaterialDesc &desc)
    // Copy thin-film interference parameters
    mat.film_thickness = desc.film_thickness;
    mat.film_ior = desc.film_ior;
+
+   // Participating medium (the SDF texture is bound by the caller when needed)
+   mat.volume.density        = desc.density;
+   mat.volume.noise_scale    = desc.noise_scale;
+   mat.volume.noise_strength = desc.noise_strength;
+   mat.volume.edge           = desc.edge;
+   mat.volume.lumps        = desc.lumps;
+   mat.volume.billow         = desc.billow;
+   mat.volume.sdf            = 0;
+   mat.volume.sdf_array      = nullptr;
+   mat.volume.field          = 0;
+   mat.volume.field_array    = nullptr;
+   mat.volume.field_dims     = make_int3(0, 0, 0);
 
    return mat;
 }
@@ -177,9 +192,25 @@ CudaScene::Scene *CudaSceneBuilder::buildGPUScene(const SceneDescription &desc)
    CudaScene::Geometry *host_geometries = new CudaScene::Geometry[num_geometries];
 
    // Convert materials
+   host_scene.has_volume = false;
    for (int i = 0; i < num_materials; ++i)
    {
       host_materials[i] = convertMaterial(desc.materials[i]);
+      if (desc.materials[i].type == MaterialType::VOLUME)
+      {
+         host_scene.has_volume = true;
+         // Signed distance grid of the mesh(es) carrying this material, for the edge fall-off
+         if (desc.materials[i].edge > 0.0f)
+         {
+            std::vector<float3> tris;
+            for (const auto &g : desc.geometries)
+               if (g.type == GeometryType::TRIANGLE && g.material_id == i)
+                  for (const Vec3 *v : {&g.data.triangle.v0, &g.data.triangle.v1, &g.data.triangle.v2})
+                     tris.push_back(make_float3((float)v->x(), (float)v->y(), (float)v->z()));
+            if (buildVolumeSDF(tris, 64, VOLUME_BOX_PAD, host_materials[i].volume))
+               bakeVolumeField(host_materials[i].volume, VOLUME_FIELD_CELLS);
+         }
+      }
    }
 
    // Convert geometries
@@ -466,6 +497,33 @@ CudaScene::Scene *CudaSceneBuilder::buildGPUScene(const SceneDescription &desc)
 }
 
 /**
+ * @brief Rewrite one material of an uploaded scene in place (GUI edits), without a rebuild
+ */
+void CudaSceneBuilder::updateMaterial(CudaScene::Scene *d_scene, int idx, const MaterialDesc &desc)
+{
+   if (!d_scene || idx < 0)
+      return;
+   CudaScene::Scene host_scene;
+   cudaMemcpy(&host_scene, d_scene, sizeof(CudaScene::Scene), cudaMemcpyDeviceToHost);
+   if (!host_scene.materials || idx >= host_scene.num_materials)
+      return;
+   // Keep the SDF texture bound at upload: only the scalar parameters change
+   CudaScene::Material current;
+   cudaMemcpy(&current, host_scene.materials + idx, sizeof(CudaScene::Material), cudaMemcpyDeviceToHost);
+   CudaScene::Material mat = convertMaterial(desc);
+   mat.volume.sdf            = current.volume.sdf;
+   mat.volume.sdf_array      = current.volume.sdf_array;
+   mat.volume.sdf_min        = current.volume.sdf_min;
+   mat.volume.sdf_inv_extent = current.volume.sdf_inv_extent;
+   mat.volume.field          = current.volume.field;
+   mat.volume.field_array    = current.volume.field_array;
+   mat.volume.field_dims     = current.volume.field_dims;
+   if (mat.volume.sdf != 0)
+      bakeVolumeField(mat.volume, VOLUME_FIELD_CELLS);
+   cudaMemcpy(host_scene.materials + idx, &mat, sizeof(CudaScene::Material), cudaMemcpyHostToDevice);
+}
+
+/**
  * @brief Free GPU scene memory
  */
 void CudaSceneBuilder::freeGPUScene(CudaScene::Scene *d_scene)
@@ -477,9 +535,19 @@ void CudaSceneBuilder::freeGPUScene(CudaScene::Scene *d_scene)
    CudaScene::Scene host_scene;
    cudaMemcpy(&host_scene, d_scene, sizeof(CudaScene::Scene), cudaMemcpyDeviceToHost);
 
-   // Free device arrays
+   // Free device arrays (and the volume SDF textures the materials may hold)
    if (host_scene.materials)
+   {
+      if (host_scene.num_materials > 0)
+      {
+         std::vector<CudaScene::Material> mats(static_cast<size_t>(host_scene.num_materials));
+         cudaMemcpy(mats.data(), host_scene.materials, mats.size() * sizeof(CudaScene::Material),
+                    cudaMemcpyDeviceToHost);
+         for (auto &m : mats)
+            freeVolumeSDF(m.volume);
+      }
       cudaFree(host_scene.materials);
+   }
    if (host_scene.geometries)
       cudaFree(host_scene.geometries);
    if (host_scene.bvh_nodes)

@@ -39,7 +39,8 @@ enum class MaterialType : uint8_t {
     SDF_MATERIAL,        // For ray-marched objects
     ANISOTROPIC_METAL,   // Physically-based anisotropic conductor (GGX)
     THIN_FILM,           // Thin-film interference (soap bubbles, oil slicks)
-    CLEAR_COAT           // Two-layer: glossy dielectric coat over diffuse base
+    CLEAR_COAT,          // Two-layer: glossy dielectric coat over diffuse base
+    VOLUME               // Scattering medium (smoke, cloud) filling a closed mesh
 };
 
 /**
@@ -72,6 +73,14 @@ struct MaterialDesc {
     float film_thickness;     // Film thickness in nanometers (200-800 typical)
     float film_ior;           // Refractive index of the thin film layer
     
+    // Participating medium (VOLUME): albedo = single-scattering albedo, anisotropy = HG g
+    float density;            // Extinction coefficient (1 / scene unit)
+    float noise_scale;        // Frequency of the density noise (features ~ 1 / noise_scale units)
+    float noise_strength;     // Interior noise amplitude: 0 = homogeneous, 1 = full contrast
+    float edge;               // Depth from the surface over which the density ramps up (0 = hard edge)
+    float lumps;              // Amplitude (scene units) of the noise displacement of the surface
+    float billow;             // 0..1: share of inverted Worley (cauliflower lumps) in the shape noise
+
     // Procedural pattern support
     ProceduralPattern pattern;    // Pattern type
     Vec3 pattern_color;           // Secondary color for pattern
@@ -93,6 +102,12 @@ struct MaterialDesc {
         , texture_id(-1)
         , film_thickness(400.0f)
         , film_ior(1.33f)
+        , density(2.0f)
+        , noise_scale(2.0f)
+        , noise_strength(0.3f)
+        , edge(0.1f)
+        , lumps(0.3f)
+        , billow(0.7f)
         , pattern(ProceduralPattern::NONE)
         , pattern_color(0, 0, 0)
         , pattern_param1(0.0f)
@@ -240,6 +255,24 @@ struct MaterialDesc {
         mat.albedo = base_color;
         mat.roughness = coat_roughness;
         mat.refractive_index = coat_ior;
+        return mat;
+    }
+
+    /**
+     * @brief Scattering medium filling a closed mesh (smoke, cloud)
+     * @param albedo Single-scattering albedo (close to 1 for a white cloud, lower for dark smoke)
+     * @param density Extinction coefficient per scene unit
+     * @param g Henyey-Greenstein asymmetry (0 isotropic, > 0 forward scattering)
+     */
+    static MaterialDesc volume(const Vec3& albedo, float density = 2.0f, float g = 0.0f,
+                               float noise_scale = 2.0f, float noise_strength = 1.0f) {
+        MaterialDesc mat;
+        mat.type = MaterialType::VOLUME;
+        mat.albedo = albedo;
+        mat.density = density;
+        mat.anisotropy = g;
+        mat.noise_scale = noise_scale;
+        mat.noise_strength = noise_strength;
         return mat;
     }
 };
@@ -472,6 +505,7 @@ public:
     Vec3 camera_look_at;
     Vec3 camera_up;
     float camera_fov;
+    std::string source_file;                  // YAML file this scene was loaded from ("" when built in code)
     
     // Rendering settings
     Vec3 background_color;

@@ -42,7 +42,6 @@ int SceneDescription::addTexture(const std::string &path)
    tex.data.assign(raw, raw + sz);
    stbi_image_free(raw);
 
-   std::cout << "Texture: Loaded '" << path << "' (" << tex.width << "x" << tex.height << " RGBA)\n";
    textures.push_back(std::move(tex));
    return static_cast<int>(textures.size() - 1);
 }

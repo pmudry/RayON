@@ -31,6 +31,8 @@ class CudaSceneBuilder
  public:
    static CudaScene::Scene *buildGPUScene(const SceneDescription &desc);
    static void freeGPUScene(CudaScene::Scene *scene);
+   /// Rewrite one material of an uploaded scene in place (GUI edits); no rebuild
+   static void updateMaterial(CudaScene::Scene *scene, int idx, const MaterialDesc &desc);
 };
 
 } // namespace Scene

@@ -87,6 +87,7 @@ set(SOURCE_RAYON
     src/rayon/gpu_renderers/cuda_raytracer.cu
     src/rayon/gpu_renderers/cuda_utils.cu
     src/rayon/gpu_renderers/scene_builder_cuda.cu
+    src/rayon/gpu_renderers/volume_sdf.cu
     src/rayon/gpu_renderers/shaders/render_acc_kernel.cu
     src/rayon/gpu_renderers/shaders/shader_golf.cu
 )
@@ -258,7 +259,8 @@ set_property(TARGET rayon PROPERTY CUDA_SEPARABLE_COMPILATION ON)
                 -ptx
                 -std=c++17
                 $<IF:$<CONFIG:Debug>,-O0,-O3>
-                $<$<CONFIG:Release>:--use_fast_math>
+                # one argument in every configuration: an empty "" argument makes nvcc abort
+                $<IF:$<CONFIG:Debug>,-lineinfo,--use_fast_math>
                 -I${OptiX_INCLUDE_DIR}
                 ${OPTIX_INCLUDE_FLAGS}
                 -o ${OPTIX_PTX_OUTPUT}
@@ -266,6 +268,8 @@ set_property(TARGET rayon PROPERTY CUDA_SEPARABLE_COMPILATION ON)
             DEPENDS ${OPTIX_PTX_SOURCE}
                     "${CMAKE_SOURCE_DIR}/src/rayon/gpu_renderers/optix/optix_params.h"
                     "${CMAKE_SOURCE_DIR}/src/rayon/gpu_renderers/sobol_sampler.cuh"
+                    "${CMAKE_SOURCE_DIR}/src/rayon/gpu_renderers/volume_medium.cuh"
+                    "${CMAKE_SOURCE_DIR}/src/rayon/gpu_renderers/volume_params.h"
             COMMENT "Compiling OptiX PTX: optix_programs.cu -> optix_programs.ptx"
             VERBATIM
         )

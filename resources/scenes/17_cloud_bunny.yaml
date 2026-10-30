@@ -1,0 +1,71 @@
+# Cloud bunny: the Stanford bunny as a cumulus sitting on a ground plane, sun and sky.
+#
+# The mesh only gives the shape. A signed distance grid of it is built at load; the surface is
+# displaced by a mix of fractal and inverted Worley noise (`lumps`, `billow`), the density ramps
+# up over `edge` units from that displaced surface and is modulated inside by fractal noise
+# (`noise_scale`, `noise_strength`). Light bounces many times inside (delta tracking, Henyey-
+# Greenstein phase function, next event estimation towards the sun with ratio-tracked
+# transmittance); with an albedo close to 1 the cloud comes out bright with self-shadowing.
+#
+#   ./rayon -m 5 --scene ../resources/scenes/17_cloud_bunny.yaml
+#   ./rayon -m 4 -s 512 -r 720 --scene ../resources/scenes/17_cloud_bunny.yaml
+#
+# Try: density 4 for a thin veil, 25 for a dense cloud; edge 0 for a hard-edged fog bunny;
+# lumps 0.6 and billow 1 for a torn cauliflower; g 0.6 for a brighter silver lining when backlit.
+# All of these are live in the GUI ("Cloud / Smoke" section).
+
+camera:
+  position: [0.169, 1.761, 5.687]
+  look_at: [-0.254, -0.456, -0.242]
+  fov: 40
+
+settings:
+  background_color: [0.45, 0.65, 0.95]  # top of the gradient sky (the horizon stays white)
+  background_intensity: 0.25            # sky brightness: fills the shadows, keep it well below the sun
+  use_bvh: true
+
+materials:
+  - name: "cloud"
+    type: "volume"
+    albedo: [0.99, 0.99, 0.99]   # single-scattering albedo: nearly white, a little grey
+    density: 30.0                # extinction per scene unit (bunny is ~3 units tall): dense, crisp
+    g: 0.5                       # Henyey-Greenstein asymmetry (0 isotropic, > 0 forward)
+    noise_scale: 1.2             # noise features of ~0.8 unit (a few lumps across the body)
+    noise_strength: 0.2          # interior modulation (0 homogeneous, 1 full contrast)
+    edge: 0.05                   # density ramps up over this depth at the surface (crisp edge)
+    lumps: 0.3                   # the shape noise displaces the surface by +-0.3 units: bulges, crevices
+    billow: 0.85                 # inverted Worley share of the shape noise (cauliflower lumps)
+
+  # Sun: a small, strong emitter far up and to the left, invisible to camera rays. Volumetric
+  # next event estimation samples it at every scattering event, which is what carves the
+  # self-shadowing into the cloud.
+  - name: "sun"
+    type: "light"
+    emission: [300.0, 285.0, 255.0]
+
+  - name: "ground"
+    type: "lambertian"
+    albedo: [0.42, 0.45, 0.38]
+
+geometry:
+  # bunny-3.obj spans x [-0.94, 0.61], y [0.33, 1.86], z [-0.61, 0.59]; scaled x2 and
+  # translated so that it stands centred on the origin.
+  - type: "obj"
+    material: "cloud"
+    file: "../models/bunny-3.obj"
+    position: [0.34, -2.2, 0.02]
+    scale: [2, 2, 2]
+
+  - type: "sphere"
+    material: "sun"
+    center: [-42, 26, 14]        # upper left, slightly in front: a long shadow to the right
+    radius: 4
+    visible: false
+
+  # Ground plane just under the bunny's feet: catches the cloud's soft shadow. Very large so
+  # that its edge never shows, whatever the camera does.
+  - type: "rectangle"
+    material: "ground"
+    corner: [-2000, -1.55, -2000]
+    u: [4000, 0, 0]
+    v: [0, 0, 4000]

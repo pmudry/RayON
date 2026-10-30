@@ -38,7 +38,9 @@ extern "C"
                                            bool denoise = false, float denoise_blend = 0.0f);
    float optixRendererLastDenoiseMs();
    void optixRendererCleanup();
+   void optixRendererUpdateMaterial(int idx, const Scene::MaterialDesc &m);
    void setOptiXSobolSampler(bool use_sobol);
+   void setOptiXBackgroundColor(float r, float g, float b);
    void setOptiXMISEnabled(bool enabled);
    void setOptiXNEEStride(int stride);
 }
@@ -56,6 +58,8 @@ class RendererOptiX : public IRenderer
 
       // Build acceleration structure from scene
       optixRendererBuildScene(request.scene);
+      ::setOptiXBackgroundColor((float)request.scene.background_color.x(), (float)request.scene.background_color.y(),
+                                (float)request.scene.background_color.z());
 
       // Zero the device accumulation buffer — no host↔device transfer needed
       optixRendererResetAccum(frame.image_width, frame.image_height);

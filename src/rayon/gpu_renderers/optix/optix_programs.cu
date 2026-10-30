@@ -7,6 +7,7 @@
 #include <curand_kernel.h>
 
 #include "optix_params.h"
+#include "volume_medium.cuh"
 // OptiX PTX is a separate GPU binary; it needs its own copy of the table.
 #define SOBOL_DEFINE_DIRECTIONS
 #include "../sobol_sampler.cuh"
@@ -381,7 +382,14 @@ __device__ OptiXLightSample sample_light_optix(const float3 &shading_p, float u_
 
          ls.direction = normalize3(sin_theta * cosf(phi) * u_basis + sin_theta * sinf(phi) * v_basis + cos_theta * w);
          ls.emission  = light.emission * params.light_intensity;
-         ls.dist      = dist;
+         // Shadow ray length: distance to the sphere's surface along the sampled direction (near
+         // root), not to its centre, or the shadow ray would hit the emitter itself.
+         {
+            float3 oc   = shading_p - light.center;
+            float  b    = dot3(oc, ls.direction);
+            float  disc = b * b - (dist_sq - light.radius * light.radius);
+            ls.dist     = (disc > 0.0f) ? (-b - sqrtf(disc)) : dist * cos_theta;
+         }
          ls.pdf       = select_pdf / solid_angle;
       }
    }
@@ -437,6 +445,97 @@ __device__ __forceinline__ bool is_delta_material_optix(OptixMaterialType mat)
 //==============================================================================
 // RAY GENERATION — path tracing loop
 //==============================================================================
+
+//==============================================================================
+// VOLUME SHADOW RAYS — transmittance along a segment through the scene's media
+//==============================================================================
+
+// Ratio tracking: unbiased transmittance estimate over `len` units of medium `m` from p
+__device__ float ratio_track_optix(const OptixMaterialData &m, float3 p, float3 dir, float len,
+                                   unsigned int &seed)
+{
+   const float sigma_max = volume_majorant(m.volume);
+   if (sigma_max <= 0.0f)
+      return 1.0f;
+   float T = 1.0f, t = 0.0f;
+   for (int k = 0; k < VOLUME_MAX_NULL_STEPS; ++k)
+   {
+      {
+         const float3 pk   = p + t * dir;
+         const float  skip = volume_empty_skip(m.volume, pk.x, pk.y, pk.z);
+         if (skip > 0.0f)
+         {
+            t += skip;
+            if (t >= len)
+               break;
+            continue;
+         }
+      }
+      t -= logf(1.0f - rand_float(seed)) / sigma_max;
+      if (t >= len)
+         break;
+      const float3 q = p + t * dir;
+      T *= 1.0f - volume_density(m.volume, q.x, q.y, q.z) / sigma_max;
+      if (T < 1e-3f)
+         return 0.0f;
+   }
+   return T;
+}
+
+// Transmittance from origin over `dist` units along dir: 1 when clear, 0 when an opaque surface
+// is in the way, in between through volumes. Without a volume in the scene this is the plain
+// occlusion test (one any-hit style trace).
+__device__ float shadow_transmittance_optix(float3 origin, float3 dir, float dist, unsigned int &seed)
+{
+   if (!params.has_volume)
+      return trace_shadow(params.traversable, origin, dir, 0.0001f, dist) ? 0.0f : 1.0f;
+   float T = 1.0f, t0 = 0.0f;
+   for (int i = 0; i < 2 * VOLUME_MAX_PASSES; ++i)
+   {
+      if (dist - t0 <= 0.0002f)
+         return T;
+      const float3 from = origin + t0 * dir;
+      PRDRadiance h;
+      h.hit = false;
+      trace(params.traversable, from, dir, 0.0001f, dist - t0, &h);
+      if (!h.hit)
+         return T;
+      if (h.material_idx < 0 || params.materials[h.material_idx].type != OptixMaterialType::VOLUME)
+         return 0.0f; // opaque surface
+      const OptixMaterialData &m = params.materials[h.material_idx];
+      const float3 d_hit = h.hit_point - from;
+      const float  t_hit = t0 + sqrtf(dot3(d_hit, d_hit));
+      if (h.front_face)
+      {
+         // Entering a medium: track up to its far side, or to the end of the segment
+         PRDRadiance ex;
+         ex.hit = false;
+         if (dist - t_hit > 0.0002f)
+            trace(params.traversable, h.hit_point, dir, 0.0001f, dist - t_hit, &ex);
+         if (ex.hit && (ex.material_idx < 0 || params.materials[ex.material_idx].type != OptixMaterialType::VOLUME))
+            return 0.0f; // opaque surface inside the medium
+         float t_exit = dist;
+         if (ex.hit)
+         {
+            const float3 d_ex = ex.hit_point - h.hit_point;
+            t_exit = t_hit + sqrtf(dot3(d_ex, d_ex));
+         }
+         T *= ratio_track_optix(m, h.hit_point, dir, t_exit - t_hit, seed);
+         if (!ex.hit)
+            return T;
+         t0 = t_exit + 0.001f;
+      }
+      else
+      {
+         // Started inside the medium: track up to this far side
+         T *= ratio_track_optix(m, from, dir, t_hit - t0, seed);
+         t0 = t_hit + 0.001f;
+      }
+      if (T <= 0.0f)
+         return 0.0f;
+   }
+   return T;
+}
 
 extern "C" __global__ void __raygen__rg()
 {
@@ -535,6 +634,7 @@ extern "C" __global__ void __raygen__rg()
 
       float3 cur_origin = ray_origin;
       float3 cur_direction = ray_direction;
+      float3 mis_origin = ray_origin; // where the last direction was sampled (light pdf for MIS)
 
       // MIS tracking
       float prev_bsdf_pdf = 1.0f;
@@ -547,13 +647,16 @@ extern "C" __global__ void __raygen__rg()
       ss.pixel_hash = pixel_hash;
 
       bool guide_done = false; // this sample's denoiser guide has been recorded
+      int  volume_passes = 0;  // medium back faces passed through (see VOLUME below)
+      float next_tmin    = 0.001f; // self-intersection guard of the next trace (see VOLUME below)
 
       for (int bounce = 0; bounce < params.max_depth; ++bounce)
       {
          PRDRadiance prd;
          prd.hit = false;
 
-         trace(params.traversable, cur_origin, cur_direction, 0.001f, 1e16f, &prd);
+         trace(params.traversable, cur_origin, cur_direction, next_tmin, 1e16f, &prd);
+         next_tmin = 0.001f;
 
          if (bounce == 0 && prd.hit)
             primary_hits += 1.0f;
@@ -576,7 +679,7 @@ extern "C" __global__ void __raygen__rg()
             else
             {
                float t = 0.5f * (unit_dir.y + 1.0f);
-               sky = (1.0f - t) * make_float3(1.0f, 1.0f, 1.0f) + t * make_float3(0.5f, 0.7f, 1.0f);
+               sky = (1.0f - t) * make_float3(1.0f, 1.0f, 1.0f) + t * params.background_color;
             }
             color = color + throughput * sky * params.background_intensity;
             if (!guide_done)
@@ -616,6 +719,150 @@ extern "C" __global__ void __raygen__rg()
             }
          }
 
+         // --- Participating medium: the mesh surface is only the boundary of the volume ---
+         if (mat.type == OptixMaterialType::VOLUME)
+         {
+            float3 dir = normalize3(cur_direction);
+            // Entering through a front face: the walk starts at the surface. A back face means the
+            // ray already was inside the medium (camera or a surface inside it): the walk starts at
+            // the ray origin and this hit is its first far side.
+            const bool started_inside = !prd.front_face;
+            if (started_inside && ++volume_passes > VOLUME_MAX_PASSES)
+               break;
+            // Delta tracking through the medium: free flights against the majorant, a step is
+            // a real scattering event with probability density / majorant, else a null collision.
+            const float sigma_max = volume_majorant(mat.volume);
+            float3 origin    = started_inside ? cur_origin : prd.hit_point;
+            bool   escaped   = false;
+            bool   have_exit = started_inside;
+            PRDRadiance ex_known = prd;
+            bool   scattered_any  = false;
+            float3 scatter_point  = origin; // last scattering point (MIS origin for the exit path)
+            float  last_phase_pdf = 1.0f;
+            for (int ev = 0; ev < VOLUME_MAX_EVENTS && !escaped; ++ev)
+            {
+               PRDRadiance ex;
+               if (have_exit)
+               {
+                  ex        = ex_known;
+                  have_exit = false;
+               }
+               else
+               {
+                  ex.hit = false;
+                  trace(params.traversable, origin, dir, 0.0001f, 1e16f, &ex);
+               }
+               if (!ex.hit)
+               {
+                  escaped = true; // open mesh: nothing ahead, leave towards the sky
+                  break;
+               }
+               const float3 to_exit = ex.hit_point - origin;
+               const float  t_exit  = sqrtf(dot3(to_exit, to_exit));
+               bool  scattered = false;
+               float t = 0.0f;
+               for (int k = 0; k < VOLUME_MAX_NULL_STEPS; ++k)
+               {
+                  {
+                     // Jump over the empty space around the shape (no density there to collide with)
+                     const float3 pk   = origin + t * dir;
+                     const float  skip = volume_empty_skip(mat.volume, pk.x, pk.y, pk.z);
+                     if (skip > 0.0f)
+                     {
+                        t += skip;
+                        if (t >= t_exit)
+                           break;
+                        continue;
+                     }
+                  }
+                  t -= logf(1.0f - rand_float(seed)) / sigma_max;
+                  if (t >= t_exit)
+                     break;
+                  float3 p = origin + t * dir;
+                  if (rand_float(seed) * sigma_max <
+                      volume_density(mat.volume, p.x, p.y, p.z))
+                  {
+                     scattered = true;
+                     origin    = p;
+                     break;
+                  }
+               }
+               if (!scattered)
+               {
+                  // Out through the far side of the medium: continue just beyond it. Any other
+                  // surface met inside the medium is left for the next bounce to shade. The
+                  // offsets stay tiny and the next trace uses a matching tmin: a surface lying
+                  // just behind the far side (the ground under a cloud) must not be skipped.
+                  const bool far_side = ex.material_idx >= 0 &&
+                                        params.materials[ex.material_idx].type == OptixMaterialType::VOLUME &&
+                                        !ex.front_face;
+                  origin    = far_side ? ex.hit_point + 0.0002f * dir : ex.hit_point - 0.0002f * dir;
+                  next_tmin = 0.0001f;
+                  escaped = true;
+                  break;
+               }
+               // Scattering event: attenuate by the albedo
+               throughput    = throughput * prd.hit_color;
+               scattered_any = true;
+               scatter_point = origin;
+
+               // Volumetric NEE: sample a light, weight by the phase function and the transmittance
+               // towards it (ratio tracking), MIS against phase-function sampling
+               if (params.mis_enabled && params.num_lights > 0)
+               {
+                  const float nee_u1 = rand_float(seed), nee_u2 = rand_float(seed), nee_sel = rand_float(seed);
+                  OptiXLightSample ls = sample_light_optix(origin, nee_sel, nee_u1, nee_u2);
+                  if (ls.pdf > 0.0f)
+                  {
+                     const float T = shadow_transmittance_optix(origin, ls.direction, ls.dist - 0.002f, seed);
+                     if (T > 0.0f)
+                     {
+                        const float ph = hg_phase(mat.anisotropy, dot3(dir, ls.direction));
+                        const float a = ls.pdf * ls.pdf, b = ph * ph;
+                        const float w = (a + b > 0.0f) ? a / (a + b) : 1.0f;
+                        color = color + throughput * ls.emission * (ph * T * w / ls.pdf);
+                     }
+                  }
+               }
+
+               // New direction from the Henyey-Greenstein phase function
+               const float cos_t = hg_sample_cos(mat.anisotropy, rand_float(seed));
+               const float sin_t = sqrtf(fmaxf(0.0f, 1.0f - cos_t * cos_t));
+               const float phi   = 6.283185307f * rand_float(seed);
+               float3 a  = fabsf(dir.x) > 0.9f ? make_float3(0.0f, 1.0f, 0.0f) : make_float3(1.0f, 0.0f, 0.0f);
+               float3 b1 = normalize3(cross3(a, dir));
+               float3 b2 = cross3(dir, b1);
+               dir = normalize3(sin_t * __cosf(phi) * b1 + sin_t * __sinf(phi) * b2 + cos_t * dir);
+               last_phase_pdf = hg_phase(mat.anisotropy, cos_t);
+               if (ev >= 8)
+               {
+                  float max_c = fmaxf(throughput.x, fmaxf(throughput.y, throughput.z));
+                  float surv  = fminf(max_c, 0.95f);
+                  if (rand_float(seed) > surv)
+                  {
+                     escaped = false;
+                     break;
+                  }
+                  throughput = throughput / surv;
+               }
+            }
+            if (!escaped)
+               break; // path cut inside the medium (roulette or event budget)
+            cur_origin    = origin;
+            cur_direction = dir;
+            if (scattered_any)
+            {
+               // An emissive hit on the exit path is MIS-weighted against the phase function
+               // sampled at the last scattering point (the exit itself is a pass-through)
+               prev_bsdf_pdf = last_phase_pdf;
+               prev_is_delta = false;
+               mis_origin    = scatter_point;
+            }
+            else if (++volume_passes <= VOLUME_MAX_PASSES)
+               --bounce; // crossed without scattering: not a bounce (keeps the surface behind at depth 0)
+            continue;
+         }
+
          if (mat.type == OptixMaterialType::LIGHT)
          {
             // MIS weight for BSDF-sampled emissive hit
@@ -629,7 +876,7 @@ extern "C" __global__ void __raygen__rg()
                if (light_idx >= 0)
                {
                   float3 hit_dir = normalize3(cur_direction);
-                  float lp = light_dir_pdf_optix(light_idx, cur_origin, hit_dir);
+                  float lp = light_dir_pdf_optix(light_idx, mis_origin, hit_dir);
                   if (lp > 0.0f)
                   {
                      float a = prev_bsdf_pdf * prev_bsdf_pdf;
@@ -920,9 +1167,10 @@ extern "C" __global__ void __raygen__rg()
                   OptiXLightSample ls = sample_light_optix(prd.hit_point, nee_sel, nee_u1, nee_u2);
                   if (ls.pdf > 0.0f)
                   {
-                     // Shadow ray
-                     if (!trace_shadow(params.traversable, prd.hit_point + 0.0001f * prd.hit_normal,
-                                       ls.direction, 0.0001f, ls.dist - 0.002f))
+                     // Shadow ray (transmittance through any volume on the way)
+                     const float T_sh = shadow_transmittance_optix(prd.hit_point + 0.0001f * prd.hit_normal,
+                                                                   ls.direction, ls.dist - 0.002f, seed);
+                     if (T_sh > 0.0f)
                      {
                         // Diffuse lobe only: f = w_d * albedo / pi, pdf = w_d * cos(theta) / pi
                         float3 f_nee = prd.hit_color * (diffuse_lobe / 3.14159265f);
@@ -931,7 +1179,7 @@ extern "C" __global__ void __raygen__rg()
                         float a      = ls.pdf * ls.pdf;
                         float b      = p_mat * p_mat;
                         float w_nee  = (a + b > 0.0f) ? (a / (a + b)) : 1.0f;
-                        color = color + throughput * f_nee * ls.emission * cos_th * w_nee * nee_scale / ls.pdf;
+                        color = color + throughput * f_nee * ls.emission * (cos_th * w_nee * nee_scale * T_sh / ls.pdf);
                      }
                   }
                }
@@ -940,6 +1188,7 @@ extern "C" __global__ void __raygen__rg()
 
          throughput = throughput * attenuation;
          cur_origin = prd.hit_point;
+         mis_origin = prd.hit_point;
          cur_direction = scatter_dir;
 
          // Track BSDF PDF for MIS weighting at the next emissive hit

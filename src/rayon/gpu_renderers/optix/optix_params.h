@@ -1,6 +1,7 @@
 // Shared data structures for OptiX host and device code
 #pragma once
 
+#include "volume_params.h"
 #include <cstdint>
 #include <cuda_runtime.h>
 
@@ -23,7 +24,8 @@ enum class OptixMaterialType : unsigned char
    SDF_MATERIAL,
    ANISOTROPIC_METAL, // GGX microfacet metal — approximated as rough mirror in OptiX
    THIN_FILM,         // Thin-film interference — approximated as mirror in OptiX
-   CLEAR_COAT         // Dielectric coat over diffuse base (Schlick Fresnel blend)
+   CLEAR_COAT,        // Dielectric coat over diffuse base (Schlick Fresnel blend)
+   VOLUME             // Scattering medium filling a closed mesh (see volume_medium.cuh)
 };
 
 // Custom-primitive geometry types (triangles go through the built-in intersector)
@@ -81,6 +83,7 @@ struct OptixMaterialData
    float3 k;             // ANISOTROPIC_METAL: complex IOR imaginary/extinction (R,G,B)
    float film_thickness; // THIN_FILM: thickness in nm
    float film_ior;       // THIN_FILM: film refractive index
+   VolumeParams volume;  // VOLUME: medium parameters + SDF texture (anisotropy = HG g, albedo = scattering albedo)
 
    int texture_id; // Diffuse texture index (-1 = none)
    int pattern_table_offset; // FIBONACCI_DOTS: first entry of this material's dot directions in params.pattern_points
@@ -171,6 +174,7 @@ struct OptixLaunchParams
 
    // Environment
    float background_intensity;
+   float3 background_color; // top colour of the gradient sky (bottom is white)
    cudaTextureObject_t hdr_env_tex;  // equirectangular HDR sky (0 = gradient fallback)
    bool                use_hdr_env;
 
@@ -198,6 +202,7 @@ struct OptixLaunchParams
    // MIS / NEE runtime controls
    bool mis_enabled;            // Master MIS toggle
    int  nee_stride;             // NEE on 1 of every N samples (contribution x N)
+   bool has_volume;             // Scene holds a VOLUME material: shadow rays estimate transmittance
 
    // Reverse lookup: custom-primitive index → light list index (-1 if not a light)
    int *geom_to_light_map;

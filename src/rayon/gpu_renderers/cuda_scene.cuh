@@ -14,6 +14,7 @@
 #endif
 
 #include "cuda_float3.cuh"
+#include "volume_params.h"
 #include <cstdint>
 
 namespace CudaScene
@@ -37,7 +38,8 @@ enum class MaterialType : uint8_t
    SDF_MATERIAL,
    ANISOTROPIC_METAL,
    THIN_FILM,
-   CLEAR_COAT   // Two-layer: glossy dielectric coat over diffuse base
+   CLEAR_COAT,  // Two-layer: glossy dielectric coat over diffuse base
+   VOLUME       // Scattering medium filling a closed mesh
 };
 
 /**
@@ -71,6 +73,9 @@ struct Material
    float film_thickness;   // Film thickness in nanometers
    float film_ior;         // Refractive index of the thin film
 
+   // Participating medium (VOLUME): see volume_medium.cuh. The SDF texture is bound at upload.
+   VolumeParams volume;
+
    // Procedural pattern support
    ProceduralPattern pattern;
    f3 pattern_color;
@@ -81,6 +86,7 @@ struct Material
        : type(MaterialType::LAMBERTIAN), albedo(0, 0, 0), emission(0, 0, 0), roughness(0), metallic(0),
          refractive_index(1), transmission(0), anisotropy(0), eta(0, 0, 0), k(0, 0, 0),
          texture_id(-1), film_thickness(400.0f), film_ior(1.33f),
+         volume{2.0f, 2.0f, 0.5f, 0.35f, 0.6f, 0.6f, 0, nullptr, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}},
          pattern(ProceduralPattern::NONE), pattern_color(0, 0, 0),
          pattern_param1(0), pattern_param2(0)
    {
@@ -256,6 +262,8 @@ struct alignas(128) Scene
    int  *light_indices; ///< Device pointer: indices into geometries[] for LIGHT-material objects
    int   num_lights;    ///< Number of emissive geometries
    float *light_cdfs;   ///< Device pointer: cumulative area CDF [num_lights+1] for importance selection
+
+   bool has_volume;     ///< Scene holds a VOLUME material: shadow rays estimate transmittance
 };
 
 } // namespace CudaScene

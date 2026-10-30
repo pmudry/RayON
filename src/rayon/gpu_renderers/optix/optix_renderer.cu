@@ -2,6 +2,7 @@
 // Handles: context, module, pipeline, GAS, SBT, launch
 
 #include "optix_params.h"
+#include "volume_sdf.cuh"
 #include "scene_description.hpp"
 
 #include <optix.h>
@@ -14,6 +15,7 @@
 #include <math_constants.h>
 #include <algorithm>
 #include <cstdint>
+#include <map>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -82,6 +84,7 @@ struct OptixState
    CUdeviceptr d_sbt_miss = 0;
    CUdeviceptr d_sbt_hitgroup = 0;
    OptixMaterialData *d_materials = nullptr;
+   std::vector<OptixMaterialData> host_materials; // mirror of d_materials for in-place updates
    cudaTextureObject_t *d_textures = nullptr;
    int num_textures = 0;
 
@@ -95,6 +98,7 @@ struct OptixState
    // MIS / NEE runtime settings (cached between launches)
    bool  mis_enabled          = true;
    int   nee_stride           = 3;
+   bool  has_volume           = false; // scene holds a VOLUME material (shadow rays track transmittance)
 
    // Adaptive sampling (converged-pixel skipping): per-pixel sample counts (negative = converged)
    // and the per-pixel sum of squared sample luminance for the convergence test.
@@ -477,6 +481,40 @@ static void buildGAS(const Scene::SceneDescription &scene)
    g_state.num_triangles = 0;
    g_state.gas_handle = 0;
 
+   // Volume materials with a soft edge: build the mesh's signed distance grid now, and trace a
+   // padded box around the mesh instead of the mesh itself, so the noise can grow lumps outside
+   // the surface. The materials upload below binds the grid; the box faces carry the material.
+   struct VolumeBox
+   {
+      VolumeParams vp;
+      float3       lo, hi;
+   };
+   std::map<int, VolumeBox> volume_boxes;
+   for (int i = 0; i < static_cast<int>(scene.materials.size()); ++i)
+   {
+      const auto &m = scene.materials[i];
+      if (m.type != Scene::MaterialType::VOLUME || m.edge <= 0.0f)
+         continue;
+      std::vector<float3> tris;
+      for (const auto &g : scene.geometries)
+         if (g.type == Scene::GeometryType::TRIANGLE && g.material_id == i)
+            for (const Vec3 *v : {&g.data.triangle.v0, &g.data.triangle.v1, &g.data.triangle.v2})
+               tris.push_back(toFloat3(*v));
+      VolumeBox box{};
+      if (!buildVolumeSDF(tris, 64, VOLUME_BOX_PAD, box.vp))
+         continue;
+      box.lo = tris[0];
+      box.hi = tris[0];
+      for (const float3 &v : tris)
+      {
+         box.lo = make_float3(std::min(box.lo.x, v.x), std::min(box.lo.y, v.y), std::min(box.lo.z, v.z));
+         box.hi = make_float3(std::max(box.hi.x, v.x), std::max(box.hi.y, v.y), std::max(box.hi.z, v.z));
+      }
+      box.lo = make_float3(box.lo.x - VOLUME_BOX_PAD, box.lo.y - VOLUME_BOX_PAD, box.lo.z - VOLUME_BOX_PAD);
+      box.hi = make_float3(box.hi.x + VOLUME_BOX_PAD, box.hi.y + VOLUME_BOX_PAD, box.hi.z + VOLUME_BOX_PAD);
+      volume_boxes[i] = box;
+   }
+
    // Partition geometry: custom primitives (own SBT record each) vs. hardware triangles.
    // Unsupported types (SDF, CUBE, ...) are skipped with a one-time warning.
    std::vector<int> supported_indices; // custom primitives, in SBT order
@@ -491,7 +529,8 @@ static void buildGAS(const Scene::SceneDescription &scene)
          supported_indices.push_back(i);
          break;
       case Scene::GeometryType::TRIANGLE:
-         triangle_indices.push_back(i);
+         if (!volume_boxes.count(scene.geometries[i].material_id)) // boxed volumes: mesh not traced
+            triangle_indices.push_back(i);
          break;
       default:
          if (!g_optix_warned_unsupported_geometry)
@@ -505,7 +544,7 @@ static void buildGAS(const Scene::SceneDescription &scene)
    }
 
    const int num_geoms = static_cast<int>(supported_indices.size());
-   const int num_tris  = static_cast<int>(triangle_indices.size());
+   const int num_tris  = static_cast<int>(triangle_indices.size()) + 12 * static_cast<int>(volume_boxes.size());
    if (num_geoms == 0 && num_tris == 0)
       return;
 
@@ -608,7 +647,36 @@ static void buildGAS(const Scene::SceneDescription &scene)
    {
       std::vector<float3> vertices(static_cast<size_t>(num_tris) * 3);
       std::vector<OptixTriangleData> tri_data(num_tris);
-      for (int i = 0; i < num_tris; ++i)
+      // Volume boxes: 12 outward-wound triangles per box, flat shading, the volume material
+      int next_tri = static_cast<int>(triangle_indices.size());
+      for (const auto &kv : volume_boxes)
+      {
+         const float3 lo = kv.second.lo, hi = kv.second.hi;
+         const float3 c[8] = {make_float3(lo.x, lo.y, lo.z), make_float3(hi.x, lo.y, lo.z),
+                              make_float3(hi.x, hi.y, lo.z), make_float3(lo.x, hi.y, lo.z),
+                              make_float3(lo.x, lo.y, hi.z), make_float3(hi.x, lo.y, hi.z),
+                              make_float3(hi.x, hi.y, hi.z), make_float3(lo.x, hi.y, hi.z)};
+         // Faces as quads (a, b, c, d) wound counter-clockwise seen from outside
+         const int faces[6][4] = {{0, 3, 2, 1},  // -z
+                                  {4, 5, 6, 7},  // +z
+                                  {0, 1, 5, 4},  // -y
+                                  {3, 7, 6, 2},  // +y
+                                  {0, 4, 7, 3},  // -x
+                                  {1, 2, 6, 5}}; // +x
+         for (const auto &f : faces)
+            for (int k = 0; k < 2; ++k)
+            {
+               const int ia = f[0], ib = k == 0 ? f[1] : f[2], ic = k == 0 ? f[2] : f[3];
+               vertices[3 * next_tri + 0] = c[ia];
+               vertices[3 * next_tri + 1] = c[ib];
+               vertices[3 * next_tri + 2] = c[ic];
+               OptixTriangleData &td = tri_data[next_tri];
+               td              = OptixTriangleData{};
+               td.material_idx = kv.first;
+               ++next_tri;
+            }
+      }
+      for (int i = 0; i < static_cast<int>(triangle_indices.size()); ++i)
       {
          const auto &t = scene.geometries[triangle_indices[i]].data.triangle;
          vertices[3 * i + 0] = toFloat3(t.v0);
@@ -714,7 +782,10 @@ static void buildGAS(const Scene::SceneDescription &scene)
    g_state.sbt.hitgroupRecordStrideInBytes = sizeof(HitGroupRecord);
    g_state.sbt.hitgroupRecordCount = num_hit_records;
 
-   // Upload materials
+   // Upload materials (release the volume SDF textures of the previous scene first)
+   for (auto &hm : g_state.host_materials)
+      freeVolumeSDF(hm.volume);
+   g_state.host_materials.clear();
    if (g_state.d_materials)
    {
       CUDA_CHECK(cudaFree(g_state.d_materials));
@@ -726,9 +797,12 @@ static void buildGAS(const Scene::SceneDescription &scene)
    {
       std::vector<OptixMaterialData> materials(num_materials);
       std::vector<float3> pattern_points; // FIBONACCI_DOTS directions, all materials concatenated
+      g_state.has_volume = false;
       for (int i = 0; i < num_materials; ++i)
       {
          const auto &m = scene.materials[i];
+         if (m.type == Scene::MaterialType::VOLUME)
+            g_state.has_volume = true;
          materials[i].pattern_table_offset = 0;
          if (static_cast<int>(m.pattern) == 1) // FIBONACCI_DOTS: precompute the dot directions once
          {
@@ -757,11 +831,33 @@ static void buildGAS(const Scene::SceneDescription &scene)
                                        static_cast<float>(m.k.z()));
          materials[i].film_thickness = m.film_thickness;
          materials[i].film_ior = m.film_ior;
+         materials[i].volume.density        = m.density;
+         materials[i].volume.noise_scale    = m.noise_scale;
+         materials[i].volume.noise_strength = m.noise_strength;
+         materials[i].volume.edge           = m.edge;
+         materials[i].volume.lumps        = m.lumps;
+         materials[i].volume.billow         = m.billow;
+         materials[i].volume.sdf            = 0;
+         materials[i].volume.sdf_array      = nullptr;
+         materials[i].volume.field          = 0;
+         materials[i].volume.field_array    = nullptr;
+         materials[i].volume.field_dims     = make_int3(0, 0, 0);
+         auto vb = volume_boxes.find(i);
+         if (vb != volume_boxes.end())
+         {
+            // Bind the distance grid built with the box geometry above
+            materials[i].volume.sdf            = vb->second.vp.sdf;
+            materials[i].volume.sdf_array      = vb->second.vp.sdf_array;
+            materials[i].volume.sdf_min        = vb->second.vp.sdf_min;
+            materials[i].volume.sdf_inv_extent = vb->second.vp.sdf_inv_extent;
+            bakeVolumeField(materials[i].volume, VOLUME_FIELD_CELLS);
+         }
          materials[i].texture_id = m.texture_id;
       }
       CUDA_CHECK(cudaMalloc(&g_state.d_materials, num_materials * sizeof(OptixMaterialData)));
       CUDA_CHECK(cudaMemcpy(g_state.d_materials, materials.data(), num_materials * sizeof(OptixMaterialData),
                              cudaMemcpyHostToDevice));
+      g_state.host_materials = materials;
 
       if (g_state.d_pattern_points)
       {
@@ -962,6 +1058,8 @@ extern "C" void setOptiXMISEnabled(bool enabled)          { g_state.mis_enabled 
 /// > 0: fixed per-sample luminance ceiling (camera moving: each frame is displayed on its own);
 /// 0: the ceiling grows with the sample count.
 static float g_optix_firefly_clamp_ceiling = 0.0f;
+static float3 g_optix_background_color = make_float3(0.5f, 0.7f, 1.0f);
+extern "C" void setOptiXBackgroundColor(float r, float g, float b) { g_optix_background_color = make_float3(r, g, b); }
 extern "C" void setOptiXFireflyClampCeiling(float ceiling) { g_optix_firefly_clamp_ceiling = ceiling; }
 extern "C" void setOptiXNEEStride(int stride)              { g_state.nee_stride = (stride < 1) ? 1 : stride; }
 
@@ -974,6 +1072,35 @@ extern "C" void setOptiXAdaptiveSampling(bool enabled, int min_samples, float th
 }
 
 extern "C" void optixRendererInit() { initializeOptiX(); }
+
+// Rewrite one material's scalar parameters in place (GUI edits), keeping its pattern table and
+// type. Does not rebuild the scene; the caller restarts the accumulation.
+extern "C" void optixRendererUpdateMaterial(int idx, const Scene::MaterialDesc &m)
+{
+   if (!g_state.d_materials || idx < 0 || idx >= (int)g_state.host_materials.size())
+      return;
+   OptixMaterialData &d = g_state.host_materials[idx];
+   d.albedo   = make_float3((float)m.albedo.x(), (float)m.albedo.y(), (float)m.albedo.z());
+   d.emission = make_float3((float)m.emission.x(), (float)m.emission.y(), (float)m.emission.z());
+   d.roughness        = m.roughness;
+   d.refractive_index = m.refractive_index;
+   d.anisotropy       = m.anisotropy;
+   d.eta = make_float3((float)m.eta.x(), (float)m.eta.y(), (float)m.eta.z());
+   d.k   = make_float3((float)m.k.x(), (float)m.k.y(), (float)m.k.z());
+   d.film_thickness = m.film_thickness;
+   d.film_ior       = m.film_ior;
+   d.volume.density        = m.density; // the SDF binding is kept as uploaded
+   d.volume.noise_scale    = m.noise_scale;
+   d.volume.noise_strength = m.noise_strength;
+   d.volume.edge           = m.edge;
+   d.volume.lumps          = m.lumps;
+   d.volume.billow         = m.billow;
+   if (d.type == OptixMaterialType::VOLUME && d.volume.sdf != 0)
+      bakeVolumeField(d.volume, VOLUME_FIELD_CELLS); // the parameters changed: rebake the field
+   CUDA_CHECK(cudaMemcpyAsync(g_state.d_materials + idx, &d, sizeof(OptixMaterialData), cudaMemcpyHostToDevice,
+                              getOptiXStream()));
+   CUDA_CHECK(cudaStreamSynchronize(getOptiXStream()));
+}
 
 extern "C" void optixRendererBuildScene(const Scene::SceneDescription &scene)
 {
@@ -1288,6 +1415,7 @@ extern "C" unsigned long long optixRendererLaunch(int width, int height, int num
    launch_params.num_textures = g_state.num_textures;
    launch_params.traversable = g_state.gas_handle;
    launch_params.background_intensity = bg_intensity;
+   launch_params.background_color     = g_optix_background_color;
    launch_params.dof_enabled = dof_enabled;
    launch_params.dof_aperture = dof_aperture;
    launch_params.dof_focus_distance = dof_focus_dist;
@@ -1309,6 +1437,7 @@ extern "C" unsigned long long optixRendererLaunch(int width, int height, int num
    launch_params.light_cdfs         = g_state.d_light_cdfs;
    launch_params.mis_enabled        = g_state.mis_enabled;
    launch_params.nee_stride         = g_state.nee_stride;
+   launch_params.has_volume         = g_state.has_volume;
    launch_params.geom_to_light_map  = g_state.d_geom_to_light;
    launch_params.num_geom_entries   = g_state.num_geom_entries;
 
@@ -1885,6 +2014,9 @@ extern "C" void optixRendererCleanup()
       CUDA_CHECK(cudaFree(g_state.d_pattern_points));
    if (g_state.d_launch_params)
       CUDA_CHECK(cudaFree(reinterpret_cast<void *>(g_state.d_launch_params)));
+   for (auto &hm : g_state.host_materials)
+      freeVolumeSDF(hm.volume);
+   g_state.host_materials.clear();
    if (g_state.d_materials)
       CUDA_CHECK(cudaFree(g_state.d_materials));
    if (g_state.d_lights)

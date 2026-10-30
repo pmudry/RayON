@@ -103,6 +103,9 @@ class RendererCUDAProgressive : public IRenderer
       float dof_aperture = 0.1f;
       float dof_focus_distance = 10.0f;
       float cam_fov_ui = static_cast<float>(camera.vfov);
+      bool        save_camera_request = false; // GUI button: write the camera into the scene YAML
+      std::string camera_save_status;            // feedback shown under the button for a few seconds
+      auto        camera_save_status_time = std::chrono::steady_clock::now();
       bool needs_rerender = false;
       bool force_immediate_render = false;
       float samples_per_batch_float = static_cast<float>(samples_per_batch);
@@ -125,6 +128,9 @@ class RendererCUDAProgressive : public IRenderer
 
       // Runtime-tweakable procedural pattern parameters (declared before applySceneSettings)
       bool scene_has_golf_ball      = false;
+      // Volume (cloud / smoke) material of the scene, editable from the GUI (-1 = none)
+      int                    volume_mat_idx = -1;
+      VolumeMaterialSettings volume_settings;
       int   golf_dimple_count       = 128;
       float golf_dimple_radius      = 0.155f;
       float golf_dimple_depth       = 0.25f;
@@ -342,8 +348,29 @@ class RendererCUDAProgressive : public IRenderer
             if (g.type == Scene::GeometryType::DISPLACED_SPHERE)
                scene_has_golf_ball = true;
          }
+         volume_mat_idx = -1;
+         for (size_t i = 0; i < active_scene.materials.size() && volume_mat_idx < 0; ++i)
+            if (active_scene.materials[i].type == Scene::MaterialType::VOLUME)
+               volume_mat_idx = (int)i;
+         if (volume_mat_idx >= 0)
+         {
+            const auto &m = active_scene.materials[volume_mat_idx];
+            volume_settings.albedo[0]      = (float)m.albedo.x();
+            volume_settings.albedo[1]      = (float)m.albedo.y();
+            volume_settings.albedo[2]      = (float)m.albedo.z();
+            volume_settings.density        = m.density;
+            volume_settings.g              = m.anisotropy;
+            volume_settings.noise_scale    = m.noise_scale;
+            volume_settings.noise_strength = m.noise_strength;
+            volume_settings.edge           = m.edge;
+            volume_settings.lumps        = m.lumps;
+            volume_settings.billow         = m.billow;
+            volume_settings.changed        = false;
+         }
       };
       scanProceduralPatterns(); // Initial scan
+      ::setBackgroundColor((float)active_scene.background_color.x(), (float)active_scene.background_color.y(),
+                           (float)active_scene.background_color.z());
 
       auto applySceneSelectionChange = [&]() {
          if (current_scene_index < 0 || current_scene_index >= scene_count)
@@ -378,6 +405,8 @@ class RendererCUDAProgressive : public IRenderer
 
          // Apply scene-specific rendering settings
          background_intensity = active_scene.background_intensity;
+         ::setBackgroundColor((float)active_scene.background_color.x(), (float)active_scene.background_color.y(),
+                              (float)active_scene.background_color.z());
          adaptive_sampling_enabled = active_scene.adaptive_sampling;
 
          // Re-scan for procedural patterns so GUI sections update correctly
@@ -733,7 +762,39 @@ class RendererCUDAProgressive : public IRenderer
                            hdr_count > 0 ? hdr_name_ptrs.data() : nullptr,
                            hdr_count,
                            &mis_enabled, &motion_gate_mis, &nee_stride,
-                           &use_sobol, nullptr, &motion_despeckle, &motion_despeckle_ratio);
+                           &use_sobol, nullptr, &motion_despeckle, &motion_despeckle_ratio,
+                           volume_mat_idx >= 0 ? &volume_settings : nullptr,
+                           &save_camera_request, active_scene.source_file.c_str(), camera_save_status.c_str());
+
+         if (save_camera_request)
+         {
+            save_camera_request = false;
+            if (Scene::saveCameraToYAML(active_scene.source_file.c_str(), look_from, look_at, camera.vfov))
+               camera_save_status = "Saved to " + active_scene.source_file;
+            else
+               camera_save_status = "Could not write " + active_scene.source_file;
+            camera_save_status_time = std::chrono::steady_clock::now();
+         }
+         else if (!camera_save_status.empty() &&
+                  std::chrono::steady_clock::now() - camera_save_status_time > std::chrono::seconds(4))
+            camera_save_status.clear();
+
+         // Cloud / smoke parameters edited in the GUI: update the material in place and restart
+         if (volume_settings.changed && volume_mat_idx >= 0)
+         {
+            auto &m          = active_scene.materials[volume_mat_idx];
+            m.albedo         = Vec3(volume_settings.albedo[0], volume_settings.albedo[1], volume_settings.albedo[2]);
+            m.density        = volume_settings.density;
+            m.anisotropy     = volume_settings.g;
+            m.noise_scale    = volume_settings.noise_scale;
+            m.noise_strength = volume_settings.noise_strength;
+            m.edge           = volume_settings.edge;
+            m.lumps        = volume_settings.lumps;
+            m.billow         = volume_settings.billow;
+            Scene::CudaSceneBuilder::updateMaterial(gpu_scene, volume_mat_idx, m);
+            volume_settings.changed = false;
+            camera_changed = true;
+         }
 
          if (auto_orbit != camera_control.isAutoOrbitEnabled())
          {

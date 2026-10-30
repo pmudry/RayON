@@ -4,6 +4,7 @@
 #include "cuda_scene.cuh"
 #include "cuda_utils.cuh"
 #include "microfacet_ggx.cuh"
+#include "volume_medium.cuh"
 
 #include <cfloat>
 #include <cmath>
@@ -13,6 +14,7 @@
 // Extern declarations for device-side global constants (defined once in renderer_cuda_device.cu)
 extern __constant__ float g_light_intensity;
 extern __constant__ float g_background_intensity;
+extern __constant__ float3 g_background_color;
 extern __constant__ float g_metal_fuzziness;
 extern __constant__ float g_glass_refraction_index;
 extern __constant__ uint32_t g_sobol_sequence_seed;
@@ -66,7 +68,8 @@ enum LegacyMaterialType
    SHOW_NORMALS = 6,
    ANISOTROPIC_METAL = 7,
    THIN_FILM = 8,
-   CLEAR_COAT = 9
+   CLEAR_COAT = 9,
+   VOLUME = 10
 };
 
 struct hit_record_simple
@@ -93,6 +96,9 @@ struct hit_record_simple
    // Thin-film interference fields (only meaningful when material == THIN_FILM)
    float film_thickness;   // Film thickness in nanometers
    float film_ior;         // Refractive index of the thin film
+
+   // Participating medium (only meaningful when material == VOLUME; anisotropy = HG g)
+   VolumeParams volume;
 
    // Index into scene.geometries[] — used by MIS to compute light PDF for emissive hits
    int geom_idx;
@@ -511,6 +517,12 @@ __device__ __forceinline__ void apply_material(const CudaScene::Material &mat, h
       rec.roughness = mat.roughness;    // coat roughness
       rec.refractive_index = mat.refractive_index > 1.0f ? mat.refractive_index : 1.5f; // coat IOR
       break;
+   case MaterialType::VOLUME:
+      rec.material = VOLUME;
+      rec.color = mat.albedo;           // single-scattering albedo
+      rec.anisotropy = mat.anisotropy;  // Henyey-Greenstein g
+      rec.volume = mat.volume;
+      break;
    }
    if (mat.pattern != CudaScene::ProceduralPattern::NONE)
    {
@@ -741,6 +753,89 @@ __device__ __forceinline__ float scatter_pdf_gpu(const hit_record_simple &rec, c
 }
 
 /// GPU light sample result
+//==============================================================================
+// VOLUME SHADOW RAYS — transmittance along a segment through the scene's media
+//==============================================================================
+
+// Ratio tracking: unbiased transmittance estimate over `len` units of the medium described by `m`
+__device__ inline float ratio_track_gpu(const hit_record_simple &m, const f3 &p, const f3 &dir, float len,
+                                        curandState *state)
+{
+   const float sigma_max = volume_majorant(m.volume);
+   if (sigma_max <= 0.0f)
+      return 1.0f;
+   float T = 1.0f, t = 0.0f;
+   for (int k = 0; k < VOLUME_MAX_NULL_STEPS; ++k)
+   {
+      {
+         const f3    pk   = p + t * dir;
+         const float skip = volume_empty_skip(m.volume, pk.x, pk.y, pk.z);
+         if (skip > 0.0f)
+         {
+            t += skip;
+            if (t >= len)
+               break;
+            continue;
+         }
+      }
+      t -= logf(1.0f - rand_float(state)) / sigma_max;
+      if (t >= len)
+         break;
+      const f3 q = p + t * dir;
+      T *= 1.0f - volume_density(m.volume, q.x, q.y, q.z) / sigma_max;
+      if (T < 1e-3f)
+         return 0.0f;
+   }
+   return T;
+}
+
+// Transmittance from origin over `dist` units along the unit direction dir: 1 when clear, 0 when
+// an opaque surface is in the way, in between through volumes. Without a volume in the scene
+// this is the plain occlusion test.
+__device__ inline float shadow_transmittance_gpu(const CudaScene::Scene &scene, const f3 &origin, const f3 &dir,
+                                                 float dist, curandState *state)
+{
+   if (!scene.has_volume)
+      return hit_scene_shadow(scene, ray_simple(origin, dir), 0.0001f, dist) ? 0.0f : 1.0f;
+   float T = 1.0f, t0 = 0.0f;
+   for (int i = 0; i < 2 * VOLUME_MAX_PASSES; ++i)
+   {
+      if (dist - t0 <= 0.0002f)
+         return T;
+      const f3 from = origin + t0 * dir;
+      hit_record_simple h;
+      if (!hit_scene(scene, ray_simple(from, dir), 0.0001f, dist - t0, h))
+         return T;
+      if (h.material != VOLUME)
+         return 0.0f; // opaque surface
+      const float t_hit = t0 + h.t;
+      if (h.front_face)
+      {
+         // Entering a medium: track up to its far side, or to the end of the segment
+         hit_record_simple ex;
+         bool ex_hit = false;
+         if (dist - t_hit > 0.0002f)
+            ex_hit = hit_scene(scene, ray_simple(h.p, dir), 0.0001f, dist - t_hit, ex);
+         if (ex_hit && ex.material != VOLUME)
+            return 0.0f; // opaque surface inside the medium
+         const float t_exit = ex_hit ? t_hit + ex.t : dist;
+         T *= ratio_track_gpu(h, h.p, dir, t_exit - t_hit, state);
+         if (!ex_hit)
+            return T;
+         t0 = t_exit + 0.001f;
+      }
+      else
+      {
+         // Started inside the medium: track up to this far side
+         T *= ratio_track_gpu(h, from, dir, t_hit - t0, state);
+         t0 = t_hit + 0.001f;
+      }
+      if (T <= 0.0f)
+         return 0.0f;
+   }
+   return T;
+}
+
 struct LightSampleGPU
 {
    f3    direction; ///< Unit direction from shading point toward light
@@ -867,7 +962,14 @@ static __device__ LightSampleGPU sample_light_gpu(const CudaScene::Scene &scene,
 
          ls.direction = dir;
          ls.emission  = mat.emission * g_light_intensity;
-         ls.dist      = dist;
+         // Shadow ray length: distance to the sphere's surface along the sampled direction (near
+         // root), not to its centre, or the shadow ray would hit the emitter itself.
+         {
+            f3    oc   = shading_p - center;
+            float b    = dot(oc, dir);
+            float disc = b * b - (dist_sq - radius * radius);
+            ls.dist    = (disc > 0.0f) ? (-b - sqrtf(disc)) : dist * cos_theta;
+         }
          ls.pdf       = select_pdf / solid_angle;
       }
    }
@@ -1220,6 +1322,9 @@ __device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scen
    // MIS tracking: PDF and specular flag of the previous BSDF sample
    float prev_bsdf_pdf  = 1.0f;
    bool  prev_is_delta  = true; // treat camera ray as delta — no prior NEE could target bounce 0
+   int   volume_passes  = 0;    // medium back faces passed through (see VOLUME below)
+   float next_tmin      = 0.001f; // self-intersection guard of the next trace (see VOLUME below)
+   f3    mis_origin     = r.orig; // where the last direction was sampled (light pdf for MIS)
 
    for (int bounce = 0; bounce < depth; bounce++)
    {
@@ -1228,12 +1333,149 @@ __device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scen
 #endif
       hit_record_simple rec;
 
-      if (hit_scene(scene, current_ray, 0.001f, FLT_MAX, rec))
+      const bool hit_any = hit_scene(scene, current_ray, next_tmin, FLT_MAX, rec);
+      next_tmin          = 0.001f;
+      if (hit_any)
       {
          // Invisible geometry: camera rays pass through, bounced rays interact normally
          if (!rec.visible && bounce == 0)
          {
             current_ray = ray_simple(rec.p + current_ray.dir * 0.01f, current_ray.dir);
+            continue;
+         }
+
+         // --- Participating medium: the mesh surface is only the boundary of the volume ---
+         if (rec.material == VOLUME)
+         {
+            f3 dir = normalize(current_ray.dir);
+            // Entering through a front face: the walk starts at the surface. A back face means the
+            // ray already was inside the medium (camera or a surface inside it): the walk starts at
+            // the ray origin and this hit is its first far side.
+            const bool started_inside = !rec.front_face;
+            if (started_inside && ++volume_passes > VOLUME_MAX_PASSES)
+               return accumulated_color;
+            // Delta tracking through the medium: free flights against the majorant, a step is
+            // a real scattering event with probability density / majorant, else a null collision.
+            const float sigma_max = volume_majorant(rec.volume);
+            f3   origin    = started_inside ? current_ray.orig : rec.p;
+            bool escaped   = false;
+            bool have_exit = started_inside;
+            bool  scattered_any  = false;
+            f3    scatter_point  = origin; // last scattering point (MIS origin for the exit path)
+            float last_phase_pdf = 1.0f;
+            for (int ev = 0; ev < VOLUME_MAX_EVENTS && !escaped; ++ev)
+            {
+               hit_record_simple ex;
+               bool ex_hit;
+               if (have_exit)
+               {
+                  ex        = rec;
+                  ex_hit    = true;
+                  have_exit = false;
+               }
+               else
+                  ex_hit = hit_scene(scene, ray_simple(origin, dir), 0.0001f, FLT_MAX, ex);
+               if (!ex_hit)
+               {
+                  escaped = true; // open mesh: nothing ahead, leave towards the sky
+                  break;
+               }
+               const float t_exit = (ex.p - origin).length(); // dir is unit length
+               bool  scattered = false;
+               float t = 0.0f;
+               for (int k = 0; k < VOLUME_MAX_NULL_STEPS; ++k)
+               {
+                  {
+                     // Jump over the empty space around the shape (no density there to collide with)
+                     const f3    pk   = origin + t * dir;
+                     const float skip = volume_empty_skip(rec.volume, pk.x, pk.y, pk.z);
+                     if (skip > 0.0f)
+                     {
+                        t += skip;
+                        if (t >= t_exit)
+                           break;
+                        continue;
+                     }
+                  }
+                  t -= logf(1.0f - rand_float(state)) / sigma_max;
+                  if (t >= t_exit)
+                     break;
+                  f3 p = origin + t * dir;
+                  if (rand_float(state) * sigma_max <
+                      volume_density(rec.volume, p.x, p.y, p.z))
+                  {
+                     scattered = true;
+                     origin    = p;
+                     break;
+                  }
+               }
+               if (!scattered)
+               {
+                  // Out through the far side of the medium: continue just beyond it. Any other
+                  // surface met inside the medium is left for the next bounce to shade.
+                  const bool far_side = (ex.material == VOLUME && !ex.front_face);
+                  origin    = far_side ? ex.p + 0.0002f * dir : ex.p - 0.0002f * dir;
+                  next_tmin = 0.0001f; // a surface just behind the far side must not be skipped
+                  escaped = true;
+                  break;
+               }
+               // Scattering event: attenuate by the albedo
+               accumulated_attenuation = accumulated_attenuation * rec.color;
+               scattered_any = true;
+               scatter_point = origin;
+
+               // Volumetric NEE: sample a light, weight by the phase function and the transmittance
+               // towards it (ratio tracking), MIS against phase-function sampling
+               if (g_mis_enabled && scene.num_lights > 0)
+               {
+                  const float nee_u1 = rand_float(state), nee_u2 = rand_float(state), nee_sel = rand_float(state);
+                  LightSampleGPU ls = sample_light_gpu(scene, origin, nee_sel, nee_u1, nee_u2);
+                  if (ls.pdf > 0.0f)
+                  {
+                     const float T = shadow_transmittance_gpu(scene, origin, ls.direction, ls.dist - 0.002f, state);
+                     if (T > 0.0f)
+                     {
+                        const float ph = hg_phase(rec.anisotropy, dot(dir, ls.direction));
+                        const float a = ls.pdf * ls.pdf, b = ph * ph;
+                        const float w = (a + b > 0.0f) ? a / (a + b) : 1.0f;
+                        accumulated_color = accumulated_color +
+                                            accumulated_attenuation * ls.emission * (ph * T * w / ls.pdf);
+                     }
+                  }
+               }
+
+               // New direction from the Henyey-Greenstein phase function
+               const float cos_t = hg_sample_cos(rec.anisotropy, rand_float(state));
+               const float sin_t = sqrtf(fmaxf(0.0f, 1.0f - cos_t * cos_t));
+               const float phi   = 2.0f * CUDART_PI_F * rand_float(state);
+               f3 a = fabsf(dir.x) > 0.9f ? f3(0.0f, 1.0f, 0.0f) : f3(1.0f, 0.0f, 0.0f);
+               f3 b1 = normalize(cross(a, dir));
+               f3 b2 = cross(dir, b1);
+               dir = normalize(sin_t * cosf(phi) * b1 + sin_t * sinf(phi) * b2 + cos_t * dir);
+               last_phase_pdf = hg_phase(rec.anisotropy, cos_t);
+               if (ev >= 8)
+               {
+                  float max_c = fmaxf(accumulated_attenuation.x,
+                                      fmaxf(accumulated_attenuation.y, accumulated_attenuation.z));
+                  float surv  = fminf(max_c, 0.95f);
+                  if (rand_float(state) > surv)
+                     return accumulated_color;
+                  accumulated_attenuation = accumulated_attenuation / surv;
+               }
+            }
+            if (!escaped)
+               return accumulated_color; // event budget exhausted inside the medium
+            current_ray = ray_simple(origin, dir);
+            if (scattered_any)
+            {
+               // An emissive hit on the exit path is MIS-weighted against the phase function
+               // sampled at the last scattering point (the exit itself is a pass-through)
+               prev_bsdf_pdf = last_phase_pdf;
+               prev_is_delta = false;
+               mis_origin    = scatter_point;
+            }
+            else if (++volume_passes <= VOLUME_MAX_PASSES)
+               --bounce; // crossed without scattering: not a bounce (keeps the surface behind at depth 0)
             continue;
          }
 
@@ -1252,7 +1494,7 @@ __device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scen
             if (g_mis_enabled && bounce > 0 && !prev_is_delta && scene.num_lights > 0)
             {
                f3 hit_dir = normalize(current_ray.dir);
-               float light_pdf = light_dir_pdf_gpu(scene, rec.geom_idx, current_ray.orig, hit_dir);
+               float light_pdf = light_dir_pdf_gpu(scene, rec.geom_idx, mis_origin, hit_dir);
                if (light_pdf > 0.0f)
                {
                   float a = prev_bsdf_pdf * prev_bsdf_pdf;
@@ -1300,9 +1542,11 @@ __device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scen
 
                   if (ls.pdf > 0.0f)
                   {
-                     // Shadow ray — stop just before the light surface
-                     ray_simple shadow_ray(rec.p + 0.0001f * rec.normal, ls.direction);
-                     if (!hit_scene_shadow(scene, shadow_ray, 0.0001f, ls.dist - 0.002f))
+                     // Shadow ray — stop just before the light surface (transmittance through volumes)
+                     const float T_sh =
+                         shadow_transmittance_gpu(scene, rec.p + 0.0001f * rec.normal, ls.direction,
+                                                  ls.dist - 0.002f, state);
+                     if (T_sh > 0.0f)
                      {
                         // eval_bsdf and scatter_pdf are now __forceinline__, enabling CSE:
                         // both reduce to cos_th/pi for Lambertian, so nvcc combines the dot products.
@@ -1314,7 +1558,8 @@ __device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scen
                         float w_nee    = (a + b > 0.0f) ? (a / (a + b)) : 1.0f;
 
                         accumulated_color = accumulated_color +
-                            accumulated_attenuation * f_nee * ls.emission * cos_th * w_nee * nee_scale / ls.pdf;
+                            accumulated_attenuation * f_nee * ls.emission *
+                                (cos_th * w_nee * nee_scale * T_sh / ls.pdf);
                      }
                   }
                }
@@ -1323,6 +1568,7 @@ __device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scen
 
          // --- Advance the path ---
          current_ray = scattered_ray;
+         mis_origin  = rec.p;
          accumulated_attenuation =
              f3(accumulated_attenuation.x * attenuation.x,
                 accumulated_attenuation.y * attenuation.y,
@@ -1379,7 +1625,8 @@ __device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scen
          else
          {
             float t = 0.5f * (unit_direction.y + 1.0f);
-            sky_color = (1.0f - t) * f3(1.0f, 1.0f, 1.0f) + t * f3(0.5f, 0.7f, 1.0f);
+            sky_color = (1.0f - t) * f3(1.0f, 1.0f, 1.0f) +
+                        t * f3(g_background_color.x, g_background_color.y, g_background_color.z);
          }
          accumulated_color = accumulated_color + accumulated_attenuation * sky_color * g_background_intensity;
          return accumulated_color;

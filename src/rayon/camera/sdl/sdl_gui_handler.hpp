@@ -89,6 +89,21 @@ struct MotionQualitySettings
    int  motion_max_depth = 4;
 };
 
+/// Live controls of the scene's volume (cloud / smoke) material. The host fills it from the
+/// material, the GUI edits it and sets `changed`, the host writes it back to the material.
+struct VolumeMaterialSettings
+{
+   float albedo[3]      = {0.99f, 0.99f, 0.99f}; ///< Single-scattering albedo
+   float density        = 2.0f;                  ///< Extinction per scene unit
+   float g              = 0.0f;                  ///< Henyey-Greenstein asymmetry
+   float noise_scale    = 2.0f;
+   float noise_strength = 0.3f;
+   float edge           = 0.1f;                  ///< Edge fall-off depth (scene units)
+   float lumps          = 0.3f;                  ///< Surface displacement amplitude (scene units)
+   float billow         = 0.7f;                  ///< Worley share of the shape noise
+   bool  changed        = false;                 ///< Set by the GUI, cleared by the host once applied
+};
+
 class SDLGuiHandler
 {
  public:
@@ -256,7 +271,10 @@ class SDLGuiHandler
                       bool *mis_enabled = nullptr, bool *motion_gate_mis = nullptr,
                       int *nee_stride = nullptr, bool *use_sobol = nullptr,
                       MotionQualitySettings *motion_quality = nullptr,
-                      bool *motion_despeckle = nullptr, float *motion_despeckle_ratio = nullptr)
+                      bool *motion_despeckle = nullptr, float *motion_despeckle_ratio = nullptr,
+                      VolumeMaterialSettings *volume = nullptr,
+                      bool *save_camera_request = nullptr, const char *scene_yaml_path = nullptr,
+                      const char *camera_save_status = nullptr)
    {
       SDL_UpdateTexture(texture, nullptr, image.data(), image_width * image_channels);
       SDL_RenderClear(renderer);
@@ -686,11 +704,25 @@ class SDLGuiHandler
 
                if (cam_pos && cam_lookat)
                {
-                  if (ImGui::CollapsingHeader("Camera Info"))
+                  ImGui::Separator();
+                  ImGui::Text("Position: %.2f, %.2f, %.2f", cam_pos[0], cam_pos[1], cam_pos[2]);
+                  ImGui::Text("Look at:  %.2f, %.2f, %.2f", cam_lookat[0], cam_lookat[1], cam_lookat[2]);
+                  if (save_camera_request)
                   {
-                     ImGui::Text("Position: %.2f, %.2f, %.2f", cam_pos[0], cam_pos[1], cam_pos[2]);
-                     ImGui::Text("Look At:  %.2f, %.2f, %.2f", cam_lookat[0], cam_lookat[1], cam_lookat[2]);
-                     ImGui::Text("FOV:      %.1f", cam_fov ? *cam_fov : 0.0f);
+                     const bool can_save = scene_yaml_path && scene_yaml_path[0] != '\0';
+                     if (!can_save)
+                        ImGui::BeginDisabled();
+                     if (ImGui::Button("Save camera to scene YAML"))
+                        *save_camera_request = true;
+                     if (!can_save)
+                        ImGui::EndDisabled();
+                     if (can_save)
+                        ImGui::SetItemTooltip("Writes position, look_at and fov into\n%s\n(only the camera block is touched).",
+                                              scene_yaml_path);
+                     else
+                        ImGui::SetItemTooltip("The current scene was not loaded from a YAML file.");
+                     if (camera_save_status && camera_save_status[0] != '\0')
+                        ImGui::TextWrapped("%s", camera_save_status);
                   }
                }
             }
@@ -775,6 +807,48 @@ class SDLGuiHandler
                      ImGui::SetItemTooltip("Depth of each dimple (displacement scale).");
                      ImGui::PopItemWidth();
                   }
+               }
+            }
+
+            // --- Cloud / Smoke: shown when the scene holds a volume material ---
+            if (volume)
+            {
+               if (reset_headers)
+                  ImGui::SetNextItemOpen(!collapse_headers);
+               if (ImGui::CollapsingHeader("Cloud / Smoke", ImGuiTreeNodeFlags_DefaultOpen))
+               {
+                  pushSliderWidth();
+                  bool moved = false;
+                  moved |= ImGui::ColorEdit3("Albedo##vol", volume->albedo, ImGuiColorEditFlags_Float);
+                  ImGui::SetItemTooltip("Single-scattering albedo: the share of light that survives each\n"
+                                        "scattering event. Near white for a cloud, grey for smoke.");
+                  moved |= ImGui::SliderFloat("Density##vol", &volume->density, 0.1f, 30.0f, "%.2f",
+                                              ImGuiSliderFlags_Logarithmic);
+                  ImGui::SetItemTooltip("Extinction per scene unit: the mean free path is 1 / density.");
+                  moved |= ImGui::SliderFloat("Anisotropy g##vol", &volume->g, -0.9f, 0.9f, "%.2f");
+                  ImGui::SetItemTooltip("Henyey-Greenstein asymmetry: 0 isotropic, positive forward\n"
+                                        "scattering (silver lining when backlit), negative backward.");
+                  moved |= ImGui::SliderFloat("Noise scale##vol", &volume->noise_scale, 0.2f, 8.0f, "%.2f",
+                                              ImGuiSliderFlags_Logarithmic);
+                  ImGui::SetItemTooltip("Frequency of the density noise: features of about 1 / scale units.");
+                  moved |= ImGui::SliderFloat("Noise strength##vol", &volume->noise_strength, 0.0f, 2.0f, "%.2f");
+                  ImGui::SetItemTooltip("Amplitude of the interior density noise: 0 homogeneous, 1 full\n"
+                                        "contrast, above 1 the field has holes.");
+                  ImGui::SeparatorText("Shape");
+                  moved |= ImGui::SliderFloat("Edge##vol", &volume->edge, 0.0f, 1.0f, "%.2f");
+                  ImGui::SetItemTooltip("Depth over which the density ramps up at the surface (scene\n"
+                                        "units): small = crisp cloud edge, large = soft haze.\n"
+                                        "0 = hard-edged fog filling the mesh (no shape noise).");
+                  moved |= ImGui::SliderFloat("Lumps##vol", &volume->lumps, 0.0f, 0.75f, "%.2f"); // max = VOLUME_BOX_PAD
+                  ImGui::SetItemTooltip("Amplitude of the surface displacement by the shape noise (scene\n"
+                                        "units): bulges where the noise is high, crevices where it is low.\n"
+                                        "Needs a reload of the scene to take effect when raised from 0.");
+                  moved |= ImGui::SliderFloat("Billow##vol", &volume->billow, 0.0f, 1.0f, "%.2f");
+                  ImGui::SetItemTooltip("Share of inverted Worley noise in the shape: rounded cauliflower\n"
+                                        "lumps (1) versus soft fractal wisps (0).");
+                  ImGui::PopItemWidth();
+                  if (moved)
+                     volume->changed = true;
                }
             }
 

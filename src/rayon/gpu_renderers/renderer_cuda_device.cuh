@@ -42,6 +42,7 @@ extern "C"
 
    // Set background gradient intensity (sky brightness)
    void setBackgroundIntensity(float intensity);
+   void setBackgroundColor(float r, float g, float b);
 
    // Set metal roughness/fuzziness multiplier
    void setMetalFuzziness(float fuzziness);

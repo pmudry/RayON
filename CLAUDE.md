@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-RayON is a high-performance path tracer (C++17/CUDA) with GPU (CUDA and OptiX) backends, plus interactive SDL2 real-time rendering. Educational project for ISC 302 HPC course, based on "Ray Tracing in One Weekend." Version 1.5.5, licensed GNU GPL v3.
+RayON is a high-performance path tracer (C++17/CUDA) with GPU (CUDA and OptiX) backends, plus interactive SDL2 real-time rendering. Educational project for ISC 302 HPC course, based on "Ray Tracing in One Weekend." Version 1.8.0, licensed GNU GPL v3.
 
 > **Note:** The original CPU rendering backends (sequential and multi-threaded) have been moved to the `legacy/cpu-renderer` branch.
 
@@ -127,7 +127,7 @@ CPU uses `double` (Vec3), GPU uses `float` — conversion at kernel boundary.
 
 ### Material Types (enum `MaterialType` in `scene_description.hpp`)
 LAMBERTIAN, METAL, MIRROR, ROUGH_MIRROR, GLASS, DIELECTRIC, LIGHT, CONSTANT, SHOW_NORMALS,
-SDF_MATERIAL, ANISOTROPIC_METAL, THIN_FILM, CLEAR_COAT
+SDF_MATERIAL, ANISOTROPIC_METAL, THIN_FILM, CLEAR_COAT, VOLUME (scattering medium inside a closed mesh)
 
 Procedural patterns (stored in `MaterialDesc`): FIBONACCI_DOTS, CHECKERBOARD, STRIPES
 

@@ -239,6 +239,42 @@ The coat is achromatic; `albedo` controls the diffuse base colour visible throug
 
 ---
 
+#### `volume` — scattering medium inside a closed mesh (smoke, cloud)
+
+Aliases: `smoke`, `cloud`. The geometry is only the boundary: rays entering it are scattered
+inside by a heterogeneous medium (delta tracking, Henyey-Greenstein phase function). Use it on a
+closed mesh (`obj`, `sphere`, `cube`). No shadow rays are traced inside the medium, so it is lit
+by whatever the scattered paths reach (sky, lights, surfaces).
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `albedo` | `[0.7, 0.7, 0.7]` | Single-scattering albedo: `[0.99, 0.99, 0.99]` for a white cloud, lower for dark smoke |
+| `density` | `2.0` | Extinction coefficient per scene unit (mean free path = 1 / density) |
+| `g` | `0.0` | Phase asymmetry: 0 isotropic, 0.3–0.7 forward scattering (also accepted as `anisotropy`) |
+| `noise_scale` | `2.0` | Frequency of the density and shape noise (features of about 1 / noise_scale units) |
+| `noise_strength` | `0.3` | Interior noise amplitude: 0 homogeneous, 1 full contrast, above 1 holes |
+| `edge` | `0.1` | Depth over which the density ramps up at the surface (0 = hard edge, no distance grid) |
+| `lumps` | `0.3` | Amplitude (scene units, up to 0.75) of the noise displacement of the surface: bulges and crevices |
+| `billow` | `0.7` | 0–1: share of inverted Worley noise in the shape (rounded cauliflower lumps vs fractal wisps) |
+
+With `edge > 0` a signed distance grid of the mesh is built on the GPU at load (64 cells along
+the longest side), so the material must sit on triangle geometry (`obj`). The OptiX backend then
+traces a box padded by 0.75 units around the mesh instead of the mesh, so the lumps can grow
+outside the surface; the CUDA backend keeps the mesh as the boundary (lumps only carve inwards).
+
+```yaml
+- name: "cloud"
+  type: "volume"
+  albedo: [0.99, 0.99, 0.99]
+  density: 8.0
+  g: 0.4
+  noise_scale: 1.5
+  noise_strength: 0.3
+  edge: 0.1
+  lumps: 0.3
+  billow: 0.7
+```
+
 ### Procedural patterns
 
 Any `lambertian` material can carry an optional `pattern` sub-block.

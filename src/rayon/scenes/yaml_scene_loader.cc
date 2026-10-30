@@ -103,6 +103,8 @@ static MaterialType parseMaterialType(const string &type_str)
       return MaterialType::THIN_FILM;
    if (type_str == "clear_coat")
       return MaterialType::CLEAR_COAT;
+   if (type_str == "volume" || type_str == "smoke" || type_str == "cloud")
+      return MaterialType::VOLUME;
    return MaterialType::LAMBERTIAN;
 }
 
@@ -366,6 +368,15 @@ static bool loadMaterials(const SimpleYAMLParser &parser, SceneDescription &scen
       mat.k = parser.getVec3(prefix + ".k", Vec3(0, 0, 0));
       mat.film_thickness = parser.getFloat(prefix + ".film_thickness", 400.0f);
       mat.film_ior = parser.getFloat(prefix + ".film_ior", 1.33f);
+      // Participating medium: `g` is the usual name for the phase asymmetry, `anisotropy` also works
+      mat.density = parser.getFloat(prefix + ".density", 2.0f);
+      mat.noise_scale = parser.getFloat(prefix + ".noise_scale", 2.0f);
+      mat.noise_strength = parser.getFloat(prefix + ".noise_strength", 0.3f);
+      mat.edge = parser.getFloat(prefix + ".edge", 0.1f);
+      mat.lumps = parser.getFloat(prefix + ".lumps", 0.3f);
+      mat.billow = parser.getFloat(prefix + ".billow", 0.7f);
+      if (parser.hasKey(prefix + ".g"))
+         mat.anisotropy = parser.getFloat(prefix + ".g", 0.0f);
 
       // Support named metal presets for anisotropic_metal
       if (mat.type == MaterialType::ANISOTROPIC_METAL && parser.hasKey(prefix + ".preset"))
@@ -526,19 +537,12 @@ static bool loadGeometry(const SimpleYAMLParser &parser, SceneDescription &scene
                scene.geometries[gi].visible = false;
          }
          // Skip the generic visibility assignment below (already handled)
-         cout << "  Loaded " << geom_type << " with material "
-              << (mat_name.empty() ? "(from MTL)" : mat_name)
-              << (visible ? "" : " (invisible)") << "\n";
          continue;
       }
 
       // Apply visibility flag to the last added geometry
       if (!scene.geometries.empty())
          scene.geometries.back().visible = visible;
-
-      cout << "  Loaded " << geom_type << " with material "
-           << (mat_name.empty() ? "(from MTL)" : mat_name)
-           << (visible ? "" : " (invisible)") << "\n";
    }
 
    return !scene.geometries.empty();
@@ -561,6 +565,8 @@ bool loadSceneFromYAML(const char *filename, SceneDescription &scene)
    scene.materials.clear();
    scene.geometries.clear();
    scene.meshes.clear();
+
+   scene.source_file = filename;
 
    // Load camera settings (optional)
    if (parser.hasKey("camera.position"))
@@ -624,6 +630,104 @@ bool loadSceneFromYAML(const char *filename, SceneDescription &scene)
    return scene.validate();
 }
 
+bool saveCameraToYAML(const char *filename, const Vec3 &position, const Vec3 &look_at, float fov)
+{
+   ifstream in(filename);
+   if (!in)
+   {
+      cerr << "ERROR: Cannot open scene file for camera update: " << filename << "\n";
+      return false;
+   }
+   vector<string> lines;
+   for (string line; getline(in, line);)
+      lines.push_back(line);
+   in.close();
+
+   auto fmt = [](double v)
+   {
+      ostringstream os;
+      os.setf(ios::fixed);
+      os.precision(3);
+      os << v;
+      string t = os.str(); // trim trailing zeros: 2.100 -> 2.1, 40.000 -> 40
+      t.erase(t.find_last_not_of('0') + 1);
+      if (!t.empty() && t.back() == '.')
+         t.pop_back();
+      return t == "-0" ? string("0") : t;
+   };
+   const string pos_line  = "  position: [" + fmt(position.x()) + ", " + fmt(position.y()) + ", " + fmt(position.z()) + "]";
+   const string look_line = "  look_at: [" + fmt(look_at.x()) + ", " + fmt(look_at.y()) + ", " + fmt(look_at.z()) + "]";
+   const string fov_line  = "  fov: " + fmt(fov);
+
+   // Locate the camera block: from the top-level "camera:" line to the next top-level key
+   auto indent_of = [](const string &l) { return l.find_first_not_of(' '); };
+   auto key_of    = [](const string &l)
+   {
+      string t = l.substr(l.find_first_not_of(' ') == string::npos ? 0 : l.find_first_not_of(' '));
+      const size_t colon = t.find(':');
+      return colon == string::npos ? string() : t.substr(0, colon);
+   };
+   size_t begin = lines.size();
+   for (size_t i = 0; i < lines.size(); ++i)
+      if (indent_of(lines[i]) == 0 && key_of(lines[i]) == "camera")
+      {
+         begin = i;
+         break;
+      }
+   if (begin == lines.size())
+   {
+      if (!lines.empty() && !lines.back().empty())
+         lines.push_back("");
+      lines.push_back("camera:");
+      lines.push_back(pos_line);
+      lines.push_back(look_line);
+      lines.push_back(fov_line);
+   }
+   else
+   {
+      size_t end = begin + 1;
+      while (end < lines.size())
+      {
+         const size_t ind = indent_of(lines[end]);
+         if (ind == 0 && !lines[end].empty() && lines[end][0] != '#')
+            break; // next top-level key
+         ++end;
+      }
+      bool have_pos = false, have_look = false, have_fov = false;
+      for (size_t i = begin + 1; i < end; ++i)
+      {
+         const string key = key_of(lines[i]);
+         if (indent_of(lines[i]) == string::npos || lines[i][indent_of(lines[i])] == '#')
+            continue;
+         if (key == "position")
+            lines[i] = pos_line, have_pos = true;
+         else if (key == "look_at")
+            lines[i] = look_line, have_look = true;
+         else if (key == "fov")
+            lines[i] = fov_line, have_fov = true;
+      }
+      // Insert the missing ones right after the "camera:" line (reverse order keeps them sorted)
+      if (!have_fov)
+         lines.insert(lines.begin() + begin + 1, fov_line);
+      if (!have_look)
+         lines.insert(lines.begin() + begin + 1, look_line);
+      if (!have_pos)
+         lines.insert(lines.begin() + begin + 1, pos_line);
+   }
+
+   ofstream out(filename, ios::trunc);
+   if (!out)
+   {
+      cerr << "ERROR: Cannot write scene file: " << filename << "\n";
+      return false;
+   }
+   for (const auto &l : lines)
+      out << l << "\n";
+   cout << "Camera saved to " << filename << ": position " << pos_line.substr(12) << ", look_at "
+        << look_line.substr(11) << ", fov " << fmt(fov) << "\n";
+   return true;
+}
+
 bool saveSceneToYAML(const char *filename, const SceneDescription &scene)
 {
    ofstream file(filename);
@@ -674,6 +778,9 @@ bool saveSceneToYAML(const char *filename, const SceneDescription &scene)
          break;
       case MaterialType::CLEAR_COAT:
          file << "\"clear_coat\"";
+         break;
+      case MaterialType::VOLUME:
+         file << "\"volume\"";
          break;
       default:
          file << "\"lambertian\"";

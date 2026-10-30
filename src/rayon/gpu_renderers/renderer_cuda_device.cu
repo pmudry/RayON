@@ -20,6 +20,7 @@
 // Global device constants (single definition here)
 __constant__ float g_light_intensity = 1.0f;
 __constant__ float g_background_intensity = 1.0f;
+__constant__ float3 g_background_color = {0.5f, 0.7f, 1.0f};
 __constant__ float g_metal_fuzziness = 0.8f;
 __constant__ float g_glass_refraction_index = 1.5f; // Default glass index
 // Sobol scramble seed, changed on every accumulation restart so the noise pattern changes when the camera moves
@@ -95,6 +96,12 @@ extern "C" void cleanupCudaStreams()
 
 //==================== HOST INTERFACE FUNCTIONS ====================
 extern "C" void setLightIntensity(float intensity) { cudaMemcpyToSymbol(g_light_intensity, &intensity, sizeof(float)); }
+
+extern "C" void setBackgroundColor(float r, float g, float b)
+{
+   float3 c = make_float3(r, g, b);
+   cudaMemcpyToSymbol(g_background_color, &c, sizeof(float3));
+}
 
 extern "C" void setBackgroundIntensity(float intensity)
 {
