@@ -86,17 +86,16 @@ class MTLLoader
             mat = MaterialDesc::glass(Ni > 1.0f ? Ni : 1.45f);
             mat.transmission = transmission;
          }
-         else if (roughness < 0.05f && illum >= 2)
+         else if (illum >= 3)
          {
+            // illum 3+ asks for ray-traced reflections: a (rough) mirror. illum 2 is the plain
+            // Blinn-Phong highlight every exporter writes for a diffuse surface (Blender: Ns 250,
+            // Ks 0.5), so it stays Lambertian.
             mat = MaterialDesc::roughMirror(Vec3(Kd[0], Kd[1], Kd[2]), roughness);
          }
          else
          {
             mat = MaterialDesc::lambertian(Vec3(Kd[0], Kd[1], Kd[2]));
-            if (roughness > 0.01f && illum >= 2)
-            {
-               mat = MaterialDesc::roughMirror(Vec3(Kd[0], Kd[1], Kd[2]), roughness);
-            }
          }
 
          result[current_name] = current_entry;

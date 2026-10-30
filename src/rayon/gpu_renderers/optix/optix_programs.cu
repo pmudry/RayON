@@ -30,10 +30,12 @@ __device__ __forceinline__ unsigned int pcg_hash(unsigned int input)
    return (word >> 22u) ^ word;
 }
 
+// Uniform in [0, 1): the top 24 bits (seed / 0xFFFFFFFF rounds to exactly 1.0f for the largest
+// seeds, and logf(1 - u) in the free-flight sampling would then be -inf)
 __device__ __forceinline__ float rand_float(unsigned int &seed)
 {
    seed = pcg_hash(seed);
-   return (float)seed / (float)0xFFFFFFFFu;
+   return (float)(seed >> 8) * (1.0f / 16777216.0f);
 }
 
 //------------------------------------------------------------------------------
@@ -63,9 +65,8 @@ __device__ __forceinline__ float sobol_rand_float(SobolState &ss, unsigned int &
          return v;
       }
       // PCG fallback for dims beyond SOBOL_MAX_DIM
-      seed = pcg_hash(seed);
       ss.dim_idx++;
-      return (float)seed / (float)0xFFFFFFFFu;
+      return rand_float(seed);
    }
    return rand_float(seed);
 }
@@ -609,8 +610,14 @@ __device__ float ratio_track_optix(const OptixMaterialData &m, float3 p, float3 
          break;
       const float3 q = p + t * dir;
       T *= 1.0f - volume_density(m.volume, q.x, q.y, q.z) / sigma_max;
-      if (T < 1e-3f)
-         return 0.0f;
+      // Russian roulette on a faint estimate: stop early, unbiased (survivors carry the ceiling)
+      constexpr float RR_T = 0.1f;
+      if (T < RR_T)
+      {
+         if (rand_float(seed) * RR_T >= T)
+            return 0.0f;
+         T = RR_T;
+      }
    }
    return T;
 }
@@ -692,8 +699,9 @@ extern "C" __global__ void __raygen__rg()
    // Per-pixel stable hash for Sobol scrambling (computed once, reused every sample).
    const uint32_t pixel_hash = pcg_hash(pixel_idx ^ (0xdeadbeef + params.sobol_sequence_seed * 0x9e3779b9u));
 
-   // Initialize seed based on pixel and frame
-   unsigned int seed = pcg_hash(pixel_idx ^ (params.frame_seed * 1099511628211u));
+   // Initialize seed based on pixel and frame. The frame seed is hashed on its own first: a plain
+   // pixel_idx ^ (frame_seed * k) makes pixel p of one launch replay pixel q of an earlier one.
+   unsigned int seed = pcg_hash(pixel_idx + pcg_hash(params.frame_seed));
 
    // Load accumulated color. The w component counts the samples whose primary ray hit any
    // geometry: the adaptive-sampling pass uses it to tell a pixel that only ever sees the
@@ -749,10 +757,13 @@ extern "C" __global__ void __raygen__rg()
          if (params.use_sobol) {
             float du = sobol_float(sobol_sample_idx, 2, pixel_hash) * 2.0f - 1.0f;
             float dv = sobol_float(sobol_sample_idx, 3, pixel_hash) * 2.0f - 1.0f;
-            // Uniform disk from (u,v) via concentric mapping
-            float r   = du * du + dv * dv;
-            if (r < 1.0f) { disk = make_float2(du, dv); }
-            else { disk = make_float2(0.0f, 0.0f); }
+            // Uniform disk from (u,v) via Shirley-Chiu concentric mapping (every sample lands in
+            // the disk: collapsing the ~21 % outside it to the centre added a pinhole image)
+            float r, theta;
+            if (du == 0.0f && dv == 0.0f) { r = 0.0f; theta = 0.0f; }
+            else if (fabsf(du) > fabsf(dv)) { r = du; theta = 0.785398163f * (dv / du); }
+            else { r = dv; theta = 1.570796327f - 0.785398163f * (du / dv); }
+            disk = make_float2(r * cosf(theta), r * sinf(theta));
          } else {
             disk = rand_in_unit_disk(seed);
          }
@@ -760,6 +771,8 @@ extern "C" __global__ void __raygen__rg()
          ray_origin = params.camera_center + aperture_offset;
          ray_direction = focus_point - ray_origin;
       }
+      // Unit directions throughout: tmin is then a distance, the same for every ray
+      ray_direction = normalize3(ray_direction);
 
       // Path tracing loop
       float3 color = make_float3(0.0f, 0.0f, 0.0f);
@@ -1090,18 +1103,19 @@ extern "C" __global__ void __raygen__rg()
             // Catch degenerate direction
             if (fabsf(scatter_dir.x) < 1e-8f && fabsf(scatter_dir.y) < 1e-8f && fabsf(scatter_dir.z) < 1e-8f)
                scatter_dir = prd.hit_normal;
+            scatter_dir = normalize3(scatter_dir);
             attenuation = prd.hit_color;
             did_scatter = true;
          }
-         else if (mat.type == OptixMaterialType::MIRROR ||
-                  mat.type == OptixMaterialType::METAL)
+         else if (mat.type == OptixMaterialType::MIRROR)
          {
             float3 unit_dir = normalize3(cur_direction);
             scatter_dir = reflect3(unit_dir, prd.hit_normal);
             attenuation = prd.hit_color;
             did_scatter = (dot3(scatter_dir, prd.hit_normal) > 0.0f);
          }
-         else if (mat.type == OptixMaterialType::ROUGH_MIRROR)
+         else if (mat.type == OptixMaterialType::ROUGH_MIRROR ||
+                  mat.type == OptixMaterialType::METAL) // METAL honours its roughness, as in CUDA
          {
             float3 unit_dir = normalize3(cur_direction);
             float eff_roughness = mat.roughness * params.metal_fuzziness;
@@ -1219,14 +1233,17 @@ extern "C" __global__ void __raygen__rg()
             float x12 = 1.0f - cos_t;
             float R12 = r12_v + (1.0f - r12_v) * (x12 * x12 * x12 * x12 * x12);
 
-            float sqrt_R = sqrtf(R01 * R12);
+            // Product of the two amplitude coefficients r01 * r12. For a film between two media of
+            // the same index (soap in air) r12 = -r01, so it is negative: the reflection on the
+            // denser side carries a pi phase shift and a vanishing film turns black.
+            float rr = -sqrtf(R01 * R12);
 
             // Airy formula for a single wavelength lambda (nm)
             auto airy = [&](float lambda) -> float {
                float delta = (4.0f * M_PIf * n1 * d * cos_t) / lambda;
                float c = cosf(delta);
-               float num = R01 + R12 + 2.0f * sqrt_R * c;
-               float den = 1.0f + R01 * R12 + 2.0f * sqrt_R * c;
+               float num = R01 + R12 + 2.0f * rr * c;
+               float den = 1.0f + R01 * R12 + 2.0f * rr * c;
                return num / fmaxf(den, 1e-8f);
             };
 
@@ -1290,6 +1307,7 @@ extern "C" __global__ void __raygen__rg()
                scatter_dir = prd.hit_normal + rnd_unit;
                if (fabsf(scatter_dir.x) < 1e-8f && fabsf(scatter_dir.y) < 1e-8f && fabsf(scatter_dir.z) < 1e-8f)
                   scatter_dir = prd.hit_normal;
+               scatter_dir = normalize3(scatter_dir);
                attenuation = prd.hit_color;
                did_scatter = true;
             }
@@ -1553,15 +1571,18 @@ extern "C" __global__ void __closesthit__triangle()
    const OptixTriangleData &td = params.tri_data[tri];
    prd->visible = td.visible != 0;
 
-   float3 outward_normal;
+   // Inside / outside is decided by the face normal: an interpolated normal can disagree with it
+   // in sign near silhouettes, which flipped the glass IOR ratio and the volume enter/exit test.
+   const float3 *v = params.tri_vertices + 3u * tri;
+   float3 face_normal = normalize3(cross3(v[1] - v[0], v[2] - v[0]));
+   float3 outward_normal = face_normal;
    if (td.has_normals)
    {
-      outward_normal = normalize3(w * td.n0 + bary.x * td.n1 + bary.y * td.n2);
-   }
-   else
-   {
-      const float3 *v = params.tri_vertices + 3u * tri;
-      outward_normal  = normalize3(cross3(v[1] - v[0], v[2] - v[0]));
+      // Orient the face like the vertex normals (meshes whose winding disagrees with their normals)
+      if (dot3(face_normal, td.n0 + td.n1 + td.n2) < 0.0f)
+         face_normal = -face_normal;
+      const float3 n = normalize3(w * td.n0 + bary.x * td.n1 + bary.y * td.n2);
+      outward_normal = (dot3(n, n) > 0.0f) ? n : face_normal; // degenerate vertex normals: flat
    }
 
    float2 uv = make_float2(0.0f, 0.0f);
@@ -1570,8 +1591,11 @@ extern "C" __global__ void __closesthit__triangle()
                        w * td.uv0.y + bary.x * td.uv1.y + bary.y * td.uv2.y);
 
    const float3 ray_dir = optixGetWorldRayDirection();
-   prd->front_face = dot3(ray_dir, outward_normal) < 0.0f;
+   prd->front_face = dot3(ray_dir, face_normal) < 0.0f;
    prd->hit_normal = prd->front_face ? outward_normal : -outward_normal;
+   // The shading normal must face the ray like the face does; past a silhouette, use the face
+   if (dot3(prd->hit_normal, ray_dir) >= 0.0f)
+      prd->hit_normal = prd->front_face ? face_normal : -face_normal;
    prd->hit_point  = optixGetWorldRayOrigin() + optixGetRayTmax() * ray_dir;
    prd->hit_tangent = azimuthal_tangent(prd->hit_normal);
 

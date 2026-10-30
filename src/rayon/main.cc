@@ -485,7 +485,15 @@ int main(int argc, char *argv[])
    auto render_end = chrono::high_resolution_clock::now();
    auto render_duration = render_end - render_start;
 
-   cout.imbue(locale("en_US.UTF-8"));
+   // Thousands separators when the locale is installed (minimal systems lack it: locale() throws,
+   // and the render would be lost before it is written)
+   try
+   {
+      cout.imbue(locale("en_US.UTF-8"));
+   }
+   catch (const std::runtime_error &)
+   {
+   }
    cout << "Rays traced: " << fixed << camera.n_rays << "\n";
    double render_seconds = std::chrono::duration_cast<std::chrono::duration<double>>(render_duration).count();
    long long rays_per_second_int = 0;

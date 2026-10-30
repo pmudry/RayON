@@ -127,6 +127,18 @@ class SimpleYAMLParser
    map<string, string> values_;
 
  public:
+   // "section.block.key": the list item or section, then the open nested blocks, then the key
+   static string keyPath(const vector<string> &section_stack, const vector<pair<int, string>> &nest,
+                         const string &key)
+   {
+      string path;
+      for (const auto &section : section_stack)
+         path += section + ".";
+      for (const auto &block : nest)
+         path += block.second + ".";
+      return path + key;
+   }
+
    bool parseFile(const string &filename)
    {
       ifstream file(filename);
@@ -138,6 +150,9 @@ class SimpleYAMLParser
 
       string line;
       vector<string> section_stack;
+      // Nested blocks opened by a "key:" line with no value (e.g. a material's "pattern:"), with
+      // the indentation of their key: a later line at or left of that column closes the block
+      vector<pair<int, string>> nest;
       int material_index = 0;
       int geometry_index = 0;
       bool in_materials = false;
@@ -158,12 +173,16 @@ class SimpleYAMLParser
             indent++;
          }
 
+         while (!nest.empty() && indent <= nest.back().first)
+            nest.pop_back();
+
          // Check for section headers
          if (trimmed == "materials:")
          {
             in_materials = true;
             in_geometry = false;
             section_stack.clear();
+            nest.clear();
             material_index = 0;
             continue;
          }
@@ -172,6 +191,7 @@ class SimpleYAMLParser
             in_materials = false;
             in_geometry = true;
             section_stack.clear();
+            nest.clear();
             geometry_index = 0;
             continue;
          }
@@ -180,6 +200,7 @@ class SimpleYAMLParser
             in_materials = false;
             in_geometry = false;
             section_stack.clear();
+            nest.clear();
             section_stack.push_back(trimmed.substr(0, trimmed.size() - 1)); // "camera" or "settings"
             continue;
          }
@@ -188,6 +209,8 @@ class SimpleYAMLParser
          if (trimmed.length() >= 2 && trimmed[0] == '-' && trimmed[1] == ' ')
          {
             trimmed = trimWhitespace(trimmed.substr(2));
+            indent += 2; // the item's keys sit to the right of the dash
+            nest.clear();
             if (in_materials)
             {
                section_stack.clear();
@@ -235,9 +258,7 @@ class SimpleYAMLParser
                   {
                      string k = trimWhitespace(pair.substr(0, cp));
                      string v = trimWhitespace(pair.substr(cp + 1));
-                     string fk = k;
-                     for (const auto &s : section_stack)
-                        fk = s + "." + fk;
+                     string fk = keyPath(section_stack, nest, k);
                      if (!v.empty())
                         values_[fk] = v;
                   }
@@ -253,16 +274,15 @@ class SimpleYAMLParser
             string key = trimWhitespace(trimmed.substr(0, colon_pos));
             string value = trimWhitespace(trimmed.substr(colon_pos + 1));
 
-            // Build full key path
-            string full_key = key;
-            for (const auto &section : section_stack)
-            {
-               full_key = section + "." + full_key;
-            }
+            string full_key = keyPath(section_stack, nest, key);
 
             if (!value.empty())
             {
                values_[full_key] = value;
+            }
+            else
+            {
+               nest.emplace_back(indent, key); // opens a nested block: "pattern:" -> "pattern.type"
             }
          }
       }
@@ -628,6 +648,12 @@ static bool loadGeometry(const SimpleYAMLParser &parser, SceneDescription &scene
                scene.geometries[gi].visible = false;
          }
          // Skip the generic visibility assignment below (already handled)
+         continue;
+      }
+      else
+      {
+         // Unknown type: say so, and do not hand this entry's visibility to the previous object
+         cerr << "WARNING: unknown geometry type '" << geom_type << "' (" << prefix << "), skipped\n";
          continue;
       }
 

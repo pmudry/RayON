@@ -18,7 +18,7 @@ extern __constant__ float g_light_falloff;
 extern __constant__ float g_background_intensity;
 extern __constant__ float3 g_background_color;
 extern __constant__ float g_metal_fuzziness;
-extern __constant__ float g_glass_refraction_index;
+extern __constant__ float g_glass_ior_multiplier;
 extern __constant__ uint32_t g_sobol_sequence_seed;
 
 // HDR environment map (equirectangular lat-long)
@@ -354,7 +354,10 @@ __device__ inline bool hit_triangle(const f3 &v0, const f3 &v1, const f3 &v2,
    {
       // Smooth shading: interpolate vertex normals using barycentric coords
       const float w = 1.0f - u - v;
-      shading_normal = normalize(w * n0 + u * n1 + v * n2);
+      const f3 n_interp = w * n0 + u * n1 + v * n2;
+      // Zero or opposing vertex normals (vn 0 0 0 in some OBJ files) would normalize to NaN, and a
+      // NaN sample poisons its pixel for good: fall back to flat shading
+      shading_normal = dot(n_interp, n_interp) > 1e-12f ? normalize(n_interp) : geo_normal;
       // Ensure smooth normal is on the same hemisphere as geometric normal
       if (dot(shading_normal, geo_normal) < 0.0f)
          shading_normal = f3(-shading_normal.x, -shading_normal.y, -shading_normal.z);
@@ -507,7 +510,7 @@ __device__ __forceinline__ void apply_material(const CudaScene::Material &mat, h
    case MaterialType::ROUGH_MIRROR:
       rec.material = ROUGH_MIRROR;
       rec.color = mat.albedo;
-      rec.roughness = mat.roughness > 0.0f ? mat.roughness : 0.3f;
+      rec.roughness = mat.roughness; // 0 = polished, as in OptiX
       break;
    case MaterialType::GLASS:
    case MaterialType::DIELECTRIC:
@@ -1146,7 +1149,7 @@ __device__ __forceinline__ bool scatter_material(const hit_record_simple &rec, c
    {
       // Refraction/reflection with Fresnel (Schlick's approximation)
       f3 unit_dir = normalize(current_ray.dir);
-      float ri = g_glass_refraction_index;
+      float ri = rec.refractive_index * g_glass_ior_multiplier; // the material's own index
       float ratio = rec.front_face ? (1.0f / ri) : ri;
 
       float cos_theta = fminf(dot(-unit_dir, rec.normal), 1.0f);
@@ -1267,14 +1270,17 @@ __device__ __forceinline__ bool scatter_material(const hit_record_simple &rec, c
       float x12 = 1.0f - cos_t;
       float R12 = r12_v + (1.0f - r12_v) * x12 * x12 * x12 * x12 * x12;
 
-      float sqrt_R = sqrtf(R01 * R12);
+      // Product of the two amplitude coefficients r01 * r12. For a film between two media of the
+      // same index (soap in air) r12 = -r01, so it is negative: the reflection on the denser side
+      // carries a pi phase shift and a vanishing film turns black.
+      float rr = -sqrtf(R01 * R12);
 
       // Airy formula for a single wavelength
       auto airy = [&](float lambda) -> float {
          float delta = (4.0f * CUDART_PI_F * n1 * d * cos_t) / lambda;
          float c = cosf(delta);
-         float num = R01 + R12 + 2.0f * sqrt_R * c;
-         float den = 1.0f + R01 * R12 + 2.0f * sqrt_R * c;
+         float num = R01 + R12 + 2.0f * rr * c;
+         float den = 1.0f + R01 * R12 + 2.0f * rr * c;
          return num / fmaxf(den, 1e-8f);
       };
 

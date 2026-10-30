@@ -50,7 +50,7 @@ extern "C"
    void setMetalFuzziness(float fuzziness);
 
    // Set glass refraction index
-   void setGlassRefractionIndex(float index);
+   void setGlassIORMultiplier(float multiplier);
 
    // Depth of Field controls
    void setDOFEnabled(bool enabled);

@@ -479,8 +479,12 @@ class RendererOptiXProgressive : public IRenderer
             applyHdrChange(idx);
       };
 
+      // Triangle count shown by the GUI: recounted only when the scene changes (a scan holds
+      // millions of geometries, too many to walk every frame)
+      int tri_count = -1;
       auto applyVisualizationToActiveScene = [&]()
       {
+         tri_count = -1;
          active_scene = original_scene;
          if (mesh_mat_choice >= 0)
             for (int slot : mesh_mat_slots)
@@ -597,7 +601,6 @@ class RendererOptiXProgressive : public IRenderer
       // Rendering buffers
       SDL_Event event;
       std::vector<unsigned char> display_image(image_width * image_height * image_channels);
-      std::vector<unsigned char> base_display_image(image_width * image_height * image_channels);
       std::vector<float> accum_buffer(image_width * image_height * image_channels, 0.0f);
       RenderTargetView display_view{&display_image, image_width, image_height, image_channels};
 
@@ -979,8 +982,6 @@ class RendererOptiXProgressive : public IRenderer
                                                current_samples, gamma, reduce && motion_despeckle,
                                                motion_despeckle_ratio, constants::MOTION_DESPECKLE_FLOOR,
                                                denoise_now, denoise_blend);
-            base_display_image = display_image;
-            display_image = base_display_image;
             if (target.pixels) *target.pixels = display_image;
             needs_rerender = false;
          }
@@ -1015,7 +1016,7 @@ class RendererOptiXProgressive : public IRenderer
             renderBatch(frame, config.width, config.height, config.depth, display_view, current_samples,
                         max_samples, frame_spp, gamma, context, num_materials_active, background_intensity,
                         dof_enabled, dof_aperture, dof_focus_distance, light_intensity, metal_fuzziness,
-                        glass_refraction_index, reduce && motion_despeckle, motion_despeckle_ratio, denoise_now,
+                        glass_refraction_index / constants::GLASS_IOR_REFERENCE, reduce && motion_despeckle, motion_despeckle_ratio, denoise_now,
                         denoise_blend);
             last_denoise_ms = denoise_now ? ::optixRendererLastDenoiseMs() : 0.0f;
             if (denoise_now)
@@ -1053,8 +1054,6 @@ class RendererOptiXProgressive : public IRenderer
                ::optixRendererRenderSampleHeatmap(display_image.data(), image_width, image_height, image_channels,
                                                   std::max(1, current_samples));
 
-            base_display_image = display_image;
-            display_image = base_display_image;
 
             if (target.pixels) *target.pixels = display_image;
          }
@@ -1093,9 +1092,10 @@ class RendererOptiXProgressive : public IRenderer
          float cam_pos[3] = {(float)look_from.x(), (float)look_from.y(), (float)look_from.z()};
          float cam_lookat[3] = {(float)look_at.x(), (float)look_at.y(), (float)look_at.z()};
 
-         int tri_count = 0;
-         for (const auto &g : active_scene.geometries)
-            if (g.type == Scene::GeometryType::TRIANGLE) ++tri_count;
+         if (tri_count < 0)
+            tri_count = static_cast<int>(std::count_if(active_scene.geometries.begin(), active_scene.geometries.end(),
+                                                       [](const Scene::GeometryDesc &g)
+                                                       { return g.type == Scene::GeometryType::TRIANGLE; }));
 
          gui.updateDisplay(display_image, image_channels, current_sps, current_ms_per_sample, current_fps, current_samples,
                            &dof_enabled, &dof_aperture, &dof_focus_distance, &light_intensity,

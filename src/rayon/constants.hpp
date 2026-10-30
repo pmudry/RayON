@@ -37,5 +37,9 @@ namespace constants
     // light sampling cannot reach; this ceiling keeps them from speckling at the price of dimmer
     // caustics (Cycles' "Clamp Indirect").
     inline constexpr float INDIRECT_CLAMP_DEFAULT = 50.0f;
+    // The GUI's "Glass IOR" slider shows the index a standard 1.5 glass takes; the renderers apply
+    // slider / GLASS_IOR_REFERENCE as a multiplier on every glass, so at its default each material
+    // keeps its own refractive_index (water 1.33, diamond 2.42).
+    inline constexpr float GLASS_IOR_REFERENCE = 1.5f;
     inline constexpr int INTERACTIVE_MAX_SPP = 100000;       // Max SPP budget for interactive accumulation
 };

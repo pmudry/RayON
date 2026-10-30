@@ -22,8 +22,8 @@ __constant__ float g_light_intensity = 1.0f;
 __constant__ float g_light_falloff = 2.0f;
 __constant__ float g_background_intensity = 1.0f;
 __constant__ float3 g_background_color = {0.5f, 0.7f, 1.0f};
-__constant__ float g_metal_fuzziness = 0.8f;
-__constant__ float g_glass_refraction_index = 1.5f; // Default glass index
+__constant__ float g_metal_fuzziness = 1.0f;
+__constant__ float g_glass_ior_multiplier = 1.0f; // GUI multiplier on each glass's own index
 // Sobol scramble seed, changed on every accumulation restart so the noise pattern changes when the camera moves
 __constant__ uint32_t g_sobol_sequence_seed = 0u;
 
@@ -116,9 +116,9 @@ extern "C" void setBackgroundIntensity(float intensity)
 
 extern "C" void setMetalFuzziness(float fuzziness) { cudaMemcpyToSymbol(g_metal_fuzziness, &fuzziness, sizeof(float)); }
 
-extern "C" void setGlassRefractionIndex(float index)
+extern "C" void setGlassIORMultiplier(float multiplier)
 {
-   cudaMemcpyToSymbol(g_glass_refraction_index, &index, sizeof(float));
+   cudaMemcpyToSymbol(g_glass_ior_multiplier, &multiplier, sizeof(float));
 }
 
 // Depth of Field setters

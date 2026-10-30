@@ -13,7 +13,7 @@
 
 // Forward declarations
 __device__ float rand_float(curandState *state);
-extern __constant__ float g_glass_refraction_index;
+extern __constant__ float g_glass_ior_multiplier;
 
 namespace Materials
 {
@@ -56,7 +56,7 @@ struct Glass : public MaterialBase<Glass>
       f3 unit_direction = normalize(r_in.dir);
 
       // Use global refraction index override if available
-      float effective_refraction_index = g_glass_refraction_index;
+      float effective_refraction_index = params.refractive_index * g_glass_ior_multiplier;
 
       // Determine if we're entering or exiting the material
       // front_face = true means we're entering (air -> glass)

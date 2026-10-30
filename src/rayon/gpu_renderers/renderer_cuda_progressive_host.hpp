@@ -158,7 +158,7 @@ class RendererCUDAProgressive : public IRenderer
          ::setLightFalloff(light_falloff);
          ::setBackgroundIntensity(background_intensity);
          ::setMetalFuzziness(metal_fuzziness);
-         ::setGlassRefractionIndex(glass_refraction_index);
+         ::setGlassIORMultiplier(glass_refraction_index / constants::GLASS_IOR_REFERENCE);
          ::setDOFEnabled(dof_enabled);
          ::setDOFAperture(dof_aperture);
          ::setDOFFocusDistance(dof_focus_distance);
@@ -379,8 +379,12 @@ class RendererCUDAProgressive : public IRenderer
       Scene::SceneDescription active_scene = scene; // Mutable copy
       Scene::SceneDescription original_scene = scene; // Keep original to restore materials
 
+      // Triangle count shown by the GUI: recounted only when the scene changes (a scan holds
+      // millions of geometries, too many to walk every frame)
+      int tri_count = -1;
       auto applyVisualizationToActiveScene = [&]() {
          // Always start from original materials, then apply visualization override.
+         tri_count = -1;
          active_scene = original_scene;
          if (visualization_mode == static_cast<int>(VisualizationMode::SHOW_NORMALS))
          {
@@ -807,9 +811,10 @@ class RendererCUDAProgressive : public IRenderer
          // Recompose from a stable base every frame so overlays don't stack over time.
          display_image = base_display_image;
 
-         int tri_count = 0;
-         for (const auto &g : active_scene.geometries)
-            if (g.type == Scene::GeometryType::TRIANGLE) ++tri_count;
+         if (tri_count < 0)
+            tri_count = static_cast<int>(std::count_if(active_scene.geometries.begin(), active_scene.geometries.end(),
+                                                       [](const Scene::GeometryDesc &g)
+                                                       { return g.type == Scene::GeometryType::TRIANGLE; }));
 
          gui.updateDisplay(display_image, image_channels, current_sps, current_ms_per_sample, current_fps, current_samples,
                            &dof_enabled, &dof_aperture, &dof_focus_distance, &light_intensity, &background_intensity,

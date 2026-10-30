@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <cstring>
 #include <functional>
+#include <iostream>
 
 namespace Scene {
 
@@ -929,18 +930,25 @@ public:
         
         // Update leaf node indices to point to reordered array positions
         new_idx = 0;
-        std::function<void(int)> updateLeafIndices = [&](int node_idx) {
+        int max_depth = 0;
+        std::function<void(int, int)> updateLeafIndices = [&](int node_idx, int depth) {
             BVHNode& node = top_level_bvh.nodes[node_idx];
+            max_depth = std::max(max_depth, depth);
             if (node.is_leaf) {
                 node.data.leaf.first_geom_idx = new_idx;
                 new_idx += node.data.leaf.geom_count;
             } else {
-                updateLeafIndices(node.data.interior.left_child);
-                updateLeafIndices(node.data.interior.right_child);
+                updateLeafIndices(node.data.interior.left_child, depth + 1);
+                updateLeafIndices(node.data.interior.right_child, depth + 1);
             }
         };
         
-        updateLeafIndices(top_level_bvh.root_index);
+        updateLeafIndices(top_level_bvh.root_index, 0);
+        // The CUDA traversal keeps a fixed stack of 32 nodes (cuda_raytracer.cuh): a deeper tree
+        // would lose subtrees there (holes, false shadows). The scans in resources/ reach 25.
+        if (max_depth >= 31)
+            std::cerr << "WARNING: BVH depth " << max_depth
+                      << " exceeds the CUDA traversal stack (32): some geometry may be missed\n";
         
         // Replace geometry array with reordered version
         geometries = std::move(reordered_geometries);

@@ -995,6 +995,7 @@ static void buildGAS(const Scene::SceneDescription &scene)
    {
       std::vector<OptixLightData> host_lights;
       std::vector<float> host_areas;
+      std::vector<float> host_power;
       // Map: SBT index → light list index (-1 if not a light)
       std::vector<int> geom_to_light(num_geoms, -1);
 
@@ -1050,6 +1051,10 @@ static void buildGAS(const Scene::SceneDescription &scene)
 
          if (valid)
          {
+            // Select lights by emitted power (area x luminance) rather than area alone: a small
+            // bright lamp next to a large dim panel gets the samples it deserves
+            const float lum = 0.2126f * ld.emission.x + 0.7152f * ld.emission.y + 0.0722f * ld.emission.z;
+            host_power.push_back(host_areas.back() * std::max(lum, 0.0f));
             geom_to_light[sbt_idx] = static_cast<int>(host_lights.size());
             host_lights.push_back(ld);
          }
@@ -1067,13 +1072,16 @@ static void buildGAS(const Scene::SceneDescription &scene)
 
       if (g_state.num_lights > 0)
       {
-         // Build CDF for area-weighted light selection
+         // Build CDF for power-weighted light selection (area-weighted if every light is black)
+         double total_power = 0.0;
+         for (float p : host_power) total_power += p;
+         const std::vector<float> &weights = total_power > 0.0 ? host_power : host_areas;
          std::vector<float> cdf(g_state.num_lights + 1, 0.0f);
          for (int i = 0; i < g_state.num_lights; ++i)
-            cdf[i + 1] = cdf[i] + host_areas[i];
-         float total_area = cdf.back();
-         if (total_area > 0.0f)
-            for (auto &v : cdf) v /= total_area;
+            cdf[i + 1] = cdf[i] + weights[i];
+         float total_weight = cdf.back();
+         if (total_weight > 0.0f)
+            for (auto &v : cdf) v /= total_weight;
          cdf.back() = 1.0f; // ensure last entry is exactly 1
 
          CUDA_CHECK(cudaMalloc(&g_state.d_lights, g_state.num_lights * sizeof(OptixLightData)));
@@ -1084,7 +1092,7 @@ static void buildGAS(const Scene::SceneDescription &scene)
          CUDA_CHECK(cudaMemcpy(g_state.d_light_cdfs, cdf.data(),
                                 (g_state.num_lights + 1) * sizeof(float), cudaMemcpyHostToDevice));
 
-         printf("OptiX NEE: %d lights uploaded (total area %.2f)\n", g_state.num_lights, total_area);
+         printf("OptiX NEE: %d lights uploaded (selected by %s)\n", g_state.num_lights, total_power > 0.0 ? "power" : "area");
       }
    }
 
