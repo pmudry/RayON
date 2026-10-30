@@ -1467,7 +1467,6 @@ extern "C" unsigned long long optixRendererLaunch(int width, int height, int num
    launch_params.samples_per_launch = samples_to_add;
    launch_params.total_samples_so_far = total_samples_so_far;
    launch_params.max_depth = max_depth;
-   launch_params.frame_seed = total_samples_so_far + 42;
    // Fresh Sobol scramble per accumulation (constant across its batches to keep stratification)
    static unsigned int sobol_sequence_seed = 0u;
    if (total_samples_so_far == 0)

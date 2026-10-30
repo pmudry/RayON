@@ -699,9 +699,7 @@ extern "C" __global__ void __raygen__rg()
    // Per-pixel stable hash for Sobol scrambling (computed once, reused every sample).
    const uint32_t pixel_hash = pcg_hash(pixel_idx ^ (0xdeadbeef + params.sobol_sequence_seed * 0x9e3779b9u));
 
-   // Initialize seed based on pixel and frame. The frame seed is hashed on its own first: a plain
-   // pixel_idx ^ (frame_seed * k) makes pixel p of one launch replay pixel q of an earlier one.
-   unsigned int seed = pcg_hash(pixel_idx + pcg_hash(params.frame_seed));
+   unsigned int seed; // PCG state, re-seeded at every sample (see the sample loop)
 
    // Load accumulated color. The w component counts the samples whose primary ray hit any
    // geometry: the adaptive-sampling pass uses it to tell a pixel that only ever sees the
@@ -729,6 +727,11 @@ extern "C" __global__ void __raygen__rg()
       // improves progressive convergence (each successive index flips one bit).
       const uint32_t abs_sample = (uint32_t)(params.total_samples_so_far + s);
       const uint32_t sobol_sample_idx = sobol_gray(abs_sample);
+      // The PCG stream of a sample depends only on (pixel, sample number, accumulation), never on
+      // how the samples were split into launches: the same render gives the same image. The
+      // sample number is hashed on its own first, or pixel p of one sample would replay pixel q of
+      // another.
+      seed = pcg_hash(pixel_idx + pcg_hash(abs_sample ^ (params.sobol_sequence_seed * 0x9e3779b9u)));
 
       // Jittered pixel sample
       // dims 0, 1 — pixel AA jitter

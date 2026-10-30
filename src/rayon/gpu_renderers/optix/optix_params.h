@@ -155,8 +155,7 @@ struct OptixLaunchParams
    int samples_per_launch;
    int total_samples_so_far;
    int max_depth;
-   unsigned int frame_seed;
-   unsigned int sobol_sequence_seed; ///< Sobol scramble seed, constant within one accumulation
+   unsigned int sobol_sequence_seed; ///< Sobol scramble and PCG seed, constant within one accumulation
    bool use_sobol;  ///< Use Sobol' quasi-random sampler instead of PCG (default: true)
    float firefly_clamp_ceiling; ///< > 0: fixed per-sample luminance ceiling (camera moving); 0: grows with samples
 
