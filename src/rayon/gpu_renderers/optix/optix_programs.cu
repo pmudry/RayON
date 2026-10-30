@@ -446,6 +446,128 @@ __device__ float light_dir_pdf_optix(int light_idx, const float3 &prev_p, const 
    }
 }
 
+//------------------------------------------------------------------------------
+// HDR sky importance sampling (tables built by buildEnvSamplingTables() in optix_renderer.cu).
+// The sky is sampled proportionally to luminance x sin(theta) over a downsampled lat-long grid:
+// params.env_marginal_cdf picks a row, params.env_conditional_cdf a cell of that row, and the
+// direction is uniform inside the cell. A cell's probability is exactly the product of the two
+// CDF steps, so the sampler and env_pdf_optix() (the pdf of a BSDF-sampled ray that escapes)
+// agree, which is what the MIS weights need. Without these tables the sun of a clear-sky HDRI
+// (a few hundred texels holding half the sky's energy) is only ever hit by chance: one hit
+// in ~40 000 diffuse bounces, each worth tens of thousands — speckle that never converges.
+//------------------------------------------------------------------------------
+
+/// True when the sky is sampled directly: an HDR map with its tables, visible, and MIS on
+__device__ __forceinline__ bool env_sampling_active()
+{
+   return params.mis_enabled && params.use_hdr_env && params.env_marginal_cdf != nullptr &&
+          params.background_intensity > 0.0f;
+}
+
+/// Probability that a NEE sample targets the sky rather than a scene light
+__device__ __forceinline__ float env_select_prob()
+{
+   if (!env_sampling_active()) return 0.0f;
+   return params.num_lights > 0 ? 0.5f : 1.0f;
+}
+
+/// Something to run NEE against: scene lights, the sampled sky, or both
+__device__ __forceinline__ bool nee_available()
+{
+   return params.num_lights > 0 || env_sampling_active();
+}
+
+/// Lat-long mapping shared by the sky lookup, the sampler and the pdf: u = azimuth, v = polar angle
+__device__ __forceinline__ float2 env_dir_to_uv(const float3 &d)
+{
+   float theta = acosf(fmaxf(-1.0f, fminf(1.0f, d.y)));
+   float phi   = atan2f(-d.z, d.x);
+   return make_float2((phi + M_PIf) * (0.5f / M_PIf), theta * (1.0f / M_PIf));
+}
+
+__device__ __forceinline__ float3 env_uv_to_dir(float u, float v)
+{
+   float st, ct, sp, cp;
+   sincosf(v * M_PIf, &st, &ct);
+   sincosf(u * 2.0f * M_PIf - M_PIf, &sp, &cp);
+   return make_float3(st * cp, ct, -st * sp);
+}
+
+/// Largest i in [0, n-1] with cdf[i] <= u (cdf holds n+1 entries, cdf[0] = 0, cdf[n] = 1, u < 1)
+__device__ __forceinline__ int env_cdf_search(const float *cdf, int n, float u)
+{
+   int lo = 0, hi = n;
+   while (hi - lo > 1)
+   {
+      const int mid = (lo + hi) >> 1;
+      if (cdf[mid] <= u) lo = mid; else hi = mid;
+   }
+   return lo;
+}
+
+/// Solid-angle pdf of the sky sampler for a unit direction (0 where the map is black)
+__device__ float env_pdf_optix(const float3 &dir)
+{
+   const float sin_theta = sqrtf(fmaxf(0.0f, 1.0f - dir.y * dir.y));
+   if (sin_theta <= 1e-6f) return 0.0f;
+   const int    W  = params.env_w, H = params.env_h;
+   const float2 uv = env_dir_to_uv(dir);
+   const int    iu = min(max((int)(uv.x * (float)W), 0), W - 1);
+   const int    iv = min(max((int)(uv.y * (float)H), 0), H - 1);
+   const float  pv = params.env_marginal_cdf[iv + 1] - params.env_marginal_cdf[iv];
+   const float *row = params.env_conditional_cdf + (size_t)iv * (W + 1);
+   const float  pu = row[iu + 1] - row[iu];
+   return pv * pu * (float)(W * H) / (2.0f * M_PIf * M_PIf * sin_theta);
+}
+
+/// Sample a sky direction from the luminance tables: emission already scaled by the sky intensity,
+/// pdf per solid angle, dist "infinite" for the shadow ray. pdf = 0 on failure.
+__device__ OptiXLightSample sample_env_optix(float u1, float u2)
+{
+   OptiXLightSample ls;
+   ls.pdf = 0.0f;
+   const int W = params.env_w, H = params.env_h;
+
+   const int   iv = env_cdf_search(params.env_marginal_cdf, H, u1);
+   const float pv = params.env_marginal_cdf[iv + 1] - params.env_marginal_cdf[iv];
+   if (pv <= 0.0f) return ls;
+   const float *row = params.env_conditional_cdf + (size_t)iv * (W + 1);
+   const int    iu  = env_cdf_search(row, W, u2);
+   const float  pu  = row[iu + 1] - row[iu];
+   if (pu <= 0.0f) return ls;
+
+   // Uniform inside the cell, re-using what is left of the variates (keeps the Sobol stratification)
+   const float dv = fminf((u1 - params.env_marginal_cdf[iv]) / pv, 0.99999f);
+   const float du = fminf((u2 - row[iu]) / pu, 0.99999f);
+   const float v  = ((float)iv + dv) / (float)H;
+   const float u  = ((float)iu + du) / (float)W;
+   const float sin_theta = sinf(v * M_PIf);
+   if (sin_theta <= 1e-6f) return ls;
+
+   const float4 s = tex2D<float4>(params.hdr_env_tex, u, v);
+   ls.direction = env_uv_to_dir(u, v);
+   ls.emission  = make_float3(s.x, s.y, s.z) * params.background_intensity;
+   ls.dist      = 1e16f;
+   ls.pdf       = pv * pu * (float)(W * H) / (2.0f * M_PIf * M_PIf * sin_theta);
+   return ls;
+}
+
+/// NEE target: the sky with probability env_select_prob(), else a scene light. The pdf carries the
+/// selection probability; light_dir_pdf_optix() / env_pdf_optix() callers must apply the same factor.
+__device__ OptiXLightSample sample_nee_optix(const float3 &shading_p, float u_sel, float u1, float u2)
+{
+   const float p_env = env_select_prob();
+   if (u_sel < p_env)
+   {
+      OptiXLightSample ls = sample_env_optix(u1, u2);
+      ls.pdf *= p_env;
+      return ls;
+   }
+   OptiXLightSample ls = sample_light_optix(shading_p, (u_sel - p_env) / (1.0f - p_env), u1, u2);
+   ls.pdf *= (1.0f - p_env);
+   return ls;
+}
+
 /// True for materials that are delta distributions (skip NEE)
 __device__ __forceinline__ bool is_delta_material_optix(OptixMaterialType mat)
 {
@@ -659,6 +781,12 @@ extern "C" __global__ void __raygen__rg()
 
       bool guide_done = false; // this sample's denoiser guide has been recorded
       int  volume_passes = 0;  // medium back faces passed through (see VOLUME below)
+      // Indirect clamp bookkeeping: what the sample holds when it leaves its first diffuse
+      // surface (or first scattering event in a medium) is direct light — the emitters and the
+      // sky seen by the camera, possibly through mirrors and glass, plus that surface's NEE.
+      // Everything gathered after is indirect and gets its own ceiling at the end of the sample.
+      bool   indirect_started = false;
+      float3 direct_color     = make_float3(0.0f, 0.0f, 0.0f);
 
       for (int bounce = 0; bounce < params.max_depth; ++bounce)
       {
@@ -684,22 +812,28 @@ extern "C" __global__ void __raygen__rg()
             // Sky/background
             float3 unit_dir = normalize3(cur_direction);
             float3 sky;
+            float  w_sky = 1.0f; // MIS weight against the sky sampler (NEE covers the same directions)
             if (params.use_hdr_env)
             {
-               // Equirectangular (lat-long) mapping
-               float theta = acosf(fmaxf(-1.0f, fminf(1.0f, unit_dir.y)));
-               float phi   = atan2f(-unit_dir.z, unit_dir.x);
-               float u     = (phi + 3.14159265f) * (0.5f / 3.14159265f);
-               float v     = theta * (1.0f / 3.14159265f);
-               float4 samp = tex2D<float4>(params.hdr_env_tex, u, v);
+               const float2 uv   = env_dir_to_uv(unit_dir);
+               const float4 samp = tex2D<float4>(params.hdr_env_tex, uv.x, uv.y);
                sky = make_float3(samp.x, samp.y, samp.z);
+               if (!prev_is_delta && env_sampling_active())
+               {
+                  const float lp = env_pdf_optix(unit_dir) * env_select_prob();
+                  if (lp > 0.0f)
+                  {
+                     const float a = prev_bsdf_pdf * prev_bsdf_pdf;
+                     w_sky = a / (a + lp * lp);
+                  }
+               }
             }
             else
             {
                float t = 0.5f * (unit_dir.y + 1.0f);
                sky = (1.0f - t) * make_float3(1.0f, 1.0f, 1.0f) + t * params.background_color;
             }
-            color = color + throughput * sky * params.background_intensity;
+            color = color + throughput * sky * (params.background_intensity * w_sky);
             if (!guide_done)
             {
                // Background seen directly (or through specular surfaces): the sky colour is the
@@ -826,10 +960,10 @@ extern "C" __global__ void __raygen__rg()
 
                // Volumetric NEE: sample a light, weight by the phase function and the transmittance
                // towards it (ratio tracking), MIS against phase-function sampling
-               if (params.mis_enabled && params.num_lights > 0)
+               if (params.mis_enabled && nee_available())
                {
                   const float nee_u1 = rand_float(seed), nee_u2 = rand_float(seed), nee_sel = rand_float(seed);
-                  OptiXLightSample ls = sample_light_optix(origin, nee_sel, nee_u1, nee_u2);
+                  OptiXLightSample ls = sample_nee_optix(origin, nee_sel, nee_u1, nee_u2);
                   if (ls.pdf > 0.0f)
                   {
                      const float T = shadow_transmittance_optix(origin, ls.direction, ls.dist - 0.002f, seed);
@@ -841,6 +975,12 @@ extern "C" __global__ void __raygen__rg()
                         color = color + throughput * ls.emission * (ph * T * w / ls.pdf);
                      }
                   }
+               }
+
+               if (!indirect_started)
+               {
+                  direct_color     = color;
+                  indirect_started = true;
                }
 
                // New direction from the Henyey-Greenstein phase function
@@ -894,7 +1034,7 @@ extern "C" __global__ void __raygen__rg()
                if (light_idx >= 0)
                {
                   float3 hit_dir = normalize3(cur_direction);
-                  float lp = light_dir_pdf_optix(light_idx, mis_origin, hit_dir);
+                  float lp = light_dir_pdf_optix(light_idx, mis_origin, hit_dir) * (1.0f - env_select_prob());
                   if (lp > 0.0f)
                   {
                      float a = prev_bsdf_pdf * prev_bsdf_pdf;
@@ -1162,7 +1302,7 @@ extern "C" __global__ void __raygen__rg()
 
          // --- NEE: direct light sampling for non-delta materials ---
          bool is_delta = is_delta_material_optix(mat.type);
-         if (params.mis_enabled && !is_delta && params.num_lights > 0)
+         if (params.mis_enabled && !is_delta && nee_available())
          {
             // The first bounce carries most of the direct light and always gets NEE; deeper
             // bounces do it on 1 of every nee_stride samples (contribution x stride, unbiased).
@@ -1184,8 +1324,11 @@ extern "C" __global__ void __raygen__rg()
                   float nee_u2  = sobol_rand_float(ss, seed);
                   float nee_sel = rand_float(seed);
 
-                  OptiXLightSample ls = sample_light_optix(prd.hit_point, nee_sel, nee_u1, nee_u2);
-                  if (ls.pdf > 0.0f)
+                  OptiXLightSample ls = sample_nee_optix(prd.hit_point, nee_sel, nee_u1, nee_u2);
+                  // A sky sample is drawn over the whole sphere: below the surface it contributes
+                  // nothing, so the shadow ray is skipped (half of them on a ground plane)
+                  float cos_th = (ls.pdf > 0.0f) ? fmaxf(0.0f, dot3(ls.direction, prd.hit_normal)) : 0.0f;
+                  if (cos_th > 0.0f)
                   {
                      // Shadow ray (transmittance through any volume on the way)
                      const float T_sh = shadow_transmittance_optix(prd.hit_point + 0.0001f * prd.hit_normal,
@@ -1194,7 +1337,6 @@ extern "C" __global__ void __raygen__rg()
                      {
                         // Diffuse lobe only: f = w_d * albedo / pi, pdf = w_d * cos(theta) / pi
                         float3 f_nee = prd.hit_color * (diffuse_lobe / 3.14159265f);
-                        float cos_th = fmaxf(0.0f, dot3(ls.direction, prd.hit_normal));
                         float p_mat  = diffuse_lobe * cos_th / 3.14159265f;
                         float a      = ls.pdf * ls.pdf;
                         float b      = p_mat * p_mat;
@@ -1204,6 +1346,12 @@ extern "C" __global__ void __raygen__rg()
                   }
                }
             }
+         }
+
+         if (!is_delta && !indirect_started)
+         {
+            direct_color     = color;
+            indirect_started = true;
          }
 
          throughput = throughput * attenuation;
@@ -1234,6 +1382,18 @@ extern "C" __global__ void __raygen__rg()
             }
             throughput = throughput / survival_prob;
          }
+      }
+
+      // Indirect clamp: fixed ceiling on the light gathered after the first diffuse bounce. Those
+      // paths reach an emitter or the sun through glass or off a mirror (caustics), which no light
+      // sampling can target; under the growing clamp below their speckle only fades as 1/sqrt(N).
+      // Biased (caustics get dimmer), but it converges. Hue-preserving, like the clamp below.
+      if (params.indirect_clamp > 0.0f && indirect_started)
+      {
+         float3 indirect = color - direct_color;
+         const float ind_lum = 0.2126f * indirect.x + 0.7152f * indirect.y + 0.0722f * indirect.z;
+         if (ind_lum > params.indirect_clamp)
+            color = direct_color + indirect * (params.indirect_clamp / ind_lum);
       }
 
       // Firefly rejection: clamp per-sample luminance so that one very bright path (a sun texel

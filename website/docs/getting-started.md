@@ -95,6 +95,7 @@ offline progress bar shows the elapsed time and an estimate of the time left.
 | `-r <WxH>` | — | Arbitrary resolution (`-r 1920x1080`, `-r 800x600`) |
 | `--sampler <sobol\|pcg>` | `sobol` | GPU sampler: low-discrepancy Sobol' or classic PCG |
 | `--no-hdr-cache` | off | Always re-decode `.hdr` files instead of reading the `.hdrcache` sidecar |
+| `--sky <name>` | gradient | Interactive modes: start with this HDR sky of `resources/hdri/` (part of the file name, e.g. `--sky sunflowers`) |
 | `--samples-per-batch <n>` | 8 | Interactive samples per batch; overrides the scene's `settings.samples_per_batch` |
 | `--no-adaptive-sampling` | off | Disable converged-pixel skipping |
 | `--no-auto-accumulate` | off | Do not keep adding samples while the camera is still |

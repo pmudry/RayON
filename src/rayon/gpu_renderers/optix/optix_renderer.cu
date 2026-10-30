@@ -14,6 +14,7 @@
 #include <cuda_runtime.h>
 #include <math_constants.h>
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <map>
 #include <cstring>
@@ -100,6 +101,7 @@ struct OptixState
    bool  mis_enabled          = true;
    int   nee_stride           = 1;
    float light_falloff        = 2.0f;
+   float indirect_clamp       = 50.0f;
    bool  has_volume           = false; // scene holds a VOLUME material (shadow rays track transmittance)
 
    // Adaptive sampling (converged-pixel skipping): per-pixel sample counts (negative = converged)
@@ -166,6 +168,11 @@ struct OptixState
    // HDR environment map managed outside the scene textures to survive scene rebuilds
    cudaArray_t         hdr_cuda_array = nullptr;
    cudaTextureObject_t hdr_tex_obj    = 0;
+   // Sky importance-sampling tables of the current HDR map (see buildEnvSamplingTables)
+   float *d_env_marginal_cdf    = nullptr;
+   float *d_env_conditional_cdf = nullptr;
+   int    env_w = 0;
+   int    env_h = 0;
 
    // Dedicated CUDA stream for OptiX launches — avoids blocking the default stream
    // and enables stream-specific synchronization instead of cudaDeviceSynchronize().
@@ -1105,6 +1112,7 @@ extern "C" void setOptiXBackgroundColor(float r, float g, float b) { g_optix_bac
 extern "C" void setOptiXFireflyClampCeiling(float ceiling) { g_optix_firefly_clamp_ceiling = ceiling; }
 extern "C" void setOptiXNEEStride(int stride)              { g_state.nee_stride = (stride < 1) ? 1 : stride; }
 extern "C" void setOptiXLightFalloff(float falloff)        { g_state.light_falloff = (falloff < 0.0f) ? 0.0f : falloff; }
+extern "C" void setOptiXIndirectClamp(float ceiling)      { g_state.indirect_clamp = (ceiling < 0.0f) ? 0.0f : ceiling; }
 
 /// Converged-pixel skipping. Buffers are (re)allocated by optixRendererResetAccum().
 extern "C" void setOptiXAdaptiveSampling(bool enabled, int min_samples, float threshold)
@@ -1116,13 +1124,20 @@ extern "C" void setOptiXAdaptiveSampling(bool enabled, int min_samples, float th
 
 extern "C" void optixRendererInit() { initializeOptiX(); }
 
-// Rewrite one material's scalar parameters in place (GUI edits), keeping its pattern table and
-// type. Does not rebuild the scene; the caller restarts the accumulation.
+// Rewrite one material in place (GUI edits, live material swaps) without rebuilding the scene;
+// the caller restarts the accumulation. The type may change, but the FIBONACCI_DOTS table and
+// the volume SDF are fixed at build time: callers keep such materials out of live swaps.
 extern "C" void optixRendererUpdateMaterial(int idx, const Scene::MaterialDesc &m)
 {
    if (!g_state.d_materials || idx < 0 || idx >= (int)g_state.host_materials.size())
       return;
    OptixMaterialData &d = g_state.host_materials[idx];
+   d.type     = static_cast<OptixMaterialType>(static_cast<uint8_t>(m.type));
+   d.pattern  = static_cast<unsigned char>(m.pattern);
+   d.pattern_color  = make_float3((float)m.pattern_color.x(), (float)m.pattern_color.y(), (float)m.pattern_color.z());
+   d.pattern_param1 = m.pattern_param1;
+   d.pattern_param2 = m.pattern_param2;
+   d.texture_id     = m.texture_id;
    d.albedo   = make_float3((float)m.albedo.x(), (float)m.albedo.y(), (float)m.albedo.z());
    d.emission = make_float3((float)m.emission.x(), (float)m.emission.y(), (float)m.emission.z());
    d.roughness        = m.roughness;
@@ -1473,6 +1488,10 @@ extern "C" unsigned long long optixRendererLaunch(int width, int height, int num
    launch_params.pattern_points     = g_state.d_pattern_points;
    launch_params.hdr_env_tex        = g_state.hdr_tex_obj;
    launch_params.use_hdr_env        = (g_state.hdr_tex_obj != 0);
+   launch_params.env_marginal_cdf    = g_state.d_env_marginal_cdf;
+   launch_params.env_conditional_cdf = g_state.d_env_conditional_cdf;
+   launch_params.env_w               = g_state.env_w;
+   launch_params.env_h               = g_state.env_h;
 
    // NEE / MIS
    launch_params.lights             = g_state.d_lights;
@@ -1481,6 +1500,7 @@ extern "C" unsigned long long optixRendererLaunch(int width, int height, int num
    launch_params.mis_enabled        = g_state.mis_enabled;
    launch_params.nee_stride         = g_state.nee_stride;
    launch_params.light_falloff      = g_state.light_falloff;
+   launch_params.indirect_clamp     = g_state.indirect_clamp;
    launch_params.has_volume         = g_state.has_volume;
    launch_params.geom_to_light_map  = g_state.d_geom_to_light;
    launch_params.num_geom_entries   = g_state.num_geom_entries;
@@ -1940,8 +1960,116 @@ extern "C" void optixRendererRenderSampleHeatmap(unsigned char *display_image, i
    memcpy(display_image, g_state.pinned_display, display_size);
 }
 
+static void freeEnvSamplingTables()
+{
+   if (g_state.d_env_marginal_cdf)    { cudaFree(g_state.d_env_marginal_cdf);    g_state.d_env_marginal_cdf = nullptr; }
+   if (g_state.d_env_conditional_cdf) { cudaFree(g_state.d_env_conditional_cdf); g_state.d_env_conditional_cdf = nullptr; }
+   g_state.env_w = 0;
+   g_state.env_h = 0;
+}
+
+/// Sky importance sampling: a 2D distribution proportional to luminance x sin(theta) over a
+/// downsampled lat-long grid of the map (at most 2048 x 1024 cells, a 4 x 4 texel box on an 8k
+/// map, widened by the bilinear filter's reach). The device picks a row from the marginal CDF and a cell from that row's conditional
+/// CDF, so the sun of a clear-sky HDRI (a few hundred texels holding half the sky's energy) is
+/// hit by next-event estimation instead of by chance. The CDFs are accumulated in double and
+/// stored as float: the rounding is monotone, so a cell's probability is exactly the difference
+/// of two consecutive entries, on the sampling side as on the pdf side.
+/// Returns false (no tables, sky left to BSDF sampling) on a black map or a failed upload.
+static bool buildEnvSamplingTables(const uint16_t *rgba16, int w, int h)
+{
+   freeEnvSamplingTables();
+   const int W = std::min(w, 2048);
+   const int H = std::min(h, 1024);
+
+   // A texel's weight goes to every cell a lookup can read it from. The texture is sampled with
+   // bilinear filtering, so a lookup at u reaches texels u*w - 0.5 +- 1: texel x is read for
+   // u in ((x - 0.5) / w, (x + 1.5) / w), half a texel beyond its own cell on the low side and
+   // a full one on the high side (wrap in u, clamp in v). Without this margin, the half-texel
+   // band along the sun's edge returns a blend of sun and sky while the table says sky: the pdf
+   // is tiny there, the MIS weight of a BSDF ray goes to 1, and the band is a firefly source.
+   std::vector<double> cell(static_cast<size_t>(W) * H, 0.0);
+   auto half_to_float = [](uint16_t bits) {
+      __half hv;
+      std::memcpy(&hv, &bits, sizeof(uint16_t));
+      return __half2float(hv);
+   };
+   auto span = [](int i, int n_tex, int n_cell, int &lo, int &hi) {
+      lo = static_cast<int>(std::floor((i - 0.5) * n_cell / n_tex));
+      hi = static_cast<int>(std::floor((i + 1.5) * n_cell / n_tex - 1e-9));
+   };
+   for (int y = 0; y < h; ++y)
+   {
+      int cy0, cy1;
+      span(y, h, H, cy0, cy1);
+      cy0 = std::max(cy0, 0);
+      cy1 = std::min(cy1, H - 1);
+      const double sin_theta = std::sin((y + 0.5) / h * CUDART_PI);
+      const uint16_t *row    = rgba16 + static_cast<size_t>(y) * w * 4u;
+      for (int x = 0; x < w; ++x)
+      {
+         const double lum = 0.2126 * half_to_float(row[x * 4 + 0]) + 0.7152 * half_to_float(row[x * 4 + 1]) +
+                            0.0722 * half_to_float(row[x * 4 + 2]);
+         if (!(lum > 0.0))
+            continue;
+         int cx0, cx1;
+         span(x, w, W, cx0, cx1);
+         const double wgt = lum * sin_theta;
+         for (int cy = cy0; cy <= cy1; ++cy)
+            for (int cx = cx0; cx <= cx1; ++cx)
+               cell[static_cast<size_t>(cy) * W + ((cx + W) % W)] += wgt;
+      }
+   }
+
+   // Conditional CDF of every row (uniform ramp on an all-black row, which the marginal never picks)
+   std::vector<float>  cond(static_cast<size_t>(H) * (W + 1));
+   std::vector<double> row_sum(static_cast<size_t>(H), 0.0);
+   for (int y = 0; y < H; ++y)
+   {
+      double sum = 0.0;
+      for (int x = 0; x < W; ++x) sum += cell[static_cast<size_t>(y) * W + x];
+      row_sum[y]  = sum;
+      float *cdf  = cond.data() + static_cast<size_t>(y) * (W + 1);
+      double acc  = 0.0;
+      cdf[0]      = 0.0f;
+      for (int x = 0; x < W; ++x)
+      {
+         acc += cell[static_cast<size_t>(y) * W + x];
+         cdf[x + 1] = (sum > 0.0) ? static_cast<float>(acc / sum) : static_cast<float>(x + 1) / W;
+      }
+      cdf[W] = 1.0f;
+   }
+   double total = 0.0;
+   for (double r : row_sum) total += r;
+   if (!(total > 0.0))
+      return false;
+   std::vector<float> marg(static_cast<size_t>(H) + 1);
+   marg[0] = 0.0f;
+   double acc = 0.0;
+   for (int y = 0; y < H; ++y)
+   {
+      acc += row_sum[y];
+      marg[y + 1] = static_cast<float>(acc / total);
+   }
+   marg[H] = 1.0f;
+
+   if (cudaMalloc(&g_state.d_env_marginal_cdf, marg.size() * sizeof(float)) != cudaSuccess ||
+       cudaMalloc(&g_state.d_env_conditional_cdf, cond.size() * sizeof(float)) != cudaSuccess ||
+       cudaMemcpy(g_state.d_env_marginal_cdf, marg.data(), marg.size() * sizeof(float), cudaMemcpyHostToDevice) != cudaSuccess ||
+       cudaMemcpy(g_state.d_env_conditional_cdf, cond.data(), cond.size() * sizeof(float), cudaMemcpyHostToDevice) != cudaSuccess)
+   {
+      fprintf(stderr, "OptiX HDR: sky sampling tables upload failed (sky left to BSDF sampling)\n");
+      freeEnvSamplingTables();
+      return false;
+   }
+   g_state.env_w = W;
+   g_state.env_h = H;
+   return true;
+}
+
 extern "C" void optixRendererClearHdrEnv()
 {
+   freeEnvSamplingTables();
    if (g_state.hdr_tex_obj != 0)
    {
       cudaDestroyTextureObject(g_state.hdr_tex_obj);
@@ -1997,6 +2125,8 @@ extern "C" bool optixRendererUploadHdrEnvHalf(const uint16_t *rgba16, int w, int
       g_state.hdr_cuda_array = nullptr;
       return false;
    }
+
+   buildEnvSamplingTables(rgba16, w, h);
 
    CUDA_CHECK(cudaDeviceSynchronize()); // fence the array upload before the render stream reads it
    return true;

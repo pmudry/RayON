@@ -72,6 +72,7 @@ struct ProgramArgs
    bool auto_accumulate = true;
    bool adaptive_sampling = true;
    bool hdr_cache = true;
+   const char *sky = nullptr; // --sky: HDR map to start the interactive modes with (name in resources/hdri/)
    bool show_menu = false;
    bool use_sobol = true; // Sobol' quasi-random sampler (false = classic PCG)
    // MIS / NEE options
@@ -96,6 +97,8 @@ void dumpHelp()
    cout << "  --scene <file>            Load a scene from a YAML file (default: built-in scene)\n";
    cout << "  --sampler <sobol|pcg>     GPU sampler: sobol = low-discrepancy (default), pcg = classic PRNG\n";
    cout << "  --no-hdr-cache            Disable the disk cache of HDR sky textures (always re-decode .hdr)\n";
+   cout << "  --sky <name>              Interactive modes: start with this HDR sky of resources/hdri/\n"
+           "                            (file name without extension, or a part of it; default: gradient sky)\n";
    cout << "\n";
    cout << "Offline rendering (modes 2, 4):\n";
    cout << "  -s <samples>              Samples per pixel (default: " << SAMPLES_PER_PIXEL << ")\n";
@@ -209,6 +212,10 @@ ProgramArgs parseInput(int argc, char *argv[])
       else if (strcmp(argv[i], "--no-hdr-cache") == 0)
       {
          args.hdr_cache = false;
+      }
+      else if (strcmp(argv[i], "--sky") == 0 && i + 1 < argc)
+      {
+         args.sky = argv[++i];
       }
       else if (strcmp(argv[i], "--no-mis") == 0)
       {
@@ -417,6 +424,7 @@ int main(int argc, char *argv[])
       settings.auto_accumulate = args.auto_accumulate;
       settings.adaptive_sampling = args.adaptive_sampling;
       settings.hdr_cache = args.hdr_cache;
+      settings.sky = args.sky ? args.sky : "";
       settings.theme = parseThemeName(args.theme);
       settings.mis_enabled           = args.mis_enabled;
       settings.motion_gate_mis       = args.motion_gate_mis;
@@ -450,6 +458,7 @@ int main(int argc, char *argv[])
       settings.auto_accumulate = args.auto_accumulate;
       settings.adaptive_sampling = args.adaptive_sampling;
       settings.hdr_cache = args.hdr_cache;
+      settings.sky = args.sky ? args.sky : "";
       settings.theme = parseThemeName(args.theme);
       settings.mis_enabled           = args.mis_enabled;
       settings.motion_gate_mis       = args.motion_gate_mis;

@@ -55,9 +55,11 @@ camera:
 | `background_intensity` | float | `1.0` | Multiplier applied to the background colour (GUI "Ambient Light") |
 | `light_intensity` | float | `1.0` | Multiplier applied to every light's emission (GUI "Lights inten.") |
 | `light_falloff` | float | `2.0` | Distance exponent of the lights' reach (GUI "Lights falloff"). `2` is the physical inverse square; lower values carry the light farther, higher values confine it around the source. Pivots at one scene unit from the light; emitters seen by the camera are unchanged. An artistic control, not energy conserving |
+| `indirect_clamp` | float | `50.0` | OptiX only. Per-sample luminance ceiling on the light gathered after the first diffuse bounce (GUI "Indirect clamp"), `0` = off. Tames the speckle of caustics (a light or the sun reached through glass or off a mirror), which no light sampling can target, at the price of dimmer caustics |
 | `use_bvh` | bool | `false` | Enable BVH acceleration (recommended for > 50 objects) |
 | `adaptive_sampling` | bool | `true` | Let converged pixels stop accumulating early |
 | `samples_per_batch` | int | `0` | Interactive batch size for this scene (`0` = renderer default; a `--samples-per-batch` on the command line wins) |
+| `hdr_sky` | string | `""` | Interactive modes: HDR map of `resources/hdri/` to show when the scene is loaded, matched on a part of the file name (`"venice_sunset"`). Without it the scene shows the built-in gradient sky; a `--sky` on the command line wins at start-up. Offline modes ignore it |
 
 ```yaml
 settings:

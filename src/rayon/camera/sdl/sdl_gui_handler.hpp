@@ -275,7 +275,8 @@ class SDLGuiHandler
                       bool *motion_despeckle = nullptr, float *motion_despeckle_ratio = nullptr,
                       VolumeMaterialSettings *volume = nullptr,
                       bool *save_camera_request = nullptr, const char *scene_yaml_path = nullptr,
-                      const char *camera_save_status = nullptr, float *light_falloff = nullptr)
+                      const char *camera_save_status = nullptr, float *light_falloff = nullptr,
+                      float *indirect_clamp = nullptr)
    {
       SDL_UpdateTexture(texture, nullptr, image.data(), image_width * image_channels);
       SDL_RenderClear(renderer);
@@ -537,6 +538,17 @@ class SDLGuiHandler
                                                 "1 = every sample (the default, lowest noise), higher = faster.");
                            ImGui::PopItemWidth();
                            if (!mis_ok) ImGui::EndDisabled();
+                        }
+                        if (indirect_clamp)
+                        {
+                           pushSliderWidth();
+                           ImGui::SliderFloat("Indirect clamp##indirect_clamp", indirect_clamp, 0.0f, 200.0f, "%.0f");
+                           ImGui::SetItemTooltip("Per-sample ceiling on the light gathered after the first diffuse\n"
+                                                "bounce (0 = off). Tames the speckle of caustics — a light or the\n"
+                                                "sun reached through glass or off a mirror — which no light sampling\n"
+                                                "can target, at the price of dimmer caustics. Saved per scene with\n"
+                                                "the camera (settings.indirect_clamp).");
+                           ImGui::PopItemWidth();
                         }
                         ImGui::TreePop();
                      }
@@ -923,6 +935,7 @@ class SDLGuiHandler
                ImGui::BulletText("N: Toggle Show Normals");
                ImGui::BulletText("Left/Right: Previous/Next Scene");
                ImGui::BulletText("Numpad +/-: Next/Prev HDR Sky");
+               ImGui::BulletText("PgUp/PgDn: Next/Prev Mesh Material (OptiX)");
                ImGui::BulletText("O: Auto orbit");
                ImGui::BulletText("F: Toggle SPP/s Counter");
                ImGui::BulletText("L: Toggle Logo");
@@ -953,6 +966,7 @@ class SDLGuiHandler
          }
          drawSPPSOverlay(display_sps, display_fps);
       }
+      drawToast();
 
       // Finalize ImGui frame
       ImGui::Render();
@@ -1016,6 +1030,44 @@ class SDLGuiHandler
    void toggleLogo() { show_logo = !show_logo; }
    void setLogoVisible(bool visible) { show_logo = visible; }
 
+   /// Show a short message at the bottom centre of the view for a few seconds (key feedback)
+   void showToast(const std::string &text, Uint32 duration_ms = 2500)
+   {
+      toast_text     = text;
+      toast_until_ms = SDL_GetTicks() + duration_ms;
+   }
+
+   /// Present one frame right away: the last image dimmed, with `text` in a box at the centre.
+   /// For the blocking steps of the main thread (scene load, BVH build), which otherwise leave the
+   /// window frozen on its last frame. Call outside updateDisplay()/present().
+   void showBusyMessage(const std::string &text)
+   {
+      SDL_RenderClear(renderer);
+      const SDL_Rect image_rect = imageDestRect();
+      SDL_RenderCopy(renderer, texture, nullptr, &image_rect);
+
+      ImGui_ImplSDLRenderer2_NewFrame();
+      ImGui_ImplSDL2_NewFrame();
+      ImGui::NewFrame();
+      ImDrawList  *draw = ImGui::GetForegroundDrawList();
+      const ImVec2 disp = ImGui::GetIO().DisplaySize;
+      draw->AddRectFilled(ImVec2(0.0f, 0.0f), disp, IM_COL32(0, 0, 0, 110));
+      ImFont      *font      = ImGui::GetFont();
+      const float  fs        = ImGui::GetFontSize() * 1.5f;
+      const ImVec2 text_size = font->CalcTextSizeA(fs, FLT_MAX, 0.0f, text.c_str());
+      const float  pad_x = 22.0f, pad_y = 14.0f;
+      const float  box_w = text_size.x + 2.0f * pad_x;
+      const float  box_h = text_size.y + 2.0f * pad_y;
+      const float  box_x = (disp.x - box_w) * 0.5f;
+      const float  box_y = (disp.y - box_h) * 0.5f;
+      draw->AddRectFilled(ImVec2(box_x, box_y), ImVec2(box_x + box_w, box_y + box_h), IM_COL32(0, 0, 0, 190), 8.0f);
+      draw->AddRect(ImVec2(box_x, box_y), ImVec2(box_x + box_w, box_y + box_h), IM_COL32(255, 255, 255, 60), 8.0f);
+      draw->AddText(font, fs, ImVec2(box_x + pad_x, box_y + pad_y), IM_COL32(240, 240, 240, 255), text.c_str());
+      ImGui::Render();
+      ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), renderer);
+      SDL_RenderPresent(renderer);
+   }
+
    void toggleWindowCollapse() { window_collapse_requested = true; }
 
    void toggleHeaderCollapse()
@@ -1048,6 +1100,39 @@ class SDLGuiHandler
    Uint32 last_perf_sample_time_ms;
    Uint32 perf_sample_interval_ms;
    Uint32 perf_time_window_ms;
+
+   // Transient message shown by showToast()
+   std::string toast_text;
+   Uint32      toast_until_ms = 0;
+
+   void drawToast()
+   {
+      if (toast_text.empty())
+         return;
+      const Uint32 now = SDL_GetTicks();
+      if (now >= toast_until_ms)
+      {
+         toast_text.clear();
+         return;
+      }
+      // Fade out over the last 400 ms
+      const float  remaining = static_cast<float>(toast_until_ms - now);
+      const float  alpha     = std::min(1.0f, remaining / 400.0f);
+      ImFont      *font      = ImGui::GetFont();
+      const float  fs        = ImGui::GetFontSize() * 1.25f;
+      const ImVec2 text_size = font->CalcTextSizeA(fs, FLT_MAX, 0.0f, toast_text.c_str());
+      const float  pad_x = 12.0f, pad_y = 7.0f, margin = 14.0f;
+      const ImVec2 disp  = ImGui::GetIO().DisplaySize;
+      const float  box_w = text_size.x + 2.0f * pad_x;
+      const float  box_h = text_size.y + 2.0f * pad_y;
+      const float  box_x = (disp.x - box_w) * 0.5f;
+      const float  box_y = disp.y - box_h - margin;
+      ImDrawList  *draw  = ImGui::GetForegroundDrawList();
+      draw->AddRectFilled(ImVec2(box_x, box_y), ImVec2(box_x + box_w, box_y + box_h),
+                          IM_COL32(0, 0, 0, static_cast<int>(140 * alpha)), 6.0f);
+      draw->AddText(font, fs, ImVec2(box_x + pad_x, box_y + pad_y),
+                    IM_COL32(235, 235, 235, static_cast<int>(240 * alpha)), toast_text.c_str());
+   }
 
    // Throttled display values for SPP/s and FPS — updated at most 10×/s.
    float  display_sps               = 0.0f;

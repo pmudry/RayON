@@ -181,10 +181,18 @@ struct OptixLaunchParams
    float3 background_color; // top colour of the gradient sky (bottom is white)
    cudaTextureObject_t hdr_env_tex;  // equirectangular HDR sky (0 = gradient fallback)
    bool                use_hdr_env;
+   // HDR sky importance sampling (NEE on the sky, MIS against BSDF sampling): luminance x sin(theta)
+   // distribution over a downsampled lat-long grid of env_w x env_h cells. Row CDF [env_h+1], then
+   // one column CDF per row [env_h x (env_w+1)]. Null when the gradient sky is in use.
+   const float *env_marginal_cdf;
+   const float *env_conditional_cdf;
+   int          env_w;
+   int          env_h;
 
    // Dynamic material multipliers (set per-frame from GUI sliders)
    float light_intensity;      // Multiplier on emissive materials
    float light_falloff;        // Distance exponent of the lights' reach (2 = inverse square, physical)
+   float indirect_clamp;       // Per-sample luminance ceiling on light gathered after the first diffuse bounce (0 = off)
    float metal_fuzziness;      // Multiplier on roughness of metallic materials
    float glass_ior_multiplier; // Multiplier on refractive index of glass/dielectric
 

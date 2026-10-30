@@ -116,6 +116,7 @@ CPU uses `double` (Vec3), GPU uses `float` — conversion at kernel boundary.
 --scene <yaml_file>      # Load scene from YAML (files live under resources/scenes/)
 --sampler <sobol|pcg>    # GPU sampler (default: sobol)
 --no-hdr-cache           # Always re-decode .hdr skies (no .hdrcache)
+--sky <name>             # Interactive modes: start with this HDR sky of resources/hdri/ (part of the file name)
 --samples-per-batch <n>  # Interactive samples per batch, overrides settings.samples_per_batch (default: 8)
 --no-adaptive-sampling   # Disable converged-pixel skipping
 --no-auto-accumulate     # Disable automatic sample accumulation when stationary

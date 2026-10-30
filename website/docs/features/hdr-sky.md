@@ -46,6 +46,8 @@ with $v = 0$ at the north pole and $v = 1$ at the south pole.
 | **Numpad +** or **=** | Next HDRI of the directory |
 | **Numpad −** or **−** | Previous HDRI |
 | **Sky** combo | Pick any file by name; the first entry is the built-in gradient |
+| `--sky <name>` | Command line: start with the first file whose name contains `<name>` (`--sky sunflowers`) |
+| `settings.hdr_sky` | Scene file: the sky to show when this scene is loaded (`hdr_sky: "venice_sunset"`), the gradient without it; `--sky` wins at start-up |
 
 Switching takes the decode time of the file the first time (seconds for an 8K map), then the
 `.hdrcache` sidecar makes it near instant.
@@ -84,9 +86,17 @@ The six bundled environments:
     Any equirectangular `.hdr` file works: put it in `resources/hdri/` and it appears in the
     Sky combo at the next start.
 
-A very bright sun disk in an HDR map is the classic firefly source. Each sample's luminance
-is clamped (a fixed ceiling of 20 while the camera moves, a growing one when still), see
-[Lights & Shadows](lighting.md#fireflies).
+A very bright sun disk in an HDR map is the classic firefly source: in `sunflowers_puresky`
+the sun covers 0.08 millisteradian, about 180 texels of the 8K map, yet carries 45 % of the
+sky's energy. The OptiX interactive mode samples the sky directly (see
+[Sky importance sampling](#sky-importance-sampling) below), so the sun lights diffuse surfaces
+through shadow rays and casts proper shadows instead of being found by chance. The CUDA
+interactive mode has no sky sampling: a diffuse bounce hits the sun once in about 40 000
+samples, each hit worth tens of thousands, and only the luminance clamp (a fixed ceiling of 20
+while the camera moves, a growing one when still, see [Lights & Shadows](lighting.md#fireflies))
+keeps the speckle in check. It never converges there: the clamp grows with the square root of
+the sample count and the hits arrive in proportion to it, so the speckle keeps a constant
+amplitude.
 
 ---
 
@@ -107,6 +117,38 @@ is clamped (a fixed ceiling of 20 while the camera moves, a growing one when sti
 ---
 
 ## Technical implementation
+
+### Sky importance sampling
+
+*OptiX interactive mode only.* When an HDR map is uploaded, `buildEnvSamplingTables()`
+(`optix_renderer.cu`) reduces it to a grid of at most 2048 × 1024 cells (a 4 × 4 texel box
+on an 8K map) weighted by luminance × sin θ, the solid angle of a lat-long cell, and builds a
+2D distribution over it: a marginal CDF over the rows and one conditional CDF per row. The
+tables are accumulated in double precision and stored as float, so the probability of a cell
+is exactly the difference of two consecutive CDF entries, on the sampling side as on the pdf
+side.
+
+The sky then takes part in next-event estimation like a light: `sample_env_optix()` picks a
+row from the marginal CDF, a cell from that row, a uniform direction inside the cell and
+returns its radiance with the solid-angle pdf
+
+$$p_\Omega(u, v) = \frac{p_\text{row} \, p_\text{cell} \, W H}{2\pi^2 \sin\theta}$$
+
+where \(2\pi^2 \sin\theta\) is the Jacobian of the lat-long mapping. When the scene also has
+emitters, half of the NEE samples go to the sky and half to the light list, and every pdf
+carries that selection probability. A BSDF-sampled ray that escapes to the sky is weighted by
+the power heuristic against `env_pdf_optix()` of its direction, exactly as an emitter hit is
+weighted against the light pdf, so the sun is never counted twice. Samples drawn below the
+surface skip the shadow ray. Everything is tied to the **Enable MIS** toggle: with MIS off the
+sky is left to BSDF sampling, as before.
+
+Measured on the default scene under `sunflowers_puresky` after 30 s at 720p: the speckle count
+drops by a factor of 30 and the image is 20 % brighter, the sun's share that the luminance
+clamp was holding back. The remaining dots are sun caustics: the sun reaching a diffuse surface
+through the glass sphere or off the metal sphere, paths that no light sampling can reach (the
+same scene with those two spheres made diffuse shows none). They are held down by the
+[indirect clamp](lighting.md#indirect-clamp-optix). The cost is the shadow ray of each diffuse bounce (about a quarter
+of the frame rate on that scene, which had no emitter and therefore no shadow rays before).
 
 ### float16 GPU texture
 

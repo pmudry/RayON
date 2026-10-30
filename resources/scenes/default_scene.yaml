@@ -13,8 +13,11 @@ scene:
     fov: 46.0
   
 settings:
+  light_intensity: 1
+  light_falloff: 2
   background_color: [0.25, 0.35, 0.55]
   background_intensity: 0.25
+  hdr_sky: "venice_sunset"   # interactive modes start with this HDR map of resources/hdri/
   use_bvh: true
   
 # Material definitions
@@ -136,3 +139,8 @@ geometry:
     corner: [-1.0, 3.0, -2.0]
     u: [2.5, 0.0, 0.0]
     v: [0.0, 0.0, 1.5]
+
+camera:
+  position: [-2.05, 2.09, 3.68]
+  look_at: [-2.01, -0.57, -1]
+  fov: 46

@@ -31,5 +31,11 @@ namespace constants
     // are touched; uniformly bright regions keep their value, and the accumulation is untouched.
     inline constexpr float MOTION_DESPECKLE_RATIO = 2.0f;
     inline constexpr float MOTION_DESPECKLE_FLOOR = 0.02f;
+    // Indirect clamp (OptiX): per-sample luminance ceiling on the light gathered after the first
+    // diffuse bounce (scene setting indirect_clamp, GUI slider). 0 = off. Caustic paths — a light
+    // or the sun reached through glass or off a mirror after a diffuse bounce — are the one thing
+    // light sampling cannot reach; this ceiling keeps them from speckling at the price of dimmer
+    // caustics (Cycles' "Clamp Indirect").
+    inline constexpr float INDIRECT_CLAMP_DEFAULT = 50.0f;
     inline constexpr int INTERACTIVE_MAX_SPP = 100000;       // Max SPP budget for interactive accumulation
 };

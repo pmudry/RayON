@@ -517,6 +517,7 @@ public:
     Vec3 camera_up;
     float camera_fov;
     std::string source_file;                  // YAML file this scene was loaded from ("" when built in code)
+    std::vector<std::string> material_names;  // YAML names, parallel to materials (empty when built in code)
     int samples_per_batch;                    // Interactive samples per batch wanted by the scene (0 = renderer default)
     
     // Rendering settings
@@ -524,6 +525,8 @@ public:
     float background_intensity;               // Sky/background brightness multiplier
     float light_intensity;                    // Multiplier on every light's emission (GUI "Lights inten.")
     float light_falloff;                      // Distance exponent of the lights' reach: 2 = physical inverse square
+    float indirect_clamp;                     // OptiX: per-sample ceiling on light gathered after the first diffuse bounce (0 = off)
+    std::string hdr_sky;                      // Interactive modes: HDR map of resources/hdri/ to start with (part of its name), "" = gradient
     bool use_bvh;                             // Enable scene BVH
     bool adaptive_sampling;                   // Enable adaptive sampling
 
@@ -538,6 +541,7 @@ public:
         , background_intensity(1.0f)
         , light_intensity(1.0f)
         , light_falloff(2.0f)
+        , indirect_clamp(50.0f)
         , use_bvh(false)
         , adaptive_sampling(true)
     {}

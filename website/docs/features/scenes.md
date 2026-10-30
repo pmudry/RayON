@@ -71,6 +71,7 @@ camera:
 | `background_intensity` | `1.0` | Sky brightness (GUI *Ambient Light*) |
 | `light_intensity` | `1.0` | Multiplier on every light's emission (GUI *Lights inten.*) |
 | `light_falloff` | `2.0` | Distance exponent of the lights' reach, 2 = physical (GUI *Lights falloff*, see [Lights & Shadows](lighting.md)) |
+| `indirect_clamp` | `50.0` | OptiX: per-sample ceiling on the light gathered after the first diffuse bounce, 0 = off (GUI *Indirect clamp*, see [Fireflies](lighting.md#fireflies)) |
 | `use_bvh` | `false` | Build the BVH; recommended above ~50 objects and for any mesh |
 | `adaptive_sampling` | `true` | Let converged pixels stop taking samples |
 | `samples_per_batch` | `0` | Interactive batch size for this scene (`0` = renderer default of 8; `--samples-per-batch` wins) |

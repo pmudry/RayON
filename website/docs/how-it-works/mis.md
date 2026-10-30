@@ -219,6 +219,15 @@ The area CDF is stored in `scene.light_cdfs[]` (CUDA) and `params.light_cdfs[]` 
 and gives area-proportional selection; the solid-angle PDF of a direction towards a given
 light is evaluated the same way for the MIS weight of an emitter hit.
 
+### The HDR sky as a light (OptiX)
+
+In the OptiX interactive mode an HDR sky is one more NEE target: a 2D distribution
+proportional to luminance × sin θ over a downsampled lat-long grid (marginal CDF over the rows,
+conditional CDF per row) picks a direction, and a ray that escapes to the sky after a diffuse
+bounce is MIS-weighted against that pdf. With emitters in the scene, the sky and the light list
+each receive half of the NEE samples. See
+[HDR Sky Dome — Sky importance sampling](../features/hdr-sky.md#sky-importance-sampling).
+
 ---
 
 ## GPU implementation

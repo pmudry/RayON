@@ -34,13 +34,14 @@ bool saveSceneToYAML(const char* filename, const SceneDescription& scene);
 /**
  * @brief Write the current view into an existing YAML scene file, in place: the camera
  * (position, look_at, fov) and the light settings (background_intensity, light_intensity,
- * light_falloff).
+ * light_falloff, and indirect_clamp when it is given: a negative value leaves that key alone).
  *
  * Only those lines of the `camera:` and `settings:` blocks are rewritten (or added, the block
  * itself being appended when missing); every other line, comments included, is kept as is.
  * @return true if the file was rewritten
  */
 bool saveViewToYAML(const char* filename, const Vec3& position, const Vec3& look_at, float fov,
-                    float background_intensity, float light_intensity, float light_falloff = 2.0f);
+                    float background_intensity, float light_intensity, float light_falloff = 2.0f,
+                    float indirect_clamp = -1.0f);
 
 } // namespace Scene

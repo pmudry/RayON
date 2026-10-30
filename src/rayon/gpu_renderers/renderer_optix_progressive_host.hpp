@@ -74,6 +74,7 @@ extern "C"
    void setOptiXFireflyClampCeiling(float ceiling);
    void setOptiXNEEStride(int stride);
    void setOptiXLightFalloff(float falloff);
+   void setOptiXIndirectClamp(float ceiling);
    void setOptiXAdaptiveSampling(bool enabled, int min_samples, float threshold);
    bool optixRendererHandoverPrior(int new_width, int new_height, float strength);
    int  optixRendererCountConvergedPixels();
@@ -91,6 +92,7 @@ class RendererOptiXProgressive : public IRenderer
       bool auto_accumulate = true;
       bool adaptive_sampling = true; ///< converged-pixel skipping
       bool hdr_cache = true; ///< use .hdrcache sidecar to speed up repeated HDR loads
+      std::string sky;       ///< --sky: HDR map to start with (part of its file name), empty = gradient
       GuiTheme theme = GuiTheme::NORD;
       bool mis_enabled           = true;
       bool motion_gate_mis       = false;
@@ -150,6 +152,7 @@ class RendererOptiXProgressive : public IRenderer
       float gamma = 2.0f;
       float light_intensity = scene.light_intensity;        // UI only — baked into SBT at build time
       float light_falloff   = scene.light_falloff;          // distance exponent of the lights' reach
+      float indirect_clamp  = scene.indirect_clamp;         // ceiling on light gathered after the first diffuse bounce
       float background_intensity = scene.background_intensity;
       float metal_fuzziness = 1.0f;        // UI only — baked into SBT at build time
       float glass_refraction_index = 1.5f; // UI only — baked into SBT at build time
@@ -240,6 +243,11 @@ class RendererOptiXProgressive : public IRenderer
       float golf_dimple_depth  = 0.25f;
       // Volume (cloud / smoke) material of the scene, editable from the GUI (-1 = none)
       int                    volume_mat_idx = -1;
+      // Live material swap of the meshes (PgUp/PgDn): every material slot used by a triangle is
+      // rewritten in place on the GPU with another material of the scene, no rebuild
+      std::vector<int> mesh_mat_slots;        // material slots of the triangles (empty: no mesh in the scene)
+      int              mesh_mat_choice = -1;  // index into mesh_mat_candidates (-1: the scene's own materials)
+      std::vector<int> mesh_mat_candidates;
       VolumeMaterialSettings volume_settings;
 
       auto syncSamplesFromSlider = [&]()
@@ -321,6 +329,43 @@ class RendererOptiXProgressive : public IRenderer
          for (size_t i = 0; i < active_scene.materials.size() && volume_mat_idx < 0; ++i)
             if (active_scene.materials[i].type == Scene::MaterialType::VOLUME)
                volume_mat_idx = (int)i;
+
+         // Mesh material swap: targets = the material slots of the triangles (OBJ meshes load as
+         // triangles), all of them taking the chosen material together. Candidates: every material
+         // whose GPU data is self-contained (lights feed the NEE list, volumes carry an SDF and
+         // Fibonacci dots a table, all fixed at build time). A mesh's own material is a candidate
+         // when there are several meshes (the others take it too). The materials no other object
+         // uses come first: they are the ones a scene declares for this.
+         mesh_mat_slots.clear();
+         mesh_mat_choice = -1;
+         mesh_mat_candidates.clear();
+         const size_t      num_mats = original_scene.materials.size();
+         std::vector<bool> used_elsewhere(num_mats, false), is_slot(num_mats, false);
+         for (const auto &g : original_scene.geometries)
+         {
+            if (g.material_id < 0 || g.material_id >= (int)num_mats)
+               continue;
+            if (g.type == Scene::GeometryType::TRIANGLE)
+            {
+               if (!is_slot[g.material_id])
+                  mesh_mat_slots.push_back(g.material_id);
+               is_slot[g.material_id] = true;
+            }
+            else
+               used_elsewhere[g.material_id] = true;
+         }
+         if (!mesh_mat_slots.empty())
+            for (int pass = 0; pass < 2; ++pass) // pass 0: unused materials, pass 1: shared ones
+               for (size_t i = 0; i < num_mats; ++i)
+               {
+                  const auto &m = original_scene.materials[i];
+                  if ((is_slot[i] && mesh_mat_slots.size() == 1) || used_elsewhere[i] != (pass == 1) ||
+                      m.type == Scene::MaterialType::LIGHT || m.type == Scene::MaterialType::VOLUME ||
+                      m.type == Scene::MaterialType::SHOW_NORMALS ||
+                      m.pattern == Scene::ProceduralPattern::FIBONACCI_DOTS)
+                     continue;
+                  mesh_mat_candidates.push_back((int)i);
+               }
          if (volume_mat_idx >= 0)
          {
             const auto &m = active_scene.materials[volume_mat_idx];
@@ -402,9 +447,40 @@ class RendererOptiXProgressive : public IRenderer
          camera_changed = true;
       };
 
+      // Index of the first HDR label containing `name` (case-insensitive), -1 when none
+      auto findHdrIndex = [&](const std::string &name) -> int {
+         auto lower = [](std::string t) {
+            std::transform(t.begin(), t.end(), t.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            return t;
+         };
+         const std::string wanted = lower(name);
+         for (int i = 1; i < hdr_count; ++i)
+            if (lower(hdr_labels[i]).find(wanted) != std::string::npos)
+               return i;
+         return -1;
+      };
+      // A scene's settings.hdr_sky selects its sky when it is loaded; without one, the gradient sky
+      auto applySceneSky = [&](const Scene::SceneDescription &sc) {
+         int idx = 0;
+         if (!sc.hdr_sky.empty())
+         {
+            idx = findHdrIndex(sc.hdr_sky);
+            if (idx < 0)
+            {
+               std::cerr << "HDR: no sky matching '" << sc.hdr_sky << "' in resources/hdri/ (gradient sky)\n";
+               idx = 0;
+            }
+         }
+         if (idx != current_hdr_index)
+            applyHdrChange(idx);
+      };
+
       auto applyVisualizationToActiveScene = [&]()
       {
          active_scene = original_scene;
+         if (mesh_mat_choice >= 0)
+            for (int slot : mesh_mat_slots)
+               active_scene.materials[slot] = original_scene.materials[mesh_mat_candidates[mesh_mat_choice]];
          if (visualization_mode == static_cast<int>(VisualizationMode::SHOW_NORMALS))
          {
             int mat = active_scene.addMaterial(Scene::MaterialDesc::normal());
@@ -413,16 +489,65 @@ class RendererOptiXProgressive : public IRenderer
          }
       };
 
+      // Write the chosen material into every mesh slot, on the host copy and on the GPU
+      auto materialLabel = [&](int idx) -> std::string {
+         if (idx >= 0 && idx < (int)original_scene.material_names.size() && !original_scene.material_names[idx].empty())
+            return original_scene.material_names[idx];
+         return "material #" + std::to_string(idx);
+      };
+      auto applyMeshMaterial = [&]()
+      {
+         if (mesh_mat_slots.empty())
+            return;
+         std::string label;
+         for (int slot : mesh_mat_slots)
+         {
+            const int src = mesh_mat_choice < 0 ? slot : mesh_mat_candidates[mesh_mat_choice];
+            active_scene.materials[slot] = original_scene.materials[src];
+            ::optixRendererUpdateMaterial(slot, active_scene.materials[slot]);
+            if (mesh_mat_choice >= 0 && label.empty())
+               label = materialLabel(src);
+            else if (mesh_mat_choice < 0)
+               label += (label.empty() ? "" : ", ") + materialLabel(src);
+         }
+         if (mesh_mat_choice < 0)
+            label += " (scene default)";
+         gui.showToast("Mesh material: " + label);
+         std::cout << "Mesh material: " << label << "\n";
+         camera_changed = true;
+      };
+      // step = +1 / -1 through [scene default, candidates...]
+      auto cycleMeshMaterial = [&](int step)
+      {
+         if (mesh_mat_slots.empty())
+         {
+            gui.showToast("No mesh in this scene");
+            return;
+         }
+         if (mesh_mat_candidates.empty())
+         {
+            gui.showToast("No other material in this scene");
+            return;
+         }
+         const int n     = (int)mesh_mat_candidates.size() + 1;
+         mesh_mat_choice = ((mesh_mat_choice + 1 + step) % n + n) % n - 1;
+         applyMeshMaterial();
+      };
+
       auto applySceneSelectionChange = [&]()
       {
          if (current_scene_index < 0 || current_scene_index >= scene_count)
             current_scene_index = 0;
+         mesh_mat_choice = -1; // the swap belongs to the scene being left
 
          const SceneEntry &selected = scene_entries[current_scene_index];
          std::cout << "Switching to scene: " << selected.label;
          if (!selected.yaml_path.empty())
             std::cout << " (" << selected.yaml_path << ")";
          std::cout << std::endl;
+         // The load and the BVH build block this thread: show what is going on before they start
+         gui.showBusyMessage("Loading " + (selected.yaml_path.empty() ? selected.label : std::filesystem::path(selected.yaml_path).stem().string()) +
+                             " ... building BVH");
 
          if (current_scene_index == 0)
             active_scene = Scene::SceneFactory::createDefaultScene();
@@ -442,9 +567,11 @@ class RendererOptiXProgressive : public IRenderer
          background_intensity = active_scene.background_intensity;
          light_intensity      = active_scene.light_intensity;
          light_falloff        = active_scene.light_falloff;
+         indirect_clamp       = active_scene.indirect_clamp;
          samples_per_batch_float = static_cast<float>(sceneBatchSize(active_scene));
          ::setOptiXBackgroundColor((float)active_scene.background_color.x(), (float)active_scene.background_color.y(),
                                    (float)active_scene.background_color.z());
+         applySceneSky(active_scene);
 
          // Re-scan for procedural patterns after scene change
          scanProceduralPatterns();
@@ -472,6 +599,18 @@ class RendererOptiXProgressive : public IRenderer
       // Initialize OptiX pipeline and build scene
       optixRendererInit();
       optixRendererBuildScene(active_scene);
+
+      // Starting sky: --sky <name> wins, else the scene's settings.hdr_sky, else the gradient
+      if (!settings_.sky.empty())
+      {
+         const int found = findHdrIndex(settings_.sky);
+         if (found > 0)
+            applyHdrChange(found);
+         else
+            std::cerr << "HDR: no sky matching '" << settings_.sky << "' in resources/hdri/ (gradient sky kept)\n";
+      }
+      else
+         applySceneSky(scene);
 
       auto last_frame_time = std::chrono::high_resolution_clock::now();
       auto total_start = std::chrono::high_resolution_clock::now();
@@ -515,6 +654,7 @@ class RendererOptiXProgressive : public IRenderer
                else if (event.key.keysym.sym == SDLK_r)
                {
                   light_intensity = 1.0f; background_intensity = 1.0f; light_falloff = 2.0f;
+                  indirect_clamp = constants::INDIRECT_CLAMP_DEFAULT;
                   metal_fuzziness = 1.0f; glass_refraction_index = 1.5f;
                   dof_enabled = false; dof_aperture = 0.1f; dof_focus_distance = 10.0f;
                   show_spps_counter = true;
@@ -528,6 +668,11 @@ class RendererOptiXProgressive : public IRenderer
                   use_sobol             = true;
                   motion_quality        = settings_.motion_quality;
                   adaptive_sampling_enabled = settings_.adaptive_sampling;
+                  if (mesh_mat_choice >= 0)
+                  {
+                     mesh_mat_choice = -1;
+                     applyMeshMaterial();
+                  }
                   camera_changed = true;
                }
                else if (event.key.keysym.sym == SDLK_f)
@@ -563,6 +708,14 @@ class RendererOptiXProgressive : public IRenderer
                else if (event.key.keysym.sym == SDLK_KP_MINUS || event.key.keysym.sym == SDLK_MINUS)
                {
                   applyHdrChange((current_hdr_index - 1 + hdr_count) % hdr_count);
+               }
+               else if (event.key.keysym.sym == SDLK_PAGEUP)
+               {
+                  cycleMeshMaterial(+1);
+               }
+               else if (event.key.keysym.sym == SDLK_PAGEDOWN)
+               {
+                  cycleMeshMaterial(-1);
                }
                else if (camera_control.handleKeyDown(event, accumulation_enabled, samples_per_batch_float,
                                                      light_intensity, background_intensity, needs_rerender,
@@ -852,6 +1005,7 @@ class RendererOptiXProgressive : public IRenderer
             float denoise_blend;
             denoiseFor(current_samples + frame_spp, reduce, denoise_now, denoise_blend);
             ::setOptiXLightFalloff(light_falloff);
+            ::setOptiXIndirectClamp(indirect_clamp);
             renderBatch(frame, config.width, config.height, config.depth, display_view, current_samples,
                         max_samples, frame_spp, gamma, context, num_materials_active, background_intensity,
                         dof_enabled, dof_aperture, dof_focus_distance, light_intensity, metal_fuzziness,
@@ -910,6 +1064,7 @@ class RendererOptiXProgressive : public IRenderer
          float old_focus = dof_focus_distance;
          float old_light = light_intensity;
          float old_falloff = light_falloff;
+         float old_indirect_clamp = indirect_clamp;
          float old_background = background_intensity;
          float old_fuzz = metal_fuzziness;
          float old_ior = glass_refraction_index;
@@ -956,13 +1111,13 @@ class RendererOptiXProgressive : public IRenderer
                            &use_sobol, &motion_quality, &motion_despeckle, &motion_despeckle_ratio,
                            volume_mat_idx >= 0 ? &volume_settings : nullptr,
                            &save_camera_request, active_scene.source_file.c_str(), camera_save_status.c_str(),
-                           &light_falloff);
+                           &light_falloff, &indirect_clamp);
 
          if (save_camera_request)
          {
             save_camera_request = false;
             if (Scene::saveViewToYAML(active_scene.source_file.c_str(), look_from, look_at, camera.vfov,
-                                      background_intensity, light_intensity, light_falloff))
+                                      background_intensity, light_intensity, light_falloff, indirect_clamp))
                camera_save_status = "Saved to " + active_scene.source_file;
             else
                camera_save_status = "Could not write " + active_scene.source_file;
@@ -995,9 +1150,12 @@ class RendererOptiXProgressive : public IRenderer
          gui.drawLogo();
          gui.present();
 
-         // Handle scene change from ImGui
+         // Handle scene change from ImGui (may have switched the sky: do not re-apply it below)
          if (current_scene_index != old_scene_index)
+         {
             applySceneSelectionChange();
+            old_hdr_index = current_hdr_index;
+         }
 
          // Handle visualization mode change from ImGui
          if (visualization_mode != old_visualization_mode)
@@ -1014,6 +1172,7 @@ class RendererOptiXProgressive : public IRenderer
          // Detect if ImGui changed rendering parameters
          if (dof_enabled != old_dof || dof_aperture != old_aperture || dof_focus_distance != old_focus ||
              light_intensity != old_light || light_falloff != old_falloff || background_intensity != old_background ||
+             indirect_clamp != old_indirect_clamp ||
              metal_fuzziness != old_fuzz || glass_refraction_index != old_ior || cam_fov_ui != old_cam_fov)
          {
             if (cam_fov_ui != old_cam_fov)

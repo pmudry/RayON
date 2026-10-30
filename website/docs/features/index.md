@@ -46,6 +46,6 @@ a per-triangle BVH on CUDA.
 **[HDR Sky Dome](hdr-sky.md)**
 
 Equirectangular HDRI environments as the sky, cycled at runtime, stored as float16 textures with
-a binary disk cache.
+a binary disk cache; the OptiX interactive mode samples the sun directly (sky importance sampling).
 </div>
 </div>

@@ -39,6 +39,7 @@ class RendererCUDAProgressive : public IRenderer
       bool auto_accumulate = true;
       bool adaptive_sampling = true;
       bool hdr_cache = true; ///< use .hdrcache sidecar to speed up repeated HDR loads
+      std::string sky;       ///< --sky: HDR map to start with (part of its file name), empty = gradient
       GuiTheme theme = GuiTheme::NORD;
       // MIS / NEE options
       bool mis_enabled          = true;  ///< Master MIS toggle
@@ -262,6 +263,46 @@ class RendererCUDAProgressive : public IRenderer
          camera_changed = true;
       };
 
+      // Index of the first HDR label containing `name` (case-insensitive), -1 when none
+      auto findHdrIndex = [&](const std::string &name) -> int {
+         auto lower = [](std::string t) {
+            std::transform(t.begin(), t.end(), t.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            return t;
+         };
+         const std::string wanted = lower(name);
+         for (int i = 1; i < hdr_count; ++i)
+            if (lower(hdr_labels[i]).find(wanted) != std::string::npos)
+               return i;
+         return -1;
+      };
+      // A scene's settings.hdr_sky selects its sky when it is loaded; without one, the gradient sky
+      auto applySceneSky = [&](const Scene::SceneDescription &sc) {
+         int idx = 0;
+         if (!sc.hdr_sky.empty())
+         {
+            idx = findHdrIndex(sc.hdr_sky);
+            if (idx < 0)
+            {
+               std::cerr << "HDR: no sky matching '" << sc.hdr_sky << "' in resources/hdri/ (gradient sky)\n";
+               idx = 0;
+            }
+         }
+         if (idx != current_hdr_index)
+            applyHdrChange(idx);
+      };
+
+      // Starting sky: --sky <name> wins, else the scene's settings.hdr_sky, else the gradient
+      if (!settings_.sky.empty())
+      {
+         const int found = findHdrIndex(settings_.sky);
+         if (found > 0)
+            applyHdrChange(found);
+         else
+            std::cerr << "HDR: no sky matching '" << settings_.sky << "' in resources/hdri/ (gradient sky kept)\n";
+      }
+      else
+         applySceneSky(scene);
+
       // Scene selection: built-ins + all YAML files discovered at runtime.
       struct SceneEntry
       {
@@ -392,6 +433,9 @@ class RendererCUDAProgressive : public IRenderer
          if (!selected.yaml_path.empty())
             std::cout << " (" << selected.yaml_path << ")";
          std::cout << std::endl;
+         // The load and the BVH build block this thread: show what is going on before they start
+         gui.showBusyMessage("Loading " + (selected.yaml_path.empty() ? selected.label : std::filesystem::path(selected.yaml_path).stem().string()) +
+                             " ... building BVH");
 
          if (current_scene_index == 0)
          {
@@ -422,6 +466,7 @@ class RendererCUDAProgressive : public IRenderer
          ::setBackgroundColor((float)active_scene.background_color.x(), (float)active_scene.background_color.y(),
                               (float)active_scene.background_color.z());
          adaptive_sampling_enabled = active_scene.adaptive_sampling;
+         applySceneSky(active_scene);
 
          // Re-scan for procedural patterns so GUI sections update correctly
          scanProceduralPatterns();
@@ -822,10 +867,11 @@ class RendererCUDAProgressive : public IRenderer
          gui.drawLogo();
          gui.present();
 
-         // Handle scene change from UI
+         // Handle scene change from UI (may have switched the sky: do not re-apply it below)
          if (current_scene_index != old_scene_index)
          {
             applySceneSelectionChange();
+            old_hdr_index = current_hdr_index;
          }
 
          // Handle visualization mode change

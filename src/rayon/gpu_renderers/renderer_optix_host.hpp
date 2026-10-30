@@ -44,6 +44,7 @@ extern "C"
    void setOptiXMISEnabled(bool enabled);
    void setOptiXNEEStride(int stride);
    void setOptiXLightFalloff(float falloff);
+   void setOptiXIndirectClamp(float ceiling);
 }
 
 class RendererOptiX : public IRenderer
@@ -65,6 +66,7 @@ class RendererOptiX : public IRenderer
       // Zero the device accumulation buffer — no host↔device transfer needed
       optixRendererResetAccum(frame.image_width, frame.image_height);
       ::setOptiXLightFalloff(request.scene.light_falloff);
+      ::setOptiXIndirectClamp(request.scene.indirect_clamp);
 
       int num_materials = static_cast<int>(request.scene.materials.size());
 

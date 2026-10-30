@@ -449,6 +449,9 @@ static bool loadMaterials(const SimpleYAMLParser &parser, SceneDescription &scen
 
       int mat_id = scene.addMaterial(mat);
       material_name_to_id[mat_name] = mat_id;
+      if (static_cast<int>(scene.material_names.size()) <= mat_id)
+         scene.material_names.resize(mat_id + 1);
+      scene.material_names[mat_id] = mat_name;
    }
 
    return !scene.materials.empty();
@@ -675,8 +678,12 @@ bool loadSceneFromYAML(const char *filename, SceneDescription &scene)
       scene.light_intensity = parser.getFloat("settings.light_intensity", 1.0f);
    if (parser.hasKey("settings.light_falloff"))
       scene.light_falloff = std::max(0.0f, parser.getFloat("settings.light_falloff", 2.0f));
+   if (parser.hasKey("settings.indirect_clamp"))
+      scene.indirect_clamp = std::max(0.0f, parser.getFloat("settings.indirect_clamp", 50.0f));
    if (parser.hasKey("settings.samples_per_batch"))
       scene.samples_per_batch = std::max(0, parser.getInt("settings.samples_per_batch", 0));
+   if (parser.hasKey("settings.hdr_sky"))
+      scene.hdr_sky = removeQuotes(parser.getString("settings.hdr_sky"));
    // Accept both "settings.use_bvh" (canonical) and "scene.use_bvh" (legacy)
    {
       string bvh_raw;
@@ -805,7 +812,7 @@ string fmtNumber(double v)
 } // namespace
 
 bool saveViewToYAML(const char *filename, const Vec3 &position, const Vec3 &look_at, float fov,
-                    float background_intensity, float light_intensity, float light_falloff)
+                    float background_intensity, float light_intensity, float light_falloff, float indirect_clamp)
 {
    ifstream in(filename);
    if (!in)
@@ -821,10 +828,12 @@ bool saveViewToYAML(const char *filename, const Vec3 &position, const Vec3 &look
    auto vec = [](const Vec3 &v)
    { return "[" + fmtNumber(v.x()) + ", " + fmtNumber(v.y()) + ", " + fmtNumber(v.z()) + "]"; };
    setBlockValues(lines, "camera", {{"position", vec(position)}, {"look_at", vec(look_at)}, {"fov", fmtNumber(fov)}});
-   setBlockValues(lines, "settings",
-                  {{"background_intensity", fmtNumber(background_intensity)},
-                   {"light_intensity", fmtNumber(light_intensity)},
-                   {"light_falloff", fmtNumber(light_falloff)}});
+   vector<pair<string, string>> settings = {{"background_intensity", fmtNumber(background_intensity)},
+                                            {"light_intensity", fmtNumber(light_intensity)},
+                                            {"light_falloff", fmtNumber(light_falloff)}};
+   if (indirect_clamp >= 0.0f) // negative: the caller does not manage this setting, leave the file's value
+      settings.push_back({"indirect_clamp", fmtNumber(indirect_clamp)});
+   setBlockValues(lines, "settings", settings);
 
    ofstream out(filename, ios::trunc);
    if (!out)

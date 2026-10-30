@@ -89,6 +89,7 @@ Two per-scene settings adjust all the lights at once, live from the GUI, saved w
 |---|---|---|---|
 | `light_intensity` | *Lights inten.* | 1 | Multiplier on every emission |
 | `light_falloff` | *Lights falloff* | 2 | Distance exponent of the lights' reach |
+| `indirect_clamp` | *Indirect clamp* | 50 | OptiX: per-sample ceiling on indirect light, 0 = off (see [Fireflies](#fireflies)) |
 
 The falloff is an artistic control layered over the physics. Sphere and rectangle lights
 already follow the inverse square law through the geometry; the setting multiplies every light
@@ -131,4 +132,26 @@ in check:
 - the still image clamps each sample's luminance to a ceiling that grows with the sample
   count, so the estimate stays unbiased in the limit;
 - while the camera moves, isolated bright pixels are scaled down at display time (the
-  **Despeckle motion frames** option), which touches the preview only.
+  **Despeckle motion frames** option), which touches the preview only;
+- the sun of an HDR sky, the brightest firefly source of all, is sampled directly by the
+  OptiX interactive mode (sky importance sampling with MIS, see
+  [HDR Sky Dome](hdr-sky.md#sky-importance-sampling)), so it reaches diffuse surfaces through
+  shadow rays rather than by chance;
+- what light sampling cannot reach, the **indirect clamp** (OptiX) holds down: a fixed
+  per-sample ceiling on the light gathered after the first diffuse bounce.
+
+### Indirect clamp (OptiX)
+
+Caustic paths, a light or the sun reaching a diffuse surface through glass or off a mirror,
+cannot be targeted by shadow rays. Under the growing clamp above they still converge, but
+slowly: the ceiling grows as \(\sqrt{N}\) and the hits arrive in proportion to \(N\), so an
+isolated dot keeps an amplitude of \(20/\sqrt{N}\), still visible after tens of thousands of
+samples. The indirect clamp is the same answer as Cycles' *Clamp Indirect*: everything a sample
+gathers after it leaves its first diffuse surface (or its first scattering event in a medium)
+is capped at `indirect_clamp` luminance per sample, 50 by default, 0 to disable. What the
+camera sees directly, through mirrors and glass included, and the shadow rays of that first
+surface are untouched, so lights, highlights and shadows keep their full value. The price is a
+bias on the caustics themselves: a caustic brighter than the ceiling per path (the sun focused
+by a glass sphere, tens of thousands per hit) is dimmed, a caustic from a lamp of emission 25
+is not. The setting is per scene, live in the GUI (*MIS / NEE* section) and saved with the
+camera.
