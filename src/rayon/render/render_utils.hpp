@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <iomanip>
@@ -73,13 +74,15 @@ inline void convertAccumBufferToImage(const RenderTargetView &target, const std:
    }
 }
 
-inline void showProgress(int current, int total)
+/// Progress bar on one terminal line. With `elapsed_s >= 0` the elapsed time and the estimated
+/// remaining time are appended.
+inline void showProgress(int current, int total, double elapsed_s = -1.0)
 {
    using namespace std;
    const int barWidth = 70;
    static int frame = 0;
    const char *spinner = "|/-\\";
-   float progress = (float)(current + 1) / total;
+   float progress = std::min(1.0f, (float)(current + 1) / total);
    int pos = barWidth * progress;
 
    cout << "Rendering: " << spinner[frame++ % 4] << " [";
@@ -90,8 +93,29 @@ inline void showProgress(int current, int total)
       else
          cout << "░";
    }
-   cout << "] " << int(progress * 100.0) << " %\r";
+   cout << "] " << setw(3) << int(progress * 100.0) << " %";
+   if (elapsed_s >= 0.0)
+   {
+      const double remaining = progress > 0.0f ? elapsed_s * (1.0 - progress) / progress : 0.0;
+      cout << "  " << fixed << setprecision(1) << elapsed_s << " s, ~" << remaining << " s left   ";
+      cout.unsetf(ios::fixed);
+   }
+   cout << "\r";
    cout.flush();
+}
+
+/// Size of the next batch of samples of an offline progressive render, chosen so that each
+/// batch takes about `target_s` seconds (the bar then moves smoothly whatever the scene costs).
+/// The first batch is one sample, to measure the per-sample time.
+inline int nextBatchSize(int last_batch, double last_batch_s, int remaining, double target_s = 0.25)
+{
+   if (remaining <= 0)
+      return 0;
+   if (last_batch <= 0)
+      return 1;
+   const double per_sample = last_batch_s / last_batch;
+   const int    n          = per_sample > 0.0 ? static_cast<int>(target_s / per_sample) : remaining;
+   return std::max(1, std::min(n, remaining));
 }
 
 inline std::string timeStr(std::chrono::nanoseconds duration)

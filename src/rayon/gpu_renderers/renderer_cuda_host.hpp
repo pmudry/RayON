@@ -35,17 +35,22 @@ class RendererCUDA : public IRenderer
       void *d_rand_states = nullptr;
       void *d_accum_buffer = nullptr;
 
-      // Render progressively with accumulative samples to show progress
-      const int samples_per_update = std::max(1, frame.samples_per_pixel / 5); // Update progress every 20% of samples
+      // Render in batches sized by time (about half a second each: every batch copies the
+      // accumulation buffer back) so the progress bar moves smoothly
       int samples_completed = 0;
       unsigned long long total_rays = 0;
-      
+      int    last_batch   = 0;
+      double last_batch_s = 0.0;
+      auto   render_start = std::chrono::steady_clock::now();
+
       while (samples_completed < frame.samples_per_pixel)
       {
          int samples_before_batch = samples_completed; // total BEFORE adding this batch
-         int samples_to_add = std::min(samples_per_update, frame.samples_per_pixel - samples_completed);
+         int samples_to_add =
+             render::nextBatchSize(last_batch, last_batch_s, frame.samples_per_pixel - samples_completed, 0.5);
          samples_completed += samples_to_add;
-         
+         auto batch_start = std::chrono::steady_clock::now();
+
          unsigned long long cuda_ray_count = ::renderPixelsCUDAAccumulative(
              nullptr, accum_buffer.data(), gpu_scene, frame.image_width, frame.image_height, frame.camera_center.x(),
              frame.camera_center.y(), frame.camera_center.z(), frame.pixel00_loc.x(), frame.pixel00_loc.y(),
@@ -55,11 +60,14 @@ class RendererCUDA : public IRenderer
              frame.u.z(), frame.v.x(), frame.v.y(), frame.v.z());
          
          total_rays += cuda_ray_count;
-         
-         // Show progress based on samples completed
+
+         const auto now = std::chrono::steady_clock::now();
+         last_batch     = samples_to_add;
+         last_batch_s   = std::chrono::duration<double>(now - batch_start).count();
          float progress = (float)samples_completed / frame.samples_per_pixel;
          int progress_steps = (int)(progress * frame.image_height);
-         render::showProgress(progress_steps, frame.image_height);
+         render::showProgress(progress_steps, frame.image_height,
+                              std::chrono::duration<double>(now - render_start).count());
       }
 
       render::convertAccumBufferToImage(request.target, accum_buffer, frame.samples_per_pixel, context.gamma);

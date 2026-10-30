@@ -66,20 +66,21 @@ class RendererOptiX : public IRenderer
 
       int num_materials = static_cast<int>(request.scene.materials.size());
 
-      // Render in batches with progress updates.
-      // Key optimization: accum buffer stays entirely on GPU across batches.
-      // Only a small launch-params struct (~200 bytes) is uploaded per batch.
-      // Use fewer, larger batches to minimize kernel launch overhead.
-      const int num_batches = 2; // 2 batches: minimal overhead while still showing progress
-      const int samples_per_update = std::max(1, frame.samples_per_pixel / num_batches);
+      // Render in batches sized by time (about a quarter of a second each) so the progress bar
+      // moves smoothly. The accum buffer stays on the GPU across batches; only a small
+      // launch-params struct is uploaded per batch, so many batches cost nothing measurable.
       int samples_completed = 0;
       unsigned long long total_rays = 0;
+      int    last_batch   = 0;
+      double last_batch_s = 0.0;
+      auto   render_start = std::chrono::steady_clock::now();
 
       while (samples_completed < frame.samples_per_pixel)
       {
          int samples_before_batch = samples_completed; // total BEFORE adding this batch
-         int samples_to_add = std::min(samples_per_update, frame.samples_per_pixel - samples_completed);
+         int samples_to_add = render::nextBatchSize(last_batch, last_batch_s, frame.samples_per_pixel - samples_completed);
          samples_completed += samples_to_add;
+         auto batch_start = std::chrono::steady_clock::now();
 
          unsigned long long ray_count = optixRendererLaunch(
              frame.image_width, frame.image_height, num_materials, samples_to_add, samples_before_batch, frame.max_depth,
@@ -101,9 +102,13 @@ class RendererOptiX : public IRenderer
 
          total_rays += ray_count;
 
+         const auto now = std::chrono::steady_clock::now();
+         last_batch     = samples_to_add;
+         last_batch_s   = std::chrono::duration<double>(now - batch_start).count();
          float progress = (float)samples_completed / frame.samples_per_pixel;
          int progress_steps = (int)(progress * frame.image_height);
-         render::showProgress(progress_steps, frame.image_height);
+         render::showProgress(progress_steps, frame.image_height,
+                              std::chrono::duration<double>(now - render_start).count());
       }
 
       // GPU-side gamma correction: converts float4 accum buffer directly to uint8
