@@ -682,6 +682,19 @@ bool loadSceneFromYAML(const char *filename, SceneDescription &scene)
       scene.indirect_clamp = std::max(0.0f, parser.getFloat("settings.indirect_clamp", 50.0f));
    if (parser.hasKey("settings.samples_per_batch"))
       scene.samples_per_batch = std::max(0, parser.getInt("settings.samples_per_batch", 0));
+   if (parser.hasKey("settings.adaptive_threshold"))
+   {
+      // A plain number (0.002) or a fraction of the display range ("0.5/255")
+      string val = removeQuotes(parser.getString("settings.adaptive_threshold", "0"));
+      size_t slash = val.find('/');
+      float threshold = std::strtof(val.c_str(), nullptr);
+      if (slash != string::npos)
+      {
+         float denominator = std::strtof(val.c_str() + slash + 1, nullptr);
+         threshold = denominator > 0.0f ? threshold / denominator : 0.0f;
+      }
+      scene.adaptive_threshold = std::max(0.0f, threshold);
+   }
    if (parser.hasKey("settings.hdr_sky"))
       scene.hdr_sky = removeQuotes(parser.getString("settings.hdr_sky"));
    // Accept both "settings.use_bvh" (canonical) and "scene.use_bvh" (legacy)

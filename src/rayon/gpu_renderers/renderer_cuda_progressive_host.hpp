@@ -120,6 +120,9 @@ class RendererCUDAProgressive : public IRenderer
                                                                                  : settings_.samples_per_batch;
       };
       samples_per_batch_float = static_cast<float>(sceneBatchSize(scene));
+      // A scene may also ask for its own adaptive sampling threshold (settings.adaptive_threshold)
+      auto sceneAdaptiveThreshold = [](const Scene::SceneDescription &sd)
+      { return sd.adaptive_threshold > 0.0f ? sd.adaptive_threshold : 0.01f; }; // 0.01 ~ 2.5/255
       float current_sps = 0.0f;
       float current_ms_per_sample = 0.0f;
       float current_fps = 0.0f;
@@ -188,7 +191,7 @@ class RendererCUDAProgressive : public IRenderer
       void *d_pixel_sample_counts = nullptr; // Per-pixel sample counts (null = disabled)
       bool adaptive_sampling_enabled = scene.adaptive_sampling;
       int min_adaptive_samples = 32;         // Don't check convergence before this many samples
-      float adaptive_threshold = 0.01f;      // Std. error of the pixel mean in display space (~2.5/255)
+      float adaptive_threshold = sceneAdaptiveThreshold(scene); // Std. error of the pixel mean in display space
       const float ADAPTIVE_STOP_PCT = 99.9f; // Stop when this share of pixels has converged
       float convergence_pct = 0.0f;          // % of pixels that have converged (for display)
       bool show_heatmap = false;              // Toggle to display sample count heatmap
@@ -463,6 +466,7 @@ class RendererCUDAProgressive : public IRenderer
          light_intensity      = active_scene.light_intensity;
          light_falloff        = active_scene.light_falloff;
          samples_per_batch_float = static_cast<float>(sceneBatchSize(active_scene));
+         adaptive_threshold      = sceneAdaptiveThreshold(active_scene);
          ::setBackgroundColor((float)active_scene.background_color.x(), (float)active_scene.background_color.y(),
                               (float)active_scene.background_color.z());
          adaptive_sampling_enabled = active_scene.adaptive_sampling;

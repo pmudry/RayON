@@ -174,6 +174,9 @@ class RendererOptiXProgressive : public IRenderer
                                                                                  : settings_.samples_per_batch;
       };
       samples_per_batch_float = static_cast<float>(sceneBatchSize(scene));
+      // A scene may also ask for its own adaptive sampling threshold (settings.adaptive_threshold)
+      auto sceneAdaptiveThreshold = [](const Scene::SceneDescription &sd)
+      { return sd.adaptive_threshold > 0.0f ? sd.adaptive_threshold : 0.01f; }; // 0.01 ~ 2.5/255
       float current_sps = 0.0f;
       float current_ms_per_sample = 0.0f;
       float current_fps = 0.0f;
@@ -213,7 +216,7 @@ class RendererOptiXProgressive : public IRenderer
       bool show_heatmap = false;
       bool adaptive_sampling_enabled = settings_.adaptive_sampling;
       const int min_adaptive_samples = 64;  // Don't check convergence before this many samples
-      float adaptive_threshold = 0.01f;     // Std. error of the pixel mean in display space (~2.5/255)
+      float adaptive_threshold = sceneAdaptiveThreshold(scene); // Std. error of the pixel mean in display space
       const float ADAPTIVE_STOP_PCT = 99.9f; // Stop when this share of pixels has converged
       float convergence_pct = 0.0f;
       int frames_since_convergence_check = 0;
@@ -228,11 +231,12 @@ class RendererOptiXProgressive : public IRenderer
          int  depth = 0;
          bool sobol = true;
          bool adaptive = false;
+         float threshold = 0.0f;
          bool invalidates(const FrameConfig &o) const
          {
             return width != o.width || height != o.height || depth != o.depth || sobol != o.sobol;
          }
-         bool operator!=(const FrameConfig &o) const { return invalidates(o) || adaptive != o.adaptive; }
+         bool operator!=(const FrameConfig &o) const { return invalidates(o) || adaptive != o.adaptive || threshold != o.threshold; }
       };
       FrameConfig last_config{};
 
@@ -569,6 +573,7 @@ class RendererOptiXProgressive : public IRenderer
          light_falloff        = active_scene.light_falloff;
          indirect_clamp       = active_scene.indirect_clamp;
          samples_per_batch_float = static_cast<float>(sceneBatchSize(active_scene));
+         adaptive_threshold      = sceneAdaptiveThreshold(active_scene);
          ::setOptiXBackgroundColor((float)active_scene.background_color.x(), (float)active_scene.background_color.y(),
                                    (float)active_scene.background_color.z());
          applySceneSky(active_scene);
@@ -903,6 +908,7 @@ class RendererOptiXProgressive : public IRenderer
                                                                   : frame.max_depth;
          config.sobol    = use_sobol && !(reduce && motion_quality.fast_sampler);
          config.adaptive = adaptive_sampling_enabled && !reduce;
+         config.threshold = adaptive_threshold;
          const int frame_spp = reduce ? motion_spp : samples_per_batch;
 
          // Configuration changed (e.g. motion cooldown elapsed → back to full resolution): the

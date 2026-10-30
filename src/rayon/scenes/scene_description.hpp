@@ -519,6 +519,7 @@ public:
     std::string source_file;                  // YAML file this scene was loaded from ("" when built in code)
     std::vector<std::string> material_names;  // YAML names, parallel to materials (empty when built in code)
     int samples_per_batch;                    // Interactive samples per batch wanted by the scene (0 = renderer default)
+    float adaptive_threshold;                 // Interactive adaptive sampling threshold wanted by the scene (0 = renderer default)
     
     // Rendering settings
     Vec3 background_color;
@@ -537,6 +538,7 @@ public:
         , camera_look_at(0, 0, -1)
         , camera_up(0, 1, 0)
         , camera_fov(90.0f)
+        , adaptive_threshold(0.0f)
         , background_color(0.5f, 0.7f, 1.0f)
         , background_intensity(1.0f)
         , light_intensity(1.0f)

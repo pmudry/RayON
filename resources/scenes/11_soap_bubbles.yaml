@@ -6,16 +6,20 @@
 # the reflection colors are clearly visible.
 
 camera:
-  position: [3.456, 1.147, 5.677]
-  look_at: [0.053, 0.927, 0]
+  position: [2.801, 1.232, 6.007]
+  look_at: [0.052, 0.616, 0.013]
   up: [0.0, 1.0, 0.0]
   fov: 40
 
 settings:
+  light_intensity: 0.9
+  light_falloff: 2.03
+  indirect_clamp: 50
   background_color: [0.02, 0.02, 0.05]
-  background_intensity: 0.0
+  background_intensity: 0
   use_bvh: true
   adaptive_sampling: false
+  adaptive_threshold: "0.5/255"
 
 materials:
   # Floor
