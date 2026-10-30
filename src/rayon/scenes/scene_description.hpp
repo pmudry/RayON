@@ -20,6 +20,7 @@
 #include <cstring>
 #include <functional>
 #include <iostream>
+#include <cmath>
 
 namespace Scene {
 
@@ -1027,6 +1028,12 @@ private:
         }
 
         constexpr int BVH_BINS = 32;
+        // Bin of a centroid, clamped on both ends: a NaN or infinite centroid (corrupt mesh data)
+        // must not index outside the bins
+        auto binOf = [](float c, float c0, float k) {
+            const float f = k * (c - c0);
+            return (f > 0.0f) ? std::min(BVH_BINS - 1, static_cast<int>(std::min(f, float(BVH_BINS - 1)))) : 0;
+        };
         struct Bin {
             double lo[3] = {1e30, 1e30, 1e30}, hi[3] = {-1e30, -1e30, -1e30};
             int count = 0;
@@ -1037,13 +1044,13 @@ private:
 
         for (int axis = 0; axis < 3; ++axis) {
             const float extent = chi[axis] - clo[axis];
-            if (!(extent > 0.0f))
-                continue; // all centroids in one plane: no split along this axis
+            if (!(extent > 0.0f) || !std::isfinite(extent))
+                continue; // all centroids in one plane (or unbounded): no split along this axis
             const float k = BVH_BINS / extent;
             Bin bins[BVH_BINS];
             for (int i = start; i < end; ++i) {
                 const BVHPrim& p = bvh_prims_[geom_indices[i]];
-                Bin& b = bins[std::min(BVH_BINS - 1, static_cast<int>(k * (p.centroid[axis] - clo[axis])))];
+                Bin& b = bins[binOf(p.centroid[axis], clo[axis], k)];
                 ++b.count;
                 for (int a = 0; a < 3; ++a) {
                     b.lo[a] = std::min(b.lo[a], p.bmin[a]);
@@ -1091,7 +1098,7 @@ private:
             auto mid = std::partition(geom_indices.begin() + start, geom_indices.begin() + end,
                 [&](int g) {
                     const float c = bvh_prims_[g].centroid[best_axis];
-                    return std::min(BVH_BINS - 1, static_cast<int>(k * (c - c0))) < best_bin;
+                    return binOf(c, c0, k) < best_bin;
                 });
             split_idx = static_cast<int>(mid - geom_indices.begin());
             if (split_idx == start || split_idx == end)
