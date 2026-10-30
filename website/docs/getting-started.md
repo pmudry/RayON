@@ -169,6 +169,7 @@ The 24 scenes in `resources/scenes/` double as a feature tour. Load any of them 
 | `17_cloud_bunny.yaml` | The volume material: the bunny as a cumulus, procedural shape noise |
 | `18_sdf_shapes.yaml` | Gallery of the ten ray-marched SDF primitives in a studio room |
 | `19_vdb_bunny.yaml` | The OpenVDB `bunny_cloud` density grid (needs a one-time conversion, see [Volumes](features/volumes.md)) |
+| `20_emissive_mesh.yaml` | A glowing OBJ bunny beside a tiny bulb: emissive meshes light the scene through bounces, NEE samples only the bulb |
 | `bvh_stress_courtyard.yaml` | 385 metallic spheres in a pyramid, a BVH stress test |
 | `99_gnd.yaml` | Scratch scene |
 

@@ -1,0 +1,120 @@
+# Emissive mesh next to a small light
+#
+# The dark room of 16_nee_small_light.yaml with a faintly glowing bunny (bunny-3.obj, ~22k
+# triangles, a "light" material) beside the five matte spheres. Next event estimation can only
+# sample spheres and rectangles: the bunny's triangles are left out of the light list and reach
+# the image through ordinary bounces, while the tiny bulb keeps all the shadow rays. (When every
+# emissive triangle joined the CUDA light list, the bulb was almost never sampled and this scene
+# was several times slower and far noisier.)
+#
+#   ./rayon -m 2 -s 64 --scene ../resources/scenes/20_emissive_mesh.yaml
+
+scene:
+  name: "Emissive mesh"
+  description: "Glowing bunny mesh beside a tiny bulb: only the bulb is sampled by next event estimation"
+
+  camera:
+    position: [0.0, 1.6, 5.2]
+    look_at: [0.0, 0.7, 0.0]
+    up: [0.0, 1.0, 0.0]
+    fov: 40.0
+
+settings:
+  background_color: [0.0, 0.0, 0.0]
+  background_intensity: 0.0
+  use_bvh: true
+
+materials:
+  - name: "floor"
+    type: "lambertian"
+    albedo: [0.72, 0.72, 0.70]
+
+  - name: "back_wall"
+    type: "lambertian"
+    albedo: [0.62, 0.64, 0.68]
+
+  - name: "isc_rose"
+    type: "lambertian"
+    albedo: [0.886, 0.671, 0.729]
+
+  - name: "isc_blue"
+    type: "lambertian"
+    albedo: [0.549, 0.776, 0.902]
+
+  - name: "isc_yellow"
+    type: "lambertian"
+    albedo: [0.969, 0.945, 0.624]
+
+  - name: "isc_green"
+    type: "lambertian"
+    albedo: [0.596, 0.780, 0.749]
+
+  - name: "isc_violet"
+    type: "lambertian"
+    albedo: [0.659, 0.565, 0.753]
+
+  # Tiny emitter: a 6 cm radius bulb, very bright. Radiance chosen so the floor gets the
+  # same irradiance as from the former 12 cm square panel (L * pi * r^2 = 900 * 0.0144).
+  - name: "pin_light"
+    type: "light"
+    emission: [1150.0, 1050.0, 900.0]
+    albedo: [1.0, 1.0, 1.0]
+
+  - name: "glow"
+    type: "light"
+    emission: [0.9, 0.75, 1.2]   # soft violet glow over ~22k triangles
+
+geometry:
+  # bunny-3.obj (x [-0.94, 0.61], y [0.33, 1.86], z [-0.61, 0.59]) stands on the floor at the back
+  # left, beside the rose sphere and in front of the wall it lights up
+  - type: "obj"
+    material: "glow"
+    file: "../models/bunny-3.obj"
+    position: [-3.1, -0.33, -2.2]
+    scale: [1, 1, 1]
+
+  # Floor
+  - type: "rectangle"
+    material: "floor"
+    corner: [-6.0, 0.0, -6.0]
+    u: [12.0, 0.0, 0.0]
+    v: [0.0, 0.0, 12.0]
+
+  # Back wall
+  - type: "rectangle"
+    material: "back_wall"
+    corner: [-6.0, 0.0, -3.0]
+    u: [12.0, 0.0, 0.0]
+    v: [0.0, 6.0, 0.0]
+
+  # Matte spheres, close together so they shadow each other
+  - type: "sphere"
+    material: "isc_rose"
+    center: [-1.6, 0.6, -0.4]
+    radius: 0.6
+
+  - type: "sphere"
+    material: "isc_blue"
+    center: [0.0, 0.75, -0.8]
+    radius: 0.75
+
+  - type: "sphere"
+    material: "isc_yellow"
+    center: [1.5, 0.5, 0.2]
+    radius: 0.5
+
+  - type: "sphere"
+    material: "isc_green"
+    center: [-0.6, 0.3, 1.0]
+    radius: 0.3
+
+  - type: "sphere"
+    material: "isc_violet"
+    center: [0.8, 0.3, 1.2]
+    radius: 0.3
+
+  # The light: a small bulb 2.8 m up (a sphere light samples in all directions)
+  - type: "sphere"
+    material: "pin_light"
+    center: [0.0, 2.8, -0.2]
+    radius: 0.06
