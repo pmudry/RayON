@@ -1,0 +1,67 @@
+# Caustic ring (OptiX caustic pass)
+#
+# The cup caustic: a mirror ring (an open cylinder, resources/models/caustic_ring.obj, made by
+# scripts/generate_caustic_ring.py) lit from the side by a small, bright lamp. Its inner wall
+# focuses the light into the cusped curve seen at the bottom of a cup of coffee (a nephroid),
+# and two glass balls focus it into bright spots on the floor behind them. The lamp is tiny, so the
+# camera paths alone almost never find this light: compare
+#   ./rayon -m 4 -s 256 --scene ../resources/scenes/22_caustic_ring.yaml
+#   ./rayon -m 4 -s 256 --scene ../resources/scenes/22_caustic_ring.yaml --no-caustics
+
+scene:
+  name: "Caustic ring"
+  description: "Mirror ring and glass balls under a small low lamp: a nephroid and focused spots"
+
+camera:
+  position: [0.5, 3.6, 3.3]
+  look_at: [0.0, 0.0, 0.0]
+  up: [0.0, 1.0, 0.0]
+  fov: 44.0
+
+settings:
+  background_color: [0.0, 0.0, 0.0]
+  background_intensity: 0.0
+  use_bvh: true
+
+materials:
+  - name: "floor"
+    type: "lambertian"
+    albedo: [0.72, 0.70, 0.66]
+  - name: "chrome"
+    type: "mirror"
+    albedo: [0.95, 0.93, 0.88]
+  - name: "glass"
+    type: "glass"
+    refractive_index: 1.5
+  - name: "lamp"
+    type: "light"
+    emission: [9000.0, 8100.0, 6800.0]
+
+geometry:
+  - type: "rectangle"
+    material: "floor"
+    corner: [-8.0, 0.0, -8.0]
+    u: [16.0, 0.0, 0.0]
+    v: [0.0, 0.0, 16.0]
+
+  # Mirror ring: radius 1, height 0.45, centred on the origin
+  - type: "obj"
+    material: "chrome"
+    file: "../models/caustic_ring.obj"
+    position: [0.0, 0.0, 0.0]
+    scale: [1, 1, 1]
+
+  - type: "sphere"
+    material: "glass"
+    center: [1.5, 0.4, 1.05]
+    radius: 0.4
+  - type: "sphere"
+    material: "glass"
+    center: [1.6, 0.3, -1.05]
+    radius: 0.3
+
+  # The lamp: 5 cm, low on the right
+  - type: "sphere"
+    material: "lamp"
+    center: [5.5, 1.5, 0.0]
+    radius: 0.05
