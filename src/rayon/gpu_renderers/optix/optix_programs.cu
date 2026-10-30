@@ -710,6 +710,186 @@ __device__ float volume_nee_transmittance_optix(const OptixMaterialData &m, floa
    return T;
 }
 
+/// Materials whose scattering is not estimated by NEE (mirrors, metals, glass, thin films): the
+/// links of a caustic chain. Clear coat is left out (its diffuse lobe takes NEE).
+__device__ __forceinline__ bool is_caustic_specular_optix(OptixMaterialType t)
+{
+   return t == OptixMaterialType::MIRROR || t == OptixMaterialType::METAL || t == OptixMaterialType::ROUGH_MIRROR ||
+          t == OptixMaterialType::GLASS || t == OptixMaterialType::DIELECTRIC ||
+          t == OptixMaterialType::ANISOTROPIC_METAL || t == OptixMaterialType::THIN_FILM;
+}
+
+/// Scattering of the caustic-specular materials, shared by the camera paths (raygen) and the light
+/// paths of the caustic pass. rnd() returns the next uniform variate (Sobol for the camera, PCG for
+/// the light); the draws happen in the same order for both. Returns false when the path ends.
+template <typename Rng>
+__device__ __forceinline__ bool scatter_specular_optix(const OptixMaterialData &mat, const PRDRadiance &prd,
+                                                       const float3 &cur_direction, Rng &&rnd, float3 &scatter_dir,
+                                                       float3 &attenuation)
+{
+   bool did_scatter = false;
+   if (mat.type == OptixMaterialType::MIRROR)
+   {
+      float3 unit_dir = normalize3(cur_direction);
+      scatter_dir = reflect3(unit_dir, prd.hit_normal);
+      attenuation = prd.hit_color;
+      did_scatter = (dot3(scatter_dir, prd.hit_normal) > 0.0f);
+   }
+   else if (mat.type == OptixMaterialType::ROUGH_MIRROR ||
+            mat.type == OptixMaterialType::METAL) // METAL honours its roughness, as in CUDA
+   {
+      float3 unit_dir = normalize3(cur_direction);
+      float eff_roughness = mat.roughness * params.metal_fuzziness;
+      float u1 = rnd();
+      float u2 = rnd();
+      float u3 = rnd();  // cube root radial
+      float z  = 2.0f * u1 - 1.0f;
+      float r  = sqrtf(fmaxf(0.0f, 1.0f - z * z));
+      float phi = 6.283185307f * u2;
+      float t   = cbrtf(u3);
+      float3 perturb = make_float3(r * __cosf(phi) * t, r * __sinf(phi) * t, z * t);
+      float3 perturbed_n = normalize3(prd.hit_normal + eff_roughness * perturb);
+      scatter_dir = reflect3(unit_dir, perturbed_n);
+      attenuation = prd.hit_color;
+      did_scatter = (dot3(scatter_dir, prd.hit_normal) > 0.0f);
+   }
+   else if (mat.type == OptixMaterialType::GLASS ||
+            mat.type == OptixMaterialType::DIELECTRIC)
+   {
+      attenuation = make_float3(1.0f, 1.0f, 1.0f);
+      float eff_ior = mat.refractive_index * params.glass_ior_multiplier;
+      float ri = prd.front_face ? (1.0f / eff_ior) : eff_ior;
+
+      float3 unit_dir = normalize3(cur_direction);
+      float cos_theta = fminf(dot3(-unit_dir, prd.hit_normal), 1.0f);
+      float sin_theta = sqrtf(1.0f - cos_theta * cos_theta);
+
+      bool cannot_refract = ri * sin_theta > 1.0f;
+      if (cannot_refract || reflectance(cos_theta, ri) > rnd())
+      {
+         scatter_dir = reflect3(unit_dir, prd.hit_normal);
+      }
+      else
+      {
+         scatter_dir = refract3(unit_dir, prd.hit_normal, ri);
+      }
+      did_scatter = true;
+   }
+   else if (mat.type == OptixMaterialType::ANISOTROPIC_METAL)
+   {
+      // Full anisotropic GGX microfacet conductor (PBR Book §9.6)
+      float aspect = sqrtf(fmaxf(1e-4f, 1.0f - 0.9f * mat.anisotropy));
+      float r2 = mat.roughness * mat.roughness;
+      float alpha_x = fmaxf(1e-4f, r2 / aspect);
+      float alpha_y = fmaxf(1e-4f, r2 * aspect);
+
+      float3 N = prd.hit_normal;
+
+      if (fmaxf(alpha_x, alpha_y) < 1e-3f)
+      {
+         // Nearly smooth: perfect mirror with complex Fresnel tint
+         float3 unit_dir = normalize3(cur_direction);
+         scatter_dir = reflect3(unit_dir, N);
+         float cos_i = fmaxf(dot3(-unit_dir, N), 0.0f);
+         attenuation = prd.hit_color * FrComplex_opt(cos_i, mat.eta, mat.k);
+         did_scatter = dot3(scatter_dir, N) > 0.0f;
+      }
+      else
+      {
+         // Build TBN frame
+         float3 T = normalize3(prd.hit_tangent - dot3(prd.hit_tangent, N) * N);
+         float3 B = cross3(N, T);
+
+         // Outgoing direction (toward viewer) in local shading space
+         float3 wo_world = normalize3(-cur_direction);
+         float3 wo_local = make_float3(dot3(wo_world, T), dot3(wo_world, B), dot3(wo_world, N));
+
+         if (wo_local.z > 0.0f)
+         {
+            // Sample microfacet normal via VNDF
+            float3 wm = Sample_wm_GGX_opt(wo_local, alpha_x, alpha_y, rnd(), rnd());
+
+            // Reflect incoming direction around microfacet normal to get wi
+            float3 wi_local = reflect3(make_float3(-wo_local.x, -wo_local.y, -wo_local.z), wm);
+
+            if (wi_local.z > 0.0f)
+            {
+               // Transform wi back to world space
+               float3 wi_world = wi_local.x * T + wi_local.y * B + wi_local.z * N;
+
+               // Fresnel + VNDF weighting: F * G / G1
+               float cos_theta_i = fmaxf(dot3(wo_local, wm), 0.0f);
+               float3 F = FrComplex_opt(cos_theta_i, mat.eta, mat.k);
+               float G = G_GGX_opt(wo_local, wi_local, alpha_x, alpha_y);
+               float G1 = G1_GGX_opt(wo_local, alpha_x, alpha_y);
+
+               attenuation = prd.hit_color * F * (G / fmaxf(G1, 1e-6f));
+               scatter_dir = wi_world;
+               did_scatter = true;
+            }
+         }
+      }
+   }
+   else if (mat.type == OptixMaterialType::THIN_FILM)
+   {
+      // Full Airy thin-film interference (soap bubbles / oil slicks).
+      // Stochastic reflect/transmit sampled from per-wavelength reflectance.
+      float3 unit_dir = normalize3(cur_direction);
+      float cos_i = fmaxf(fabsf(dot3(-unit_dir, prd.hit_normal)), 0.001f);
+
+      float n0 = mat.refractive_index; // exterior medium (air ≈ 1.0)
+      float n1 = mat.film_ior;         // film (soap/water ≈ 1.33)
+      float d  = mat.film_thickness;   // film thickness in nm
+
+      float sin_i = sqrtf(fmaxf(0.0f, 1.0f - cos_i * cos_i));
+      float sin_t_sq = (n0 / n1) * (n0 / n1) * (1.0f - cos_i * cos_i);
+      float cos_t = (sin_t_sq >= 1.0f) ? 0.0f : sqrtf(1.0f - sin_t_sq);
+      (void)sin_i;
+
+      float r01_v = (n0 - n1) / (n0 + n1); r01_v *= r01_v;
+      float x01 = 1.0f - cos_i;
+      float R01 = r01_v + (1.0f - r01_v) * (x01 * x01 * x01 * x01 * x01);
+
+      float r12_v = (n1 - n0) / (n1 + n0); r12_v *= r12_v;
+      float x12 = 1.0f - cos_t;
+      float R12 = r12_v + (1.0f - r12_v) * (x12 * x12 * x12 * x12 * x12);
+
+      // Product of the two amplitude coefficients r01 * r12. For a film between two media of
+      // the same index (soap in air) r12 = -r01, so it is negative: the reflection on the
+      // denser side carries a pi phase shift and a vanishing film turns black.
+      float rr = -sqrtf(R01 * R12);
+
+      // Airy formula for a single wavelength lambda (nm)
+      auto airy = [&](float lambda) -> float {
+         float delta = (4.0f * M_PIf * n1 * d * cos_t) / lambda;
+         float c = cosf(delta);
+         float num = R01 + R12 + 2.0f * rr * c;
+         float den = 1.0f + R01 * R12 + 2.0f * rr * c;
+         return num / fmaxf(den, 1e-8f);
+      };
+
+      float Rr = airy(650.0f), Rg = airy(550.0f), Rb = airy(450.0f);
+      float avg_R = (Rr + Rg + Rb) / 3.0f;
+
+      if (rnd() < avg_R)
+      {
+         // Reflect — carry iridescent color
+         scatter_dir = reflect3(unit_dir, prd.hit_normal);
+         attenuation = make_float3(Rr, Rg, Rb) * (1.0f / fmaxf(avg_R, 0.001f));
+         did_scatter = (dot3(scatter_dir, prd.hit_normal) > 0.0f);
+      }
+      else
+      {
+         // Transmit — pass straight through
+         scatter_dir = unit_dir;
+         attenuation = make_float3(1.0f - Rr, 1.0f - Rg, 1.0f - Rb)
+                       * (1.0f / fmaxf(1.0f - avg_R, 0.001f));
+         did_scatter = true;
+      }
+   }
+   return did_scatter;
+}
+
 extern "C" __global__ void __raygen__rg()
 {
    // One thread per pixel, looping over the batch's samples. (A width x height x spp launch with
@@ -1143,164 +1323,10 @@ extern "C" __global__ void __raygen__rg()
             attenuation = prd.hit_color;
             did_scatter = true;
          }
-         else if (mat.type == OptixMaterialType::MIRROR)
+         else if (is_caustic_specular_optix(mat.type))
          {
-            float3 unit_dir = normalize3(cur_direction);
-            scatter_dir = reflect3(unit_dir, prd.hit_normal);
-            attenuation = prd.hit_color;
-            did_scatter = (dot3(scatter_dir, prd.hit_normal) > 0.0f);
-         }
-         else if (mat.type == OptixMaterialType::ROUGH_MIRROR ||
-                  mat.type == OptixMaterialType::METAL) // METAL honours its roughness, as in CUDA
-         {
-            float3 unit_dir = normalize3(cur_direction);
-            float eff_roughness = mat.roughness * params.metal_fuzziness;
-            float u1 = sobol_rand_float(ss, seed);
-            float u2 = sobol_rand_float(ss, seed);
-            float u3 = sobol_rand_float(ss, seed);  // cube root radial
-            float z  = 2.0f * u1 - 1.0f;
-            float r  = sqrtf(fmaxf(0.0f, 1.0f - z * z));
-            float phi = 6.283185307f * u2;
-            float t   = cbrtf(u3);
-            float3 perturb = make_float3(r * __cosf(phi) * t, r * __sinf(phi) * t, z * t);
-            float3 perturbed_n = normalize3(prd.hit_normal + eff_roughness * perturb);
-            scatter_dir = reflect3(unit_dir, perturbed_n);
-            attenuation = prd.hit_color;
-            did_scatter = (dot3(scatter_dir, prd.hit_normal) > 0.0f);
-         }
-         else if (mat.type == OptixMaterialType::GLASS ||
-                  mat.type == OptixMaterialType::DIELECTRIC)
-         {
-            attenuation = make_float3(1.0f, 1.0f, 1.0f);
-            float eff_ior = mat.refractive_index * params.glass_ior_multiplier;
-            float ri = prd.front_face ? (1.0f / eff_ior) : eff_ior;
-
-            float3 unit_dir = normalize3(cur_direction);
-            float cos_theta = fminf(dot3(-unit_dir, prd.hit_normal), 1.0f);
-            float sin_theta = sqrtf(1.0f - cos_theta * cos_theta);
-
-            bool cannot_refract = ri * sin_theta > 1.0f;
-            if (cannot_refract || reflectance(cos_theta, ri) > sobol_rand_float(ss, seed))
-            {
-               scatter_dir = reflect3(unit_dir, prd.hit_normal);
-            }
-            else
-            {
-               scatter_dir = refract3(unit_dir, prd.hit_normal, ri);
-            }
-            did_scatter = true;
-         }
-         else if (mat.type == OptixMaterialType::ANISOTROPIC_METAL)
-         {
-            // Full anisotropic GGX microfacet conductor (PBR Book §9.6)
-            float aspect = sqrtf(fmaxf(1e-4f, 1.0f - 0.9f * mat.anisotropy));
-            float r2 = mat.roughness * mat.roughness;
-            float alpha_x = fmaxf(1e-4f, r2 / aspect);
-            float alpha_y = fmaxf(1e-4f, r2 * aspect);
-
-            float3 N = prd.hit_normal;
-
-            if (fmaxf(alpha_x, alpha_y) < 1e-3f)
-            {
-               // Nearly smooth: perfect mirror with complex Fresnel tint
-               float3 unit_dir = normalize3(cur_direction);
-               scatter_dir = reflect3(unit_dir, N);
-               float cos_i = fmaxf(dot3(-unit_dir, N), 0.0f);
-               attenuation = prd.hit_color * FrComplex_opt(cos_i, mat.eta, mat.k);
-               did_scatter = dot3(scatter_dir, N) > 0.0f;
-            }
-            else
-            {
-               // Build TBN frame
-               float3 T = normalize3(prd.hit_tangent - dot3(prd.hit_tangent, N) * N);
-               float3 B = cross3(N, T);
-
-               // Outgoing direction (toward viewer) in local shading space
-               float3 wo_world = normalize3(-cur_direction);
-               float3 wo_local = make_float3(dot3(wo_world, T), dot3(wo_world, B), dot3(wo_world, N));
-
-               if (wo_local.z > 0.0f)
-               {
-                  // Sample microfacet normal via VNDF
-                  float3 wm = Sample_wm_GGX_opt(wo_local, alpha_x, alpha_y, sobol_rand_float(ss, seed), sobol_rand_float(ss, seed));
-
-                  // Reflect incoming direction around microfacet normal to get wi
-                  float3 wi_local = reflect3(make_float3(-wo_local.x, -wo_local.y, -wo_local.z), wm);
-
-                  if (wi_local.z > 0.0f)
-                  {
-                     // Transform wi back to world space
-                     float3 wi_world = wi_local.x * T + wi_local.y * B + wi_local.z * N;
-
-                     // Fresnel + VNDF weighting: F * G / G1
-                     float cos_theta_i = fmaxf(dot3(wo_local, wm), 0.0f);
-                     float3 F = FrComplex_opt(cos_theta_i, mat.eta, mat.k);
-                     float G = G_GGX_opt(wo_local, wi_local, alpha_x, alpha_y);
-                     float G1 = G1_GGX_opt(wo_local, alpha_x, alpha_y);
-
-                     attenuation = prd.hit_color * F * (G / fmaxf(G1, 1e-6f));
-                     scatter_dir = wi_world;
-                     did_scatter = true;
-                  }
-               }
-            }
-         }
-         else if (mat.type == OptixMaterialType::THIN_FILM)
-         {
-            // Full Airy thin-film interference (soap bubbles / oil slicks).
-            // Stochastic reflect/transmit sampled from per-wavelength reflectance.
-            float3 unit_dir = normalize3(cur_direction);
-            float cos_i = fmaxf(fabsf(dot3(-unit_dir, prd.hit_normal)), 0.001f);
-
-            float n0 = mat.refractive_index; // exterior medium (air ≈ 1.0)
-            float n1 = mat.film_ior;         // film (soap/water ≈ 1.33)
-            float d  = mat.film_thickness;   // film thickness in nm
-
-            float sin_i = sqrtf(fmaxf(0.0f, 1.0f - cos_i * cos_i));
-            float sin_t_sq = (n0 / n1) * (n0 / n1) * (1.0f - cos_i * cos_i);
-            float cos_t = (sin_t_sq >= 1.0f) ? 0.0f : sqrtf(1.0f - sin_t_sq);
-            (void)sin_i;
-
-            float r01_v = (n0 - n1) / (n0 + n1); r01_v *= r01_v;
-            float x01 = 1.0f - cos_i;
-            float R01 = r01_v + (1.0f - r01_v) * (x01 * x01 * x01 * x01 * x01);
-
-            float r12_v = (n1 - n0) / (n1 + n0); r12_v *= r12_v;
-            float x12 = 1.0f - cos_t;
-            float R12 = r12_v + (1.0f - r12_v) * (x12 * x12 * x12 * x12 * x12);
-
-            // Product of the two amplitude coefficients r01 * r12. For a film between two media of
-            // the same index (soap in air) r12 = -r01, so it is negative: the reflection on the
-            // denser side carries a pi phase shift and a vanishing film turns black.
-            float rr = -sqrtf(R01 * R12);
-
-            // Airy formula for a single wavelength lambda (nm)
-            auto airy = [&](float lambda) -> float {
-               float delta = (4.0f * M_PIf * n1 * d * cos_t) / lambda;
-               float c = cosf(delta);
-               float num = R01 + R12 + 2.0f * rr * c;
-               float den = 1.0f + R01 * R12 + 2.0f * rr * c;
-               return num / fmaxf(den, 1e-8f);
-            };
-
-            float Rr = airy(650.0f), Rg = airy(550.0f), Rb = airy(450.0f);
-            float avg_R = (Rr + Rg + Rb) / 3.0f;
-
-            if (sobol_rand_float(ss, seed) < avg_R)
-            {
-               // Reflect — carry iridescent color
-               scatter_dir = reflect3(unit_dir, prd.hit_normal);
-               attenuation = make_float3(Rr, Rg, Rb) * (1.0f / fmaxf(avg_R, 0.001f));
-               did_scatter = (dot3(scatter_dir, prd.hit_normal) > 0.0f);
-            }
-            else
-            {
-               // Transmit — pass straight through
-               scatter_dir = unit_dir;
-               attenuation = make_float3(1.0f - Rr, 1.0f - Rg, 1.0f - Rb)
-                             * (1.0f / fmaxf(1.0f - avg_R, 0.001f));
-               did_scatter = true;
-            }
+            did_scatter = scatter_specular_optix(mat, prd, cur_direction, [&]() { return sobol_rand_float(ss, seed); },
+                                                 scatter_dir, attenuation);
          }
          else if (mat.type == OptixMaterialType::CLEAR_COAT)
          {
