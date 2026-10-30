@@ -81,6 +81,7 @@ struct ProgramArgs
    int  nee_stride            = 1; // NEE every sample: a stride trades a few % of time for much more noise
    const char *scene_file = nullptr;
    const char *theme = nullptr;
+   const char *output_file = nullptr; // -o: write the image there only (no latest.png, no timestamped copy)
 };
 
 void dumpHelp()
@@ -102,6 +103,8 @@ void dumpHelp()
    cout << "\n";
    cout << "Offline rendering (modes 2, 4):\n";
    cout << "  -s <samples>              Samples per pixel (default: " << SAMPLES_PER_PIXEL << ")\n";
+   cout << "  -o <file.png>             Write the image to this file only (default: rendered_images/latest.png\n"
+           "                            plus a timestamped copy with its render statistics)\n";
    cout << "\n";
    cout << "Interactive rendering (modes 3, 5):\n";
    cout << "  --samples-per-batch <n>   Samples per batch, overrides the scene's settings.samples_per_batch\n"
@@ -248,6 +251,10 @@ ProgramArgs parseInput(int argc, char *argv[])
             args.samples = -1;
             return args;
          }
+      }
+      else if (strcmp(argv[i], "-o") == 0 && i + 1 < argc)
+      {
+         args.output_file = argv[++i];
       }
       else if (strcmp(argv[i], "--scene") == 0 && i + 1 < argc)
       {
@@ -503,6 +510,12 @@ int main(int argc, char *argv[])
           static_cast<long long>(std::llround(static_cast<double>(camera.n_rays.load()) / render_seconds));
 
    cout << "Rays/sec: " << rays_per_second_int << "\n";
+
+   if (args.output_file)
+   {
+      utils::FileUtils::writeImage(localImage, camera.image_width, camera.image_height, args.output_file);
+      return 0;
+   }
 
    const string output_path = utils::FileUtils::buildTimestampedOutputPath();
 

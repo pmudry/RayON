@@ -28,6 +28,10 @@ cd build && cmake .. -DCMAKE_BUILD_TYPE=Debug && make -j && cd ..
 
 After adding new files/directories under `src/`, re-run `cmake .. --fresh` to update includes and `.clangd`.
 
+Image regression test (renders are deterministic): `scripts/regress.sh` renders 10 scenes in modes 2
+and 4 and compares them with `tests/regression/`; after an intended visual change, inspect the diffs
+and refresh the references with `scripts/regress.sh --update`.
+
 ## Code Style
 
 - **Formatter**: `.clang-format` — LLVM base, 120-column limit, 3-space indent, Allman braces, no tabs
@@ -114,6 +118,7 @@ CPU uses `double` (Vec3), GPU uses `float` — conversion at kernel boundary.
 -s <samples>             # Samples per pixel for offline modes (default: SAMPLES_PER_PIXEL)
 -r <WxH>|<height>        # Resolution: WxH (e.g. 1920x1080) or height for 16:9 (e.g. 720)
 --scene <yaml_file>      # Load scene from YAML (files live under resources/scenes/)
+-o <file.png>            # Offline modes: write the image there only (no latest.png / timestamped copy)
 --sampler <sobol|pcg>    # GPU sampler (default: sobol)
 --no-hdr-cache           # Always re-decode .hdr skies (no .hdrcache)
 --sky <name>             # Interactive modes: start with this HDR sky of resources/hdri/ (part of the file name)
