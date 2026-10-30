@@ -277,6 +277,33 @@ outside the surface; the CUDA backend keeps the mesh as the boundary (lumps only
   billow: 0.7
 ```
 
+**Density from data.** Instead of a mesh and noise, the material can read a dense density
+grid converted from OpenVDB (sample models, Blender smoke caches) with
+`tools/vdb_to_volume.py`; see `resources/volumes/README.md`. The material then needs no
+geometry: the loader adds the grid's box as the medium boundary, and `edge`, `lumps`, `billow`
+are ignored (the grid holds the shape; `noise_strength` defaults to 0).
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `grid` | — | Path of the `.vol` file (relative to the scene file) |
+| `grid_scale` | `1.0` | Scene units per grid unit |
+| `grid_position` | `[0, 0, 0]` | World offset added to the scaled grid coordinates |
+
+The grid values are normalised to [0, 1]; `density` is the extinction per scene unit where the
+grid reads 1. No empty-space skipping applies to grids, so sparse grids render slower than
+the procedural volume at the same density.
+
+```yaml
+- name: "cloud"
+  type: "volume"
+  grid: "../volumes/bunny_cloud.vol"
+  grid_scale: 0.0656
+  grid_position: [0.06, -1.25, -0.06]
+  albedo: [0.99, 0.99, 0.99]
+  density: 60.0
+  g: 0.5
+```
+
 ### Procedural patterns
 
 Any `lambertian` material can carry an optional `pattern` sub-block.

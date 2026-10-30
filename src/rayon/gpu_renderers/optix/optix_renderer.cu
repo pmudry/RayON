@@ -505,7 +505,19 @@ static void buildGAS(const Scene::SceneDescription &scene)
    for (int i = 0; i < static_cast<int>(scene.materials.size()); ++i)
    {
       const auto &m = scene.materials[i];
-      if (m.type != Scene::MaterialType::VOLUME || m.edge <= 0.0f)
+      if (m.type != Scene::MaterialType::VOLUME)
+         continue;
+      if (!m.grid_file.empty())
+      {
+         // Density grid from data: the grid's own box, unpadded (the loader's box mesh is not traced)
+         VolumeBox box{};
+         box.lo = toFloat3(m.grid_min);
+         box.hi = toFloat3(m.grid_max);
+         if (loadVolumeGrid(m.grid_file, box.lo, box.hi, box.vp))
+            volume_boxes[i] = box;
+         continue;
+      }
+      if (m.edge <= 0.0f)
          continue;
       std::vector<float3> tris;
       for (const auto &g : scene.geometries)
@@ -870,12 +882,16 @@ static void buildGAS(const Scene::SceneDescription &scene)
          auto vb = volume_boxes.find(i);
          if (vb != volume_boxes.end())
          {
-            // Bind the distance grid built with the box geometry above
+            // Bind the distance grid built with the box geometry above (or the data grid)
             materials[i].volume.sdf            = vb->second.vp.sdf;
             materials[i].volume.sdf_array      = vb->second.vp.sdf_array;
             materials[i].volume.sdf_min        = vb->second.vp.sdf_min;
             materials[i].volume.sdf_inv_extent = vb->second.vp.sdf_inv_extent;
-            bakeVolumeField(materials[i].volume, VOLUME_FIELD_CELLS);
+            materials[i].volume.field          = vb->second.vp.field;
+            materials[i].volume.field_array    = vb->second.vp.field_array;
+            materials[i].volume.field_dims     = vb->second.vp.field_dims;
+            if (materials[i].volume.sdf != 0)
+               bakeVolumeField(materials[i].volume, VOLUME_FIELD_CELLS);
          }
          materials[i].texture_id = m.texture_id;
       }

@@ -6,6 +6,7 @@
  */
 
 #include "volume_params.h"
+#include <string>
 #include <vector>
 
 /**
@@ -26,6 +27,15 @@ bool buildVolumeSDF(const std::vector<float3> &tris, int max_cells, float pad, V
  * change (a few milliseconds). Needs vp.sdf; a no-op otherwise.
  */
 void bakeVolumeField(VolumeParams &vp, int max_cells);
+
+/**
+ * @brief Bind a density grid read from a `.vol` file (tools/vdb_to_volume.py) as the extinction
+ * field of `vp`, over the world box [lo, hi]. The values are already in [0, 1]; outside the box
+ * the field reads 0. No distance grid is built (vp.sdf stays 0: no empty-space skipping), and
+ * bakeVolumeField() leaves the grid alone, so the GUI's noise sliders have no effect on it.
+ * @return false when the file cannot be read or the texture allocated (vp.field stays 0)
+ */
+bool loadVolumeGrid(const std::string &path, float3 lo, float3 hi, VolumeParams &vp);
 
 /// Release the textures and arrays bound by buildVolumeSDF / bakeVolumeField
 void freeVolumeSDF(VolumeParams &vp);

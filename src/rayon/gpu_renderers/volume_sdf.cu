@@ -4,6 +4,7 @@
  */
 
 #include "volume_sdf.cuh"
+#include "volume_grid.hpp"
 #include "volume_medium.cuh"
 #include <algorithm>
 #include <cmath>
@@ -142,10 +143,11 @@ __global__ void bakeFieldKernel(VolumeParams vp, int3 dims, float *__restrict__ 
    out[idx] = volume_field_procedural(vp, x, y, z);
 }
 
-// Upload a float grid as a 3D texture (linear filtering, clamped); reuses the array when the
-// dimensions did not change.
-static bool uploadGridTexture(const float *d_grid, int3 dims, cudaTextureObject_t &tex, cudaArray_t &arr,
-                              int3 &cur_dims)
+// Upload a float grid (device memory by default) as a 3D texture with linear filtering; reuses
+// the array when the dimensions did not change. `mode` applies to a newly created texture only.
+static bool uploadGridTexture(const float *grid, int3 dims, cudaTextureObject_t &tex, cudaArray_t &arr,
+                              int3 &cur_dims, cudaMemcpyKind kind = cudaMemcpyDeviceToDevice,
+                              cudaTextureAddressMode mode = cudaAddressModeClamp)
 {
    if (arr && (cur_dims.x != dims.x || cur_dims.y != dims.y || cur_dims.z != dims.z))
    {
@@ -166,10 +168,10 @@ static bool uploadGridTexture(const float *d_grid, int3 dims, cudaTextureObject_
       }
    }
    cudaMemcpy3DParms copy = {};
-   copy.srcPtr   = make_cudaPitchedPtr(const_cast<float *>(d_grid), dims.x * sizeof(float), dims.x, dims.y);
+   copy.srcPtr   = make_cudaPitchedPtr(const_cast<float *>(grid), dims.x * sizeof(float), dims.x, dims.y);
    copy.dstArray = arr;
    copy.extent   = make_cudaExtent(dims.x, dims.y, dims.z);
-   copy.kind     = cudaMemcpyDeviceToDevice;
+   copy.kind     = kind;
    cudaMemcpy3D(&copy);
    if (!tex)
    {
@@ -177,7 +179,7 @@ static bool uploadGridTexture(const float *d_grid, int3 dims, cudaTextureObject_
       res.resType         = cudaResourceTypeArray;
       res.res.array.array = arr;
       cudaTextureDesc td = {};
-      td.addressMode[0] = td.addressMode[1] = td.addressMode[2] = cudaAddressModeClamp;
+      td.addressMode[0] = td.addressMode[1] = td.addressMode[2] = mode;
       td.filterMode       = cudaFilterModeLinear;
       td.readMode         = cudaReadModeElementType;
       td.normalizedCoords = 1;
@@ -213,6 +215,35 @@ void bakeVolumeField(VolumeParams &vp, int max_cells)
    if (cudaDeviceSynchronize() == cudaSuccess)
       uploadGridTexture(d_grid, dims, vp.field, vp.field_array, vp.field_dims);
    cudaFree(d_grid);
+}
+
+bool loadVolumeGrid(const std::string &path, float3 lo, float3 hi, VolumeParams &vp)
+{
+   vp.sdf         = 0;
+   vp.sdf_array   = nullptr;
+   vp.field       = 0;
+   vp.field_array = nullptr;
+   vp.field_dims  = make_int3(0, 0, 0);
+   Scene::VolumeGridHeader h;
+   std::vector<float>      values;
+   if (!Scene::readVolumeGrid(path, h, values))
+   {
+      fprintf(stderr, "Volume grid: cannot read '%s'\n", path.c_str());
+      return false;
+   }
+   const float3 ext = make_float3(hi.x - lo.x, hi.y - lo.y, hi.z - lo.z);
+   if (ext.x <= 0.0f || ext.y <= 0.0f || ext.z <= 0.0f)
+      return false;
+   const int3 dims = make_int3(h.nx, h.ny, h.nz);
+   // Border mode: the field reads 0 outside the box (the OptiX box may be padded)
+   if (!uploadGridTexture(values.data(), dims, vp.field, vp.field_array, vp.field_dims, cudaMemcpyHostToDevice,
+                          cudaAddressModeBorder))
+      return false;
+   vp.sdf_min        = lo;
+   vp.sdf_inv_extent = make_float3(1.0f / ext.x, 1.0f / ext.y, 1.0f / ext.z);
+   printf("Volume grid: %dx%dx%d cells bound (%.1f MB)\n", dims.x, dims.y, dims.z,
+          (double)values.size() * sizeof(float) / 1e6);
+   return true;
 }
 
 bool buildVolumeSDF(const std::vector<float3> &tris, int max_cells, float pad, VolumeParams &vp)

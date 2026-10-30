@@ -69,3 +69,6 @@ __pycache__/
 
 # MkDocs built site output
 site/
+
+# Dense volume grids converted from OpenVDB (large; regenerate with tools/vdb_to_volume.py)
+resources/volumes/*.vol

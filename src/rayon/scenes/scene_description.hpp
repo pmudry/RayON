@@ -80,6 +80,13 @@ struct MaterialDesc {
     float edge;               // Depth from the surface over which the density ramps up (0 = hard edge)
     float lumps;              // Amplitude (scene units) of the noise displacement of the surface
     float billow;             // 0..1: share of inverted Worley (cauliflower lumps) in the shape noise
+    // Density grid from data (VOLUME): a `.vol` file (tools/vdb_to_volume.py) replaces the mesh shape
+    // and the noise; the loader adds the box [grid_min, grid_max] (world space) as the medium boundary
+    std::string grid_file;    // Empty = procedural volume shaped by the mesh
+    float grid_scale;         // Scene units per grid unit
+    Vec3 grid_position;       // World offset added to the (scaled) grid coordinates
+    Vec3 grid_min;            // World-space box covered by the grid (set by the scene loader)
+    Vec3 grid_max;
 
     // Procedural pattern support
     ProceduralPattern pattern;    // Pattern type
@@ -108,6 +115,10 @@ struct MaterialDesc {
         , edge(0.1f)
         , lumps(0.3f)
         , billow(0.7f)
+        , grid_scale(1.0f)
+        , grid_position(0, 0, 0)
+        , grid_min(0, 0, 0)
+        , grid_max(0, 0, 0)
         , pattern(ProceduralPattern::NONE)
         , pattern_color(0, 0, 0)
         , pattern_param1(0.0f)

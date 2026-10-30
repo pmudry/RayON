@@ -1,0 +1,57 @@
+# VDB cloud bunny: the OpenVDB sample model `bunny_cloud.vdb` rendered as a cloud, the same
+# image as pbrt-v4's "bunny-cloud" scene. The density comes from data instead of the
+# procedural noise of 17_cloud_bunny.yaml: the grid was resampled into RayON's dense `.vol`
+# format with tools/vdb_to_volume.py (see resources/volumes/README.md), and the material binds
+# it straight into the 3D texture the tracking loops read. No mesh is needed: the loader adds
+# the grid's box as the medium boundary. Blender smoke caches go through the same tool.
+#
+#   ./rayon -m 5 --scene ../resources/scenes/19_vdb_bunny.yaml
+#   ./rayon -m 4 -s 512 -r 720 --scene ../resources/scenes/19_vdb_bunny.yaml
+#
+# The grid is normalised to [0, 1]; `density` scales it (extinction per scene unit at value 1).
+# `grid_scale` and `grid_position` place the grid in the scene: the source box spans
+# [-24.0, -3.8, -16.7] to [22.2, 42.0, 18.4] in VDB units, scaled here to a 3-unit-tall bunny
+# standing on the ground. No shape noise applies (edge, lumps, billow are ignored).
+
+camera:
+  position: [0.089, 1.885, 4.887]
+  look_at: [-0.067, -0.078, -0.025]
+  fov: 40
+
+settings:
+  light_intensity: 1.1
+  samples_per_batch: 1                  # the grid volume is expensive: one sample per interactive batch
+  background_color: [0.45, 0.65, 0.95]
+  background_intensity: 0
+  use_bvh: true
+
+materials:
+  - name: "cloud"
+    type: "volume"
+    grid: "../volumes/bunny_cloud.vol"   # dense density grid (tools/vdb_to_volume.py)
+    grid_scale: 0.0656                   # scene units per VDB unit: 45.8 units tall -> 3.0
+    grid_position: [0.06, -1.25, -0.06]  # offset of the scaled grid: feet on the ground, centred
+    albedo: [0.99, 0.99, 0.99]
+    density: 60.0                        # extinction per scene unit where the grid reads 1
+    g: -0.3                              # slight back-scattering: brighter when lit from the camera side
+
+  - name: "sun"
+    type: "light"
+    emission: [300.0, 285.0, 255.0]
+
+  - name: "ground"
+    type: "lambertian"
+    albedo: [0.42, 0.45, 0.38]
+
+geometry:
+  - type: "sphere"
+    material: "sun"
+    center: [-42, 26, 14]
+    radius: 4
+    visible: false
+
+  - type: "rectangle"
+    material: "ground"
+    corner: [-2000, -1.55, -2000]
+    u: [4000, 0, 0]
+    v: [0, 0, 4000]

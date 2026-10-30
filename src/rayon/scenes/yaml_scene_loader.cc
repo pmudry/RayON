@@ -5,6 +5,7 @@
 
 #include "yaml_scene_loader.hpp"
 #include "obj_loader.hpp"
+#include "volume_grid.hpp"
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
@@ -377,6 +378,35 @@ static bool loadMaterials(const SimpleYAMLParser &parser, SceneDescription &scen
       mat.billow = parser.getFloat(prefix + ".billow", 0.7f);
       if (parser.hasKey(prefix + ".g"))
          mat.anisotropy = parser.getFloat(prefix + ".g", 0.0f);
+      // Density grid from data (tools/vdb_to_volume.py): replaces the mesh shape and the noise.
+      // The loader adds the grid's box as the medium boundary once the geometry is read.
+      if (mat.type == MaterialType::VOLUME && parser.hasKey(prefix + ".grid"))
+      {
+         string grid_path = removeQuotes(parser.getString(prefix + ".grid"));
+         if (!grid_path.empty() && !scene_dir.empty() && !std::filesystem::path(grid_path).is_absolute())
+            grid_path = scene_dir + "/" + grid_path;
+         VolumeGridHeader header;
+         if (!readVolumeGridHeader(grid_path, header))
+         {
+            cerr << "ERROR: cannot read the volume grid '" << grid_path << "' of material '" << mat_name
+                 << "' (expected a .vol file written by tools/vdb_to_volume.py)\n";
+            return false;
+         }
+         mat.grid_file     = grid_path;
+         mat.grid_scale    = parser.getFloat(prefix + ".grid_scale", 1.0f);
+         mat.grid_position = parser.getVec3(prefix + ".grid_position", Vec3(0, 0, 0));
+         const double s = mat.grid_scale;
+         mat.grid_min = Vec3(mat.grid_position.x() + header.bmin[0] * s, mat.grid_position.y() + header.bmin[1] * s,
+                             mat.grid_position.z() + header.bmin[2] * s);
+         mat.grid_max = Vec3(mat.grid_position.x() + header.bmax[0] * s, mat.grid_position.y() + header.bmax[1] * s,
+                             mat.grid_position.z() + header.bmax[2] * s);
+         // The grid is normalised to [0, 1] and holds all the detail: no interior noise by default
+         // (the majorant is then exact) and no distance grid of the boundary
+         mat.noise_strength = parser.getFloat(prefix + ".noise_strength", 0.0f);
+         mat.edge           = 0.0f;
+         cout << "Volume grid: " << grid_path << " (" << header.nx << "x" << header.ny << "x" << header.nz
+              << " cells), box [" << mat.grid_min << "] - [" << mat.grid_max << "]\n";
+      }
 
       // Support named metal presets for anisotropic_metal
       if (mat.type == MaterialType::ANISOTROPIC_METAL && parser.hasKey(prefix + ".preset"))
@@ -422,6 +452,23 @@ static bool loadMaterials(const SimpleYAMLParser &parser, SceneDescription &scen
    }
 
    return !scene.materials.empty();
+}
+
+// Boundary of a volume read from a density grid: the grid's world box as 12 outward-wound
+// triangles carrying the material (the GPU back ends trace it like any volume mesh)
+static void addVolumeGridBox(SceneDescription &scene, int mat_id)
+{
+   const Vec3 lo = scene.materials[mat_id].grid_min, hi = scene.materials[mat_id].grid_max;
+   const Vec3 c[8] = {Vec3(lo.x(), lo.y(), lo.z()), Vec3(hi.x(), lo.y(), lo.z()), Vec3(hi.x(), hi.y(), lo.z()),
+                      Vec3(lo.x(), hi.y(), lo.z()), Vec3(lo.x(), lo.y(), hi.z()), Vec3(hi.x(), lo.y(), hi.z()),
+                      Vec3(hi.x(), hi.y(), hi.z()), Vec3(lo.x(), hi.y(), hi.z())};
+   // Faces as quads (a, b, c, d) wound counter-clockwise seen from outside
+   const int faces[6][4] = {{0, 3, 2, 1}, {4, 5, 6, 7}, {0, 1, 5, 4}, {3, 7, 6, 2}, {0, 4, 7, 3}, {1, 2, 6, 5}};
+   for (const auto &f : faces)
+   {
+      scene.addTriangle(c[f[0]], c[f[1]], c[f[2]], mat_id);
+      scene.addTriangle(c[f[0]], c[f[2]], c[f[3]], mat_id);
+   }
 }
 
 static bool loadGeometry(const SimpleYAMLParser &parser, SceneDescription &scene,
@@ -667,6 +714,10 @@ bool loadSceneFromYAML(const char *filename, SceneDescription &scene)
               "\n";
       return false;
    }
+   // Volumes read from a density grid need no geometry of their own: their box is the boundary
+   for (int i = 0; i < static_cast<int>(scene.materials.size()); ++i)
+      if (!scene.materials[i].grid_file.empty())
+         addVolumeGridBox(scene, i);
 
    cout << "Scene loaded successfully:" << "\n";
    cout << "  - " << scene.materials.size() << " materials" << "\n";
@@ -875,6 +926,28 @@ bool saveSceneToYAML(const char *filename, const SceneDescription &scene)
       {
          file << "    eta: [" << mat.eta.x() << ", " << mat.eta.y() << ", " << mat.eta.z() << "]\n";
          file << "    k: [" << mat.k.x() << ", " << mat.k.y() << ", " << mat.k.z() << "]\n";
+      }
+
+      // Participating medium
+      if (mat.type == MaterialType::VOLUME)
+      {
+         file << "    density: " << mat.density << "\n";
+         file << "    g: " << mat.anisotropy << "\n";
+         file << "    noise_scale: " << mat.noise_scale << "\n";
+         file << "    noise_strength: " << mat.noise_strength << "\n";
+         if (!mat.grid_file.empty())
+         {
+            file << "    grid: \"" << mat.grid_file << "\"\n";
+            file << "    grid_scale: " << mat.grid_scale << "\n";
+            file << "    grid_position: [" << mat.grid_position.x() << ", " << mat.grid_position.y() << ", "
+                 << mat.grid_position.z() << "]\n";
+         }
+         else
+         {
+            file << "    edge: " << mat.edge << "\n";
+            file << "    lumps: " << mat.lumps << "\n";
+            file << "    billow: " << mat.billow << "\n";
+         }
       }
 
       // Pattern

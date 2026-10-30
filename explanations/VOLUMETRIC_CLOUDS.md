@@ -108,6 +108,36 @@ est trop lent pour les nuages et n'est plus la cible de ce travail.
   (`-lineinfo` en Debug à la place) ; dépendances PTX complétées.
 - Denoiser OptiX (IA) pour les images en mouvement, désactivé par défaut (commit `80c8813`).
 
+### 1.6 Route courte réalisée : le lapin VDB par une grille brute
+
+Pour vérifier que le transport de lumière ne dépend pas de la forme procédurale, la « route
+courte » du projet (section 3, étape 2) a été faite sans lier OpenVDB au projet : un script
+Python rééchantillonne la grille `density` d'un `.vdb` en un tableau dense que RayON charge
+directement dans la texture 3D que lisent les boucles de tracking.
+
+![Scène 19_vdb_bunny : bunny_cloud.vdb d'OpenVDB, OptiX, 512 spp, 720p, 40 s](../images/vdb_bunny.png)
+
+- `tools/vdb_to_volume.py` (pyopenvdb + numpy) : lit la grille, la filtre par un facteur
+  entier pour tenir dans `--cells` cellules, normalise en [0, 1] et écrit un fichier `.vol`
+  (en-tête : résolution, boîte monde, maximum ; puis les valeurs float32, x le plus rapide).
+  Format et recette Blender dans `resources/volumes/README.md`.
+- `src/rayon/scenes/volume_grid.hpp` : lecteur du format (hôte).
+- Clés YAML du matériau `volume` : `grid`, `grid_scale`, `grid_position`. Le loader calcule
+  la boîte monde de la grille et l'ajoute comme 12 triangles portant le matériau : aucune
+  géométrie à écrire dans la scène. `edge`, `lumps`, `billow` sont ignorés.
+- `loadVolumeGrid()` (`volume_sdf.cu`) lie la grille comme champ d'extinction
+  (`VolumeParams::field`) sur sa boîte, en mode *border* (0 hors de la boîte). Pas de grille
+  de distance : `bakeVolumeField()` laisse le champ tel quel, les curseurs de bruit de la GUI
+  sont sans effet. Les deux back ends la lisent : CUDA trace la boîte du loader, OptiX
+  remplace cette boîte par la sienne (non rembourrée) comme pour les volumes à mesh.
+- `bunny_cloud.vdb` (577×572×438 voxels) est filtré par 2 → 289×286×219 cellules, 72 Mo de
+  texture, chargement instantané. Les `.vol` sont ignorés par git (régénérer avec le script).
+
+Coût : 40 s pour 512 spp à 720p contre 11 s pour le lapin procédural, parce qu'un seul
+majorant global s'applique à toute la boîte sans saut d'espace vide (la grille de distance
+n'existe pas) et que la densité est plus forte (60 contre 30). C'est exactement ce que la
+grille de majorants de l'étape 3 corrige.
+
 ---
 
 ## 2. Limites connues
@@ -123,6 +153,8 @@ est trop lent pour les nuages et n'est plus la cible de ce travail.
   structure d'un écoulement : pas de volutes enroulées, pas de détail cohérent jusqu'au pixel.
   pbrt rend une grille issue d'une simulation.
 - Un seul majorant global : dans les zones peu denses on paie beaucoup de collisions nulles.
+  Pour les grilles de données (section 1.6) il n'y a même pas de saut d'espace vide : toute
+  la boîte est parcourue au majorant, d'où un rendu 3 à 4 fois plus lent que le procédural.
 - Pas de milieu émissif (feu), pas d'absorption colorée, pas d'animation.
 
 ---
@@ -146,11 +178,13 @@ un VDB sur CPU, le rééchantillonner dans cette texture, et rendre.
    NanoVDB (<https://github.com/AcademySoftwareFoundation/openvdb/tree/master/nanovdb>).
    Lire `volume_medium.cuh` et le bloc `VOLUME` de `optix_programs.cu` en parallèle de
    l'artifact.
-2. **Route courte : VDB → texture 3D** (3 semaines). Lier OpenVDB (ou NanoVDB seul, qui lit
-   les `.nvdb` sans dépendance ; conversion par `nanovdb_convert`). Nouveau champ YAML
-   `vdb: "../volumes/bunny_cloud.nvdb"` (+ `vdb_grid: "density"`), rééchantillonnage sur la
-   grille de `bakeVolumeField`, boîte englobante prise du VDB (plus besoin du mesh ni de la
-   grille de distance). Livrable : le lapin nuage de pbrt dans RayON, image côte à côte.
+2. **Route courte : VDB → texture 3D** (1 semaine, déjà faite en version minimale, section
+   1.6). Reproduire le lapin VDB (`tools/vdb_to_volume.py`, scène `19_vdb_bunny.yaml`),
+   comprendre le format `.vol` et le chemin grille → `VolumeParams::field`, puis comparer avec
+   pbrt-v4 sur la même scène (`bunny-cloud`). Améliorations possibles sans toucher aux
+   kernels : lire le `.vdb` directement en C++ (lier OpenVDB, ou NanoVDB seul qui lit les
+   `.nvdb` sans dépendance), rééchantillonnage trilinéaire au lieu du filtre entier, stockage
+   en `half` ou `uint8` pour diviser la mémoire par 2 ou 4.
 3. **NanoVDB sur GPU** (3 semaines). Échantillonner la grille NanoVDB directement dans le
    kernel (`nanovdb::SampleFromVoxels`, interpolation trilinéaire), sans rééchantillonnage ni
    perte de résolution. Ajouter une **grille de majorants** grossière (par ex. 16³ ou tuiles
@@ -183,13 +217,15 @@ un VDB sur CPU, le rééchantillonner dans cette texture, et rendre.
 |----------------------------------------------------|-----------------------------------------------------------|
 | `src/rayon/gpu_renderers/volume_params.h`          | `VolumeParams` (densité, bruit, textures sdf/field)        |
 | `src/rayon/gpu_renderers/volume_medium.cuh`        | bruits, `volume_density`, `volume_empty_skip`, phase HG    |
-| `src/rayon/gpu_renderers/volume_sdf.cu/.cuh`       | grille de distance, recuit du champ (`bakeVolumeField`)    |
+| `src/rayon/gpu_renderers/volume_sdf.cu/.cuh`       | grille de distance, recuit du champ (`bakeVolumeField`), `loadVolumeGrid` |
+| `src/rayon/scenes/volume_grid.hpp`, `tools/vdb_to_volume.py` | format `.vol` : lecteur hôte et convertisseur VDB |
 | `src/rayon/gpu_renderers/optix/optix_programs.cu`  | raygen : bloc `VOLUME`, `ratio_track_optix`, `shadow_transmittance_optix` |
 | `src/rayon/gpu_renderers/optix/optix_renderer.cu`  | `buildGAS` (boîte du volume), `optixRendererUpdateMaterial` |
 | `src/rayon/gpu_renderers/cuda_raytracer.cuh`       | même logique côté CUDA                                     |
 | `src/rayon/scenes/scene_description.hpp`, `yaml_scene_loader.cc` | `MaterialDesc::volume()`, clés YAML          |
 | `src/rayon/camera/sdl/sdl_gui_handler.hpp`         | section GUI « Cloud / Smoke » (`VolumeMaterialSettings`)   |
-| `resources/scenes/17_cloud_bunny.yaml`             | scène de référence                                         |
+| `resources/scenes/17_cloud_bunny.yaml`             | scène de référence (forme procédurale)                     |
+| `resources/scenes/19_vdb_bunny.yaml`, `resources/volumes/README.md` | lapin VDB par grille brute, recette Blender |
 
 ### Pièges rencontrés, à connaître
 

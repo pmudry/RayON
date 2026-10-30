@@ -214,8 +214,15 @@ CudaScene::Scene *CudaSceneBuilder::buildGPUScene(const SceneDescription &desc)
       if (desc.materials[i].type == MaterialType::VOLUME)
       {
          host_scene.has_volume = true;
+         if (!desc.materials[i].grid_file.empty())
+         {
+            // Density grid from data: bound as the field over the box added by the scene loader
+            const Vec3 &lo = desc.materials[i].grid_min, &hi = desc.materials[i].grid_max;
+            loadVolumeGrid(desc.materials[i].grid_file, make_float3((float)lo.x(), (float)lo.y(), (float)lo.z()),
+                           make_float3((float)hi.x(), (float)hi.y(), (float)hi.z()), host_materials[i].volume);
+         }
          // Signed distance grid of the mesh(es) carrying this material, for the edge fall-off
-         if (desc.materials[i].edge > 0.0f)
+         else if (desc.materials[i].edge > 0.0f)
          {
             std::vector<float3> tris;
             for (const auto &g : desc.geometries)
