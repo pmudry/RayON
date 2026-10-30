@@ -5,7 +5,7 @@
 namespace constants
 {
     inline const std::string ver_major = "1";
-    inline const std::string ver_minor = "8";
+    inline const std::string ver_minor = "9";
     inline const std::string ver_patch = "0";
     inline const std::string version = ver_major + "." + ver_minor + "." + ver_patch;
 
