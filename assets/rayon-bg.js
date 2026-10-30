@@ -18,7 +18,7 @@
    const DEFAULT_PRESET = "subtle";
 
    const PRESETS = {
-      subtle:   { count: 30, masterOpacity: 0.3,  speedMin: 0.8,  speedMax: 1.5,  opacityMin: 0.2, opacityMax: 0.8, glow: 0.5, dotBrightness: 1.8, rayLength: 400, fadeZone: 120 },
+      subtle:   { count: 18, masterOpacity: 0.3,  speedMin: 0.8,  speedMax: 1.5,  opacityMin: 0.2, opacityMax: 0.8, glow: 0.5, dotBrightness: 1.8, rayLength: 400, fadeZone: 120 },
       balanced: { count: 20, masterOpacity: 1.0,  speedMin: 0.2,  speedMax: 0.5,  opacityMin: 0.10, opacityMax: 0.30, glow: 0.5, dotBrightness: 1.2, rayLength: 500, fadeZone: 150 },
       vivid:    { count: 30, masterOpacity: 1.4,  speedMin: 0.3,  speedMax: 0.7,  opacityMin: 0.15, opacityMax: 0.45, glow: 0.8, dotBrightness: 1.6, rayLength: 550, fadeZone: 150 },
       intense:  { count: 40, masterOpacity: 1.8,  speedMin: 0.5,  speedMax: 1.0,  opacityMin: 0.20, opacityMax: 0.55, glow: 1.0, dotBrightness: 2.0, rayLength: 600, fadeZone: 180 },
@@ -119,8 +119,17 @@
    if (!cv) return; // bail if the canvas wasn't injected
    const ctx = cv.getContext("2d");
 
+   // The canvas is decoration: one device pixel per CSS pixel is plenty, and on a HiDPI or 4K
+   // display rendering it at the full device pixel ratio quadruples the fill cost of every frame.
+   const MAX_DPR = 1;
+   // Draw at most this many frames per second (the rays move slowly, 60 fps buys nothing).
+   const MAX_FPS = 30;
+   // Stop drawing once the page is scrolled past the first screen: the rays only matter
+   // behind the hero banner, and a hidden-but-running animation is what makes the page feel slow.
+   const SCROLL_PAUSE = 1.0; // in screen heights
+
    function resize() {
-      const dpr = window.devicePixelRatio || 1;
+      const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
       W = window.innerWidth;
       H = window.innerHeight;
       cv.width  = W * dpr;
@@ -237,7 +246,14 @@
       return g;
    }
 
-   function tick() {
+   let lastFrame = 0;
+
+   function tick(now) {
+      if (now !== undefined && now - lastFrame < 1000 / MAX_FPS - 1) {
+         animId = requestAnimationFrame(tick);
+         return;
+      }
+      lastFrame = now || 0;
       ctx.clearRect(0, 0, W, H);
 
       while (rays.length < cfg.count)
@@ -322,15 +338,25 @@
       animId = requestAnimationFrame(tick);
    }
 
-   // ── Visibility API — pause when tab is hidden ─────────────────────────────
+   // ── Pause when the tab is hidden or the page is scrolled past the hero ────
 
-   document.addEventListener("visibilitychange", function () {
-      if (document.hidden) {
-         if (animId) { cancelAnimationFrame(animId); animId = null; }
-      } else {
-         if (!animId) animId = requestAnimationFrame(tick);
+   let scrolledAway = false;
+
+   function updateRunning() {
+      const shouldRun = !document.hidden && !scrolledAway;
+      if (!shouldRun && animId) {
+         cancelAnimationFrame(animId); animId = null;
+         ctx.clearRect(0, 0, W, H);
+      } else if (shouldRun && !animId) {
+         animId = requestAnimationFrame(tick);
       }
-   });
+   }
+
+   document.addEventListener("visibilitychange", updateRunning);
+   window.addEventListener("scroll", function () {
+      const away = window.scrollY > window.innerHeight * SCROLL_PAUSE;
+      if (away !== scrolledAway) { scrolledAway = away; updateRunning(); }
+   }, { passive: true });
 
    // ── Reduced-motion preference ─────────────────────────────────────────────
 
