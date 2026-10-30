@@ -52,7 +52,9 @@ is 250 000 entries: enable `use_bvh: true` for any mesh.
 | `Ns exponent` | Converted to roughness (`1 − √(Ns / 1000)`) |
 | `Ni ior` | Refractive index of glass materials |
 | `d opacity` | Below 0.5 selects a glass material |
-| `illum 5` / `7` | Mirror / glass |
+| `illum 0`–`2` | Lambertian (`illum 2` is the usual exporter default for a diffuse surface) |
+| `illum 3` and above | Rough mirror, roughness from `Ns` |
+| `illum 5` / `7` | Glass |
 | `map_Kd path` | Image texture, resolved relative to the `.mtl` file |
 
 ---

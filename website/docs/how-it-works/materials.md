@@ -89,7 +89,7 @@ reflected direction:
 \mathbf{r}_\text{fuzzy} = \mathbf{r}_\text{perfect} + \text{roughness} \cdot \xi
 \]
 
-where \(\xi\) is a random vector in the unit sphere. Rays that scatter back below the surface are
+where \(\xi\) is a random vector drawn uniformly *inside* the unit ball (both back-ends). Rays that scatter back below the surface are
 absorbed (energy conservation).
 
 A **tint** (RGB colour) modulates the reflection to produce metallic effects:
@@ -183,8 +183,10 @@ top and bottom of a thin layer produces wavelength-dependent constructive/destru
 \Delta\phi = \frac{4\pi\, n_f\, d\, \cos\theta_t}{\lambda}
 \]
 
-The `film_thickness` parameter controls which wavelengths are amplified — smaller values produce
-blue/violet; larger values shift toward red.
+The `film_thickness` parameter controls which wavelengths are amplified. The two reflections
+have opposite signs (the one off the denser side gains a half-wave shift), so a film much thinner
+than the wavelength reflects almost nothing — the black spots of a draining bubble — and thicker
+films cycle through the interference colours.
 
 ```yaml
 materials:

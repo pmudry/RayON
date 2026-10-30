@@ -117,26 +117,30 @@ RayON uses the **Surface Area Heuristic (SAH)** to choose the optimal split:
 The intuition: if the left child has a small surface area, a ray is less likely to enter it, so
 testing many primitives there is cheap. The SAH quantifies this trade-off.
 
-**Algorithm:**
+**Algorithm (binned SAH):**
 
-1. Compute the centroid AABB of all objects in this partition.
-2. For each axis (X, Y, Z), try \(M = 8\) split positions.
-3. For each candidate split: partition objects, compute SAH cost.
-4. Choose the axis + position with the lowest cost.
-5. If no split is better than a leaf (cost ≥ leaf cost), make a leaf.
-6. Recurse on each child.
+1. Compute the AABB of the objects in this partition and the AABB of their centroids.
+2. Four objects or fewer: make a leaf.
+3. For each axis (X, Y, Z), drop every centroid into one of 32 equal **bins** along the
+   centroid box, keeping a count and a box per bin.
+4. Sweep the bins left to right and right to left: the 31 bin boundaries are the candidate
+   splits, and the running boxes and counts give each one's SAH cost in O(1).
+5. Partition the objects at the cheapest boundary of the cheapest axis and recurse on each side.
+
+Binning costs O(n) per level instead of sorting the objects three times per node: the 1M-triangle
+Cupid scan builds in about 0.6 s instead of 7 s, with the same render times.
 
 ```cpp
-// From scene_description.hpp
-float bestCost = std::numeric_limits<float>::max();
+// From scene_description.hpp (simplified)
 for (int axis = 0; axis < 3; ++axis) {
-    for (int i = 0; i < NUM_SPLIT_CANDIDATES; ++i) {
-        float splitPos = centroidMin[axis]
-            + (centroidMax[axis] - centroidMin[axis]) * (float)(i+1) / (NUM_SPLIT_CANDIDATES+1);
-        // partition & evaluate SAH cost...
-        if (cost < bestCost) { bestCost = cost; bestAxis = axis; bestSplit = splitPos; }
-    }
+    Bin bins[BVH_BINS];                       // count + box per bin
+    for (int i = start; i < end; ++i)
+        bins[binOf(centroid[i][axis])].add(prim[i]);
+    // right-to-left sweep: area and count of everything after each boundary
+    // left-to-right sweep: cost = 1 + (A_L * N_L + A_R * N_R) / A_P
+    if (cost < best_cost) { best_cost = cost; best_axis = axis; best_bin = b; }
 }
+std::partition(..., [&](int g) { return binOf(centroid[g][best_axis]) < best_bin; });
 ```
 
 ---

@@ -100,7 +100,7 @@ Field of view, depth of field (aperture and focus distance), auto orbit.
 | **Lights falloff** | Distance exponent of the lights' reach, 2 = physical ([Lights & Shadows](lighting.md)) |
 | **Ambient Light** | Brightness of the sky (`settings.background_intensity`) |
 | **Metal Fuzz** | Multiplier on the roughness of rough mirrors |
-| **Glass IOR** | Index of refraction of glass materials |
+| **Glass IOR** | Index a standard 1.5 glass takes: every glass is scaled by slider / 1.5, so at the default each keeps its own `refractive_index` |
 
 The light and sky values are live: they are launch parameters, no scene rebuild is needed.
 

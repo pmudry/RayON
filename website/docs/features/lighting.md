@@ -48,7 +48,8 @@ gallery for a large soft box above the room.
 ## Next event estimation
 
 Every non-specular hit traces one **shadow ray** towards a point sampled on a light: a light is
-picked with probability proportional to its area, then a point on it (uniform on rectangles,
+picked with probability proportional to its power (area × luminance of its emission) on OptiX, to
+its area on CUDA, then a point on it (uniform on rectangles,
 inside the visible cone for spheres). The emitter's contribution is weighted against the chance
 that the material's own scattering would have found it, so that nothing is counted twice. This is
 multiple importance sampling; the math is on the [MIS page](../how-it-works/mis.md).
