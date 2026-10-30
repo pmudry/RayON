@@ -278,13 +278,13 @@ __device__ __forceinline__ bool sdf_march(const SdfPrim &s, float ox, float oy, 
       const float eps = SDF_HIT_EPSILON * fmaxf(1.0f, 0.1f * t);
       if (!armed)
       {
-         // Both kernels start their bounce and shadow rays at least ~1e-4 off the surface, so
-         // one or two steps clear the band; a ray truly leaving the surface is then armed
+         // Rays leaving a surface (bounces, shadow rays, refraction into the shape) start in
+         // or next to the band: step until the distance has grown clear of it, on either side
          if (fabsf(d) > 1.5f * eps)
             armed = true;
          else
          {
-            t += fmaxf(fabsf(d), eps);
+            t += fmaxf(fabsf(d), 2.0f * eps);
             if (t > t_out)
                return false;
             continue;

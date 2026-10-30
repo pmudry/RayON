@@ -657,6 +657,15 @@ extern "C" __global__ void __raygen__rg()
 
          trace(params.traversable, cur_origin, cur_direction, 0.001f, 1e16f, &prd);
 
+         // Invisible geometry (lights kept out of the picture): camera rays pass through it,
+         // bounced rays interact normally
+         if (bounce == 0 && prd.hit && !prd.visible)
+         {
+            cur_origin = prd.hit_point + 0.01f * normalize3(cur_direction);
+            --bounce;
+            continue;
+         }
+
          if (bounce == 0 && prd.hit)
             primary_hits += 1.0f;
 
@@ -1370,6 +1379,7 @@ extern "C" __global__ void __closesthit__triangle()
    const float2 bary      = optixGetTriangleBarycentrics(); // (u, v) weights of v1, v2
    const float  w         = 1.0f - bary.x - bary.y;
    const OptixTriangleData &td = params.tri_data[tri];
+   prd->visible = td.visible != 0;
 
    float3 outward_normal;
    if (td.has_normals)
@@ -1404,6 +1414,7 @@ extern "C" __global__ void __closesthit__ch()
    prd->hit_prim_idx = optixGetPrimitiveIndex();
 
    const HitGroupData *sbt_data = reinterpret_cast<const HitGroupData *>(optixGetSbtDataPointer());
+   prd->visible = sbt_data->visible != 0;
 
    // Get hit normal from intersection program attributes
    prd->hit_normal = make_float3(__int_as_float(optixGetAttribute_0()), __int_as_float(optixGetAttribute_1()),
@@ -1419,12 +1430,6 @@ extern "C" __global__ void __closesthit__ch()
    float t_hit = optixGetRayTmax();
    float3 ray_origin = optixGetWorldRayOrigin();
    prd->hit_point = ray_origin + t_hit * ray_dir;
-
-   // --- SDF primitive: the hit sits within the marcher's tolerance of the surface, and the
-   // bounce rays start right at the hit point: nudge it off the surface along the shading
-   // normal (towards the ray's side) so neither the bounce nor the shadow ray re-hits it
-   if (sbt_data->geom_type == OptixGeomType::SDF)
-      prd->hit_point = prd->hit_point + 3e-4f * prd->hit_normal;
 
    // --- Displaced sphere: post-intersection position and normal correction ---
    if (sbt_data->geom_type == OptixGeomType::DISPLACED_SPHERE)

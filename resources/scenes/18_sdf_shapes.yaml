@@ -1,97 +1,214 @@
-# SDF shapes: ray-marched signed distance primitives (Íñigo Quilez's distance functions) on the
-# default scene's ground, under its area light. These used to be part of the built-in default
-# scene; both backends sphere-trace them (gpu_renderers/sdf_primitives.cuh).
+# SDF gallery: the ray-marched signed distance primitives (Íñigo Quilez's distance functions,
+# gpu_renderers/sdf_primitives.cuh) on a dark lacquered floor inside a grey studio room, lit by
+# a large hidden soft box and two visible bulbs (sphere lights). Both backends sphere-trace them.
 #
 #   ./rayon -m 5 --scene ../resources/scenes/18_sdf_shapes.yaml
-#   ./rayon -m 4 -s 256 -r 720 --scene ../resources/scenes/18_sdf_shapes.yaml
+#   ./rayon -m 4 -s 512 -r 720 --scene ../resources/scenes/18_sdf_shapes.yaml
 #
-# Rotations are Euler angles in degrees, applied in X, Y, Z order.
+# Rotations are Euler angles in degrees, applied in X, Y, Z order. Named parameters per shape
+# are listed in SCENE_FORMAT.md (`params: [a, b, c]` sets them raw).
 
 camera:
-  position: [-2, 2, 5]
-  look_at: [-0.5, 0.3, -3]
-  fov: 40
+  position: [-1.864, 3.791, 7.309]
+  look_at: [-0.385, -0.173, -0.818]
+  fov: 38
 
 settings:
-  background_intensity: 1.0
+  samples_per_batch: 2                   # interactive batch size for this scene (ray marching is costly)
+  background_color: [0.10, 0.12, 0.18]   # only seen if a ray escapes the room
+  background_intensity: 0.35
   use_bvh: true
 
 materials:
-  - name: "ground"
+  - name: "floor"
+    type: "clear_coat"
+    albedo: [0.16, 0.16, 0.17]
+    roughness: 0.22                      # soft reflections: the hidden lights' edges must not show in them
+  - name: "walls"
     type: "lambertian"
-    albedo: [0.44, 0.7, 0.95]
-  - name: "light"
+    albedo: [0.50, 0.49, 0.47]
+  - name: "key_light"
     type: "light"
-    emission: [4.8, 4.1, 3.7]
-  - name: "steel"
-    type: "metal"
-    albedo: [0.6, 0.6, 0.65]
+    emission: [4.0, 3.75, 3.5]
+  - name: "bulb_warm"
+    type: "light"
+    emission: [40.0, 30.0, 18.0]
+  - name: "bulb_cool"
+    type: "light"
+    emission: [14.0, 22.0, 40.0]
+
+  - name: "gold"
+    type: "anisotropic_metal"
+    preset: "gold"
+    roughness: 0.22
+    anisotropy: 0.6
+  - name: "ceramic"
+    type: "clear_coat"
+    albedo: [0.78, 0.78, 0.80]
+    roughness: 0.08
+  - name: "terracotta"
+    type: "clear_coat"
+    albedo: [0.74, 0.42, 0.28]
     roughness: 0.1
   - name: "brass"
     type: "rough_mirror"
-    albedo: [0.9, 0.7, 0.3]
+    albedo: [0.9, 0.72, 0.35]
     roughness: 0.2
-  - name: "green"
+  - name: "glass"
+    type: "glass"
+    refractive_index: 1.5
+  - name: "isc_blue"
+    type: "clear_coat"
+    albedo: [0.55, 0.78, 0.90]
+    roughness: 0.05
+  - name: "isc_rose"
+    type: "clear_coat"
+    albedo: [0.89, 0.67, 0.73]
+    roughness: 0.25                      # flat faces: a sharper coat would mirror the room as stripes
+  - name: "isc_violet"
+    type: "clear_coat"
+    albedo: [0.66, 0.56, 0.75]
+    roughness: 0.05
+  - name: "isc_yellow"
     type: "lambertian"
-    albedo: [0.2, 0.8, 0.4]
-  - name: "red_gloss"
-    type: "rough_mirror"
-    albedo: [0.8, 0.3, 0.3]
-    roughness: 0.15
-  - name: "orange"
+    albedo: [0.97, 0.95, 0.62]
+  - name: "isc_green"
     type: "lambertian"
-    albedo: [1.0, 0.6, 0.2]
+    albedo: [0.60, 0.78, 0.75]
 
 geometry:
-  - type: "sphere"
-    material: "ground"
-    center: [0, -950.5, -1]
-    radius: 950.0
-
   - type: "rectangle"
-    material: "light"
-    corner: [-1.0, 3.0, -2.0]
-    u: [2.5, 0, 0]
-    v: [0, 0, 1.5]
+    material: "floor"
+    corner: [-200, 0, -200]
+    u: [400, 0, 0]
+    v: [0, 0, 400]
 
-  # Death Star: a sphere with a spherical cutout (along local +x), turned towards the camera
+  # The room: back wall, side walls, ceiling and a wall behind the camera (the floor above
+  # closes it). Grey, so the bounced light stays neutral.
+  - type: "rectangle"
+    material: "walls"
+    corner: [-22.0, 0.0, -9.0]
+    u: [44.0, 0, 0]
+    v: [0, 9.0, 0]
+  - type: "rectangle"
+    material: "walls"
+    corner: [-22.0, 0.0, -9.0]
+    u: [0, 0, 24.0]
+    v: [0, 9.0, 0]
+  - type: "rectangle"
+    material: "walls"
+    corner: [22.0, 0.0, -9.0]
+    u: [0, 0, 24.0]
+    v: [0, 9.0, 0]
+  - type: "rectangle"
+    material: "walls"
+    corner: [-22.0, 9.0, -9.0]
+    u: [44.0, 0, 0]
+    v: [0, 0, 24.0]
+  - type: "rectangle"
+    material: "walls"
+    corner: [-22.0, 0.0, 15.0]
+    u: [44.0, 0, 0]
+    v: [0, 9.0, 0]
+
+  # Key light: a wide hidden soft box just under the ceiling, reaching towards the camera so
+  # that the foreground floor is lit as well
+  - type: "rectangle"
+    material: "key_light"
+    corner: [-5.0, 8.5, -1.5]
+    u: [10.0, 0, 0]
+    v: [0, 0, 9.0]
+    visible: false
+  # Two bulbs: a warm one front left, a cool one back right. Small and bright, they give the
+  # crisp highlights on the lacquer and the metals, and they are seen in the picture.
+  - type: "sphere"
+    material: "bulb_warm"
+    center: [-4.6, 2.8, -4.5]
+    radius: 0.3
+  - type: "sphere"
+    material: "bulb_cool"
+    center: [4.8, 3.2, -5.5]
+    radius: 0.3
+
+  # Centre piece: the Mandelbulb fractal (power 8)
   - type: "sdf"
-    material: "steel"
-    shape: "death_star"
-    center: [-3.5, 1.2, -4.5]
-    radius: 0.8
-    cutout_radius: 0.5
-    cutout_distance: 1.0
-    rotation: [0, -75, 0]
+    material: "gold"
+    shape: "mandelbulb"
+    center: [0.0, 1.25, -0.6]
+    power: 8
+    iterations: 12
+    rotation: [-20, 35, 0]
 
-  # Hollow sphere with its top cut off, tilted towards the camera
+  # Death Star (cutout along local +x, turned towards the camera and tilted up a little)
+  - type: "sdf"
+    material: "ceramic"
+    shape: "death_star"
+    center: [-2.7, 0.85, -0.4]
+    radius: 0.85
+    cutout_radius: 0.55
+    cutout_distance: 1.05
+    rotation: [0, -70, 20]
+
+  # Hollow sphere with its cap cut off, tilted towards the camera
   - type: "sdf"
     material: "brass"
     shape: "cut_hollow_sphere"
-    center: [0.0, 0.8, -5.0]
-    radius: 0.7
+    center: [2.7, 0.75, -0.4]
+    radius: 0.75
     cut_height: 0.3
-    thickness: 0.1
-    rotation: [27, 0, 0]
+    thickness: 0.08
+    rotation: [30, 0, 0]
 
+  # Standing torus
   - type: "sdf"
-    material: "green"
-    shape: "octahedron"
-    center: [2.5, 0.5, -2.0]
-    size: 0.6
-    rotation: [0, 45, 45]
-
-  - type: "sdf"
-    material: "red_gloss"
-    shape: "pyramid"
-    center: [3.0, 0.0, -4.0]
-    height: 0.8
-    rotation: [0, 72, 0]
-
-  - type: "sdf"
-    material: "orange"
+    material: "isc_blue"
     shape: "torus"
-    center: [1.5, 0.7, -3.5]
+    center: [-1.5, 0.82, 1.5]
     major_radius: 0.6
-    minor_radius: 0.2
-    rotation: [54, 36, 0]
+    minor_radius: 0.22
+    rotation: [78, 25, 0]
+
+  - type: "sdf"
+    material: "glass"
+    shape: "octahedron"
+    center: [1.5, 0.75, 1.5]
+    size: 0.75
+    rotation: [0, 30, 0]
+
+  # Pyramid: square base of side 1 on the plane through its centre, apex at `height`
+  - type: "sdf"
+    material: "isc_rose"
+    shape: "pyramid"
+    center: [3.3, 0.0, 1.3]
+    height: 1.0
+    rotation: [0, 25, 0]
+
+  # Capsule lying on its side (its axis is local y)
+  - type: "sdf"
+    material: "isc_yellow"
+    shape: "capsule"
+    center: [-3.4, 0.3, 1.3]
+    radius: 0.3
+    height: 0.9
+    rotation: [0, 20, 90]
+
+  - type: "sdf"
+    material: "terracotta"
+    shape: "box"
+    center: [-4.4, 0.42, -1.4]
+    half_extents: [0.42, 0.42, 0.42]
+    rotation: [0, 35, 0]
+
+  - type: "sdf"
+    material: "isc_green"
+    shape: "cylinder"
+    center: [4.4, 0.5, -1.4]
+    radius: 0.45
+    height: 1.0
+
+  # A sphere SDF too, lacquered, for completeness
+  - type: "sdf"
+    material: "isc_violet"
+    shape: "sphere"
+    center: [0.0, 0.4, 2.6]
+    radius: 0.4

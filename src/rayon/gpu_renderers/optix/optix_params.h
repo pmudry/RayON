@@ -52,6 +52,7 @@ struct HitGroupData
    float3 v_vec;   // Rectangle edge v    / SDF Euler rotation (radians, X Y Z order)
    float3 normal;  // Precomputed rectangle normal
    int    sdf_shape; // SDF: shape code (SdfShape)
+   int    visible;   // 0 = camera rays pass through (invisible light sources)
 };
 
 // Per-triangle shading attributes (read once per closest hit, never during traversal)
@@ -62,6 +63,7 @@ struct OptixTriangleData
    int material_idx;
    int has_normals; // 1 = interpolate per-vertex normals, 0 = use face normal
    int has_uvs;     // 1 = has UV coords, 0 = no UV
+   int visible;     // 0 = camera rays pass through
 };
 
 // Material data (flat struct, uploaded as array)
@@ -237,6 +239,7 @@ struct PRDRadiance
    int hit_prim_idx;   // Custom-primitive index (for light identification in MIS), -1 for triangles
    bool hit;
    bool front_face;
+   bool visible;       // false: camera rays pass through this geometry
 };
 
 // SBT record template

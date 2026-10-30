@@ -619,6 +619,7 @@ static void buildGAS(const Scene::SceneDescription &scene)
          OPTIX_CHECK(optixSbtRecordPackHeader(pg, &rec));
 
          rec.data.material_idx = g.material_id;
+         rec.data.visible      = g.visible ? 1 : 0;
 
          switch (g.type)
          {
@@ -695,6 +696,7 @@ static void buildGAS(const Scene::SceneDescription &scene)
                OptixTriangleData &td = tri_data[next_tri];
                td              = OptixTriangleData{};
                td.material_idx = kv.first;
+               td.visible      = 1;
                ++next_tri;
             }
       }
@@ -707,6 +709,7 @@ static void buildGAS(const Scene::SceneDescription &scene)
 
          OptixTriangleData &td = tri_data[i];
          td.material_idx = scene.geometries[triangle_indices[i]].material_id;
+         td.visible      = scene.geometries[triangle_indices[i]].visible ? 1 : 0;
          td.has_normals  = t.has_normals ? 1 : 0;
          td.has_uvs      = t.has_uvs ? 1 : 0;
          td.n0 = toFloat3(t.n0);

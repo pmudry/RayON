@@ -316,7 +316,7 @@ A YAML sequence of geometry entries. Each entry requires `type` and `material`.
 
 ### `visible` flag
 
-Any geometry entry accepts an optional `visible` flag (default `true`). Setting it to `false` makes the object invisible to primary (camera) rays but still participates in lighting — useful for area lights you want to cast light without appearing in the image.
+Any geometry entry accepts an optional `visible` flag (default `true`). Setting it to `false` makes the object invisible to primary (camera) rays but still participates in lighting — useful for area lights you want to cast light without appearing in the image. Both backends honour it (reflections of a hidden light still show, as they should).
 
 ```yaml
 - type: "rectangle"
