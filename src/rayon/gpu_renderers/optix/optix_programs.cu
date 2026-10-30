@@ -677,6 +677,39 @@ __device__ float shadow_transmittance_optix(float3 origin, float3 dir, float dis
    return T;
 }
 
+// Transmittance for the NEE of a scattering event at p, inside medium m, over `dist` units along
+// dir. A boxed medium (the scene's only one) is left analytically: ratio tracking runs first, up to
+// the box face, and in a dense cloud its roulette usually ends the estimate before any ray is
+// traced. Only a surviving estimate pays an occlusion-only ray for opaque surfaces inside the box
+// (the ground under a cloud), and then the general path from the box face to the light. Each
+// factor is an independent estimate of its own segment, so the product stays unbiased.
+__device__ float volume_nee_transmittance_optix(const OptixMaterialData &m, float3 p, float3 dir, float dist,
+                                                unsigned int &seed)
+{
+   if (!m.volume.boxed)
+      return shadow_transmittance_optix(p, dir, dist, seed);
+
+   // Exit distance of the box along dir (p is inside it)
+   const float3 lo = m.volume.box_lo, hi = m.volume.box_hi;
+   const float tx = (dir.x > 0.0f) ? (hi.x - p.x) / dir.x : (dir.x < 0.0f) ? (lo.x - p.x) / dir.x : 1e30f;
+   const float ty = (dir.y > 0.0f) ? (hi.y - p.y) / dir.y : (dir.y < 0.0f) ? (lo.y - p.y) / dir.y : 1e30f;
+   const float tz = (dir.z > 0.0f) ? (hi.z - p.z) / dir.z : (dir.z < 0.0f) ? (lo.z - p.z) / dir.z : 1e30f;
+   const float t_box = fmaxf(0.0f, fminf(fminf(tx, ty), tz));
+   const float t_med = fminf(t_box, dist);
+
+   float T = ratio_track_optix(m, p, dir, t_med, seed);
+   if (T <= 0.0f)
+      return 0.0f;
+   // Opaque surfaces between p and the box face (the face itself stays outside the interval)
+   constexpr float FACE_GAP = 0.0005f;
+   if (t_med > 2.0f * FACE_GAP && trace_shadow(params.traversable, p, dir, 0.0001f, t_med - FACE_GAP))
+      return 0.0f;
+   // Beyond the box: anything on the way to the light, as usual
+   if (dist > t_box + FACE_GAP)
+      T *= shadow_transmittance_optix(p + (t_box + FACE_GAP) * dir, dir, dist - t_box - FACE_GAP, seed);
+   return T;
+}
+
 extern "C" __global__ void __raygen__rg()
 {
    // One thread per pixel, looping over the batch's samples. (A width x height x spp launch with
@@ -982,7 +1015,7 @@ extern "C" __global__ void __raygen__rg()
                   OptiXLightSample ls = sample_nee_optix(origin, nee_sel, nee_u1, nee_u2);
                   if (ls.pdf > 0.0f)
                   {
-                     const float T = shadow_transmittance_optix(origin, ls.direction, ls.dist - 0.002f, seed);
+                     const float T = volume_nee_transmittance_optix(mat, origin, ls.direction, ls.dist - 0.002f, seed);
                      if (T > 0.0f)
                      {
                         const float ph = hg_phase(mat.anisotropy, dot3(dir, ls.direction));

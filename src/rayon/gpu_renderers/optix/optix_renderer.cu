@@ -843,6 +843,9 @@ static void buildGAS(const Scene::SceneDescription &scene)
       std::vector<OptixMaterialData> materials(num_materials);
       std::vector<float3> pattern_points; // FIBONACCI_DOTS directions, all materials concatenated
       g_state.has_volume = false;
+      const int num_volume_materials = static_cast<int>(
+          std::count_if(scene.materials.begin(), scene.materials.end(),
+                        [](const Scene::MaterialDesc &m) { return m.type == Scene::MaterialType::VOLUME; }));
       for (int i = 0; i < num_materials; ++i)
       {
          const auto &m = scene.materials[i];
@@ -890,6 +893,11 @@ static void buildGAS(const Scene::SceneDescription &scene)
          auto vb = volume_boxes.find(i);
          if (vb != volume_boxes.end())
          {
+            // The analytic box of the NEE shortcut is exactly the traced one; only valid when this
+            // is the scene's only medium (another box could overlap it)
+            materials[i].volume.box_lo = vb->second.lo;
+            materials[i].volume.box_hi = vb->second.hi;
+            materials[i].volume.boxed  = (num_volume_materials == 1) ? 1 : 0;
             // Bind the distance grid built with the box geometry above (or the data grid)
             materials[i].volume.sdf            = vb->second.vp.sdf;
             materials[i].volume.sdf_array      = vb->second.vp.sdf_array;

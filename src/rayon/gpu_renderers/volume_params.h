@@ -34,4 +34,9 @@ struct VolumeParams
    cudaTextureObject_t field;
    cudaArray_t         field_array;
    int3                field_dims;
+   // The medium is traced as this axis-aligned box (OptiX, padded box or data grid) and no other
+   // medium overlaps it: shadow rays from inside find the way out analytically (OptiX NEE)
+   float3 box_lo{};
+   float3 box_hi{};
+   int    boxed = 0;
 };
