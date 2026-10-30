@@ -344,7 +344,7 @@ CudaScene::Scene *CudaSceneBuilder::buildGPUScene(const SceneDescription &desc)
    // --- Build light list for NEE ---
    {
       std::vector<int>   light_idx_host;
-      std::vector<float> light_area_host;
+      std::vector<float> light_power_host;
 
       for (int i = 0; i < num_geometries; ++i)
       {
@@ -352,12 +352,15 @@ CudaScene::Scene *CudaSceneBuilder::buildGPUScene(const SceneDescription &desc)
          if (mat_id < 0 || mat_id >= static_cast<int>(desc.materials.size()))
             continue;
          const MaterialDesc &mat = desc.materials[mat_id];
-         if (mat.type == MaterialType::LIGHT)
+         const GeometryDesc &gd  = desc.geometries[i];
+         // Only spheres and rectangles can be sampled by NEE (sample_light_gpu): an emissive mesh,
+         // SDF or displaced sphere stays out of the list, so its triangles cannot crowd out the real
+         // lamps, and a BSDF ray that hits it simply gets the full MIS weight.
+         if (mat.type == MaterialType::LIGHT &&
+             (gd.type == GeometryType::SPHERE || gd.type == GeometryType::RECTANGLE))
          {
             light_idx_host.push_back(i);
-            // Approximate area for CDF: sphere = 4*pi*r^2, rectangle = |u×v|, others = 1
-            float area             = 1.0f;
-            const GeometryDesc &gd = desc.geometries[i];
+            float area = 0.0f;
             if (gd.type == GeometryType::SPHERE)
             {
                float r = static_cast<float>(gd.data.sphere.radius);
@@ -375,7 +378,10 @@ CudaScene::Scene *CudaSceneBuilder::buildGPUScene(const SceneDescription &desc)
                float cz = ux * vy - uy * vx;
                area     = std::sqrt(cx * cx + cy * cy + cz * cz);
             }
-            light_area_host.push_back(area);
+            // Select lights by emitted power (area x luminance), as OptiX does
+            const float lum = static_cast<float>(0.2126 * mat.emission.x() + 0.7152 * mat.emission.y() +
+                                                 0.0722 * mat.emission.z());
+            light_power_host.push_back(area * std::max(lum, 0.0f));
          }
       }
 
@@ -389,20 +395,20 @@ CudaScene::Scene *CudaSceneBuilder::buildGPUScene(const SceneDescription &desc)
          cudaMemcpy(host_scene.light_indices, light_idx_host.data(),
                     host_scene.num_lights * sizeof(int), cudaMemcpyHostToDevice);
 
-         // Build and upload CDF (prefix sum of areas, normalised to [0,1])
+         // Build and upload CDF (prefix sum of powers, normalised to [0,1])
          std::vector<float> cdf(host_scene.num_lights + 1, 0.0f);
          float total = 0.0f;
-         for (float a : light_area_host)
+         for (float a : light_power_host)
             total += a;
 
          if (total > 0.0f)
          {
             for (int i = 0; i < host_scene.num_lights; ++i)
-               cdf[i + 1] = cdf[i] + light_area_host[i] / total;
+               cdf[i + 1] = cdf[i] + light_power_host[i] / total;
          }
          else
          {
-            // Degenerate: all areas are zero — fall back to a uniform distribution.
+            // Degenerate: all powers are zero — fall back to a uniform distribution.
             const float step = 1.0f / static_cast<float>(host_scene.num_lights);
             for (int i = 0; i < host_scene.num_lights; ++i)
                cdf[i + 1] = cdf[i] + step;
