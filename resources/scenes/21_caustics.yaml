@@ -1,0 +1,66 @@
+# Caustics (OptiX caustic pass)
+#
+# A glass sphere floating above the floor and a mirror sphere, lit by a small panel behind them:
+# the glass focuses the lamp into a bright spot in the middle of its shadow, the mirror spreads a
+# faint reflection of it over the floor and the wall. A shadow ray cannot pass through glass, so the camera paths alone
+# find this light only by chance (speckle); the OptiX caustic pass traces it from the lamp.
+# Compare:
+#   ./rayon -m 4 -s 256 --scene ../resources/scenes/21_caustics.yaml
+#   ./rayon -m 4 -s 256 --scene ../resources/scenes/21_caustics.yaml --no-caustics
+
+scene:
+  name: "Caustics"
+  description: "Glass and mirror spheres under a small lamp: the caustics of the OptiX caustic pass"
+
+camera:
+  position: [0.0, 2.2, 4.0]
+  look_at: [0.3, 0.2, 0.0]
+  up: [0.0, 1.0, 0.0]
+  fov: 40.0
+
+settings:
+  background_color: [0.0, 0.0, 0.0]
+  background_intensity: 0.0
+  use_bvh: true
+
+materials:
+  - name: "floor"
+    type: "lambertian"
+    albedo: [0.75, 0.75, 0.72]
+  - name: "wall"
+    type: "lambertian"
+    albedo: [0.6, 0.62, 0.66]
+  - name: "glass"
+    type: "glass"
+    refractive_index: 1.5
+  - name: "mirror"
+    type: "mirror"
+    albedo: [0.95, 0.95, 0.95]
+  - name: "lamp"
+    type: "light"
+    emission: [40.0, 38.0, 34.0]
+
+geometry:
+  - type: "rectangle"
+    material: "floor"
+    corner: [-4.0, 0.0, -3.0]
+    u: [8.0, 0.0, 0.0]
+    v: [0.0, 0.0, 7.0]
+  - type: "rectangle"
+    material: "wall"
+    corner: [-4.0, 0.0, -1.5]
+    u: [8.0, 0.0, 0.0]
+    v: [0.0, 4.0, 0.0]
+  - type: "sphere"
+    material: "glass"
+    center: [-0.4, 1.0, 0.2]
+    radius: 0.5
+  - type: "sphere"
+    material: "mirror"
+    center: [0.9, 0.4, -0.3]
+    radius: 0.4
+  - type: "rectangle"
+    material: "lamp"
+    corner: [-0.65, 2.8, -1.0]
+    u: [0.5, 0.0, 0.0]
+    v: [0.0, 0.0, 0.5]

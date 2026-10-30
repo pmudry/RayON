@@ -103,6 +103,8 @@ counted twice and the result is unbiased: the caustic converges smoothly instead
 |---|---|---|
 | Caustic pass | `--no-caustics` | on (OptiX modes) |
 
+`21_caustics.yaml` shows it best: render it with and without `--no-caustics`.
+
 ## Light intensity and falloff
 
 Two per-scene settings adjust all the lights at once, live from the GUI, saved with the camera.

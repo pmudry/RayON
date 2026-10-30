@@ -28,7 +28,7 @@ cd build && cmake .. -DCMAKE_BUILD_TYPE=Debug && make -j && cd ..
 
 After adding new files/directories under `src/`, re-run `cmake .. --fresh` to update includes and `.clangd`.
 
-Image regression test (renders are deterministic): `scripts/regress.sh` renders 11 scenes in modes 2
+Image regression test (renders are deterministic): `scripts/regress.sh` renders 12 scenes in modes 2
 and 4 and compares them with `tests/regression/`; after an intended visual change, inspect the diffs
 and refresh the references with `scripts/regress.sh --update`.
 
