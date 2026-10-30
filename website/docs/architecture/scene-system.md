@@ -1,7 +1,7 @@
 # Scene System
 
 RayON uses a **"build once, render anywhere"** architecture. A single host-side scene description
-is constructed once and handed to the GPU renderer.
+is constructed once, from YAML or from C++, and handed to whichever GPU back-end renders it.
 
 ---
 
@@ -15,11 +15,14 @@ into the GPU-specific flat format at build time:
 flowchart LR
     yaml["YAML file\nor\nC++ code"]
     desc["SceneDescription\n(host-side, neutral)"]
-    gpu_builder["CUDASceneBuilder\n::buildGPUScene()"]
+    gpu_builder["CudaSceneBuilder\n::buildGPUScene()"]
     gpu_scene["CudaScene::Scene\n(flat GPU structs)"]
+    optix_builder["optixRendererBuildScene()\nbuildGAS()"]
+    optix_scene["OptiX GAS + IAS\nSBT records, light table"]
 
     yaml -->|parse / construct| desc
     desc --> gpu_builder --> gpu_scene
+    desc --> optix_builder --> optix_scene
 
     style desc fill:#2d3436,stroke:#e17055,color:#ffffff
 ```
@@ -28,13 +31,16 @@ flowchart LR
 
 ## SceneDescription
 
-Defined in `src/rayon/scene_description.hpp`, `SceneDescription` holds:
+Defined in `src/rayon/scenes/scene_description.hpp`, `SceneDescription` holds:
 
-- **Materials** — a `std::vector<MaterialDesc>` with type enum + parameters union
-- **Geometry** — a `std::vector<GeometryDesc>` with type enum + parameters union
-- **BVH nodes** — built by `buildBVH()`, stored as a flat `std::vector<BVHNode>`
-- **Camera/render settings** — resolution, samples, look_from, look_at, FOV, DOF
-- **Flags** — `use_bvh`, `background_color`
+- **Materials** — a `std::vector<MaterialDesc>`: a type enum and every parameter any type may
+  need (albedo, roughness, complex IOR, film thickness, volume density and noise, grid file…)
+- **Geometry** — a `std::vector<GeometryDesc>` with a type enum and a parameters union; an OBJ
+  mesh becomes one `TRIANGLE` entry per face
+- **BVH nodes** — built by `buildBVH()` with the surface area heuristic, a flat `std::vector<BVHNode>`
+- **Camera and settings** — position, look-at, field of view, background colour and intensity,
+  light intensity and falloff, batch size, the path of the YAML file the scene came from
+- **Textures** — image paths, deduplicated, uploaded once per back-end
 
 ### Adding objects programmatically
 
@@ -58,39 +64,14 @@ scene_desc.addRectangle(Vec3(-1, 3, -2), Vec3(2.5, 0, 0), Vec3(0, 0, 1.5), light
 scene_desc.use_bvh = true;
 ```
 
-This is exactly how `main.cc::create_scene_description()` builds the default scene.
+This is how `scene_factory.hpp` builds the built-in default scene; `yaml_scene_loader.cc` does
+the same from a file and can write the camera and light settings back into it.
 
 ---
 
-## CPU scene building
+## CUDA scene building
 
-!!! info "CPU renderers archived"
-    The CPU rendering backends and `CPUSceneBuilder` have been moved to the
-    [`legacy/cpu-renderer`](https://github.com/pmudry/RayON/tree/legacy/cpu-renderer) branch.
-    The main branch now supports GPU rendering only.
-
-`CPUSceneBuilder::buildCPUScene(desc)` walked the `GeometryDesc` list and instantiated normal
-C++ objects:
-
-```cpp
-// CPUSceneBuilder converts descriptors to polymorphic hittables
-if (geom.type == GeometryType::SPHERE) {
-    list.add(std::make_shared<Sphere>(
-        geom.sphere.center,
-        geom.sphere.radius,
-        cpu_materials[geom.material_id]
-    ));
-}
-```
-
-The key classes (`Sphere`, `Rectangle`, `Triangle`, etc.) inherited from `Hittable` and implemented
-a virtual `hit()` function. This is idiomatic C++ — no GPU concerns.
-
----
-
-## GPU scene building
-
-`CUDASceneBuilder::buildGPUScene(desc)` converts the same description into **Plain Old Data**
+`CudaSceneBuilder::buildGPUScene(desc)` converts the description into **Plain Old Data**
 structures the GPU can work with:
 
 ```cpp
@@ -112,7 +93,25 @@ The result is a `CudaScene::Scene` struct containing:
 - `BVHNode* bvh_nodes` — flat array (if BVH is enabled)
 - `int num_geometries`, `int num_materials`, `int num_bvh_nodes`
 
-All of these are allocated with `cudaMalloc` and freed after rendering.
+All of these are allocated with `cudaMalloc` and freed after rendering. Volume materials get
+their signed distance grid and baked density field built here (`volume_sdf.cu`), as 3D
+textures bound into the material.
+
+---
+
+## OptiX scene building
+
+`optixRendererBuildScene()` walks the same description but splits it by how OptiX intersects
+things: every `TRIANGLE` goes into one **triangle geometry acceleration structure** handled by
+the RT cores, with a per-triangle side table (material, normals, UVs, visibility); spheres,
+rectangles, displaced spheres and SDF shapes become **custom primitives** with their own
+bounding boxes and a shader binding table record each. A one-level instance acceleration
+structure references both. Volumes are traced as a box around their mesh. Lights are collected
+into a device table with an area CDF for next event estimation.
+
+!!! info "CPU renderers archived"
+    The CPU back-ends and their `CPUSceneBuilder` live on the
+    [`legacy/cpu-renderer`](https://github.com/pmudry/RayON/tree/legacy/cpu-renderer) branch.
 
 ---
 
@@ -121,7 +120,7 @@ All of these are allocated with `cudaMalloc` and freed after rendering.
 Without virtual functions, the GPU dispatcher uses switch statements:
 
 ```cpp
-// From shader_common.cuh
+// From cuda_raytracer.cuh
 __device__ bool intersect_geometry(const Geometry& g, const Ray& r, float t_min, float t_max,
                                    HitRecord& rec) {
     switch (g.type) {
@@ -166,10 +165,13 @@ artefacts in scene geometry construction while keeping GPU compute on `float` la
 
 ## Adding a new geometry type
 
-1. Add the enum value to `GeometryType` in `scene_description.hpp`.
-2. Add a parameters struct inside the `GeometryDesc` union.
-3. Add a `CudaScene::Geometry` union member in `cuda_scene.cuh`.
-4. Implement `intersect_my_shape()` in `shader_common.cuh`.
-5. Add the case to both switch statements above.
-6. Add `convertGeometry()` case in `scene_builder_cuda.cu`.
-7. Add a `SceneDescription::addMyShape()` factory method.
+1. Add the enum value to `GeometryType` in `scenes/scene_description.hpp`.
+2. Add a parameters struct inside the `GeometryDesc` union and a `SceneDescription::addMyShape()`
+   factory method that fills the bounds.
+3. Add a `CudaScene::Geometry` union member in `cuda_scene.cuh` and the `convertGeometry()` case
+   in `scene_builder_cuda.cu`.
+4. Implement the intersection in `cuda_raytracer.cuh` (`intersect_geometry()`), ideally in a header
+   shared with OptiX as `sdf_primitives.cuh` is.
+5. On OptiX, add an `__intersection__` program in `optix_programs.cu`, a program group and the
+   SBT record fill in `optix_renderer.cu`, and list the type in `buildGAS()`.
+6. Parse it in `yaml_scene_loader.cc` and document it in `SCENE_FORMAT.md`.

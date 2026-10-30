@@ -1,65 +1,86 @@
 # Gallery
 
-A curated collection of renders from RayON's built-in scenes, showcasing the range of materials,
-lighting effects, and geometric complexity the renderer supports.
+Renders from the bundled scenes, grouped by what they show. Every image can be reproduced from
+`resources/scenes/` with the offline modes (`-m 4` or `-m 2`).
 
 ---
+
+=== "Volumes & SDF"
+
+    <div class="img-grid cols-2">
+      <figure>
+        <img src="../assets/images/cloud_bunny.png" alt="The Stanford bunny as a cumulus cloud on a ground plane">
+        <figcaption><strong>Cloud bunny</strong> — <code>17_cloud_bunny.yaml</code>. The volume material with procedural shape noise, a hidden sun and volumetric shadow rays. OptiX, 512 spp, 720p.</figcaption>
+      </figure>
+      <figure>
+        <img src="../assets/images/vdb_bunny.png" alt="OpenVDB bunny cloud density grid">
+        <figcaption><strong>VDB bunny</strong> — <code>19_vdb_bunny.yaml</code>. The OpenVDB <code>bunny_cloud</code> grid, 289×286×219 cells, read straight into the 3D density texture. OptiX, 512 spp, 720p.</figcaption>
+      </figure>
+      <figure>
+        <img src="../assets/images/full_bunny.png" alt="The VDB bunny cloud at 2048 samples per pixel in 1080p">
+        <figcaption><strong>VDB bunny, 2048 spp, 1080p</strong> — the same scene left to converge.</figcaption>
+      </figure>
+      <figure>
+        <img src="../assets/images/sdf_gallery.png" alt="Ten ray-marched SDF primitives in a studio room">
+        <figcaption><strong>SDF gallery</strong> — <code>18_sdf_shapes.yaml</code>. Mandelbulb, death star, cut hollow sphere, torus, glass octahedron, pyramid, capsule, box, cylinder and sphere, sphere-traced on the GPU. OptiX, 384 spp, 720p.</figcaption>
+      </figure>
+    </div>
 
 === "Scenes"
 
     <div class="img-grid cols-2">
       <figure>
-        <img src="../assets/images/samples/cornell.png" alt="Cornell box — colour bleeding between red and green walls onto the ceiling and white floor spheres">
-        <figcaption><strong>Cornell Box</strong> — classic test scene. Coloured diffuse walls create colour bleeding on nearby surfaces. Soft shadow from an area light overhead.</figcaption>
+        <img src="../assets/images/samples/cornell.png" alt="Cornell box with colour bleeding between the coloured walls and the spheres">
+        <figcaption><strong>Cornell box</strong> — <code>09_color_bleed_box.yaml</code>. Coloured diffuse walls bleed onto the neighbouring surfaces; the area light overhead gives soft shadows.</figcaption>
       </figure>
       <figure>
-        <img src="../assets/images/samples/gui_debug/indoor spheres.png" alt="Indoor scene with multiple reflective and diffuse spheres">
-        <figcaption><strong>Indoor Spheres</strong> — assorted dielectric, metallic, and diffuse spheres in an enclosed room with area lighting.</figcaption>
+        <img src="../assets/images/samples/gui_debug/indoor spheres.png" alt="Indoor scene with reflective and diffuse spheres">
+        <figcaption><strong>Indoor spheres</strong> — dielectric, metallic and diffuse spheres in an enclosed room with area lighting.</figcaption>
       </figure>
       <figure>
-        <img src="../assets/images/samples/isc_spheres.png" alt="Scene with spheres arranged on a reflective floor">
-        <figcaption><strong>ISC Spheres</strong> — multi-material arrangement with strong inter-reflections between specular surfaces.</figcaption>
+        <img src="../assets/images/samples/isc_spheres.png" alt="Spheres on a reflective floor">
+        <figcaption><strong>ISC spheres</strong> — the five colours of the ISC programme's majors, with strong inter-reflections between specular surfaces.</figcaption>
       </figure>
       <figure>
-        <img src="../assets/images/samples/bvh_testing.png" alt="Many spheres rendered">
-        <figcaption><strong>Multiple spheres</strong> — scene, using for performance assessment in realtime.</figcaption>
+        <img src="../assets/images/samples/bvh_testing.png" alt="Many spheres in a grid">
+        <figcaption><strong>BVH test scene</strong> — <code>01_bvh_test_scene.yaml</code>, 150 spheres used to measure the acceleration structure.</figcaption>
       </figure>
       <figure>
-        <img src="../assets/images/samples/golf.png" alt="Golf ball displacement mapping — dimpled surface under directional light">
-        <figcaption><strong>Golf Ball</strong> — procedural displacement mapping creates the characteristic dimple pattern on a sphere. The BRDF captures specular highlights across the surface microstructure.</figcaption>
-      </figure>           
+        <img src="../assets/images/samples/golf.png" alt="Golf ball with procedural displacement">
+        <figcaption><strong>Golf ball</strong> — a displaced sphere: the dimple pattern is procedural, and its count, radius and depth are live sliders in the GUI.</figcaption>
+      </figure>
       <figure>
-        <img src="../assets/images/for_project/sampling/aniso_512spp.png" alt="Anisotropic metals scene at 512 SPP — directional highlight streaks fully resolved">
-        <figcaption><strong>Anisotropic Metals — 512 SPP</strong> — directional highlight streaks fully resolved across all roughness and anisotropy levels. Rendered with the CUDA path tracer.</figcaption>
-      </figure>       
+        <img src="../assets/images/for_project/sampling/aniso_512spp.png" alt="Anisotropic metals scene at 512 spp">
+        <figcaption><strong>Anisotropic metals</strong> — <code>01_anisotropic_metals_test.yaml</code> at 512 spp: anisotropy along the rows, roughness along the columns.</figcaption>
+      </figure>
     </div>
 
 === "Materials"
 
     <div class="img-grid cols-2">
       <figure>
-        <img src="../assets/images/samples/metals%20shine%202.png" alt="Tinted rough mirrors — gold, copper, and steel preset tints">
-        <figcaption><strong>Tinted Rough Mirrors</strong> — gold, copper, and steel preset tints. Roughness controls how blurry the reflections appear (0 = perfect mirror, 1 ≈ diffuse).</figcaption>
+        <img src="../assets/images/samples/metals%20shine%202.png" alt="Tinted rough mirrors: gold, copper and steel">
+        <figcaption><strong>Tinted rough mirrors</strong> — gold, copper and steel tints. The roughness blurs the reflection, from a perfect mirror at 0 towards diffuse at 1.</figcaption>
       </figure>
       <figure>
-        <img src="../assets/images/samples/dielectric%20metsals.png" alt="Glass dielectric spheres with refractive caustics next to metallic surfaces">
-        <figcaption><strong>Dielectrics &amp; Metals</strong> — glass spheres use Snell's law for refraction and Schlick's approximation for the reflection/transmission ratio at grazing angles.</figcaption>
-      </figure>      
-      <figure>
-        <img src="../assets/images/samples/textures/uv_mapping.png" alt="UV texture mapped cube, sphere and ground plane with a grid texture">
-        <figcaption><strong>UV Texture Mapping</strong> — a grid texture applied to UV-mapped OBJ models via MTL. UVs are interpolated per-triangle using barycentric coordinates.</figcaption>
+        <img src="../assets/images/samples/dielectric%20metsals.png" alt="Glass spheres with caustics next to metallic surfaces">
+        <figcaption><strong>Dielectrics and metals</strong> — glass follows Snell's law with Schlick's Fresnel approximation; the caustic under the sphere emerges from the path tracing alone.</figcaption>
       </figure>
       <figure>
-        <img src="../assets/images/samples/textures/texture_orig.png" alt="Blender-exported OBJ scene with multi-material MTL textures">
-        <figcaption><strong>MTL-driven Textures</strong> — per-group materials from a Blender-exported scene. Each mesh group picks its diffuse texture from the <code>.mtl</code> file automatically.</figcaption>
+        <img src="../assets/images/samples/thin_film_shader.png" alt="Soap-bubble thin-film shading">
+        <figcaption><strong>Thin film</strong> — <code>11_soap_bubbles.yaml</code>. The Airy interference formula at several film thicknesses sweeps through the spectrum.</figcaption>
       </figure>
       <figure>
-        <img src="../assets/images/samples/thin_film_shader.png" alt="Soap-bubble like thin film shading">
-        <figcaption><strong>Thin-film rendering</strong> — mimics oil stains or soap bubbles.</figcaption>
+        <img src="../assets/images/samples/plastic_shading.png" alt="Clear coat over a diffuse base on the dragon">
+        <figcaption><strong>Clear coat</strong> — a Lambertian base under a smooth dielectric coat; the highlight is view-dependent.</figcaption>
       </figure>
       <figure>
-        <img src="../assets/images/samples/plastic_shading.png" alt="Plastic shading — diffuse base with specular highlight layer">
-        <figcaption><strong>Plastic Shading</strong> — two-layer model: a Lambertian base coat with a specular clearcoat layer on top. The highlight is view-dependent.</figcaption>
+        <img src="../assets/images/samples/textures/uv_mapping.png" alt="UV textured cube, sphere and plane">
+        <figcaption><strong>UV texture mapping</strong> — <code>13_texture_test1.yaml</code>. A grid texture through MTL files, interpolated with barycentric coordinates.</figcaption>
+      </figure>
+      <figure>
+        <img src="../assets/images/samples/textures/texture_orig.png" alt="Blender export with multi-material textures">
+        <figcaption><strong>MTL-driven textures</strong> — <code>14_texture_test2.yaml</code>. Each group of a Blender export picks its texture from the <code>.mtl</code> file.</figcaption>
       </figure>
     </div>
 
@@ -67,67 +88,70 @@ lighting effects, and geometric complexity the renderer supports.
 
     <div class="img-grid cols-2">
       <figure>
-        <img src="../assets/images/samples/gui_debug/normals.png" alt="Normal visualisation mode — surfaces coloured by surface normal direction">
-        <figcaption><strong>Normal Visualisation</strong> — the <code>ShowNormals</code> material maps surface normals directly to RGB: <em>R=X, G=Y, B=Z</em>. Useful for debugging geometry orientation and smooth normals on mesh imports.</figcaption>
+        <img src="../assets/images/samples/gui_debug/normals.png" alt="Normal visualisation mode">
+        <figcaption><strong>Normals</strong> — key <b>N</b> maps the surface normal to RGB (R = X, G = Y, B = Z). The smooth interpolation hides the face boundaries of the mesh.</figcaption>
       </figure>
       <figure>
-        <img src="../assets/images/samples/gui_debug/statue.png" alt="Interactive SDL2 window showing real-time accumulative path tracing at 100 Hz">
-        <figcaption><strong>Interactive Mode</strong> — SDL2 window at ~100 Hz with Dear ImGui overlaid. The sample counter and convergence indicator are visible in the top-right panel.</figcaption>
+        <img src="../assets/images/samples/gui_debug/statue.png" alt="Interactive window with the Dear ImGui panel">
+        <figcaption><strong>Interactive mode</strong> — the SDL2 window with the Dear ImGui panel: sample counter, convergence and the live sliders.</figcaption>
       </figure>
       <figure>
-        <img src="../assets/images/samples/obj_loading.png" alt="OBJ mesh loading test — low-poly model with triangulated faces">
-        <figcaption><strong>OBJ Mesh Loading</strong> — imported triangle mesh, rendered with smooth interpolated normals from the <code>.obj</code> file's vertex normal list.</figcaption>
+        <img src="../assets/images/samples/obj_loading.png" alt="OBJ mesh with smooth normals">
+        <figcaption><strong>OBJ loading</strong> — an imported mesh rendered with the vertex normals of the file.</figcaption>
       </figure>
       <figure>
         <img src="../assets/images/dev/dof.png" alt="Depth of field with bokeh blur">
-        <figcaption><strong>Depth of Field</strong> — aperture and focus distance are adjustable at runtime via ImGui sliders in interactive mode. The lens model is a thin lens approximation.</figcaption>
+        <figcaption><strong>Depth of field</strong> — thin-lens aperture and focus distance, adjustable live in the <em>Camera Settings</em> section.</figcaption>
       </figure>
     </div>
 
 === "Progressive Quality"
 
-    <p>Anisotropic metals scene rendered at increasing sample counts. Every doubling halves Monte Carlo noise — error
-    decays as \(\mathcal{O}(1/\sqrt{N})\). The anisotropic specular lobes are particularly sensitive to sample count.</p>
+    <p>The anisotropic metals scene at increasing sample counts. Monte Carlo noise decays as
+    \(\mathcal{O}(1/\sqrt{N})\): every doubling of the samples removes about 30 % of the noise.
+    The anisotropic highlights are the slowest to resolve.</p>
 
     <div class="img-grid cols-2">
       <figure>
-        <img src="../assets/images/for_project/sampling/aniso_4spp.png" alt="4 samples per pixel — heavy noise across specular lobes">
-        <figcaption><strong>4 SPP</strong> — specular highlights are buried in noise; anisotropic streaks invisible.</figcaption>
+        <img src="../assets/images/for_project/sampling/aniso_4spp.png" alt="4 samples per pixel">
+        <figcaption><strong>4 spp</strong> — the highlights are buried in noise.</figcaption>
       </figure>
       <figure>
-        <img src="../assets/images/for_project/sampling/aniso_16spp.png" alt="16 samples per pixel — rough shapes visible">
-        <figcaption><strong>16 SPP</strong> — sphere shapes emerge; directional highlights faintly visible.</figcaption>
+        <img src="../assets/images/for_project/sampling/aniso_16spp.png" alt="16 samples per pixel">
+        <figcaption><strong>16 spp</strong> — shapes emerge, the streaks are faintly visible.</figcaption>
       </figure>
       <figure>
         <img src="../assets/images/for_project/sampling/aniso_32spp.png" alt="32 samples per pixel">
-        <figcaption><strong>32 SPP</strong> — anisotropic streaks begin to form; still noticeably noisy.</figcaption>
+        <figcaption><strong>32 spp</strong> — the anisotropic streaks form.</figcaption>
       </figure>
       <figure>
         <img src="../assets/images/for_project/sampling/aniso_64spp.png" alt="64 samples per pixel">
-        <figcaption><strong>64 SPP</strong> — usable quality; highlight directionality clear on low-roughness spheres.</figcaption>
+        <figcaption><strong>64 spp</strong> — usable; the direction of the highlights is clear on the smooth spheres.</figcaption>
       </figure>
       <figure>
-        <img src="../assets/images/for_project/sampling/aniso_128spp.png" alt="128 samples per pixel — clean highlights">
-        <figcaption><strong>128 SPP</strong> — clean for most materials; high-anisotropy spheres still show slight graininess.</figcaption>
+        <img src="../assets/images/for_project/sampling/aniso_128spp.png" alt="128 samples per pixel">
+        <figcaption><strong>128 spp</strong> — clean for most materials.</figcaption>
       </figure>
       <figure>
-        <img src="../assets/images/for_project/sampling/aniso_512spp.png" alt="512 samples per pixel — near-converged">
-        <figcaption><strong>512 SPP</strong> — near-converged; anisotropic lobes fully resolved across all roughness levels.</figcaption>
+        <img src="../assets/images/for_project/sampling/aniso_512spp.png" alt="512 samples per pixel">
+        <figcaption><strong>512 spp</strong> — near convergence.</figcaption>
       </figure>
     </div>
 
 === "HDR Skies"
 
-    <p>Scene renders using equirectangular HDR environment maps from <a href="https://polyhaven.com">Poly Haven</a> (CC0 licence) as the sky dome. Six environments are bundled — download them with <code>bash resources/hdri/download_hdri.sh 8k</code>.</p>
+    <p>Scenes lit by equirectangular HDR environments from <a href="https://polyhaven.com">Poly Haven</a>
+    (CC0). Six environments are downloaded by <code>bash resources/hdri/download_hdri.sh 8k</code>,
+    see <a href="../features/hdr-sky/">HDR Sky Dome</a>.</p>
 
     <div class="img-grid cols-3">
-      <img src="../assets/images/samples/hdri/hdri_0.png" alt="HDR sky render — default gradient sky">
-      <img src="../assets/images/samples/hdri/hdri_1.png" alt="HDR sky render — environment 1">
-      <img src="../assets/images/samples/hdri/hdri_3.png" alt="HDR sky render — environment 3">
-      <img src="../assets/images/samples/hdri/hdri_4.png" alt="HDR sky render — environment 4">
-      <img src="../assets/images/samples/hdri/hdri_5.png" alt="HDR sky render — environment 5">
-      <img src="../assets/images/samples/hdri/hdri_6.png" alt="HDR sky render — environment 6">
-      <img src="../assets/images/samples/hdri/hdri_7.png" alt="HDR sky render — environment 7">
-      <img src="../assets/images/samples/hdri/hdri_8.png" alt="HDR sky render — environment 8">
-      <img src="../assets/images/samples/hdri/hdri_9.png" alt="HDR sky render — environment 9">
+      <img src="../assets/images/samples/hdri/hdri_0.png" alt="HDR sky render">
+      <img src="../assets/images/samples/hdri/hdri_1.png" alt="HDR sky render">
+      <img src="../assets/images/samples/hdri/hdri_3.png" alt="HDR sky render">
+      <img src="../assets/images/samples/hdri/hdri_4.png" alt="HDR sky render">
+      <img src="../assets/images/samples/hdri/hdri_5.png" alt="HDR sky render">
+      <img src="../assets/images/samples/hdri/hdri_6.png" alt="HDR sky render">
+      <img src="../assets/images/samples/hdri/hdri_7.png" alt="HDR sky render">
+      <img src="../assets/images/samples/hdri/hdri_8.png" alt="HDR sky render">
+      <img src="../assets/images/samples/hdri/hdri_9.png" alt="HDR sky render">
     </div>

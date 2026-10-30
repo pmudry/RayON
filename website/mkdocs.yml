@@ -1,5 +1,5 @@
-site_name: RayON | 🚧 Work in progress
-site_description: An interactive high-performance CPU & CUDA path tracer with progressive sampling.
+site_name: RayON
+site_description: An interactive CUDA and OptiX path tracer with progressive sampling, volumetric clouds and ray-marched SDF shapes.
 site_author: Pierre-André Mudry
 site_url: https://pmudry.github.io/RayON
 repo_url: https://github.com/pmudry/RayON
@@ -141,6 +141,8 @@ nav:
     - features/index.md
     - Interactive Mode: features/interactive.md
     - YAML Scene Format: features/scenes.md
+    - Lights & Shadows: features/lighting.md
+    - Volumes, Clouds & Smoke: features/volumes.md
     - SDF Shapes: features/sdf-shapes.md
     - OBJ Loading: features/obj-loading.md
     - HDR Sky Dome: features/hdr-sky.md

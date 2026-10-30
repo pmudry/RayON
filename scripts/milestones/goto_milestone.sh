@@ -62,6 +62,11 @@ declare -a    COMMIT=( ""
     "1f7a83d"   # 13
     "8ec565e"   # 14
     "d831935"   # 15
+    "ff0a128"   # 16
+    "104892f"   # 17
+    "80c8813"   # 18
+    "d3c5795"   # 19
+    "2018380"   # 20
 )
 
 declare -a EXECUTABLE=( ""
@@ -80,6 +85,11 @@ declare -a EXECUTABLE=( ""
     "rayon"               # 13
     "rayon"               # 14
     "rayon"               # 15
+    "rayon"               # 16
+    "rayon"               # 17
+    "rayon"               # 18
+    "rayon"               # 19
+    "rayon"               # 20
 )
 
 declare -a MAKE_TARGET=( ""
@@ -98,6 +108,11 @@ declare -a MAKE_TARGET=( ""
     "rayon"               # 13
     "rayon"               # 14
     "rayon"               # 15
+    "rayon"               # 16
+    "rayon"               # 17
+    "rayon"               # 18
+    "rayon"               # 19
+    "rayon"               # 20
 )
 
 # "offline" = batch render to PNG; "interactive" = SDL window
@@ -117,6 +132,11 @@ declare -a DEMO_MODE=( ""
     "interactive"  # 13
     "offline"      # 14
     "offline"      # 15
+    "interactive"  # 16
+    "interactive"  # 17
+    "interactive"  # 18
+    "interactive"  # 19
+    "interactive"  # 20
 )
 
 # Digit piped to stdin for the pre-flag era interactive method menus.
@@ -138,6 +158,11 @@ declare -a STDIN_CHOICE=( ""
     ""   # 13
     ""   # 14
     ""   # 15
+    ""   # 16
+    ""   # 17
+    ""   # 18
+    ""   # 19
+    ""   # 20
 )
 
 # Run arguments for the default demo mode.
@@ -158,6 +183,11 @@ declare -a RUN_ARGS=( ""
     "-m 3 -r 720 --scene resources/scenes/12_clearcoat_pokemonball.yaml"  # 13
     "-m 4 -r 720 -s 64"                                                    # 14
     "-m 4 -r 720 -s 64"                                                    # 15
+    "-m 3 -r 720 --scene resources/scenes/14_texture_test2.yaml"          # 16
+    "-m 5 -r 720 --scene resources/scenes/16_nee_small_light.yaml"        # 17
+    "-m 5 -r 720 --scene resources/scenes/04_obj_dragon.yaml"             # 18
+    "-m 5 -r 720 --scene resources/scenes/17_cloud_bunny.yaml"            # 19
+    "-m 5 -r 720 --scene resources/scenes/18_sdf_shapes.yaml"             # 20
 )
 
 # Run arguments when --offline is forced on an interactive milestone.
@@ -177,6 +207,11 @@ declare -a OFFLINE_ARGS=( ""
     "-m 2 -r 720 -s 128 --scene resources/scenes/12_clearcoat_pokemonball.yaml"    # 13
     ""                    # 14 — already offline OptiX
     ""                    # 15 — already offline OptiX
+    "-m 2 -r 720 -s 128 --scene resources/scenes/14_texture_test2.yaml"   # 16
+    "-m 4 -r 720 -s 128 --scene resources/scenes/16_nee_small_light.yaml" # 17
+    "-m 4 -r 720 -s 128 --scene resources/scenes/04_obj_dragon.yaml"      # 18
+    "-m 4 -r 720 -s 256 --scene resources/scenes/17_cloud_bunny.yaml"     # 19
+    "-m 4 -r 720 -s 256 --scene resources/scenes/18_sdf_shapes.yaml"      # 20
 )
 
 # Stdin choice override for --offline mode on interactive pre-flag milestones.
@@ -186,6 +221,7 @@ declare -a OFFLINE_STDIN=( ""
     "2"          # 6 — use CUDA offline instead of SDL
     "2"          # 7
     "" "" "" "" "" "" "" ""  # 8-15
+    "" "" "" "" ""           # 16-20
 )
 
 declare -a DESCRIPTION=( ""
@@ -204,9 +240,14 @@ declare -a DESCRIPTION=( ""
     "Thin-film interference + clear-coat (Mar 13, 2026)"          # 13
     "First NVIDIA OptiX render (Mar 15, 2026)"                     # 14
     "OptiX 4× speedup on dragon mesh (Mar 15, 2026)"              # 15
+    "MTL materials & image textures on OBJ meshes (Mar 15, 2026)" # 16
+    "Next event estimation + MIS, furnace test (Mar 20, 2026)"    # 17
+    "Camera motion regulator + OptiX AI denoiser (Oct 29, 2026)"  # 18
+    "Volume material — the cloud bunny, v1.8.0 (Oct 30, 2026)"    # 19
+    "SDF gallery, VDB bunny, light falloff (Oct 30, 2026)"        # 20
 )
 
-NUM_MILESTONES=15
+NUM_MILESTONES=20
 
 # ── Helper functions ────────────────────────────────────────────────────────────
 

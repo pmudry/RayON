@@ -13,7 +13,7 @@ machine (NVIDIA DGX Spark, 2026).
 | Resolution | 1280 × 720 (720p) |
 | Samples per pixel | 1024 |
 | Runs per benchmark | 3 (averaged) |
-| CUDA block size | 32 × 4 (128 threads) |
+| CUDA block size | 32 × 8 (256 threads) |
 | BVH | Enabled (SAH) |
 
 ---
@@ -95,6 +95,20 @@ noise requires **quadrupling** the samples.
 
 ---
 
+## Reference timings, October 2026
+
+Offline OptiX renders at 720p on the DGX Spark, measured during the development of the volume
+material (single run each, the GPU otherwise idle):
+
+| Scene | Samples | Time | Notes |
+|---|---|---|---|
+| `17_cloud_bunny.yaml` | 512 | 11 s | procedural volume, baked field, empty-space skipping |
+| `19_vdb_bunny.yaml` | 512 | 40 s | density grid, no empty-space skipping yet |
+| `18_sdf_shapes.yaml` | 384 | 23 s | ten ray-marched shapes incl. a mandelbulb |
+| `16_nee_small_light.yaml` (360p) | 64 | 0.17 s | five matte spheres, one bulb |
+
+---
+
 ## Running the benchmark yourself
 
 ```bash
@@ -122,6 +136,10 @@ timestamp,commit,branch,gpu,resolution,samples,method,sampler,run,time_s
 - **Enable BVH** for any scene with more than ~15 objects: `use_bvh: true` in YAML.
 - **Raise the Target FPS** in the GUI's "Camera Motion" section for a very responsive orbit/pan
   experience — the batch size and the render resolution auto-scale down to keep up.
-- **Block size** — the default 32×4 is tuned for warp alignment. Changing it often regresses performance.
-- **Fast math** — `--use_fast_math` is currently disabled by default because a small number of
-  scenes show artefacts in glass materials. Enable only if you do not have refractive surfaces.
+- **Block size** — the default 32×8 is tuned for warp alignment; register-cap and block-shape
+  experiments (see `ROADMAP.md`) gave no consistent gain.
+- **Fast math** — `--use_fast_math` is on in Release builds and off in Debug builds.
+- **Prefer OptiX** (`-m 4`, `-m 5`) on RTX-class hardware: triangles and shadow rays run on the
+  RT cores, and the interactive mode has the motion regulator.
+- **Keep an eye on the first run after a build**: OptiX compiles its module on the first launch
+  (a few seconds, then cached on disk), so time the second run.

@@ -9,12 +9,14 @@ It grew into a full-featured interactive GPU path tracer used as an educational 
 
 The project demonstrates:
 
-- How the same scene description can drive both a readable CPU implementation and a massively
-  parallel CUDA kernel without duplicating logic.
-- Progressive sample accumulation and interactive camera control at real-time frame rates on
-  modern GPUs.
-- Physically-based materials (Lambertian diffuse, rough mirror microfacet, dielectric glass,
-  emissive lights) implemented consistently on both CPU and GPU.
+- How one scene description drives two GPU back-ends, a software path tracer in CUDA and a
+  hardware-accelerated one on OptiX, without duplicating the scene logic.
+- Progressive sample accumulation and interactive camera control at real-time frame rates,
+  with a regulator that trades resolution for frame rate while the camera moves.
+- Physically-based materials, from Lambertian and microfacet conductors to thin films, clear
+  coats and participating media, with next event estimation and multiple importance sampling.
+- Ray-marched signed distance shapes and volumetric clouds from procedural noise or OpenVDB
+  data.
 
 The source code is published under the GPL v3 licence and is intended as a learning resource
 as much as a working renderer.

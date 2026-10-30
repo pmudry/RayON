@@ -150,15 +150,11 @@ The effect is most pronounced in scenes with complex indirect lighting.
 
 ---
 
-## Multiple Importance Sampling (future)
+## Beyond the BRDF: light sampling
 
-A natural extension is **Multiple Importance Sampling (MIS)**: combine the cosine-weighted
-BRDF sampler with a light-direction sampler, weighting each by its contribution using the
-balance heuristic:
-
-\[
-w_s(\omega) = \frac{n_s \, p_s(\omega)}{\sum_k n_k \, p_k(\omega)}
-\]
-
-This is listed in the [ROADMAP](https://github.com/pmudry/RayON/blob/main/ROADMAP.md) and would
-further reduce noise in scenes with small, intense light sources (current weak point).
+Cosine-weighted sampling is the best *one-strategy* sampler for a diffuse surface, but it knows
+nothing about where the light is. RayON combines it with a second strategy that samples the
+lights directly, and weights the two with the power heuristic. That is
+[Multiple Importance Sampling](mis.md), and it is what makes small bright lights tractable.
+The random numbers themselves come from a [Sobol' sequence](sobol-sampling.md) rather than a
+pseudo-random generator.

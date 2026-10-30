@@ -534,7 +534,7 @@ class SDLGuiHandler
                            ImGui::SliderInt("NEE stride##nee_stride", nee_stride, 1, 8);
                            ImGui::SetItemTooltip("The first bounce always traces a shadow ray; deeper bounces\n"
                                                 "do it on 1 out of every N samples (contribution \xc3\x97 N, unbiased).\n"
-                                                "1 = every sample (lowest noise), 3 = default, higher = faster.");
+                                                "1 = every sample (the default, lowest noise), higher = faster.");
                            ImGui::PopItemWidth();
                            if (!mis_ok) ImGui::EndDisabled();
                         }
@@ -735,7 +735,7 @@ class SDLGuiHandler
                         ImGui::EndDisabled();
                      if (can_save)
                         ImGui::SetItemTooltip("Writes the camera (position, look_at, fov) and the light settings\n"
-                                              "(Lights inten., Ambient Light) into\n%s\n(only those lines are touched).",
+                                              "(Lights inten., Lights falloff, Ambient Light) into\n%s\n(only those lines are touched).",
                                               scene_yaml_path);
                      else
                         ImGui::SetItemTooltip("The current scene was not loaded from a YAML file.");
@@ -920,12 +920,11 @@ class SDLGuiHandler
                ImGui::Separator();
                ImGui::Text("Keys:");
                ImGui::BulletText("SPACE: Toggle Accumulation");
-               ImGui::BulletText("A: Toggle Normal Arrows");
                ImGui::BulletText("N: Toggle Show Normals");
                ImGui::BulletText("Left/Right: Previous/Next Scene");
                ImGui::BulletText("Numpad +/-: Next/Prev HDR Sky");
                ImGui::BulletText("O: Auto orbit");
-               ImGui::BulletText("F / H: Toggle SPP/s Counter");
+               ImGui::BulletText("F: Toggle SPP/s Counter");
                ImGui::BulletText("L: Toggle Logo");
                ImGui::BulletText("Enter: Collapse/Expand Window");
                ImGui::BulletText("H: Hide/Show UI");

@@ -19,8 +19,9 @@ scattered ray direction and an attenuation factor).
 | **Anisotropic Metal** | `ANISOTROPIC_METAL` | ✓ | — | `roughness`, `anisotropy`, `eta`/`k` (complex IOR) |
 | **Thin Film** | `THIN_FILM` | ✓ | — | `film_thickness` (nm), `film_ior` |
 | **Clear Coat** | `CLEAR_COAT` | ✓ | — | `albedo`, `roughness`, `refractive_index` |
-| **Area Light** | `LIGHT` | — | ✓ | `emission` (RGB) |
-| **SDF Material** | `SDF_MATERIAL` | ✓ | — | For ray-marched SDF objects |
+| **Light** | `LIGHT` | — | ✓ | `emission` (RGB); rectangles and spheres are sampled by NEE |
+| **Volume** | `VOLUME` | ✓ (inside) | — | `albedo`, `density`, `g`, noise and shape fields — see [Volumes](../features/volumes.md) |
+| **SDF Material** | `SDF_MATERIAL` | ✓ | — | A diffuse material for ray-marched SDF objects |
 | **Show Normals** | `SHOW_NORMALS` | — | — | debug: normal → RGB |
 | **Constant** | `CONSTANT` | — | — | debug: solid colour |
 
@@ -249,7 +250,7 @@ and the surface acts as a perfect mirror.
 materials:
   - name: glass
     type: glass
-    ior: 1.5      # crown glass (water ≈ 1.33, diamond ≈ 2.42)
+    refractive_index: 1.5      # crown glass (water ≈ 1.33, diamond ≈ 2.42)
 ```
 
 <img class="render-img" src="../../assets/images/samples/dielectric metsals.png"
@@ -260,13 +261,14 @@ emerges from the path tracing integral.*
 
 ---
 
-## Area Light
+## Lights
 
-Light sources are geometry (rectangles or spheres) with the `LIGHT` material. The `scatter()`
-function returns `false` (no further bouncing) and `emitted()` returns the emission colour.
-
-Soft shadows emerge naturally — a larger light source means more rays from the scene "see" the
-light directly, producing smooth penumbrae.
+Light sources are geometry (rectangles or spheres) with the `light` material. A path that hits
+one adds its emission and stops. On top of that, every diffuse hit traces a shadow ray towards
+a sampled point on a light (next event estimation), and the two contributions are combined with
+multiple importance sampling, see [MIS](mis.md). Soft shadows emerge naturally: a larger light
+is seen from more points of the penumbra. The per-scene intensity and falloff controls are on
+the [Lights & Shadows](../features/lighting.md) page.
 
 ```yaml
 materials:
@@ -277,15 +279,44 @@ materials:
 geometry:
   - type: rectangle
     material: warm_white_light
-    position: [-1.0, 3.0, -2.0]
-    u_vec: [2.5, 0.0, 0.0]
-    v_vec: [0.0, 0.0, 1.5]
+    corner: [-1.0, 3.0, -2.0]
+    u: [2.5, 0.0, 0.0]
+    v: [0.0, 0.0, 1.5]
 ```
 
 <img class="render-img" src="../../assets/images/samples/cornell.png" alt="Cornell box with area light">
 
 *Cornell box lit by a single rectangular area light on the ceiling.
 The coloured walls produce visible colour bleeding on the floor and white sphere.*
+
+---
+
+## Volume (participating medium)
+
+The `volume` material has no surface: the geometry only bounds a medium with an extinction
+coefficient \(\sigma_t\) that varies in space. A ray inside it travels a random free distance,
+then either scatters (with probability given by the single-scattering albedo) into a direction
+drawn from the Henyey–Greenstein phase function,
+
+\[
+p_\text{HG}(\cos\theta) = \frac{1}{4\pi}\,\frac{1 - g^2}{(1 + g^2 - 2g\cos\theta)^{3/2}},
+\]
+
+or is absorbed. Because \(\sigma_t\) is heterogeneous, the free distance is sampled by
+**delta tracking** against a constant majorant, with null collisions where the real density is
+lower. The implementation, the noise-based shape and the OpenVDB grids are described on the
+[Volumes](../features/volumes.md) page.
+
+```yaml
+materials:
+  - name: cloud
+    type: volume
+    albedo: [0.99, 0.99, 0.99]
+    density: 30.0
+    g: 0.5
+```
+
+<img class="render-img" src="../../assets/images/cloud_bunny.png" alt="Cloud bunny">
 
 ---
 
@@ -310,8 +341,10 @@ the imported mesh makes the face boundaries invisible.*
 
 ## The material dispatch system
 
-The GPU renderer stores all material parameters in a **flat POD union** and selects the correct
-code path at runtime via a `switch` statement, since virtual dispatch is not available on the GPU.
+The GPU renderers store all material parameters in a **flat POD struct** and select the code
+path at runtime with a `switch` on the type, since virtual dispatch is not available on the GPU.
+On CUDA the dispatch lives in `cuda_raytracer.cuh`, on OptiX in the ray-generation program of
+`optix_programs.cu`; the two share the volume and SDF code through common headers.
 
 !!! info "CPU renderers archived"
     The CPU rendering backends (which used polymorphic C++ virtual dispatch for materials)

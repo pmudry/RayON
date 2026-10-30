@@ -97,7 +97,8 @@ graph TD
 
 ## Building the BVH — Surface Area Heuristic (SAH)
 
-The BVH is built **on the CPU** before any rendering starts (either CUDA or CPU renderer).
+The BVH is built **on the CPU** before any rendering starts and traversed by the CUDA
+back-end; OptiX builds its own acceleration structures on the GPU and does not use it.
 The quality of the tree determines traversal efficiency — a bad partition can make the BVH
 *slower* than brute force.
 
@@ -146,7 +147,7 @@ GPU kernels cannot use recursion (limited stack depth, divergence cost). The BVH
 **iteratively** using a per-thread local stack of depth 32:
 
 ```cpp
-// From shader_common.cuh — simplified
+// From cuda_raytracer.cuh — simplified
 __device__ HitRecord trace_ray_scene_bvh(Ray ray, const BVHNode* bvh, ...) {
     int stack[BVH_STACK_DEPTH];
     int stackPtr = 0;

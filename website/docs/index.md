@@ -1,47 +1,70 @@
 ---
-title: "RayON | \U0001F6A7 Work in progress"
+title: "RayON"
 hide:
   - toc
   - navigation
 ---
 
-<!-- live reload probe -->
-
 <div class="hero-banner">
   <img src="assets/rayon_logo_animated.svg"
        alt="RayON — animated prism logo with light rays dispersing into a spectrum"
        loading="eager" class="hero-svg off-glb">
-  <p class="hero-tagline">A high-performance CUDA &amp; OptiX path tracer with real-time progressive sampling</p>
+  <p class="hero-tagline">A CUDA &amp; OptiX path tracer with real-time progressive sampling, volumetric clouds and ray-marched shapes</p>
 </div>
 
 ## What is RayON?
 
-RayON is an educational and experimental **path tracer** built in C++ with CUDA and OptiX acceleration.
-It started as a re-implementation of the classic
-[Ray Tracing in One Weekend](https://github.com/RayTracing/raytracing.github.io) series and evolved
-into a fully interactive raytracer running at **> 100 FPS @ 720p** on an NVIDIA DGX Spark.
+RayON is an educational and experimental **path tracer** written in C++17 and CUDA. It started
+as a re-implementation of the classic
+[Ray Tracing in One Weekend](https://github.com/RayTracing/raytracing.github.io) series and grew
+into an interactive renderer that holds **60 frames per second while the camera moves** and
+accumulates thousands of samples per pixel when it stops. It is used as teaching material in the
+*ISC 302 High-Performance Computing* course at HES-SO Valais.
 
-Two GPU rendering back-ends are available at runtime — no recompilation needed:
+Two GPU back-ends share one scene description and one GUI, each in an offline and an interactive
+flavour. No recompilation is needed to switch between them (`-m 2` to `-m 5`):
 
 <div class="feature-grid" markdown>
 <div class="feature-card" markdown>
-**CUDA GPU**
+**OptiX** (hardware ray tracing)
 
-One-shot CUDA kernel with 32×4 thread blocks, warp-friendly memory layout, and persistent `curand` states.
+Triangles on the RT cores, custom intersectors for spheres, rectangles and SDF shapes, an AI
+denoiser for motion frames and a regulator that trades resolution for frame rate. The default
+when the OptiX SDK is found.
 </div>
 <div class="feature-card" markdown>
-**CUDA Interactive**
+**CUDA** (software ray tracing)
 
-SDL2 window with progressive accumulation. Orbit, pan, zoom with the mouse. [`Dear ImGui`](https://github.com/ocornut/imgui) sliders for live DOF, samples, light intensity, and roughness.
+One thread per pixel, a BVH traversed with an iterative stack, persistent random states and a
+float accumulation buffer that never leaves the GPU. Runs everywhere CUDA runs.
+</div>
+<div class="feature-card" markdown>
+**Interactive mode**
+
+SDL2 window with mouse orbit, pan and zoom, a Dear ImGui panel for every rendering parameter,
+scene switching with the arrow keys, HDR skies, and a button that writes the camera and the
+light settings back into the scene file.
 </div>
 </div>
 
 !!! info "CPU renderers archived"
-    The original CPU rendering backends (sequential and multi-threaded) have been moved to the
+    The original CPU rendering back-ends (sequential and multi-threaded) live on the
     [`legacy/cpu-renderer`](https://github.com/pmudry/RayON/tree/legacy/cpu-renderer) branch.
-    The main branch now supports GPU rendering only.
+    The main branch is GPU only.
 
-It also features **BVH Acceleration**, CPU-built, with GPU-traversed Bounding Volume Hierarchy with Surface Area Heuristic (SAH) splitting. This provides 5–50× speedup on scenes with 100+ objects.
+### What it renders
+
+- **Materials**: Lambertian, mirror, rough mirror, glass, GGX anisotropic conductors with measured
+  complex IOR, thin-film interference, clear coat, area and sphere lights, and a **volume** material
+  for clouds and smoke (delta tracking, Henyey–Greenstein phase function, volumetric shadow rays).
+- **Geometry**: spheres, rectangles, triangles, Wavefront OBJ meshes with MTL materials and UV
+  textures, procedurally displaced spheres, ten ray-marched **signed distance primitives**, and
+  volumes shaped by a mesh, by procedural noise or by an OpenVDB density grid.
+- **Light transport**: next event estimation with multiple importance sampling, a Sobol'
+  low-discrepancy sampler with Owen scrambling, Russian roulette, adaptive (converged-pixel)
+  sampling, a BVH built with the surface area heuristic.
+- **Scenes**: a plain YAML format with 24 bundled examples, from a Cornell box to the
+  Stanford bunny as a cumulus cloud.
 
 ---
 
@@ -49,28 +72,28 @@ It also features **BVH Acceleration**, CPU-built, with GPU-traversed Bounding Vo
 
 <div class="img-grid cols-2">
   <figure>
-    <img src="assets/images/samples/isc_spheres.png" alt="Lambert & glass shading">
-    <figcaption><strong>Lambert and dielectric glass</strong> — straight from "Raytracing in one weekend".</figcaption>
+    <img src="assets/images/cloud_bunny.png" alt="The Stanford bunny rendered as a cumulus cloud on a ground plane">
+    <figcaption><strong>Cloud bunny</strong> — the volume material: a mesh shaped by noise, lit by a sun with volumetric shadow rays. Scene <code>17_cloud_bunny.yaml</code>.</figcaption>
   </figure>
   <figure>
-    <img src="assets/images/samples/plastic_shading.png" alt="OBJ loader with plastic shading">
-    <figcaption><strong>Stanford dragon OBJ loading</strong> — with plastic shading and scene integration.</figcaption>
+    <img src="assets/images/vdb_bunny.png" alt="The OpenVDB bunny cloud density grid rendered in RayON">
+    <figcaption><strong>VDB bunny</strong> — the same transport on a density grid from OpenVDB, the reference image of the pbrt book. Scene <code>19_vdb_bunny.yaml</code>.</figcaption>
   </figure>
   <figure>
-    <img src="assets/images/samples/golf.png" alt="Golf ball with procedural displacement mapping">
-    <figcaption><strong>Golf Ball</strong> — procedural displacement mapping and specular highlights across the dimpled microstructure.</figcaption>
-  </figure>
-  <figure>
-    <img src="assets/images/samples/dielectric metsals.png" alt="Metallic microfacet anisotropic spheres">
-    <figcaption><strong>Anistropic &amp; Metals</strong> — microfacet anisotropic SDF rendering (from PBR model).</figcaption>
-  </figure>
-  <figure>
-    <img src="assets/images/samples/thin_film_shader.png" alt="Thin film shader">
-    <figcaption><strong>Thin film shading</strong> — oil, soap bubbles... you name it.</figcaption>
+    <img src="assets/images/sdf_gallery.png" alt="Ten ray-marched signed distance shapes in a studio room">
+    <figcaption><strong>SDF gallery</strong> — mandelbulb, death star, cut hollow sphere, torus, octahedron, pyramid and friends, sphere-traced on both back-ends. Scene <code>18_sdf_shapes.yaml</code>.</figcaption>
   </figure>
   <figure>
     <img src="assets/images/samples/cornell.png" alt="Cornell box with area light and colour bleeding">
-    <figcaption><strong>Cornell Box</strong> — diffuse colour bleeding and soft shadows from a rectangular area light.</figcaption>
+    <figcaption><strong>Cornell box</strong> — diffuse colour bleeding and soft shadows from a rectangular area light, resolved by next event estimation.</figcaption>
+  </figure>
+  <figure>
+    <img src="assets/images/samples/dielectric metsals.png" alt="Anisotropic metal and glass spheres">
+    <figcaption><strong>Anisotropic metals and glass</strong> — GGX microfacet conductors with measured spectral Fresnel next to dielectrics.</figcaption>
+  </figure>
+  <figure>
+    <img src="assets/images/samples/thin_film_shader.png" alt="Thin film shader">
+    <figcaption><strong>Thin film</strong> — soap bubbles and oil slicks from the Airy interference formula.</figcaption>
   </figure>
 </div>
 
@@ -79,28 +102,21 @@ It also features **BVH Acceleration**, CPU-built, with GPU-traversed Bounding Vo
 ## Quick start
 
 ```bash
-# Build (requires CMake ≥ 3.20, a C++17 compiler, and optionally CUDA + SDL2)
+# Build (CMake ≥ 3.20, a C++17 compiler, the CUDA toolkit; SDL2 and the OptiX SDK are optional)
 mkdir -p build && cd build
 cmake .. --fresh
 make -j$(nproc)
 
-# Run — defaults to interactive mode when SDL2 is present, offline CUDA otherwise
+# Run from build/ — the OptiX programs and the HDR skies are found relative to this directory.
+# Interactive OptiX when available, else interactive CUDA, else offline CUDA.
 ./rayon
 
-# Or pick an explicit renderer with -m:
-./rayon -m 2   # CUDA one-shot
-./rayon -m 3   # CUDA interactive (SDL2 required)
+# Pick a mode explicitly: 2 = CUDA offline, 3 = CUDA interactive, 4 = OptiX offline, 5 = OptiX interactive
+./rayon -m 4 -s 512 -r 1080 --scene ../resources/scenes/17_cloud_bunny.yaml
 ```
 
-Load one of the bundled example scenes:
-
-```bash
-./rayon --scene ../resources/scenes/09_color_bleed_box.yaml -s 512 -r 1080
-```
-
-See [Getting Started](getting-started.md) for the full setup guide, or
-[YAML Scene Format](features/scenes.md) to author your own scenes.
-
+See [Getting Started](getting-started.md) for the full setup, the command-line options and the
+list of bundled scenes, or [YAML Scene Format](features/scenes.md) to write your own.
 
 ---
 
@@ -108,8 +124,9 @@ See [Getting Started](getting-started.md) for the full setup guide, or
 
 | Section | What you'll find |
 |---|---|
-| [How It Works](how-it-works/index.md) | The math: ray equations, material models, BVH, sampling theory |
-| [Architecture](architecture/index.md) | Code organization, CUDA renderer internals, progressive pipeline |
-| [Features](features/index.md) | Interactive controls, YAML scene format, SDF shapes, OBJ loading |
-| [Gallery](gallery.md) | Curated renders from all available scenes |
-| [Performance](performance.md) | Benchmark results, speedup tables, tuning tips |
+| [How It Works](how-it-works/index.md) | The math: rendering equation, materials, BVH, sampling, Sobol', MIS, optimisations |
+| [Architecture](architecture/index.md) | Scene system, CUDA renderer internals, the progressive pipeline |
+| [Features](features/index.md) | Interactive mode, YAML scenes, lights, volumes, SDF shapes, OBJ loading, HDR skies |
+| [Gallery](gallery.md) | Renders from the bundled scenes |
+| [Performance](performance.md) | Benchmarks, speedups, tuning tips |
+| [Development History](history.md) | How the project grew, commit by commit |

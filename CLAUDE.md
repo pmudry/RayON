@@ -94,7 +94,7 @@ CPU uses `double` (Vec3), GPU uses `float` — conversion at kernel boundary.
 
 - C++/CUDA boundary: device functions in `.cu`, exposed via `extern "C"`
 - All CUDA calls wrapped with `CUDA_CHECK()` macro (`cuda_utils.cu`)
-- Kernel block size: 32×8 (128 threads) for memory coalescing
+- Kernel block size: 32×8 (256 threads, `__launch_bounds__(256)`) for memory coalescing
 - Separable compilation enabled for cross-file device functions
 - `curand` states persist across progressive frames (allocated once, reused)
 

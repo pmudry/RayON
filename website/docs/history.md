@@ -9,17 +9,19 @@
 A walkthrough of how RayON grew from a 53-line `main.cc` into a multi-backend interactive GPU
 path tracer — told through the git history.
 
-The project spans roughly six months, from a first "hello sphere" on a September evening to a
-full NVIDIA OptiX hardware-accelerated renderer the following spring. Each milestone below
-corresponds to a real commit (or small cluster of commits) and captures both what was built and
-why it mattered at that stage.
+The project spans a bit more than a year, from a first "hello sphere" on a September evening to
+an OptiX renderer with volumetric clouds the following autumn, with long breaks in between. Each
+milestone below corresponds to a real commit (or small cluster of commits) and captures both what
+was built and why it mattered at that stage.
 
 !!! info "LLM usage across the project"
     **Milestones 1–6** were written entirely by hand, with no LLM assistance. LLM tools were
     first introduced in **Milestone 7** for specific features (SDF shapes, YAML loader, Cornell
     box). **The last four milestones (12–15) were mainly implemented with LLM assistance**,
     ranging from full implementation to collaborative design and partial coding. Individual
-    milestones note where and how AI was involved.
+    milestones note where and how AI was involved. The October 2026 work (milestones 19 to 21)
+    was implemented with Claude Code, with the author directing the design, testing every
+    change in the GUI and deciding what to keep.
 
 ---
 
@@ -586,6 +588,115 @@ overlay from both GPU progressive renderers, updated all documentation with arch
 
 ---
 
+## Milestone 18 — Next Event Estimation & MIS (March 20–21, 2026) { #mis }
+
+**Commits:** [`104892f`](https://github.com/pmudry/RayON/commit/104892f) (PR #32) ·
+[`44b59e9`](https://github.com/pmudry/RayON/commit/44b59e9) · [`553b912`](https://github.com/pmudry/RayON/commit/553b912)
+
+Until this point the path tracer only found lights by chance: a path bounced off a diffuse
+surface in a cosine-weighted direction and hoped to land on an emitter. Fine for a sky, hopeless
+for a small bulb. Milestone 18 adds **next event estimation**, a shadow ray towards a sampled
+point on a light at every diffuse hit, and weights it against the BSDF-sampled emitter hits with
+the **power heuristic**, so nothing is counted twice. Lights are picked by an area CDF;
+rectangles are sampled uniformly and spheres by the cone they subtend.
+
+A furnace test scene (`15_mis_furnace_test.yaml`) checks that the estimator conserves energy,
+and `scripts/render_comparisons.sh` produces the sixteen images of the
+[Visual Comparisons](how-it-works/visual-comparisons.md) page: four scenes, Sobol' against PCG,
+MIS off against on.
+
+Two clean-up passes follow, the unit tests of the vector math and a dangling ambient-light
+parameter are removed, and the project goes quiet for seven months.
+
+**What changed:** NEE and MIS on both GPU back-ends, light tables with area CDFs, shadow-ray
+traversal, furnace test, comparison renders, `--no-mis` and `--nee-stride`.
+
+---
+
+## Milestone 19 — OptiX on the RT Cores, Adaptive Sampling Rebuilt (October 27–28, 2026) { #optix-hw }
+
+**Commits:** [`cfac65b`](https://github.com/pmudry/RayON/commit/cfac65b) ·
+[`718afe2`](https://github.com/pmudry/RayON/commit/718afe2) · [`36cc0db`](https://github.com/pmudry/RayON/commit/36cc0db) ·
+[`7f4826c`](https://github.com/pmudry/RayON/commit/7f4826c)
+
+The return starts with correctness: two Sobol' dimensions were correlated in the OptiX
+sampler, the scramble was not refreshed on restart, polygonal meshes with anisotropic materials
+showed split faces, and the clear coat was biased under MIS. With those fixed, the OptiX
+back-end finally uses what it was adopted for: **every triangle goes to the RT cores** in one
+hardware geometry acceleration structure, shadow rays terminate on the first hit with a slim
+payload, and the mesh scenes run at hardware speed.
+
+**Adaptive sampling** is rebuilt around a standard-error test with smooth re-checks and a
+consistent firefly clamp, and stops freezing pixels that are lit only by rare bright paths. The
+interactive window becomes resizable, and a first "motion-time quality scaling" appears. The
+NEE scene with the tiny bulb (`16_nee_small_light.yaml`) is added to show what the shadow rays
+buy, and `scripts/rayon_vnc.sh` makes the interactive mode usable on a remote GPU server.
+
+**What changed:** hardware triangles and cheap shadow rays on OptiX, Sobol' fixes, clear-coat
+MIS fix, adaptive sampling v2, resizable window, NEE demo scene, VNC launcher.
+
+---
+
+## Milestone 20 — Camera Motion Regulator & AI Denoiser (October 29, 2026) { #motion }
+
+**Commits:** [`a72647e`](https://github.com/pmudry/RayON/commit/a72647e) ·
+[`db4ade3`](https://github.com/pmudry/RayON/commit/db4ade3) · [`d2c0c87`](https://github.com/pmudry/RayON/commit/d2c0c87) ·
+[`1e96007`](https://github.com/pmudry/RayON/commit/1e96007) · [`80c8813`](https://github.com/pmudry/RayON/commit/80c8813)
+
+A camera move throws the accumulation away, so an orbit on a heavy scene is a slideshow of
+one-batch frames. A day of commits turns this into a **regulator**: while the camera moves the
+OptiX renderer renders at a fraction of the resolution (quarter, half, three quarters, upscaled
+for display) with few samples, and a cost model of the previous frames lowers the fraction
+first and the samples second until the target frame rate holds, then raises them back. The
+options get their own *Camera Motion* section in the panel, a display-time despeckle removes
+the isolated bright dots of the preview, and the **OptiX AI denoiser** can smooth the motion
+frames and fade out over the first still ones. None of it touches the converged image.
+
+Adaptive depth, the old trick of starting at four bounces, is retired: the full depth is kept
+at all times so the lighting does not change character when the camera stops.
+
+**What changed:** fractional-resolution motion frames, cost-model regulator with target FPS,
+*Camera Motion* GUI section, motion despeckle, OptiX denoiser, golf-ball dimple defaults.
+
+---
+
+## Milestone 21 — Clouds, SDF Shapes & VDB Data, v1.8.0 (October 30, 2026) { #volumes }
+
+**Commits:** [`d3c5795`](https://github.com/pmudry/RayON/commit/d3c5795) ·
+[`6af216f`](https://github.com/pmudry/RayON/commit/6af216f) · [`bf38756`](https://github.com/pmudry/RayON/commit/bf38756) ·
+[`b2e07a0`](https://github.com/pmudry/RayON/commit/b2e07a0) · [`2018380`](https://github.com/pmudry/RayON/commit/2018380)
+
+The target image was the cloud bunny of the *Physically Based Rendering* book. The new
+**`volume` material** turns a closed mesh into a participating medium: a signed distance grid of
+the mesh built on the GPU, a surface displaced by Worley and fractal noise, a density field baked
+into a 3D texture, delta tracking with a Henyey–Greenstein phase function, volumetric shadow
+rays by ratio tracking, all weighted by MIS, with empty-space skipping outside the cloud. The
+cloud sliders are live in the GUI, and a new button saves the camera and the light settings back
+into the scene file.
+
+<img class="render-img" src="../assets/images/cloud_bunny.png" alt="The cloud bunny">
+
+The same day the **SDF primitives**, which until then were only drawn by the archived CPU
+renderer, are implemented for both GPU back-ends from one shared marcher (ten shapes, Euler
+rotations, named parameters, a custom primitive on OptiX), with a studio-room gallery scene.
+Chasing grain in that scene revealed that next event estimation ran on one sample in three by
+default; it now runs on every sample. Then the "raw grid" route to **OpenVDB data**: a Python
+tool converts a `.vdb` into a dense grid that the material binds straight into its 3D texture,
+and the OpenVDB `bunny_cloud` renders in RayON without any OpenVDB dependency in the C++ code.
+A per-scene **light falloff** exponent, time-sized batches for the offline progress bar and a
+clean-up of the command-line help close the day, and the write-up
+`explanations/VOLUMETRIC_CLOUDS.md` turns the remaining work (NanoVDB on the GPU, a grid of
+local majorants) into a student project.
+
+<img class="render-img" src="../assets/images/sdf_gallery.png" alt="The SDF gallery scene">
+
+**What changed:** `volume` material and GUI section, cloud bunny scene, save-camera button, SDF
+primitives on CUDA and OptiX with a gallery scene, `visible` flag on OptiX, per-scene batch
+size, NEE stride 1 by default, `.vol` density grids from OpenVDB, light falloff, offline
+progress bar, version 1.8.0.
+
+---
+
 ## The Timeline at a Glance
 
 ```
@@ -612,6 +723,11 @@ Mar 15 ━━ NVIDIA OptiX — 4× speedup (hardware RT)
 Mar 15 ━━ MTL materials & image texture mapping (GPU)
 Mar 18 ━━ HDR sky dome · float16 textures · .hdrcache sidecar
 Mar 20 ━━ CPU renderers archived to legacy/cpu-renderer 👋
+Mar 20 ━━ Next event estimation + MIS, furnace test, visual comparisons
+           ┄┄┄ (break) ┄┄┄
+Oct 27 ━━ OptiX hardware triangles, Sobol' fixes, adaptive sampling v2
+Oct 29 ━━ Camera motion regulator, AI denoiser
+Oct 30 ━━ Volume material (cloud bunny) · SDF primitives on GPU · VDB grids · v1.8.0
 ```
 
 ---
@@ -668,3 +784,7 @@ The milestone checkpoints and their default demo modes are:
 | 14 | 2026-03-15 | `8ec565e` | offline | First OptiX render |
 | 15 | 2026-03-15 | `d831935` | offline | OptiX 4× speedup on dragon mesh |
 | 16 | 2026-03-15 | `ff0a128` | interactive | MTL materials & image textures on OBJ meshes |
+| 17 | 2026-03-20 | `104892f` | interactive | Next event estimation and MIS — the NEE scene |
+| 18 | 2026-10-29 | `80c8813` | interactive | Camera motion regulator and AI denoiser on the dragon |
+| 19 | 2026-10-30 | `d3c5795` | interactive | The cloud bunny, v1.8.0 |
+| 20 | 2026-10-30 | `2018380` | interactive | SDF gallery, VDB bunny, light falloff |

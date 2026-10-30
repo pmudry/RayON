@@ -26,7 +26,8 @@ website/docs/assets/images/for_project/
 website/docs/assets/images/dev/
 website/docs/assets/images/thumbnails/
 website/docs/assets/images/sampling/
-website/docs/assets/images/real_time_raytrace.png
+website/docs/assets/images/comparisons/
+website/docs/assets/images/*.png
 # website/docs/assets/images/renders/ is tracked — manually committed PNGs for docs
 
 # Python cache and virtual environments

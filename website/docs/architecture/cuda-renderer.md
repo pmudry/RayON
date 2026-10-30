@@ -7,12 +7,14 @@ CUDA kernel maps to image pixels, how memory is managed, and the design choices 
 
 ## Kernel launch configuration
 
-### Thread block shape: 32 × 4
+### Thread block shape: 32 × 8
 
-RayON uses a rectangular 2D thread block of **32 columns × 4 rows = 128 threads**:
+RayON uses a rectangular 2D thread block of **32 columns × 8 rows = 256 threads** (16 × 16 on
+devices that allow fewer than 256 threads per block), and the path-tracing kernel is annotated
+with `__launch_bounds__(256)`:
 
 ```cpp
-dim3 block_size(32, 4);   // 128 threads per block
+dim3 block_size(32, 8);   // 256 threads per block
 dim3 grid_size(
     (image_width  + block_size.x - 1) / block_size.x,
     (image_height + block_size.y - 1) / block_size.y
@@ -20,24 +22,24 @@ dim3 grid_size(
 renderPixelsKernel<<<grid_size, block_size>>>(...);
 ```
 
-Why 32 × 4 instead of, say, 16 × 8?
+Why 32 × 8 instead of, say, 16 × 16?
 
 - **32 threads per row** aligns with one CUDA warp (32 threads that execute in lock-step).
   Adjacent pixels in the same row touch adjacent memory addresses — the memory access is
   **coalesced** and served in one transaction rather than 32 separate ones.
-- **4 rows** keeps the block at 128 threads, a reasonable occupancy multiplier, without
-  wasting shared memory or occupancy.
+- **8 rows** make 256 threads, which lets the compiler budget registers for a kernel that
+  carries a lot of state (ray, hit record, material, sampler) without spilling.
 
 ```mermaid
 graph TD
-    subgraph "Block (32×4 = 128 threads)"
+    subgraph "Block (32×8 = 256 threads)"
         direction LR
         row0["Row 0:  pixel [col,   row  ] … pixel [col+31, row  ]  ← 1 warp"]
         row1["Row 1:  pixel [col,   row+1] … pixel [col+31, row+1]  ← 1 warp"]
-        row2["Row 2:  pixel [col,   row+2] … pixel [col+31, row+2]  ← 1 warp"]
-        row3["Row 3:  pixel [col,   row+3] … pixel [col+31, row+3]  ← 1 warp"]
+        rows["…"]
+        row7["Row 7:  pixel [col,   row+7] … pixel [col+31, row+7]  ← 1 warp"]
     end
-    row0 ~~~ row1 ~~~ row2 ~~~ row3
+    row0 ~~~ row1 ~~~ rows ~~~ row7
 ```
 
 ### Thread → pixel mapping
@@ -60,8 +62,9 @@ __global__ void renderPixelsKernel(uint8_t* output, int width, int height, ...) 
 
 ## Random number generation
 
-Every pixel needs independent random numbers. RayON uses NVIDIA's **curand** library with
-per-thread persistent state:
+Every pixel needs independent random numbers. By default they come from a **Sobol'** sequence
+with per-pixel Owen scrambling (see [Sobol' sampling](../how-it-works/sobol-sampling.md)); the
+sampler state is stored in the per-pixel `curandState` slot that the PCG fallback also uses:
 
 ```cpp
 // Initialisation — called once per pixel on first launch
@@ -190,5 +193,6 @@ int sm_count = g_device_props.multiProcessorCount; // no API call
 | `-O3` | Host-side optimisation |
 | `--expt-relaxed-constexpr` | Allow `constexpr` host functions in device code |
 | `-lineinfo` (Debug) | Source-level line info for `cuda-gdb` and `Nsight` |
-| `--use_fast_math` | Disabled by default — refractive glass artefacts |
-| `all-major` architectures | Supports all major GPU generations in one binary |
+| `--use_fast_math` (Release) | Fast `rsqrtf`, fused multiply-add, relaxed denormals |
+| `CMAKE_CUDA_ARCHITECTURES=native` | Compiled for the GPU of the build machine |
+| OptiX PTX | `optix_programs.cu` is compiled to PTX at `-O3` (with `-lineinfo` in Debug) and loaded at run time |

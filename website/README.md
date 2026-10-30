@@ -31,8 +31,10 @@ uv run mkdocs serve
 Open http://localhost:8000.
 
 **Live reload** is enabled — save any `.md` file under `docs/` and the browser refreshes
-automatically. Images are copied from `images/`, `explanations/lambert sampling/`, and
+automatically. Images are copied from `images/` (the root PNGs, `samples/`, `dev/`,
+`for_project/`, `sampling/`, `comparisons/`), `explanations/lambert sampling/` and
 `material_gallery/thumbnails/` at startup by the `hooks.py` build hook.
+`scripts/serve_docs.sh` from the repository root does the same.
 
 ---
 
@@ -79,37 +81,27 @@ mkdocs.yml              ← MkDocs configuration (theme, nav, extensions)
 hooks.py                ← Build hook: copies images into docs/assets/images/ at build time
 docs/
 ├── index.md            ← Home page
-├── getting-started.md
+├── getting-started.md  ← build, run, CLI options, list of the bundled scenes
 ├── gallery.md
 ├── performance.md
-├── how-it-works/
-│   ├── index.md
-│   ├── ray-tracing.md
-│   ├── materials.md
-│   ├── bvh.md
-│   └── sampling.md
-├── architecture/
-│   ├── index.md
-│   ├── scene-system.md
-│   ├── cuda-renderer.md
-│   └── progressive-rendering.md
-├── features/
-│   ├── index.md
-│   ├── interactive.md
-│   ├── scenes.md
-│   ├── sdf-shapes.md
-│   └── obj-loading.md
+├── history.md          ← development history, milestone by milestone
+├── about.md
+├── how-it-works/       ← ray tracing, materials, BVH, sampling, Sobol', MIS, comparisons, optimisations
+├── architecture/       ← scene system, CUDA renderer, progressive rendering
+├── features/           ← interactive mode, YAML scenes, lighting, volumes, SDF shapes, OBJ, HDR sky
 ├── assets/
 │   ├── extra.css       ← Custom CSS
 │   ├── mathjax.js      ← MathJax configuration
+│   ├── rayon-bg.js     ← Animated ray background of the home page
 │   └── images/         ← GENERATED — do not commit; populated by hooks.py at build time
 └── overrides/
-    └── main.html       ← MkDocs theme override (minimal)
+    └── main.html       ← MkDocs theme override (home page background)
 ```
 
 > **Note:** `docs/assets/images/` is git-ignored because it is populated automatically from the
 > source image directories (`images/`, `explanations/lambert sampling/`, `material_gallery/thumbnails/`).
-> Never commit files into `docs/assets/images/` manually.
+> Never commit files into `docs/assets/images/` manually; put new renders into `images/` at the
+> repository root (they are copied to `assets/images/<name>.png`) or into `images/samples/`.
 
 ---
 
@@ -127,16 +119,14 @@ docs/
 1. Run the raytracer and produce a PNG:
    ```bash
    cd build
-   ./rayon --scene ../resources/scenes/05_material_laboratory.yaml -s 512 -r 1080
-   # choose renderer 2 (CUDA GPU)
-   cp rendered_images/latest.png ../docs/assets/images/renders/my_render.png
+   ./rayon -m 4 --scene ../resources/scenes/05_material_laboratory.yaml -s 512 -r 1080
+   cp rendered_images/latest.png ../images/my_render.png
    ```
-2. Reference it in Markdown:
+2. Reference it in Markdown (the hook copies root PNGs of `images/` to `assets/images/`):
    ```markdown
-   ![My render](../assets/images/renders/my_render.png)
+   ![My render](../assets/images/my_render.png)
    ```
-3. Commit the PNG. Unlike the automatically-copied images, files placed directly in
-   `docs/assets/images/renders/` are tracked by git and served as-is.
+3. Commit the PNG under `images/`.
 
 ---
 

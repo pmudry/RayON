@@ -266,13 +266,14 @@
   background-color: #f0f0f2 !important;
 }
 
-/* Glassmorphism content area on the homepage — dark theme
+/* Glass content area on the homepage — dark theme
    Note: data-md-color-scheme is on body, rayon-homepage is on html,
-   so we need a descendant selector (space) between them. */
+   so we need a descendant selector (space) between them.
+   No backdrop-filter here: blurring the whole content panel over the animated canvas made
+   Chrome re-blur the full page on every frame (Firefox coped), so the panel is a plain
+   translucent tint instead. */
 .rayon-homepage [data-md-color-scheme="slate"] .md-content {
-  background: rgba(35, 35, 42, 0.2) !important;
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  background: rgba(35, 35, 42, 0.55) !important;
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   padding-left: 1rem;
@@ -281,11 +282,9 @@
   margin-right: 1rem;
 }
 
-/* Glassmorphism content area on the homepage — light theme */
+/* Glass content area on the homepage — light theme */
 .rayon-homepage [data-md-color-scheme="default"] .md-content {
-  background: rgba(220, 220, 225, 0.2) !important;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: rgba(235, 235, 240, 0.7) !important;
   border-radius: 12px;
   border: 1px solid rgba(139, 139, 139, 0.06);
   padding-left: 1rem;

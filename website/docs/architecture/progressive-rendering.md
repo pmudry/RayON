@@ -1,190 +1,150 @@
 # Progressive Rendering
 
-Interactive mode (renderer mode 3) is where RayON feels most alive. This page explains exactly
-how the progressive accumulation pipeline keeps the display responsive while steadily improving
-image quality.
+The interactive modes (3 for CUDA, 5 for OptiX) are where RayON feels most alive. This page
+explains how the accumulation loop keeps the window responsive while the image converges, and
+how the OptiX renderer holds its frame rate while the camera moves.
 
 ---
 
 ## Overview
 
-The progressive renderer operates in a loop:
+The interactive host (`renderer_optix_progressive_host.hpp`, `renderer_cuda_progressive_host.hpp`)
+runs one loop:
 
-1. User moves the camera → **motion detected** → reset accumulation, restart progressive rendering.
-2. Camera is still for 500 ms → **accumulation phase** → add more samples per stage.
-3. Each stage: one GPU kernel pass, gamma-correct on GPU, copy uint8 to host, blit to SDL texture.
+1. Poll SDL events: mouse, keyboard, window resize, the Dear ImGui panel.
+2. If the camera or a scene parameter changed, **reset the accumulation** (zero the float
+   buffer on the device, restart the sample counter).
+3. Launch one **batch** of samples per pixel on the GPU and add it to the accumulation buffer.
+4. Convert the buffer to the 8-bit display image on the GPU, copy it to pinned host memory,
+   upload it to the SDL texture, draw the panel, present.
 
 ```mermaid
 sequenceDiagram
     actor User
     participant SDL
-    participant Host as "Host (C++)"
-    participant GPU as "GPU Kernel"
-
-    User->>SDL: move mouse
-    SDL-->>Host: SDL_MOUSEMOTION event
-    Host->>GPU: reset accum buffer (clear float array)
-    loop accumulation stages
-        Host->>GPU: renderPixelsKernelAccum(spp=samples_per_batch)
-        GPU-->>Host: uint8 display buffer (D2H)
-        Host->>SDL: SDL_UpdateTexture + SDL_RenderCopy
-        SDL-->>User: frame displayed
-        Note over Host: wait 500 ms if stationary
-        Host->>GPU: renderPixelsKernelAccum(spp=+samples_per_batch)
+    participant Host as Host (C++)
+    participant GPU
+    User->>SDL: drag the mouse
+    SDL-->>Host: SDL_MOUSEMOTION
+    Host->>GPU: reset accumulation (memset on the render stream)
+    loop every frame
+        Host->>GPU: launch(samples_per_batch, samples_so_far)
+        GPU-->>Host: uint8 display buffer (async copy, pinned memory)
+        Host->>SDL: SDL_UpdateTexture + SDL_RenderCopy + ImGui
+        SDL-->>User: frame
     end
 ```
 
----
-
-## Sample stages
-
-The accumulative renderer progresses through predefined SPP levels:
-
-```
-8 → 16 → 32 → 64 → 128 → 256 → 512 → 1024 → 2048 → max_samples
-```
-
-After each stage completes, the renderer pauses **500 ms** before starting the next, checking
-for user input. This keeps the UI responsive — a mouse drag will immediately interrupt the
-accumulation and reset to 8 SPP.
-
-During camera motion, the batch size and the render resolution are automatically reduced to
-hold the Target FPS of the "Camera Motion" GUI section. Once the camera is stationary, each
-subsequent frame adds another stage.
+There is no fixed schedule of sample stages and no pause between batches: as long as the camera
+is still, every frame adds **Samples/Batch** samples (8 by default, per-scene override with
+`settings.samples_per_batch`), until the accumulation is complete.
 
 ---
 
-## Tiled rendering for responsiveness
+## Float accumulation on the GPU
 
-The image is divided into an **8×8 grid of tiles** (64 tiles). Each tile is rendered
-independently, so progress is visible as tiles complete:
+The accumulation buffer is a `float4` array of `width × height` that never leaves the device.
+Each kernel launch adds its samples to it and keeps the total count; a small gamma kernel then
+converts the running mean to 8-bit RGB:
 
 ```cpp
-// Each tile is 1/8 of image width × 1/8 of image height
-int tile_w = (image_width  + 7) / 8;
-int tile_h = (image_height + 7) / 8;
-
-for (int ty = 0; ty < 8 && !user_moved; ++ty) {
-    for (int tx = 0; tx < 8 && !user_moved; ++tx) {
-        renderTile(tx * tile_w, ty * tile_h, tile_w, tile_h, spp);
-        displayIntermediate(); // show partial result
-    }
-}
+float r = sqrtf(accum[i].x / total_samples);   // gamma 2.0 = sqrt
 ```
 
-If the user moves the camera while tiles are rendering, the inner loops break immediately
-and the accumulation resets. This prevents the "frozen UI" problem of waiting for a
-full-resolution render to complete.
+Only the 3-byte-per-pixel display image crosses to the host, through an asynchronous copy into
+page-locked memory on a dedicated stream, so the next batch can start while the previous frame
+is being displayed (see [Optimisations](../how-it-works/optimizations.md), items 7, 11 and 17).
+
+The sampler state (Sobol' index, scramble seed) is also persistent per pixel, and the scramble
+is refreshed on every restart so that consecutive accumulations do not replay the same sequence.
 
 ---
 
-## Float accumulation on GPU
+## When does it stop?
 
-The accumulation buffer is a **float array on the GPU** of size `width × height × 3`.
-Each new sample pass adds to this buffer with atomic additions:
+| Condition | Default |
+|---|---|
+| Adaptive sampling reports 99.9 % of the pixels converged | on |
+| The per-pixel budget is reached | 100 000 samples |
+| Accumulation paused with **Space** or `--no-auto-accumulate` | — |
 
-```cpp
-// In the accumulative kernel
-atomicAdd(&d_accum[pixel_idx * 3 + 0], pixel_color.x);
-atomicAdd(&d_accum[pixel_idx * 3 + 1], pixel_color.y);
-atomicAdd(&d_accum[pixel_idx * 3 + 2], pixel_color.z);
-```
+### Adaptive sampling
 
-Atomics are needed because multiple samples per kernel launch write to the same pixel.
-
-After each pass, a lightweight gamma kernel normalises and converts to uint8:
-
-```cpp
-float r = sqrtf(d_accum[i*3+0] / total_samples); // gamma 2.0 = sqrt
-```
-
-Only the 3-byte-per-pixel uint8 result is copied host ← device. The float buffer stays
-on device throughout the session.
+Each pixel tracks its own sample count and the statistics of its value. After 32 samples, a
+pixel whose **standard error** in display space falls below the threshold (0.01 of the 0–1
+range, about 2.5 levels of 255, adjustable in the GUI) is flagged as converged and skipped by
+later batches; the GPU counts the converged pixels with a warp-shuffle reduction so only one
+integer comes back to the host. Pixels that are lit only by rare bright paths keep sampling.
+The **Show Sample Heatmap** option paints the samples spent per pixel.
 
 ---
 
-## Adaptive depth
+## Camera motion (OptiX)
 
-Removed: earlier versions could start at 4 bounces and add one per sample stage
-(`--adaptive-depth`). The motion regulator above replaced it; the bounce depth is now constant.
+A camera move invalidates the accumulation, so during an orbit every frame is a one-batch
+image. At full resolution that is a few frames per second on a heavy scene. The OptiX host
+therefore trades quality for frame rate **while the camera moves only**:
 
+```mermaid
+flowchart LR
+    A["camera event"] --> B["moving: render at a fraction of the\nresolution with few samples,\nupscale for display"]
+    B -->|"no event for the cooldown (50 ms)"| C["still: full resolution,\nSamples/Batch per frame,\naccumulate"]
+    C -->|"camera event"| B
 ```
-Stage 1 (8 SPP):   MAX_DEPTH = 4   ← fast, direct lighting only
-Stage 2 (16 SPP):  MAX_DEPTH = 5
-Stage 3 (32 SPP):  MAX_DEPTH = 6   ← first-order caustics readable
-Stage 4 (64 SPP):  MAX_DEPTH = 7
-Stage 5+:          MAX_DEPTH = 8   ← full-quality bouncing
-```
+
+The **regulator** holds a target frame rate (60 fps by default). It models the cost of a
+motion frame from the previous ones and, when the frame rate drops, lowers the render fraction
+first (from the ceiling of 3/4 down to a floor of 1/4 of the width and height, that is 1/16 of
+the pixels), then the samples per frame (down to a floor of 4). When there is headroom it raises
+them back. Every value is a slider in the *Camera Motion* section of the panel; the readout
+shows what the last motion frame used.
+
+On top of the regulator, the motion frames can use one sample per pixel, the cheaper PCG
+sampler, a capped bounce depth, skip the shadow rays, be despeckled at display time, and be
+passed through the **OptiX AI denoiser** (guided by the albedo and normal of the first hit).
+The denoiser can keep running over the first still frames with a weight that fades to zero at
+64 samples, so the image does not snap from smooth to noisy when the camera stops. Optional
+intermediate stages (1/2 then 3/4 resolution, each fading into the previous image) are
+available for very heavy scenes.
+
+The CUDA interactive renderer has none of this: it keeps rendering full batches while the
+camera moves, with the display-time despeckle as its only concession.
 
 ---
 
 ## Camera interaction
 
-The camera is controlled via SDL mouse events:
-
 | Input | Action |
 |---|---|
-| Left mouse button + drag | **Orbit** — rotate around look-at point |
-| Right mouse button + drag | **Pan** — translate look-at point laterally |
-| Scroll wheel | **Zoom** — adjust distance from look-at point |
-| `Space` | Force re-render from current accumulation state |
-| `ESC` | Quit |
+| Left mouse + drag | Orbit around the look-at point |
+| Right mouse + drag | Pan the camera and the look-at point |
+| Scroll wheel | Zoom |
+| **O** | Auto orbit |
+| Left / Right | Previous / next scene |
 
-**Orbit implementation:**
-
-```cpp
-// sdl_gui_controls.hpp — simplified
-void handle_orbit(float dx, float dy) {
-    spherical_theta += dy * sensitivity;
-    spherical_phi   += dx * sensitivity;
-    spherical_theta = clamp(spherical_theta, 0.01f, PI - 0.01f);
-
-    // Convert spherical → Cartesian offset from look_at
-    float r = distance;
-    look_from.x = look_at.x + r * sin(spherical_theta) * cos(spherical_phi);
-    look_from.y = look_at.y + r * cos(spherical_theta);
-    look_from.z = look_at.z + r * sin(spherical_theta) * sin(spherical_phi);
-}
-```
+The orbit keeps the camera on a sphere around the look-at point in spherical coordinates;
+the pan moves both points along the camera's right and up vectors. Any change restarts the
+accumulation; the GUI's **Save camera & lights** button writes the current view into the scene
+file.
 
 ---
 
-## Dear ImGui controls
+## Live parameter updates
 
-The interactive window overlays a Dear ImGui panel with live controls:
+Most sliders change a value that is passed to the next launch and restart the accumulation.
+Nothing is rebuilt:
 
-| Slider | Affects |
-|---|---|
-| Samples per pixel | Base SPP for current accumulation pass |
-| Max samples | Upper bound for auto-accumulate |
-| Light intensity | Scales area light emission (via `cudaMemcpyToSymbol`) |
-| Roughness | Material roughness of selected sphere |
-| Aperture / Focus | DOF lens model parameters |
-| Max depth | Ray bounce limit |
+- **OptiX**: background intensity, light intensity and falloff, depth of field, the MIS and
+  sampler options are fields of the launch parameters, uploaded (a few hundred bytes) before
+  every launch. The cloud sliders rewrite one material record and re-bake its density field.
+- **CUDA**: the same values are `__constant__` symbols updated with `cudaMemcpyToSymbol`,
+  and the material record is rewritten in place.
 
-Changes to any slider trigger `needs_rerender = true`, which resets the accumulation buffer and
-restarts from 8 SPP.
+Changing the scene rebuilds everything: the acceleration structures, the material and light
+tables, the textures and the volume grids.
 
 <img class="render-img" src="../../assets/images/real_time_raytrace.png"
-     alt="Interactive SDL2 window with Dear ImGui overlay showing real-time path traced scene">
+     alt="Interactive SDL2 window with the Dear ImGui panel">
 
-*The interactive window at ~100 Hz on the DGX Spark. The ImGui panel is overlaid on the right.*
-
----
-
-## Live parameter updates via `cudaMemcpyToSymbol`
-
-Some parameters (like light intensity) are stored as __device__ constants and updated
-without re-creating the scene:
-
-```cpp
-// Host side
-float h_light_intensity = 5.0f;
-cudaMemcpyToSymbol(d_light_intensity, &h_light_intensity, sizeof(float));
-
-// Device side  (__device__ in shader_common.cuh)
-__device__ float d_light_intensity;
-// ... used directly in the emission evaluation
-```
-
-This avoids a full GPU scene rebuild on every slider change.
+*The interactive window on the DGX Spark. The panel on the right holds every setting of this
+page.*

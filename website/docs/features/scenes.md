@@ -1,239 +1,223 @@
 # YAML Scene Format
 
-All scenes in RayON can be described as plain YAML files and loaded without recompilation.
-The format is parsed by a lightweight custom parser (`yaml_scene_loader.cc`) — no external
-YAML library is required.
+Every scene can be described in a plain YAML file and loaded without recompilation. The format
+is read by a small custom parser (`yaml_scene_loader.cc`), no external YAML library is needed.
+The reference below matches `resources/scenes/SCENE_FORMAT.md` in the repository.
 
 ---
 
 ## Loading a scene
 
 ```bash
-./rayon --scene path/to/scene.yaml
+./rayon --scene ../resources/scenes/09_color_bleed_box.yaml -s 512 -r 1080
 ```
 
-If the file cannot be found or parsed, the renderer falls back to the built-in default scene
-with a warning message. Load time is under 10 ms for any scene.
+In interactive mode the **Scene** combo and the **Left / Right** keys switch between every YAML
+file found in `resources/scenes/`. A scene loads in a few milliseconds; OBJ meshes and volume
+grids take longer.
 
 ---
 
 ## File structure
 
-A scene file has up to five top-level sections:
+Four optional top-level sections, in any order. Comments start with `#`, values may be quoted.
 
 ```yaml
-settings:     # (optional) render parameters and flags
-camera:       # (optional) camera position and lens settings
-materials:    # list of named materials
-geometry:     # list of geometric objects
+camera:        # viewpoint
+settings:      # render options
+materials:     # named material library
+geometry:      # the objects
 ```
 
----
-
-## Settings
-
-```yaml
-settings:
-  use_bvh: true         # enable BVH acceleration (recommended for > 15 objects)
-  background_color: [0.05, 0.05, 0.08]   # sky/background RGB (values 0–1)
-```
-
----
-
-## Camera
-
-```yaml
-camera:
-  look_from: [0.0, 1.5, 6.0]   # camera position
-  look_at:   [0.0, 0.5, 0.0]   # point the camera looks at
-  up:        [0.0, 1.0, 0.0]   # world up direction
-  vfov:      40.0               # vertical field of view (degrees)
-  aperture:  0.02               # lens aperture radius (0 = pinhole)
-  focus_dist: 6.0               # focal plane distance
-```
-
----
-
-## Materials
-
-Materials are defined in a named list and referenced by name in geometry entries.
-
-### Lambertian (diffuse)
+Both `materials:` and `geometry:` entries accept the compact inline syntax:
 
 ```yaml
 materials:
-  - name: red_wall
-    type: lambertian
-    albedo: [0.65, 0.05, 0.05]
+  - { name: floor, type: lambertian, albedo: [0.15, 0.15, 0.18] }
+geometry:
+  - { type: sphere, material: floor, center: [0, 1, 0], radius: 0.7 }
 ```
-
-### Mirror
-
-```yaml
-  - name: perfect_mirror
-    type: mirror
-```
-
-### Rough mirror (metal)
-
-```yaml
-  - name: gold
-    type: rough_mirror
-    albedo: [1.0, 0.85, 0.57]    # tint colour
-    roughness: 0.03               # 0.0 = perfect, 1.0 ≈ diffuse
-```
-
-### Glass (dielectric)
-
-```yaml
-  - name: glass
-    type: glass
-    ior: 1.5                      # index of refraction
-```
-
-### Area light
-
-```yaml
-  - name: warm_light
-    type: light
-    emission: [5.0, 4.5, 3.5]    # RGB emission; values > 1 are valid (HDR)
-```
-
-### Anisotropic metal (GGX microfacet)
-
-```yaml
-  - name: brushed_gold
-    type: anisotropic_metal
-    preset: gold            # gold | silver | copper | aluminum
-    roughness: 0.08
-    anisotropy: 0.7         # 0.0 = isotropic, 1.0 = maximum anisotropy
-
-  - name: custom_conductor
-    type: anisotropic_metal
-    roughness: 0.05
-    anisotropy: 0.5
-    eta: [0.18, 0.42, 1.37]   # complex IOR real part (RGB)
-    k:   [3.42, 2.35, 1.77]   # complex IOR imaginary part (RGB)
-```
-
-### Thin film (iridescent)
-
-```yaml
-  - name: soap_bubble
-    type: thin_film
-    film_thickness: 400    # nanometers — controls highlight colour
-    film_ior: 1.33         # refractive index of the film (water ≈ 1.33)
-```
-
-### Clear coat
-
-```yaml
-  - name: car_paint_red
-    type: clear_coat
-    albedo: [0.8, 0.05, 0.05]  # diffuse base colour
-    roughness: 0.04             # coat roughness (0 = mirror coat)
-    refractive_index: 1.5       # coat IOR (typical lacquer/plastic)
-```
-
-### Procedural patterns
-
-Procedural patterns can be added to any Lambertian or rough-mirror material via a `pattern`
-block. The pattern modulates the base albedo.
-
-```yaml
-  - name: checkerboard_floor
-    type: lambertian
-    albedo: [0.9, 0.9, 0.9]
-    pattern:
-      type: checkerboard
-      color: [0.1, 0.1, 0.1]
-
-  - name: fibonacci_dots
-    type: lambertian
-    albedo: [0.8, 0.8, 0.8]
-    pattern:
-      type: fibonacci_dots
-      color: [0.1, 0.1, 0.1]
-      dot_count: 12
-      dot_radius: 0.33
-
-  - name: striped
-    type: lambertian
-    albedo: [0.9, 0.9, 0.9]
-    pattern:
-      type: stripes
-      color: [0.1, 0.1, 0.1]
-```
-
-The texture path is resolved relative to the YAML file's directory. Textures are loaded once
-and deduplicated by path.
-See [OBJ Loading](obj-loading.md) for applying textures via MTL files.
 
 ---
 
-## Geometry
+## `camera`
 
-### Sphere
+| Key | Default | Description |
+|---|---|---|
+| `position` | `[0, 0, 0]` | Camera origin |
+| `look_at` | `[0, 0, -1]` | Point the camera looks at |
+| `up` | `[0, 1, 0]` | World up vector |
+| `fov` | `90` | Vertical field of view in degrees |
 
 ```yaml
-geometry:
-  - type: sphere
-    material: gold
-    center: [-2.0, 0.5, 0.0]
+camera:
+  position: [0, 2, 8]
+  look_at:  [0, 0.5, 0]
+  fov: 45
+```
+
+!!! tip "Save the camera from the GUI"
+    In interactive mode, frame the view you like and press **Save camera & lights to scene
+    YAML** in the *Scene* section. The `camera:` lines and the light settings of the file are
+    rewritten in place, comments included.
+
+---
+
+## `settings`
+
+| Key | Default | Description |
+|---|---|---|
+| `background_color` | `[0.5, 0.7, 1.0]` | Top colour of the gradient sky (linear RGB) |
+| `background_intensity` | `1.0` | Sky brightness (GUI *Ambient Light*) |
+| `light_intensity` | `1.0` | Multiplier on every light's emission (GUI *Lights inten.*) |
+| `light_falloff` | `2.0` | Distance exponent of the lights' reach, 2 = physical (GUI *Lights falloff*, see [Lights & Shadows](lighting.md)) |
+| `use_bvh` | `false` | Build the BVH; recommended above ~50 objects and for any mesh |
+| `adaptive_sampling` | `true` | Let converged pixels stop taking samples |
+| `samples_per_batch` | `0` | Interactive batch size for this scene (`0` = renderer default of 8; `--samples-per-batch` wins) |
+
+---
+
+## `materials`
+
+Each entry needs a `name` and a `type`. Geometry entries reference the name.
+
+### Common fields
+
+| Field | Default | Notes |
+|---|---|---|
+| `albedo` | `[0.7, 0.7, 0.7]` | Base colour |
+| `emission` | `[0, 0, 0]` | Emitted radiance; alternatively `color` + `emission_intensity` |
+| `roughness` | `0` | Used by the reflective types |
+| `metallic` | `0` | Metallic factor |
+| `texture` | — | Image file (relative to the scene file) that replaces the albedo through the mesh UVs |
+
+### Material types
+
+| `type` | What it is | Specific fields |
+|---|---|---|
+| `lambertian` | Ideal diffuse | `pattern` sub-block (below) |
+| `mirror` | Perfect specular reflection | — |
+| `rough_mirror`, `metal` | Fuzzy reflection | `roughness` |
+| `glass`, `dielectric` | Refractive dielectric | `refractive_index` (1.5 for glass), `transmission` |
+| `light` | Emitter | `emission`, or `color` + `emission_intensity` |
+| `anisotropic_metal` | GGX microfacet conductor | `roughness`, `anisotropy`, `preset` (`gold`, `silver`, `copper`, `aluminum`) or `eta` + `k` |
+| `thin_film` | Iridescent interference layer | `film_thickness` (nm), `film_ior` (1.33), `refractive_index` of the outside |
+| `clear_coat` | Glossy dielectric coat over a diffuse base | `roughness` of the coat (0.05), `refractive_index` (1.5) |
+| `volume`, `smoke`, `cloud` | Scattering medium inside a closed mesh or a density grid | see [Volumes](volumes.md) |
+| `constant` | Flat unlit colour | — |
+| `show_normals` | Normals as colours (debug) | — |
+
+```yaml
+materials:
+  - name: "plaster"
+    type: "lambertian"
+    albedo: [0.8, 0.78, 0.72]
+
+  - name: "brushed_gold"
+    type: "anisotropic_metal"
+    preset: "gold"
+    roughness: 0.08
+    anisotropy: 0.7
+
+  - name: "bubble"
+    type: "thin_film"
+    film_thickness: 400.0
+    film_ior: 1.33
+
+  - name: "red_car_paint"
+    type: "clear_coat"
+    albedo: [0.85, 0.10, 0.08]
+    roughness: 0.05
+    refractive_index: 1.5
+
+  - name: "warm_light"
+    type: "light"
+    color: [1.0, 0.875, 0.75]
+    emission_intensity: 12
+```
+
+The physics behind each type is on the [Materials](../how-it-works/materials.md) page.
+
+### Procedural patterns
+
+A `lambertian` material can carry a `pattern` block: `fibonacci_dots` (dots on a Vogel spiral,
+with `color`, `dot_count`, `dot_radius`) or `stripes` (alternating bands along the sphere's
+local Y axis, with `color`).
+
+```yaml
+  - name: "pokeball"
+    type: "lambertian"
+    albedo: [0.9, 0.1, 0.1]
+    pattern:
+      type: "fibonacci_dots"
+      color: [0.02, 0.02, 0.02]
+      dot_count: 12
+      dot_radius: 0.33
+```
+
+---
+
+## `geometry`
+
+Each entry needs a `type` and a `material`. Any entry accepts `visible: false`, which hides the
+object from camera rays while it keeps lighting the scene (and keeps appearing in reflections).
+
+### `sphere`
+
+```yaml
+  - type: "sphere"
+    material: "glass"
+    center: [0, 1, -2]
     radius: 0.8
 ```
 
-### Rectangle (area quad)
+### `rectangle`
 
-Defined by a position and two edge vectors:
+A quad spanned by two edge vectors from a corner. Also the usual shape of an area light.
 
 ```yaml
-  - type: rectangle
-    material: warm_light
-    position: [-1.0, 3.0, -2.0]   # one corner of the rectangle
-    u_vec:    [ 2.5, 0.0,  0.0]   # first edge vector
-    v_vec:    [ 0.0, 0.0,  1.5]   # second edge vector
+  - type: "rectangle"
+    material: "area_light"
+    corner: [-1.5, 4, -1.5]
+    u: [3, 0, 0]
+    v: [0, 0, 3]
 ```
 
-The surface normal is `cross(u_vec, v_vec)`. Flip `u_vec` or `v_vec` to reverse it.
+### `triangle`
 
-### Displaced sphere (golf ball)
+`v0`, `v1`, `v2`, with optional per-vertex normals `n0`, `n1`, `n2` for smooth shading.
+
+### `obj`
+
+A Wavefront mesh, path relative to the scene file. `position` is applied after `scale`. The
+`material` key is optional when the OBJ references an MTL file. See [OBJ Loading](obj-loading.md).
 
 ```yaml
-  - type: displaced_sphere
-    material: golf_white
-    center: [1.0, 0.3, 0.0]
-    radius: 0.5
-    displacement: 0.02    # dimple depth
-    frequency: 18.0       # number of dimple rows
+  - type: "obj"
+    material: "silver"
+    file: "../models/stanford-bunny.obj"
+    position: [0, 0, 0]
+    scale: [1, 1, 1]
 ```
 
-### OBJ mesh
+### `displaced_sphere`
+
+A sphere with golf-ball dimples: `center`, `radius`, `displacement_scale` (0.2), `pattern_type` (0).
+
+### `sdf`
+
+A ray-marched signed distance primitive: `shape`, `center`, `rotation` (degrees, X then Y then
+Z) and the shape's named parameters. See [SDF Shapes](sdf-shapes.md).
 
 ```yaml
-  - type: obj
-    material: plastic          # optional — overridden by MTL per-group materials
-    file: "../resources/models/bunny.obj"
-    scale:    [1.0, 1.0, 1.0]
-    position: [0.0, 0.0, 0.0]
-```
-
-The `material` key is optional when the OBJ has a `mtllib` — each `usemtl` group in the OBJ
-will use the material defined in the `.mtl` file.
-
-The path is relative to the scene YAML file's directory.
-See [OBJ Loading](obj-loading.md) for MTL materials, UV textures, and mesh format requirements.
-
-### SDF primitive
-
-```yaml
-  - type: sdf_primitive
-    material: chrome
-    sdf_type: torus          # torus | octahedron | death_star | pyramid
-    position: [0.0, 1.0, 0.0]
-    scale: 0.6
-    rotation: [0.0, 45.0, 0.0]   # Euler angles in degrees (X, Y, Z)
-    params: [0.5, 0.2]            # shape-specific: torus = [major_r, minor_r]
+  - type: "sdf"
+    material: "steel"
+    shape: "death_star"
+    center: [-3.5, 1.2, -4.5]
+    radius: 0.8
+    cutout_radius: 0.5
+    cutout_distance: 1.0
+    rotation: [0, 54, 0]
 ```
 
 ---
@@ -241,59 +225,65 @@ See [OBJ Loading](obj-loading.md) for MTL materials, UV textures, and mesh forma
 ## Complete minimal scene
 
 ```yaml
-settings:
-  use_bvh: false
-  background_color: [0.5, 0.7, 1.0]
-
 camera:
-  look_from: [0.0, 1.0, 4.0]
-  look_at:   [0.0, 0.5, 0.0]
-  vfov: 50.0
+  position: [0, 2, 7]
+  look_at: [0, 0, 0]
+  fov: 45
+
+settings:
+  background_color: [0.05, 0.07, 0.12]
+  background_intensity: 0.5
+  use_bvh: true
 
 materials:
-  - name: sky_blue
-    type: lambertian
-    albedo: [0.3, 0.5, 0.8]
-
-  - name: diffuse_red
-    type: lambertian
-    albedo: [0.8, 0.1, 0.1]
-
-  - name: floor
-    type: lambertian
-    albedo: [0.8, 0.8, 0.8]
+  - name: "ground"
+    type: "lambertian"
+    albedo: [0.5, 0.5, 0.5]
+  - name: "red_ball"
+    type: "lambertian"
+    albedo: [0.9, 0.1, 0.1]
+  - name: "mirror_ball"
+    type: "mirror"
+  - name: "glass_ball"
+    type: "glass"
+    refractive_index: 1.5
+  - name: "area_light"
+    type: "light"
+    emission: [10, 9, 8]
 
 geometry:
-  - type: sphere
-    material: diffuse_red
-    center: [0.0, 0.5, 0.0]
+  - type: "rectangle"
+    material: "ground"
+    corner: [-10, 0, -10]
+    u: [20, 0, 0]
+    v: [0, 0, 20]
+  - type: "rectangle"
+    material: "area_light"
+    corner: [-1, 5, -1]
+    u: [2, 0, 0]
+    v: [0, 0, 2]
+  - type: "sphere"
+    material: "red_ball"
+    center: [-1.5, 0.5, 0]
     radius: 0.5
-
-  - type: sphere
-    material: floor
-    center: [0.0, -100.0, 0.0]   # Earth trick — large sphere as ground plane
-    radius: 100.0
+  - type: "sphere"
+    material: "mirror_ball"
+    center: [0, 0.6, 0]
+    radius: 0.6
+  - type: "sphere"
+    material: "glass_ball"
+    center: [1.5, 0.5, 0]
+    radius: 0.5
 ```
 
 ---
 
-## Available example scenes
+## Parser behaviour
 
-| File | What it demonstrates |
-|---|---|
-| `default_scene.yaml` | Full-featured: metals, glass, area light, SDF shapes |
-| `09_color_bleed_box.yaml` | Cornell box with colour bleeding |
-| `05_material_laboratory.yaml` | Side-by-side all material types |
-| `03_platonic_solids.yaml` | SDF shapes: torus, octahedron, pyramid |
-| `04_obj_dragon.yaml` | Stanford dragon OBJ mesh |
-| `04_obj_statue.yaml` | Statue OBJ mesh |
-| `01_anisotropic_metals_test.yaml` | Anisotropic brushed-metal highlights |
-| `02_displacement_garden.yaml` | Displacement-mapped spheres |
-| `06_caustics_chapel.yaml` | Refractive caustics from glass |
-| `10_isc_neons_bunny.yaml` | Emissive neon lights + bunny mesh |
-| `11_soap_bubbles.yaml` | Thin-film iridescence |
-| `12_clearcoat_pokemonball.yaml` | Clearcoat over diffuse base |
-| `13_texture_test1.yaml` | UV-mapped OBJ with grid texture (MTL-driven) |
-| `14_texture_test2.yaml` | Multi-material OBJ scene with Blender-exported MTL |
-| `15_mis_furnace_test.yaml` | MIS furnace test — energy conservation validation |
-| `bvh_stress_courtyard.yaml` | 300+ objects, BVH stress test |
+- At most 100 materials and 1000 geometry entries per file.
+- Keys are case-sensitive. An unknown material `type` falls back to `lambertian`; an unknown
+  geometry type is skipped with a message.
+- An OBJ that fails to load prints an error but does not abort the scene.
+- With a duplicate material name, the last entry wins.
+
+The bundled scenes are listed in [Getting Started](../getting-started.md#example-scenes).

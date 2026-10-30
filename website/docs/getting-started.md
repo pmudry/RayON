@@ -1,6 +1,7 @@
 # Getting Started
 
-This page walks you through everything needed to build RayON from source and run your first render.
+This page walks you through building RayON from source, running your first render, and the
+command-line options.
 
 ---
 
@@ -8,90 +9,73 @@ This page walks you through everything needed to build RayON from source and run
 
 | Dependency | Version | Required? | Notes |
 |---|---|---|---|
-| C++ compiler | C++17 | **Yes** | Clang ≥ 14 (default) or GCC ≥ 11 |
-| CMake | ≥ 3.20 | **Yes** | Ninja also supported |
-| CUDA Toolkit | ≥ 12.0 | **Yes** | Required for GPU renderer modes 2–5 |
-| SDL2 | ≥ 2.0 | Optional | Required for interactive mode (3, 5) and real-time display |
-| SDL2_image | ≥ 2.0 | Optional | Companion to SDL2 for texture loading |
-| Dear ImGui | bundled | — | Included under `src/external/` |
-| stb | bundled | — | Included under `src/external/` |
+| C++ compiler | C++17 | **Yes** | Clang (default, `USE_CLANG=ON`) or GCC |
+| CMake | ≥ 3.20 | **Yes** | Generates `compile_commands.json` for clangd |
+| CUDA Toolkit | ≥ 12.0 | **Yes** | Both back-ends are CUDA programs; the architecture is set to `native` |
+| NVIDIA OptiX SDK | 8.0 or 9.0 | Optional | Enables modes 4 and 5 (hardware ray tracing). Found through `OptiX_INSTALL_DIR`, `~/Downloads/NVIDIA-OptiX-SDK-*`, `/usr/local/NVIDIA-OptiX-SDK` or `/opt/optix` |
+| SDL2 | ≥ 2.0 | Optional | Enables the interactive modes 3 and 5 |
+| Dear ImGui, stb | bundled | — | Included under `src/external/` |
 
-> **Without SDL2** the interactive mode is disabled but all offline render modes work.
+Without SDL2 the offline modes still work. Without the OptiX SDK only the CUDA back-end is built.
 
 ---
 
 ## Building from source
 
 ```bash
-# 1. Clone
 git clone https://github.com/pmudry/RayON.git
 cd RayON
 
-# 2. Configure (generates compile_commands.json for IDE autocompletion)
 mkdir -p build && cd build
-cmake .. --fresh -DCMAKE_EXPORT_COMPILE_COMMANDS=1
-
-# Copy compile commands for IDE tools
-cp compile_commands.json ..
-
-# 3. Build (uses all cores minus two)
+cmake .. --fresh          # prints which of SDL2 and OptiX were found
 make -j$(nproc)
 ```
 
 !!! tip "VS Code users"
-    Use the pre-defined tasks via `Ctrl+Shift+P → Run Task`:
-
-    - **CMake: fresh** — clean CMake reconfigure
-    - **Make build** — incremental compilation
-    - **Launch** — build and run
+    Use the pre-defined tasks via `Ctrl+Shift+P → Run Task`: **CMake: fresh**, **Make build**
+    and **Launch**. `clangd` picks up `compile_commands.json` and the `.clangd` file that CMake
+    maintains with the include paths of every directory under `src/`.
 
 ### Build variants
 
 ```bash
-# Debug build (enables -lineinfo for cuda-gdb, disables -O3)
-cmake .. --fresh -DCMAKE_BUILD_TYPE=Debug
-
-# Release build (default — -O3, best performance)
-cmake .. --fresh -DCMAKE_BUILD_TYPE=Release
-
-# Force GCC instead of Clang
-cmake .. --fresh -DUSE_CLANG=OFF
+cmake .. --fresh -DCMAKE_BUILD_TYPE=Debug      # -lineinfo for cuda-gdb and Nsight, no fast math
+cmake .. --fresh -DCMAKE_BUILD_TYPE=Release    # default: -O3 and --use_fast_math
+cmake .. --fresh -DUSE_CLANG=OFF               # GCC instead of Clang for the host code
+cmake .. --fresh -DENABLE_CLANG_TIDY=ON        # static analysis during the build (.clang-tidy)
+cmake .. --fresh -DENABLE_DIAGS=ON             # extra diagnostic output in the renderers
 ```
+
+After adding files or directories under `src/`, re-run `cmake .. --fresh` so the include paths
+and `compile_commands.json` are regenerated.
 
 ---
 
 ## Running RayON
+
+!!! warning "Run from `build/`"
+    The OptiX programs (`optix_programs.ptx`) and the HDR skies (`../resources/hdri/`) are
+    located relative to the current directory. Every example below assumes `cd build`.
 
 ```bash
 cd build
 ./rayon
 ```
 
-When SDL2 is available, RayON defaults directly to **interactive mode (mode 3)** — no prompt.
-When only CUDA is available, it defaults to the one-shot CUDA renderer (mode 2).
-
-To pick a renderer explicitly, use `-m`:
+With no `-m` the renderer picks the best mode it was built with: **5** (OptiX interactive) when
+both OptiX and SDL2 are available, else 4, else 3, else 2.
 
 ```bash
-./rayon -m 2          # CUDA one-shot
-./rayon -m 3          # CUDA interactive (SDL2 required)
-./rayon -m 4          # OptiX one-shot (if built with OptiX)
-./rayon -m 5          # OptiX interactive (SDL2 + OptiX required)
+./rayon -m 2          # CUDA offline
+./rayon -m 3          # CUDA interactive (SDL2)
+./rayon -m 4          # OptiX offline
+./rayon -m 5          # OptiX interactive (SDL2 + OptiX)
+./rayon --menu        # ask which mode to use
 ```
 
-Or add `--menu` to see the interactive selection prompt:
-
-```bash
-./rayon --menu
-# Choose rendering method:
-#   2. CUDA GPU (default)
-#   3. CUDA GPU with interactive SDL display
-#   4. OptiX GPU (hardware RT cores)
-#   5. OptiX GPU with interactive SDL display
-```
-
-Rendered images are saved automatically to `build/rendered_images/` as timestamped
-`.png` + `.json` (metadata) + `.txt` (log) triplets. `latest.png` is always overwritten.
+Offline renders are written to `build/rendered_images/` as a timestamped `.png` with a `.json`
+metadata file and a `.txt` log next to it; `latest.png` always holds the most recent image. The
+offline progress bar shows the elapsed time and an estimate of the time left.
 
 ---
 
@@ -103,74 +87,88 @@ Rendered images are saved automatically to `build/rendered_images/` as timestamp
 
 | Flag | Default | Description |
 |---|---|---|
-| `-m <method>` | 5 (3 without OptiX) | Renderer: `2`=CUDA, `3`=CUDA interactive, `4`=OptiX, `5`=OptiX interactive |
-| `--menu` | — | Show interactive renderer-selection menu instead of using the default |
+| `-m <method>` | 5 (3 without OptiX) | Renderer: `2` = CUDA offline, `3` = CUDA interactive, `4` = OptiX offline, `5` = OptiX interactive |
+| `--menu` | — | Show the mode selection menu instead of using the default |
 | `--scene <yaml>` | built-in | Load a scene from a YAML file |
 | `-s <n>` | 64 | Samples per pixel (offline modes 2, 4) |
-| `-r <h>` | 720 | Image height; aspect ratio 16:9 auto-applied (`-r 1080`) |
+| `-r <h>` | 720 | Image height; the width follows the 16:9 aspect ratio (`-r 1080`) |
 | `-r <WxH>` | — | Arbitrary resolution (`-r 1920x1080`, `-r 800x600`) |
-| `--samples-per-batch <n>` | 8 | Samples per batch for interactive mode (overrides the scene's `settings.samples_per_batch`) |
 | `--sampler <sobol\|pcg>` | `sobol` | GPU sampler: low-discrepancy Sobol' or classic PCG |
-| `--no-adaptive-sampling` | off | Disable converged-pixel skipping (adaptive sampling) |
-| `--no-auto-accumulate` | off | Disable automatic sample accumulation when stationary |
-| `--no-hdr-cache` | off | Disable `.hdrcache` disk cache — always re-decode the `.hdr` file from scratch |
-| `--theme <name>` | `nord` | ImGui colour theme: `light`, `classic`, `nord`, `dracula`, `gruvbox`, `catppuccin` |
-| `-h`, `--help` | — | Print help and exit |
+| `--no-hdr-cache` | off | Always re-decode `.hdr` files instead of reading the `.hdrcache` sidecar |
+| `--samples-per-batch <n>` | 8 | Interactive samples per batch; overrides the scene's `settings.samples_per_batch` |
+| `--no-adaptive-sampling` | off | Disable converged-pixel skipping |
+| `--no-auto-accumulate` | off | Do not keep adding samples while the camera is still |
+| `--theme <name>` | `nord` | GUI theme: `light`, `classic`, `nord`, `dracula`, `gruvbox`, `catppuccin` |
+| `-h`, `--help` | — | Print the help and exit |
 
 ### MIS / NEE options (all modes)
 
 | Flag | Default | Description |
 |---|---|---|
-| `--no-mis` | MIS on | Disable Multiple Importance Sampling and NEE (noisier but faster per sample) |
+| `--no-mis` | MIS on | Disable multiple importance sampling and next event estimation (faster per sample, much noisier) |
 | `--motion-gate-mis` | off | Disable MIS while the camera moves (interactive modes only) |
-| `--nee-stride <N>` | `1` | Beyond the first bounce, fire a shadow ray on 1-of-every-N samples and scale the contribution by N |
+| `--nee-stride <N>` | `1` | Beyond the first bounce, trace the shadow ray on 1 of every N samples and scale its contribution by N |
+
+The target frame rate while moving, the quality floors, the denoiser and the adaptive sampling
+threshold are GUI settings, see [Interactive Mode](features/interactive.md).
 
 ### Examples
 
 ```bash
-# High-quality offline render to PNG
-./rayon -m 2 --scene ../resources/scenes/09_color_bleed_box.yaml -s 2048 -r 1080
+# High-quality offline render with OptiX
+./rayon -m 4 --scene ../resources/scenes/09_color_bleed_box.yaml -s 2048 -r 1080
 
-# Fast preview (offline)
+# Fast preview with CUDA
 ./rayon -m 2 --scene ../resources/scenes/default_scene.yaml -s 8 -r 360
 
-# Interactive session with manual batch size
-./rayon --scene ../resources/scenes/default_scene.yaml --samples-per-batch 12
-# > interactive window opens directly (mode 5, or 3 without OptiX)
+# Interactive session on the cloud bunny
+./rayon --scene ../resources/scenes/17_cloud_bunny.yaml
 
-# Interactive with custom theme and no adaptive sampling
+# Interactive with a custom theme and no adaptive sampling
 ./rayon --theme dracula --no-adaptive-sampling
 ```
+
+### Interactive mode on a remote GPU server
+
+The SDL window does not work through `ssh -X`. Start a VNC session on the server instead:
+
+```bash
+sudo apt install tigervnc-standalone-server openbox   # once, on the server
+scripts/rayon_vnc.sh -r 1080 --scene resources/scenes/18_sdf_shapes.yaml
+```
+
+The script starts a headless VNC server sized to the render resolution, runs `rayon` inside it
+and prints the `vncviewer` command to connect from your machine. `Ctrl-C` stops everything.
 
 ---
 
 ## Example scenes
 
-17 pre-built YAML scenes are available in `resources/scenes/`:
+The 24 scenes in `resources/scenes/` double as a feature tour. Load any of them with `--scene`.
 
 | File | Highlights |
 |---|---|
-| `default_scene.yaml` | Full-featured default — metals, glass, area light, SDF shapes |
-| `09_color_bleed_box.yaml` | Cornell box with coloured wall bleeding |
-| `05_material_laboratory.yaml` | Side-by-side showcase of all material types |
-| `03_platonic_solids.yaml` | SDF platonic solids — icosahedron, octahedron, torus |
-| `04_obj_dragon.yaml` | Stanford dragon mesh at ~100k triangles |
-| `01_anisotropic_metals_test.yaml` | Anisotropic brushed-metal highlight patterns |
-| `11_soap_bubbles.yaml` | Thin-film iridescent soap bubble material |
-| `12_clearcoat_pokemonball.yaml` | Clearcoat layer over diffuse base |
-| `bvh_stress_courtyard.yaml` | 300+ objects — BVH stress test |
+| `default_scene.yaml` | The built-in scene: rough mirrors, glass, anisotropic gold and copper, a Fibonacci-dotted sphere, an area light |
+| `default_scene_no_ambient.yaml` | The same without the sky, lit by the area light alone |
+| `01_anisotropic_metals_test.yaml` | 4×4 grid of aluminium spheres: anisotropy along X, roughness along Y |
+| `01_anisotropic_scene_obj.yaml` | The same grid on cylinder meshes (OBJ), a check of anisotropic shading on polygons |
+| `01_bvh_test_scene.yaml` | 150 spheres in a grid, a BVH sanity scene |
+| `02_displacement_garden.yaml` | Procedurally displaced spheres (golf-ball dimples) |
+| `03_platonic_solids.yaml` | The five Platonic solids as OBJ meshes with anisotropic metals |
+| `04_obj_dragon.yaml`, `04_obj_statue.yaml`, `04_obj_test_scene.yaml` | OBJ loading: the xyzrgb dragon (250 k triangles), the Winged Victory statue, a test sphere |
+| `05_material_laboratory.yaml` | Rough mirrors, anisotropic metals and glass side by side |
+| `06_caustics_chapel.yaml` | Glass spheres in a dark room with a small bright light: caustics and the hardest case for sampling |
+| `09_color_bleed_box.yaml` | Cornell box with red, green and blue walls |
+| `10_isc_neons_bunny.yaml` | Five coloured neon strips lighting the Stanford bunny |
+| `11_soap_bubbles.yaml` | Thin-film interference at several film thicknesses |
+| `12_clearcoat_pokemonball.yaml` | Clear coat over a diffuse base, with Suzanne |
+| `13_texture_test1.yaml`, `14_texture_test2.yaml` | UV-mapped OBJ models with image textures through MTL files |
+| `15_mis_furnace_test.yaml` | Furnace test: energy conservation of the MIS estimator |
+| `16_nee_small_light.yaml` | Five matte spheres under a tiny bulb: what next event estimation buys |
+| `17_cloud_bunny.yaml` | The volume material: the bunny as a cumulus, procedural shape noise |
+| `18_sdf_shapes.yaml` | Gallery of the ten ray-marched SDF primitives in a studio room |
+| `19_vdb_bunny.yaml` | The OpenVDB `bunny_cloud` density grid (needs a one-time conversion, see [Volumes](features/volumes.md)) |
+| `bvh_stress_courtyard.yaml` | 385 metallic spheres in a pyramid, a BVH stress test |
+| `99_gnd.yaml` | Scratch scene |
 
-See [YAML Scene Format](features/scenes.md) for full documentation on writing your own.
-
----
-
-## Output files
-
-Every render writes to `build/rendered_images/` with the timestamp as the filename prefix:
-
-```
-output_2026-03-14_15-30-00.png   ← the rendered image
-output_2026-03-14_15-30-00.json  ← render metadata (samples, time, resolution, scene)
-output_2026-03-14_15-30-00.txt   ← ASCII log
-latest.png                        ← always points to the most recent render
-```
+The format is documented in [YAML Scene Format](features/scenes.md).

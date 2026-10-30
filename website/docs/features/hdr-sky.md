@@ -7,29 +7,29 @@ full HDR environment map loaded from an `.hdr` file and projected as an equirect
 
 ## Built-in gradient sky
 
-When no YAML sky key is specified, the renderer uses a simple linear gradient between a horizon
-colour and a zenith colour:
+By default the sky is a vertical gradient from white at the horizon to `background_color` at
+the zenith, scaled by `background_intensity` (the GUI's *Ambient Light*):
 
 ```yaml
 settings:
-  background_color: [0.05, 0.05, 0.08]  # overrides gradient with a solid colour
+  background_color: [0.45, 0.65, 0.95]   # zenith colour (default: [0.5, 0.7, 1.0])
+  background_intensity: 0.25             # 0 = no sky light at all
 ```
 
-Omit `background_color` entirely to get the default blue-to-white gradient.
-This sky model requires no image files and renders at zero memory cost.
+This sky needs no image file and costs nothing.
 
 ---
 
 ## HDR environment sky dome
 
 An equirectangular `.hdr` file (Radiance RGBE format) is mapped onto an infinite sphere
-around the scene.
-Any ray that misses all geometry samples the sky dome at the corresponding direction.
+around the scene. Any ray that misses all geometry samples the sky dome in its direction.
 
-```yaml
-settings:
-  hdr_sky: "../resources/hdri/venice_sunset_8k.hdr"
-```
+The sky is chosen in the interactive modes, not in the scene file: at start-up the renderer
+scans `resources/hdri/` (looked up as `../resources/hdri` from `build/`) and lists every
+`.hdr` it finds in the **Sky** combo of the *Environment & Materials* section, after the
+built-in gradient. **Numpad + / −** cycle through them. The offline modes render with the
+gradient sky.
 
 The mapping is derived from the ray's unit direction vector:
 
@@ -41,15 +41,14 @@ with $v = 0$ at the north pole and $v = 1$ at the south pole.
 
 ### Switching sky in interactive mode
 
-In interactive mode the sky can be cycled at runtime **without restarting**:
-
 | Input | Effect |
 |---|---|
-| **Numpad +** or **=** | Next HDRI in directory |
-| **Numpad −** or **−** | Previous HDRI in directory |
+| **Numpad +** or **=** | Next HDRI of the directory |
+| **Numpad −** or **−** | Previous HDRI |
+| **Sky** combo | Pick any file by name; the first entry is the built-in gradient |
 
-A **Sky** combo-box in the *Environment* section of the ImGui panel also lets you pick any
-loaded `.hdr` file by name.
+Switching takes the decode time of the file the first time (seconds for an 8K map), then the
+`.hdrcache` sidecar makes it near instant.
 
 ---
 
@@ -82,8 +81,12 @@ The six bundled environments:
 | `rosendal_plains_2` | [polyhaven.com/a/rosendal_plains_2](https://polyhaven.com/a/rosendal_plains_2) |
 
 !!! note "Adding your own HDRIs"
-    Any equirectangular `.hdr` file works — just place it in `resources/hdri/` and reference it
-    from your YAML scene file or cycle to it with Numpad +/-.
+    Any equirectangular `.hdr` file works: put it in `resources/hdri/` and it appears in the
+    Sky combo at the next start.
+
+A very bright sun disk in an HDR map is the classic firefly source. Each sample's luminance
+is clamped (a fixed ceiling of 20 while the camera moves, a growing one when still), see
+[Lights & Shadows](lighting.md#fireflies).
 
 ---
 

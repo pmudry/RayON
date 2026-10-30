@@ -1,9 +1,9 @@
 # OBJ Loading
 
-RayON can import triangle meshes from Wavefront `.obj` files and render them alongside
-analytical geometry using physical path tracing — same materials, same BVH, same illumination.
-Materials can come from a YAML definition or directly from the `.mtl` file referenced by the
-OBJ, and UV-mapped image textures are fully supported on the GPU (CUDA and OptiX backends).
+RayON imports triangle meshes from Wavefront `.obj` files and renders them with the same
+materials, lights and acceleration as the analytic geometry. Materials can come from the YAML
+scene or from the `.mtl` file the OBJ references, and UV-mapped image textures are sampled on
+the GPU.
 
 ---
 
@@ -12,208 +12,137 @@ OBJ, and UV-mapped image textures are fully supported on the GPU (CUDA and OptiX
 | Feature | Supported |
 |---|---|
 | Vertex positions (`v`) | ✓ |
-| Vertex normals (`vn`) | ✓ — smooth per-vertex normals |
-| Texture coordinates (`vt`) | ✓ — UV-mapped image textures (GPU backends) |
+| Vertex normals (`vn`) | ✓ smooth per-vertex normals |
+| Texture coordinates (`vt`) | ✓ UV-mapped image textures |
 | Triangular faces (`f`) | ✓ |
-| Quad faces | Auto-triangulated into two triangles |
-| Multiple material groups (`usemtl`) | ✓ — per-group materials from MTL |
-| MTL material files (`mtllib`) | ✓ — Kd, Ke, Ni, Ns, map_Kd supported |
+| Quad faces | triangulated into two triangles |
+| Material groups (`usemtl`) | ✓ per-group materials from the MTL |
+| MTL files (`mtllib`) | ✓ `Kd`, `Ke`, `Ni`, `Ns`, `d`, `illum`, `map_Kd` |
 
-!!! note "Triangles only"
-    Faces with more than 4 vertices are not supported. Most 3D modelling tools can export
-    triangulated meshes via an export option.
-
-!!! note "GPU only for textures"
-    UV texture sampling is implemented in the CUDA and OptiX backends. CPU renders ignore
-    the texture and fall back to the material's solid albedo.
+Faces with more than four vertices are not supported; export triangulated meshes.
 
 ---
 
 ## Loading a mesh
 
-In a YAML scene file:
-
 ```yaml
 geometry:
-  - type: obj
-    material: plastic_white    # optional — YAML material overrides MTL
-    file: "../resources/models/bunny.obj"
-    scale: [1.0, 1.0, 1.0]    # per-axis scale
-    position: [0.0, 0.0, 0.0] # translation after scaling
+  - type: "obj"
+    material: "plastic_white"      # optional: fallback for groups without usemtl
+    file: "../models/stanford-bunny.obj"
+    scale: [1.0, 1.0, 1.0]         # per-axis scale
+    position: [0.0, 0.0, 0.0]      # translation applied after scaling
 ```
 
-The `file` path is resolved **relative to the YAML scene file's directory**.
+The `file` path is resolved relative to the scene file. When the OBJ carries a `mtllib`, the
+`material` key may be omitted and every `usemtl` group uses its MTL material; a YAML material
+is the fallback for faces without one.
 
-### MTL-only mode
-
-When the OBJ file contains a `mtllib` reference, the `material` key in YAML is optional.
-Omitting it lets all per-face materials come from the `.mtl` file:
-
-```yaml
-geometry:
-  - type: obj
-    file: "../models/my_scene.obj"
-    position: [0.0, 0.0, 0.0]
-    scale:    [1.0, 1.0, 1.0]
-    # No material: key — each usemtl group uses its MTL-defined material
-```
-
-If a YAML `material` is provided it is used as fallback for any face group that has no
-`usemtl` directive in the OBJ.
-
-Loading multiple meshes:
-
-```yaml
-geometry:
-  - type: obj
-    material: gold
-    file: "../resources/models/dragon.obj"
-    scale: [0.5, 0.5, 0.5]
-    position: [-1.5, 0.0, 0.0]
-
-  - type: obj
-    material: glass
-    file: "../resources/models/bunny.obj"
-    scale: [1.0, 1.0, 1.0]
-    position: [1.5, 0.0, 0.0]
-```
+Each triangle becomes one geometry entry of the scene description, so a 250 000-triangle dragon
+is 250 000 entries: enable `use_bvh: true` for any mesh.
 
 ---
 
-## MTL material support
-
-When the OBJ references an `.mtl` file, RayON parses it and maps standard MTL properties to
-internal materials:
+## MTL materials
 
 | MTL property | Effect in RayON |
 |---|---|
-| `Kd r g b` | Diffuse albedo colour |
-| `Ke r g b` | Emission — creates a `light` material when non-zero |
-| `Ns exponent` | Converted to roughness: `roughness ≈ 1 − √(Ns/1000)` |
-| `Ni ior` | Refractive index (used for glass materials) |
-| `d opacity` | Opacity < 0.5 selects a glass material |
-| `illum 5/7` | Selects mirror/glass material |
-| `map_Kd path` | Loads an image texture (see below) |
-
-Texture paths in `.mtl` files are resolved relative to **the `.mtl` file's directory**.
+| `Kd r g b` | Diffuse albedo |
+| `Ke r g b` | Emission; a non-zero value makes a `light` material |
+| `Ns exponent` | Converted to roughness (`1 − √(Ns / 1000)`) |
+| `Ni ior` | Refractive index of glass materials |
+| `d opacity` | Below 0.5 selects a glass material |
+| `illum 5` / `7` | Mirror / glass |
+| `map_Kd path` | Image texture, resolved relative to the `.mtl` file |
 
 ---
 
-## Image texture mapping
+## Image textures
 
-When a material's `map_Kd` specifies a texture image, RayON loads it with `stb_image`
-and uploads it as a CUDA texture object. UV coordinates from the OBJ are interpolated
-across the triangle using barycentric weights:
+A `map_Kd` texture, or a `texture:` key on a YAML material, is decoded with `stb_image` and
+uploaded as a CUDA texture object. At a hit the UVs are interpolated with the barycentric
+weights of the triangle,
 
 $$
-(u, v)_\text{hit} = (1-u-v)\,(u_0,v_0) + u\,(u_1,v_1) + v\,(u_2,v_2)
+(u, v)_\text{hit} = (1-u-v)\,(u_0,v_0) + u\,(u_1,v_1) + v\,(u_2,v_2),
 $$
 
-The sampled texel then overrides the material's solid albedo at the hit point,
-so you can use any Lambertian, rough-mirror, or glass material with a texture.
-
-Textures can also be assigned directly in the YAML material block:
+and the texel replaces the material's albedo. Textures are loaded once and shared by path.
 
 ```yaml
 materials:
-  - name: textured_floor
-    type: lambertian
-    albedo: [1.0, 1.0, 1.0]    # base tint (overridden by texture)
-    texture: "../resources/textures/grid_512.png"
+  - name: "textured_floor"
+    type: "lambertian"
+    texture: "../textures/grid_512.png"
 ```
 
 <div class="img-grid cols-2">
   <figure>
     <img src="../../assets/images/samples/textures/uv_mapping.png" alt="UV texture mapped cube and sphere">
-    <figcaption><strong>UV texture mapping</strong> — a grid texture applied to a UV-mapped cube, sphere, and ground plane via MTL.</figcaption>
+    <figcaption><strong>UV mapping</strong> — a grid texture on a UV-mapped cube, sphere and ground plane (<code>13_texture_test1.yaml</code>).</figcaption>
   </figure>
   <figure>
     <img src="../../assets/images/samples/textures/texture_orig.png" alt="Textured OBJ scene">
-    <figcaption><strong>MTL-driven textures</strong> — per-group materials from an exported Blender scene with a UV grid texture.</figcaption>
+    <figcaption><strong>MTL-driven textures</strong> — per-group materials of a Blender export (<code>14_texture_test2.yaml</code>).</figcaption>
   </figure>
 </div>
 
 ---
 
-## Triangle intersection — Möller–Trumbore
+## Triangle intersection
 
-Triangles are intersected using the **Möller–Trumbore algorithm** — numerically stable and fast:
-
-For a ray \(\mathbf{r}(t) = \mathbf{o} + t\mathbf{d}\) and triangle \((\mathbf{v}_0, \mathbf{v}_1, \mathbf{v}_2)\):
+The CUDA back-end intersects triangles with the **Möller–Trumbore** algorithm. For a ray
+\(\mathbf{o} + t\mathbf{d}\) and a triangle \((\mathbf{v}_0, \mathbf{v}_1, \mathbf{v}_2)\), with
+\(\mathbf{e}_1 = \mathbf{v}_1 - \mathbf{v}_0\), \(\mathbf{e}_2 = \mathbf{v}_2 - \mathbf{v}_0\),
+\(\mathbf{p} = \mathbf{d} \times \mathbf{e}_2\), \(\mathbf{t} = \mathbf{o} - \mathbf{v}_0\) and
+\(\mathbf{q} = \mathbf{t} \times \mathbf{e}_1\):
 
 \[
 \begin{pmatrix} t \\ u \\ v \end{pmatrix} =
 \frac{1}{\mathbf{p} \cdot \mathbf{e}_1}
-\begin{pmatrix}
-  \mathbf{q} \cdot \mathbf{e}_2 \\
-  \mathbf{p} \cdot \mathbf{t}_\text{vec} \\
-  \mathbf{q} \cdot \mathbf{d}
-\end{pmatrix}
+\begin{pmatrix} \mathbf{q} \cdot \mathbf{e}_2 \\ \mathbf{p} \cdot \mathbf{t} \\ \mathbf{q} \cdot \mathbf{d} \end{pmatrix},
+\qquad
+\text{hit} \iff u \ge 0,\; v \ge 0,\; u + v \le 1,\; t > t_\min .
 \]
 
-where \(\mathbf{e}_1 = \mathbf{v}_1 - \mathbf{v}_0\), \(\mathbf{e}_2 = \mathbf{v}_2 - \mathbf{v}_0\),
-\(\mathbf{p} = \mathbf{d} \times \mathbf{e}_2\), \(\mathbf{t}_\text{vec} = \mathbf{o} - \mathbf{v}_0\),
-\(\mathbf{q} = \mathbf{t}_\text{vec} \times \mathbf{e}_1\).
+The OptiX back-end hands every triangle to the **RT cores**: all triangles of the scene go into
+one geometry acceleration structure with the built-in intersector, and a per-triangle table
+holds the material, the normals, the UVs and the `visible` flag.
 
-A hit occurs when \(u \geq 0\), \(v \geq 0\), \(u + v \leq 1\), and \(t > t_\min\).
+### Smooth normals
 
----
-
-## Smooth normals
-
-When the `.obj` file contains vertex normals (`vn` records), RayON interpolates them across
-the triangle face using the barycentric coordinates \((u, v)\):
-
-\[
-\hat{n}_\text{interp} = (1 - u - v)\,\hat{n}_0 + u\,\hat{n}_1 + v\,\hat{n}_2
-\]
-
-This makes the mesh appear smooth even at low polygon counts:
+With `vn` records the shading normal is interpolated across the face,
+\(\hat{n} = (1 - u - v)\,\hat{n}_0 + u\,\hat{n}_1 + v\,\hat{n}_2\), which makes a low-polygon
+mesh look smooth. Without them the flat face normal is used.
 
 <div class="img-grid cols-2">
   <figure>
     <img src="../../assets/images/samples/obj_loading.png" alt="Smooth OBJ mesh import">
-    <figcaption><strong>Smooth normals</strong> — interpolated per-vertex normals make the low-poly mesh look smooth.</figcaption>
+    <figcaption><strong>Smooth normals</strong> — interpolated per-vertex normals on a low-poly mesh.</figcaption>
   </figure>
   <figure>
-    <img src="../../assets/images/samples/gui_debug/normals.png" alt="Normal visualisation of OBJ mesh">
-    <figcaption><strong>Normal visualisation</strong> — the <code>ShowNormals</code> material reveals the gradient of interpolated normals across every face.</figcaption>
+    <img src="../../assets/images/samples/gui_debug/normals.png" alt="Normal visualisation of an OBJ mesh">
+    <figcaption><strong>Normal visualisation</strong> — the <code>show_normals</code> material (key <b>N</b> in the GUI).</figcaption>
   </figure>
 </div>
-
-If the `.obj` has no normals, flat face normals are computed from `cross(e1, e2)`.
-
----
-
-## BVH with triangle meshes
-
-When `use_bvh: true`, the BVH wraps the entire OBJ mesh in a single AABB. Within-mesh
-triangle acceleration (a per-mesh BVH) is on the roadmap but not yet implemented — for meshes
-with thousands of triangles, the current configuration will test every triangle once the outer
-AABB is hit.
-
-For best performance with large meshes, keep the scene BVH enabled and limit meshes to
-a few thousand triangles.
 
 ---
 
 ## Included models
 
-Three `.obj` test models are provided in `resources/models/`:
+`resources/models/` ships a set of test meshes, among them:
 
-| File | Triangles | Source |
+| File | Triangles | Used by |
 |---|---|---|
-| `bunny.obj` | ~16 k | Stanford Bunny (Stanford Scanning Repository) |
-| `dragon.obj` | ~100 k | Stanford Dragon (Stanford Scanning Repository) |
-| `statue.obj` | ~30 k | Custom scan |
+| `bunny-3.obj`, `bunny-2.obj`, `stanford-bunny.obj` | 22 k, 69 k, 69 k | `10_isc_neons_bunny`, `17_cloud_bunny` |
+| `xyzrgb_dragon.obj` | 250 k | `04_obj_dragon` |
+| `dragon.obj` | 871 k | the largest mesh, for BVH tests |
+| `victory.obj` | 17 k | `04_obj_statue` |
+| `nefertiti.obj`, `nefertiti2.obj` | 100 k, 50 k | |
+| `suzanne.obj`, `teapot.obj` | 500, 6 k | `12_clearcoat_pokemonball` |
+| `tetrahedron`, `cube`, `octahedron`, `dodecahedron`, `icosahedron` | 4 to 20 | `03_platonic_solids` |
+| `cube_uv.obj`, `sphere_uv.obj`, `plane_uv.obj` | | `13_texture_test1` (generated by `scripts/generate_uv_models.py`) |
+| `shelby-car.obj`, `sci-fi.obj`, `PokemonBall.obj`, `isc-text.obj` | 291 k, 37 k, 7 k, 15 k | |
 
-UV-mapped test models for texture validation (generated by `scripts/generate_uv_models.py`):
-
-| File | Description |
-|---|---|
-| `plane_uv.obj` | Subdivided ground plane with UV coords |
-| `cube_uv.obj` | Cube with per-face UV mapping |
-| `sphere_uv.obj` | UV sphere with latitude-longitude UV |
-
-The Stanford models are used under the Stanford 3D Scanning Repository's
-[terms of use](https://graphics.stanford.edu/data/3Dscanrep/).
+The Stanford models are used under the
+[Stanford 3D Scanning Repository terms](https://graphics.stanford.edu/data/3Dscanrep/).

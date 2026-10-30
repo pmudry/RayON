@@ -1,6 +1,6 @@
 """
 MkDocs hooks:
-  on_pre_build  — copy image assets from repo root into docs/assets/images/
+  on_pre_build  — copy image assets from repo root into docs/assets/images/ (git-ignored)
   on_page_content — unwrap glightbox <a> wrappers inside img-comparison-slider
                     elements so the web component slots work correctly.
 """
@@ -22,11 +22,16 @@ def on_pre_build(config, **kwargs):
         ("images/dev",                            "dev"),
         ("material_gallery/thumbnails",           "thumbnails"),
         ("explanations/lambert sampling",         "sampling"),
+        ("images/sampling",                       "sampling"),
         ("images/comparisons",                    "comparisons"),
     ]
 
+    # Every PNG at the root of images/ (feature renders such as cloud_bunny.png) lands directly
+    # in docs/assets/images/
     single_files = [
-        ("images/real_time_raytrace.png", "real_time_raytrace.png"),
+        (os.path.join("images", f), f)
+        for f in sorted(os.listdir(os.path.join(repo_root, "images")))
+        if f.lower().endswith(".png")
     ]
 
     for src_rel, dst_rel in copies:

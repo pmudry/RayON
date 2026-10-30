@@ -64,13 +64,10 @@ No `powf()` call is needed — squaring is sufficient and the formula is numeric
 when one PDF approaches zero.
 
 ```cpp
-// mis_utils.hpp
-inline double power_heuristic(double pdf_a, double pdf_b)
-{
-    double a = pdf_a * pdf_a;
-    double b = pdf_b * pdf_b;
-    return (a + b > 0.0) ? (a / (a + b)) : 0.0;
-}
+// as written in both kernels
+float a = pdf_a * pdf_a;
+float b = pdf_b * pdf_b;
+float w = a / (a + b);
 ```
 
 **Intuition**: if the light PDF is much larger than the BSDF PDF for a given direction, NEE was
@@ -81,8 +78,8 @@ PDF is much larger (e.g. a specular spike), the BSDF sample gets most of the cre
 
 ## Algorithm: iterative path tracer with MIS
 
-The CPU `ray_color()` loop in `cpu_ray_tracer.hpp` implements the full MIS algorithm.
-Below is a commented walkthrough of one path:
+Both GPU kernels (`cuda_raytracer.cuh` and the ray-generation program of `optix_programs.cu`)
+implement the same loop. Below is a commented walkthrough of one path:
 
 ```
 for each bounce:
@@ -143,26 +140,13 @@ for each bounce:
 
 ---
 
-## Material interface changes
+## What the materials provide
 
-### ScatterRecord
-
-The `scatter_mis()` method returns a `ScatterRecord` instead of a simple `(attenuation, ray)`
-pair:
-
-```cpp
-struct ScatterRecord
-{
-    Ray    scattered;    // sampled outgoing ray
-    Color  bsdf_value;  // f(wo, wi) — NOT pre-divided by PDF
-    double pdf;          // PDF of the sampled direction
-    bool   is_specular;  // true → delta BSDF, skip NEE entirely
-};
-```
-
-The separate `pdf` field is essential for MIS: the throughput update
-`bsdf_value * cos_θ / pdf` can be computed explicitly, and `pdf` is re-used for the MIS weight
-at the next emissive hit.
+For MIS a material has to answer two questions beyond "give me a scattered direction": what is
+the BSDF value for an arbitrary direction, and what is the probability that the material's own
+sampler would have chosen it. The scattering code therefore returns the BSDF value and the PDF
+separately instead of the pre-divided attenuation; the PDF is kept for the MIS weight at the
+next emissive hit.
 
 ### Lambertian — full MIS support
 
@@ -179,11 +163,14 @@ Because \(f \cdot \cos\theta / p = (\rho/\pi) \cdot \cos\theta / (\cos\theta/\pi
 the throughput simplifies to the albedo in the pure-BSDF path — exactly as before. The explicit
 form is only needed for NEE evaluation and MIS weights.
 
-### Other materials (Mirror, Glass, GGX, ThinFilm, ClearCoat)
+### Other materials
 
-These use the default `scatter_mis()` fallback which wraps the legacy `scatter()` and sets
-`is_specular = true`. They skip NEE and MIS weighting entirely — correct behaviour for delta
-or near-delta BSDFs.
+Mirrors, glass, anisotropic GGX metals and thin films are treated as delta (or near-delta)
+BSDFs: they skip NEE and get a weight of 1 when they hit a light, which is correct for a perfect
+mirror and a reasonable approximation for the glossy ones. On the OptiX back-end the clear coat
+and the SDF material also take shadow rays (the diffuse base of the clear coat benefits most;
+treating it as delta produced a visible bias that was fixed in October 2026). Volumes sample
+the lights from every scattering event with the phase function as the BSDF.
 
 ---
 
@@ -228,9 +215,9 @@ The combined solid-angle PDF is:
 p_\text{total}(\omega) = \sum_{i=1}^{N} p_\text{select}(i) \cdot p_{\Omega,i}(\omega)
 \]
 
-On the CPU, `Hittable_list::pdf_value()` averages over all lights (uniform selection);
-`random_direction()` picks one light uniformly at random. On the GPU, the area CDF stored in
-`scene.light_cdfs[]` provides area-proportional selection.
+The area CDF is stored in `scene.light_cdfs[]` (CUDA) and `params.light_cdfs[]` (OptiX)
+and gives area-proportional selection; the solid-angle PDF of a direction towards a given
+light is evaluated the same way for the MIS weight of an emitter hit.
 
 ---
 
@@ -250,16 +237,18 @@ struct Scene {
 These arrays are populated at scene build time in `scene_builder_cuda.cu` by scanning all geometry
 for `MaterialType::LIGHT`.
 
-### Shadow ray: `hit_scene_shadow()`
+### Shadow rays
 
-An early-exit BVH traversal that returns `true` as soon as **any** geometry occludes the path.
-Stack depth is capped at 16 (shadow rays rarely need deep traversal). This avoids the full
-closest-hit bookkeeping of `hit_scene()`, making shadow tests ~40–60 % cheaper.
+CUDA: `hit_scene_shadow()` is an early-exit BVH traversal that returns as soon as **any**
+geometry occludes the segment, with a shallow stack, about half the cost of a closest-hit
+query. OptiX: shadow rays use the `OPTIX_RAY_FLAG_TERMINATE_ON_FIRST_HIT` path with a slim
+payload, and triangles are tested by the RT cores. Through a volume, the shadow ray's
+transmittance is estimated by ratio tracking instead of a binary hit.
 
 ### BSDF evaluation and PDF
 
-Currently implemented for **Lambertian** only (all other materials are treated as delta via
-`is_delta_material()`):
+On CUDA the explicit BSDF is implemented for **Lambertian** (every other material is delta via
+`is_delta_material()`); OptiX adds the SDF material and the clear coat:
 
 ```cpp
 __device__ f3 eval_bsdf_gpu(const hit_record_simple &rec, const f3 &wi)
@@ -309,17 +298,17 @@ total ray count increases by ~25–40 %.
 
 ## Verification
 
-1. **Furnace test** — place a diffuse sphere inside a uniformly emitting sphere (albedo 1.0).
-   The result must be flat white; any colour bias indicates an energy leak in the MIS weights.
+1. **Furnace test** — `15_mis_furnace_test.yaml`: diffuse spheres in a uniform radiance
+   environment. A sphere with albedo 1 must vanish against the background; any bias indicates
+   an energy leak in the MIS weights.
 
-2. **Light count at startup** — both backends print detected lights:
+2. **Light count at startup** — the OptiX backend prints the lights it uploads:
    ```
-   MIS: 2 light(s) detected
-   CPU scene: 8 objects, 2 lights
+   OptiX NEE: 1 lights uploaded (total area 0.05)
    ```
 
-3. **CPU / GPU consistency** — render a scene with both backends at high sample counts. Mean pixel
-   values should agree to within statistical noise.
+3. **CUDA / OptiX consistency** — render a scene with both backends at high sample counts. Mean
+   pixel values should agree to within statistical noise.
 
 4. **Variance comparison** — render a Cornell-box-style scene at 64 spp with and without MIS. The
    MIS image should show dramatically lower noise around shadow edges and on diffuse surfaces

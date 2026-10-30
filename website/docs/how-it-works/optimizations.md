@@ -50,19 +50,22 @@ executes.
 
 ---
 
-## 3 — Thread-block shape: 32 × 4
+## 3 — Thread-block shape: 32 × 8
 
-**What it is:** the kernel is launched with 2-D thread blocks of 32 columns × 4 rows = 128 threads.
+**What it is:** the kernel is launched with 2-D thread blocks of 32 columns × 8 rows = 256
+threads (16 × 16 on devices that allow fewer threads per block).
 
 **Why it helps:** 32 threads exactly fill one CUDA **warp** — the unit of SIMD execution. With
 32 threads per row, adjacent threads access adjacent pixel addresses, which coalesces into a
 single memory transaction. A 16×8 block would split one row across two warps and introduce
-cross-warp divergence on conditional branches.
+cross-warp divergence on conditional branches. Register-cap and block-shape experiments
+(`--maxrregcount` 48–80, 32×8 / 16×16 / 8×32) gave no consistent gain across resolutions,
+so 32×8 with 80 registers stayed the default.
 
 **Measured impact:** ~5–10% throughput gain over 16×8 at the same occupancy.
 
 ```cpp
-dim3 block_size(32, 4);   // 128 threads, one warp per row
+dim3 block_size(32, 8);   // 256 threads, one warp per row
 dim3 grid_size(
     (width  + block_size.x - 1) / block_size.x,
     (height + block_size.y - 1) / block_size.y
@@ -266,6 +269,53 @@ lighting never changes character between the moving and the still image.
 
 ---
 
+## 19 — OptiX: hardware triangles, cheap shadow rays, slim payload
+
+**What it is:** every triangle of the scene goes into one geometry acceleration structure with
+the built-in RT-core intersector; only spheres, rectangles, displaced spheres and SDF shapes
+remain custom primitives, referenced by a one-level instance acceleration structure. Shadow
+rays terminate on the first hit with a minimal payload, and the radiance payload was trimmed to
+what the closest-hit programs actually fill.
+
+**Measured impact:** the mesh scenes (dragon, statue, bunny) run at hardware speed; shadow rays
+cost a fraction of a closest-hit query.
+
+**Files:** `optix/optix_renderer.cu` (`buildGAS`), `optix/optix_programs.cu`
+
+---
+
+## 20 — Motion regulator: resolution before samples
+
+**What it is:** while the camera moves, the interactive OptiX renderer holds a target frame
+rate by lowering the render fraction first (down to a quarter of the width and height, 1/16 of
+the pixels, upscaled for display) and then the samples per frame, with a cost model of the
+previous frames, and raises both back when there is headroom. The accumulation restarts on
+every move, so none of this touches the final image. An optional AI denoiser (the OptiX neural
+denoiser, guided by albedo and normal) smooths the motion frames and fades out over the first
+still frames.
+
+**Measured impact:** 60 fps held on the cloud bunny during orbit on the DGX Spark, against a
+few frames per second at full resolution.
+
+**Files:** `renderer_optix_progressive_host.hpp`, `sdl_gui_handler.hpp` (`MotionQualitySettings`)
+
+---
+
+## 21 — Volumes: baked density field and empty-space skipping
+
+**What it is:** the procedural density of a cloud (distance to the mesh, shape noise, interior
+noise) is baked once into a 3D texture of 160 cells, re-baked in milliseconds when a slider
+moves, so the delta-tracking loop pays one texture fetch per step. The signed distance grid of
+the mesh bounds how far a point outside the cloud is from any density, and the tracking loop
+jumps that distance instead of taking null-collision steps.
+
+**Measured impact:** the cloud bunny renders 512 spp at 720p in 11 s; the same transport on a
+density grid without the distance skip takes 40 s.
+
+**Files:** `volume_sdf.cu`, `volume_medium.cuh`
+
+---
+
 ## GPU Implementation Techniques
 
 The sections above cover algorithmic and system-level decisions. This section documents the
@@ -454,7 +504,7 @@ production renderers (Blender Cycles exposes equivalent "Clamp Direct / Indirect
 |---|---|---|---|
 | 1 | CPU multi-threading | ~15× | CPU *(archived — see `legacy/cpu-renderer` branch)* |
 | 2 | CUDA GPU kernels | ~400× vs. CPU ST | CUDA |
-| 3 | 32×4 thread blocks | ~5–10% throughput | CUDA |
+| 3 | 32×8 thread blocks | ~5–10% throughput | CUDA |
 | 4 | Cosine-weighted sampling | 4–8× fewer SPP | All |
 | 5 | Russian roulette termination | ~15–20% throughput | All |
 | 6 | Persistent curand states | −46 ms/frame overhead | CUDA |
@@ -463,17 +513,21 @@ production renderers (Blender Cycles exposes equivalent "Clamp Direct / Indirect
 | 9 | Inlined material dispatch | ~5–10% throughput | CUDA |
 | 10 | Adaptive sampling | 20–50% on mixed scenes | CUDA |
 | 11 | Non-blocking stream + pinned memory | −2 ms/frame display latency | CUDA |
-| 12 | Adaptive depth | Subjective responsiveness | CUDA |
+| 12 | Adaptive depth | removed, replaced by 20 | — |
 | 13 | Precomputed inverse ray direction | 5–15% for BVH scenes | CUDA |
 | 14 | `__launch_bounds__(256)` | ~5–10% throughput | CUDA |
 | 15 | Warp-shuffle converged counting | <0.1 ms vs. ~1–2 ms D2H | CUDA |
 | 16 | Accumulation reset stream ordering | Eliminates white-frame/black-streak artifacts | CUDA + OptiX |
 | 17 | OptiX GPU gamma + pinned memory | 5× bandwidth reduction (14 MB → 2.7 MB) | OptiX |
 | 18 | Firefly rejection | Eliminates HDR white-dot flickering | CUDA + OptiX |
+| 19 | Hardware triangles, cheap shadow rays, slim payload | Mesh scenes at RT-core speed | OptiX |
+| 20 | Motion regulator (resolution first) + AI denoiser | 60 fps held while moving | OptiX |
+| 21 | Baked density field + empty-space skipping | 11 s vs 40 s for the cloud bunny | CUDA + OptiX |
 
 The **combined CUDA + BVH** speedup reaches **~1 660×** over single-threaded CPU on the
 default scene at 720p, 1 024 SPP — measured on an NVIDIA DGX Spark (GB10 GPU).
 
-Techniques 1–16 are **backward-compatible** — they do not change the rendered output. Technique
-17 and 18 introduce minor biases (OptiX gamma rounding; HDR luminance clamping) that are
-invisible at normal viewing conditions but eliminate distracting artifacts.
+Techniques 1–16, 19 and 21 do not change the converged image. Techniques 17 and 18 introduce
+minor biases (OptiX gamma rounding; luminance clamping) that are invisible at normal viewing
+conditions but eliminate distracting artifacts, and technique 20 only affects the preview while
+the camera moves.

@@ -11,8 +11,8 @@
  *  - Scene and BVH are built once via optixRendererBuildScene() and persist in g_state.
  *  - Camera change reset → optixRendererResetAccum() instead of freeing/reallocating CUDA buffers.
  *  - Per-frame render → optixRendererLaunch() + optixRendererDownloadAccum().
- *  - light_intensity / metal_fuzziness / glass_refraction_index sliders are visible in the UI
- *    but have no effect (OptiX bakes those into the SBT at scene-build time).
+ *  - light_intensity, light_falloff and background_intensity are launch parameters (live);
+ *    metal_fuzziness / glass_refraction_index are passed per launch as multipliers too.
  *  - While the camera moves, quality is traded for framerate (MotionQualitySettings): reduced
  *    resolution (upscaled for display), one sample per frame, PCG sampler, capped depth.
  *  - Converged-pixel skipping (adaptive sampling) is implemented on the OptiX side with a
