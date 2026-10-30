@@ -898,9 +898,22 @@ public:
             geom_indices[i] = static_cast<int>(i);
         }
         
+        // Boxes and centroids, packed for the builder's sweeps
+        bvh_prims_.resize(geometries.size());
+        for (size_t i = 0; i < geometries.size(); ++i) {
+            BVHPrim& p = bvh_prims_[i];
+            for (int a = 0; a < 3; ++a) {
+                p.bmin[a] = geometries[i].bounds_min[a];
+                p.bmax[a] = geometries[i].bounds_max[a];
+                p.centroid[a] = static_cast<float>(0.5 * (p.bmin[a] + p.bmax[a]));
+            }
+        }
+
         // Recursively build BVH
         top_level_bvh.nodes.clear();
+        top_level_bvh.nodes.reserve(geometries.size() / 2);
         top_level_bvh.root_index = buildBVHRecursive(geom_indices, 0, static_cast<int>(geom_indices.size()));
+        std::vector<BVHPrim>().swap(bvh_prims_); // only needed while building
         
         // Remap geometries to match BVH leaf order for optimal memory access
         std::vector<GeometryDesc> reordered_geometries;
@@ -960,144 +973,148 @@ public:
     }
 
 private:
+    /// Per-geometry data the builder reads over and over: its box and centroid, packed so the
+    /// sweeps do not walk the ~300-byte GeometryDesc array (a scan holds a million of them)
+    struct BVHPrim {
+        double bmin[3], bmax[3];
+        float centroid[3];
+    };
+    std::vector<BVHPrim> bvh_prims_;
+
+    static float boxArea(const double* lo, const double* hi) {
+        const double dx = hi[0] - lo[0], dy = hi[1] - lo[1], dz = hi[2] - lo[2];
+        return static_cast<float>(2.0 * (dx * dy + dy * dz + dz * dx));
+    }
+
     /**
-     * @brief Recursively build BVH using Surface Area Heuristic (SAH)
+     * @brief Recursively build BVH using a binned Surface Area Heuristic (SAH)
+     *
+     * The centroids of the range are dropped into BVH_BINS bins along each axis and the SAH is
+     * evaluated at the bin boundaries: O(n) per node instead of three full sorts, for a tree of
+     * practically the same quality. Same node layout as before: the parent precedes its children.
      * @param geom_indices Indices of geometries to partition
      * @param start Start index in geom_indices
      * @param end End index (exclusive) in geom_indices
      * @return Index of created node in BVH tree
      */
     int buildBVHRecursive(std::vector<int>& geom_indices, int start, int end) {
-        BVHNode node;
-        
-        // Compute bounding box for all geometries in range
-        node.bounds_min = Vec3(1e30, 1e30, 1e30);
-        node.bounds_max = Vec3(-1e30, -1e30, -1e30);
-        
+        // Bounds of the geometries and of their centroids
+        double lo[3] = {1e30, 1e30, 1e30}, hi[3] = {-1e30, -1e30, -1e30};
+        float clo[3] = {1e30f, 1e30f, 1e30f}, chi[3] = {-1e30f, -1e30f, -1e30f};
         for (int i = start; i < end; ++i) {
-            const GeometryDesc& geom = geometries[geom_indices[i]];
-            node.bounds_min = Vec3(
-                std::min(node.bounds_min.x(), geom.bounds_min.x()),
-                std::min(node.bounds_min.y(), geom.bounds_min.y()),
-                std::min(node.bounds_min.z(), geom.bounds_min.z())
-            );
-            node.bounds_max = Vec3(
-                std::max(node.bounds_max.x(), geom.bounds_max.x()),
-                std::max(node.bounds_max.y(), geom.bounds_max.y()),
-                std::max(node.bounds_max.z(), geom.bounds_max.z())
-            );
+            const BVHPrim& p = bvh_prims_[geom_indices[i]];
+            for (int a = 0; a < 3; ++a) {
+                lo[a] = std::min(lo[a], p.bmin[a]);
+                hi[a] = std::max(hi[a], p.bmax[a]);
+                clo[a] = std::min(clo[a], p.centroid[a]);
+                chi[a] = std::max(chi[a], p.centroid[a]);
+            }
         }
-        
-        int count = end - start;
-        
+
+        BVHNode node;
+        node.bounds_min = Vec3(lo[0], lo[1], lo[2]);
+        node.bounds_max = Vec3(hi[0], hi[1], hi[2]);
+        const int count = end - start;
+
         // Leaf node: few geometries
         if (count <= 4) {
             node.is_leaf = true;
             node.data.leaf.first_geom_idx = start;
             node.data.leaf.geom_count = count;
-            
             int node_idx = static_cast<int>(top_level_bvh.nodes.size());
             top_level_bvh.nodes.push_back(node);
             return node_idx;
         }
-        
-        // Interior node: find best split using SAH
+
+        constexpr int BVH_BINS = 32;
+        struct Bin {
+            double lo[3] = {1e30, 1e30, 1e30}, hi[3] = {-1e30, -1e30, -1e30};
+            int count = 0;
+        };
+        const float parent_area = std::max(boxArea(lo, hi), 1e-30f);
         float best_cost = 1e30f;
-        int best_axis = 0;
-        int best_split_idx = start + count / 2;
-        
-        Vec3 extent = node.bounds_max - node.bounds_min;
-        float parent_area = 2.0f * (extent.x() * extent.y() + extent.y() * extent.z() + extent.z() * extent.x());
-        
-        // Prefix/suffix sweep arrays for O(n) SAH evaluation per axis
-        std::vector<Vec3> prefix_min(count), prefix_max(count);
-        std::vector<Vec3> suffix_min(count), suffix_max(count);
-        
-        // Try each axis
+        int best_axis = -1, best_bin = 0;
+
         for (int axis = 0; axis < 3; ++axis) {
-            // Sort geometries along this axis by centroid
-            std::sort(geom_indices.begin() + start, geom_indices.begin() + end,
-                [this, axis](int a, int b) {
-                    Vec3 ca = (geometries[a].bounds_min + geometries[a].bounds_max) * 0.5;
-                    Vec3 cb = (geometries[b].bounds_min + geometries[b].bounds_max) * 0.5;
-                    return ca[axis] < cb[axis];
-                });
-            
-            // Build prefix bounds (left-to-right sweep)
-            Vec3 running_min(1e30, 1e30, 1e30), running_max(-1e30, -1e30, -1e30);
-            for (int i = 0; i < count; ++i) {
-                const GeometryDesc& geom = geometries[geom_indices[start + i]];
-                running_min = Vec3(std::min(running_min.x(), geom.bounds_min.x()),
-                                   std::min(running_min.y(), geom.bounds_min.y()),
-                                   std::min(running_min.z(), geom.bounds_min.z()));
-                running_max = Vec3(std::max(running_max.x(), geom.bounds_max.x()),
-                                   std::max(running_max.y(), geom.bounds_max.y()),
-                                   std::max(running_max.z(), geom.bounds_max.z()));
-                prefix_min[i] = running_min;
-                prefix_max[i] = running_max;
+            const float extent = chi[axis] - clo[axis];
+            if (!(extent > 0.0f))
+                continue; // all centroids in one plane: no split along this axis
+            const float k = BVH_BINS / extent;
+            Bin bins[BVH_BINS];
+            for (int i = start; i < end; ++i) {
+                const BVHPrim& p = bvh_prims_[geom_indices[i]];
+                Bin& b = bins[std::min(BVH_BINS - 1, static_cast<int>(k * (p.centroid[axis] - clo[axis])))];
+                ++b.count;
+                for (int a = 0; a < 3; ++a) {
+                    b.lo[a] = std::min(b.lo[a], p.bmin[a]);
+                    b.hi[a] = std::max(b.hi[a], p.bmax[a]);
+                }
             }
-            
-            // Build suffix bounds (right-to-left sweep)
-            running_min = Vec3(1e30, 1e30, 1e30);
-            running_max = Vec3(-1e30, -1e30, -1e30);
-            for (int i = count - 1; i >= 0; --i) {
-                const GeometryDesc& geom = geometries[geom_indices[start + i]];
-                running_min = Vec3(std::min(running_min.x(), geom.bounds_min.x()),
-                                   std::min(running_min.y(), geom.bounds_min.y()),
-                                   std::min(running_min.z(), geom.bounds_min.z()));
-                running_max = Vec3(std::max(running_max.x(), geom.bounds_max.x()),
-                                   std::max(running_max.y(), geom.bounds_max.y()),
-                                   std::max(running_max.z(), geom.bounds_max.z()));
-                suffix_min[i] = running_min;
-                suffix_max[i] = running_max;
+            // Right-to-left sweep: area and count of everything at or after each bin
+            float right_area[BVH_BINS];
+            int right_count[BVH_BINS];
+            Bin acc;
+            for (int b = BVH_BINS - 1; b > 0; --b) {
+                acc.count += bins[b].count;
+                for (int a = 0; a < 3; ++a) {
+                    acc.lo[a] = std::min(acc.lo[a], bins[b].lo[a]);
+                    acc.hi[a] = std::max(acc.hi[a], bins[b].hi[a]);
+                }
+                right_area[b] = acc.count ? boxArea(acc.lo, acc.hi) : 0.0f;
+                right_count[b] = acc.count;
             }
-            
-            // Evaluate SAH at each split position in O(1) using precomputed bounds
-            for (int i = 1; i < count; ++i) {
-                Vec3 left_extent = prefix_max[i - 1] - prefix_min[i - 1];
-                Vec3 right_extent = suffix_max[i] - suffix_min[i];
-                float left_area = 2.0f * (left_extent.x() * left_extent.y() + 
-                                         left_extent.y() * left_extent.z() + 
-                                         left_extent.z() * left_extent.x());
-                float right_area = 2.0f * (right_extent.x() * right_extent.y() + 
-                                          right_extent.y() * right_extent.z() + 
-                                          right_extent.z() * right_extent.x());
-                
-                // SAH cost: C_traverse + P_left * C_left + P_right * C_right
-                float cost = 1.0f + (left_area / parent_area) * i + 
-                                   (right_area / parent_area) * (count - i);
-                
+            // Left-to-right sweep, SAH at the boundary before bin b:
+            // C_traverse + P_left * C_left + P_right * C_right
+            acc = Bin();
+            for (int b = 1; b < BVH_BINS; ++b) {
+                acc.count += bins[b - 1].count;
+                for (int a = 0; a < 3; ++a) {
+                    acc.lo[a] = std::min(acc.lo[a], bins[b - 1].lo[a]);
+                    acc.hi[a] = std::max(acc.hi[a], bins[b - 1].hi[a]);
+                }
+                if (acc.count == 0 || right_count[b] == 0)
+                    continue;
+                const float cost = 1.0f + (boxArea(acc.lo, acc.hi) * acc.count + right_area[b] * right_count[b]) /
+                                              parent_area;
                 if (cost < best_cost) {
                     best_cost = cost;
                     best_axis = axis;
-                    best_split_idx = start + i;
+                    best_bin = b;
                 }
             }
         }
-        
-        // Sort by best axis for final split
-        std::sort(geom_indices.begin() + start, geom_indices.begin() + end,
-            [this, best_axis](int a, int b) {
-                Vec3 ca = (geometries[a].bounds_min + geometries[a].bounds_max) * 0.5;
-                Vec3 cb = (geometries[b].bounds_min + geometries[b].bounds_max) * 0.5;
-                return ca[best_axis] < cb[best_axis];
-            });
-        
+
+        int split_idx = start + count / 2;
+        if (best_axis >= 0) {
+            const float k = BVH_BINS / (chi[best_axis] - clo[best_axis]);
+            const float c0 = clo[best_axis];
+            auto mid = std::partition(geom_indices.begin() + start, geom_indices.begin() + end,
+                [&](int g) {
+                    const float c = bvh_prims_[g].centroid[best_axis];
+                    return std::min(BVH_BINS - 1, static_cast<int>(k * (c - c0))) < best_bin;
+                });
+            split_idx = static_cast<int>(mid - geom_indices.begin());
+            if (split_idx == start || split_idx == end)
+                split_idx = start + count / 2; // cannot happen with the counts above; stay safe
+        } else {
+            best_axis = 0; // identical centroids: split the range in two halves
+        }
+
         // Create interior node
         node.is_leaf = false;
         node.split_axis = static_cast<uint8_t>(best_axis);
-        
+
         int node_idx = static_cast<int>(top_level_bvh.nodes.size());
         top_level_bvh.nodes.push_back(node);
-        
+
         // Recursively build children
-        int left_child = buildBVHRecursive(geom_indices, start, best_split_idx);
-        int right_child = buildBVHRecursive(geom_indices, best_split_idx, end);
-        
+        int left_child = buildBVHRecursive(geom_indices, start, split_idx);
+        int right_child = buildBVHRecursive(geom_indices, split_idx, end);
+
         // Update node with child indices
         top_level_bvh.nodes[node_idx].data.interior.left_child = left_child;
         top_level_bvh.nodes[node_idx].data.interior.right_child = right_child;
-        
+
         return node_idx;
     }
 
