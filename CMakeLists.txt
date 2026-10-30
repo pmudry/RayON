@@ -258,7 +258,9 @@ set_property(TARGET rayon PROPERTY CUDA_SEPARABLE_COMPILATION ON)
             COMMAND ${CMAKE_CUDA_COMPILER}
                 -ptx
                 -std=c++17
-                $<IF:$<CONFIG:Debug>,-O0,-O3>
+                # Always optimised: there is no device debugger for OptiX programs, and -O0 PTX
+                # makes the OptiX backend several times slower (Debug keeps -lineinfo for Nsight)
+                -O3
                 # one argument in every configuration: an empty "" argument makes nvcc abort
                 $<IF:$<CONFIG:Debug>,-lineinfo,--use_fast_math>
                 -I${OptiX_INCLUDE_DIR}
@@ -269,6 +271,7 @@ set_property(TARGET rayon PROPERTY CUDA_SEPARABLE_COMPILATION ON)
                     "${CMAKE_SOURCE_DIR}/src/rayon/gpu_renderers/optix/optix_params.h"
                     "${CMAKE_SOURCE_DIR}/src/rayon/gpu_renderers/sobol_sampler.cuh"
                     "${CMAKE_SOURCE_DIR}/src/rayon/gpu_renderers/volume_medium.cuh"
+                    "${CMAKE_SOURCE_DIR}/src/rayon/gpu_renderers/sdf_primitives.cuh"
                     "${CMAKE_SOURCE_DIR}/src/rayon/gpu_renderers/volume_params.h"
             COMMENT "Compiling OptiX PTX: optix_programs.cu -> optix_programs.ptx"
             VERBATIM

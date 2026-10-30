@@ -203,8 +203,6 @@ class MTLLoader
       }
 
       commitMaterial();
-
-      std::cout << "MTL Loader: Loaded " << result.size() << " material(s) from '" << filename << "'\n";
       return result;
    }
 };

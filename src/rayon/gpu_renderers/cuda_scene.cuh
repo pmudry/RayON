@@ -108,13 +108,20 @@ enum class GeometryType : uint8_t
    SDF_PRIMITIVE
 };
 
+// Mirrors Scene::SDFType and the SdfShape codes of sdf_primitives.cuh (same order)
 enum class SDFType : uint8_t
 {
    SPHERE,
    BOX,
    TORUS,
    CAPSULE,
+   CYLINDER,
+   PLANE,
    MANDELBULB,
+   DEATH_STAR,
+   CUT_HOLLOW_SPHERE,
+   OCTAHEDRON,
+   PYRAMID,
    CUSTOM
 };
 
@@ -171,6 +178,7 @@ struct Geometry
          SDFType sdf_type;
          f3 position;
          f3 parameters;
+         f3 rotation; // Euler angles in radians (X, Y, Z order)
          float max_distance;
          float epsilon;
       } sdf;

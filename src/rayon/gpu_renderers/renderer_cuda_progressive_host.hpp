@@ -35,6 +35,7 @@ class RendererCUDAProgressive : public IRenderer
    struct Settings
    {
       int samples_per_batch = constants::INTERACTIVE_SAMPLES_PER_BATCH;
+      bool samples_per_batch_forced = false; ///< set on the command line: scenes may not override it
       bool auto_accumulate = true;
       bool adaptive_sampling = true;
       bool hdr_cache = true; ///< use .hdrcache sidecar to speed up repeated HDR loads
@@ -42,7 +43,7 @@ class RendererCUDAProgressive : public IRenderer
       // MIS / NEE options
       bool mis_enabled          = true;  ///< Master MIS toggle
       bool motion_gate_mis      = false; ///< Auto-disable MIS during camera motion
-      int  nee_stride           = 3;     ///< Do NEE every N samples (1 = always)
+      int  nee_stride           = 1;     ///< Do NEE every N samples (1 = always)
    };
 
    RendererCUDAProgressive() = default;
@@ -109,6 +110,14 @@ class RendererCUDAProgressive : public IRenderer
       bool needs_rerender = false;
       bool force_immediate_render = false;
       float samples_per_batch_float = static_cast<float>(samples_per_batch);
+      // A scene may ask for its own batch size (settings.samples_per_batch) unless the command
+      // line fixed one; the renderer default is used otherwise
+      auto sceneBatchSize = [&](const Scene::SceneDescription &sd)
+      {
+         return (sd.samples_per_batch > 0 && !settings_.samples_per_batch_forced) ? sd.samples_per_batch
+                                                                                 : settings_.samples_per_batch;
+      };
+      samples_per_batch_float = static_cast<float>(sceneBatchSize(scene));
       float current_sps = 0.0f;
       float current_ms_per_sample = 0.0f;
       float current_fps = 0.0f;
@@ -405,6 +414,7 @@ class RendererCUDAProgressive : public IRenderer
 
          // Apply scene-specific rendering settings
          background_intensity = active_scene.background_intensity;
+         samples_per_batch_float = static_cast<float>(sceneBatchSize(active_scene));
          ::setBackgroundColor((float)active_scene.background_color.x(), (float)active_scene.background_color.y(),
                               (float)active_scene.background_color.z());
          adaptive_sampling_enabled = active_scene.adaptive_sampling;

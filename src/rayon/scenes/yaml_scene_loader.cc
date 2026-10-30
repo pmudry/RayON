@@ -419,10 +419,6 @@ static bool loadMaterials(const SimpleYAMLParser &parser, SceneDescription &scen
 
       int mat_id = scene.addMaterial(mat);
       material_name_to_id[mat_name] = mat_id;
-
-      cout << "  Loaded material: " << mat_name << " (ID: " << mat_id
-           << ")"
-              "\n";
    }
 
    return !scene.materials.empty();
@@ -485,6 +481,51 @@ static bool loadGeometry(const SimpleYAMLParser &parser, SceneDescription &scene
          float disp_scale = parser.getFloat(prefix + ".displacement_scale", 0.2f);
          int pattern = parser.getInt(prefix + ".pattern_type", 0);
          scene.addDisplacedSphere(center, radius, mat_id, disp_scale, pattern);
+      }
+      else if (geom_type == "sdf")
+      {
+         // Ray-marched signed distance primitive (CUDA backend only). The shape picks the
+         // meaning of the three parameters; named keys fill them, `params` sets them raw.
+         static const struct
+         {
+            const char *name;
+            SDFType     type;
+            const char *keys[3];
+         } shapes[] = {
+            {"sphere", SDFType::SPHERE, {"radius", nullptr, nullptr}},
+            {"box", SDFType::BOX, {nullptr, nullptr, nullptr}}, // half_extents vec3
+            {"torus", SDFType::TORUS, {"major_radius", "minor_radius", nullptr}},
+            {"capsule", SDFType::CAPSULE, {"radius", "height", nullptr}},
+            {"cylinder", SDFType::CYLINDER, {"radius", "height", nullptr}},
+            {"mandelbulb", SDFType::MANDELBULB, {"power", "iterations", nullptr}},
+            {"death_star", SDFType::DEATH_STAR, {"radius", "cutout_radius", "cutout_distance"}},
+            {"cut_hollow_sphere", SDFType::CUT_HOLLOW_SPHERE, {"radius", "cut_height", "thickness"}},
+            {"octahedron", SDFType::OCTAHEDRON, {"size", nullptr, nullptr}},
+            {"pyramid", SDFType::PYRAMID, {"height", nullptr, nullptr}},
+         };
+         const string shape = removeQuotes(parser.getString(prefix + ".shape"));
+         const auto  *def   = (const decltype(&shapes[0]))nullptr;
+         for (const auto &s : shapes)
+            if (shape == s.name)
+               def = &s;
+         if (!def)
+         {
+            cerr << "ERROR: Unknown sdf shape '" << shape << "' for geometry[" << i << "]\n";
+            continue;
+         }
+         Vec3 center = parser.getVec3(prefix + ".center");
+         Vec3 params = parser.getVec3(prefix + ".params");
+         if (def->type == SDFType::BOX && parser.hasKey(prefix + ".half_extents"))
+            params = parser.getVec3(prefix + ".half_extents");
+         double p[3] = {params.x(), params.y(), params.z()};
+         for (int k = 0; k < 3; ++k)
+            if (def->keys[k] && parser.hasKey(prefix + "." + def->keys[k]))
+               p[k] = parser.getDouble(prefix + "." + def->keys[k], p[k]);
+         // Rotation given in degrees (X, Y, Z Euler order), stored in radians
+         Vec3 rot_deg = parser.getVec3(prefix + ".rotation");
+         const double d2r = M_PI / 180.0;
+         scene.addSDFPrimitive(def->type, center, Vec3(p[0], p[1], p[2]), mat_id,
+                               Vec3(rot_deg.x() * d2r, rot_deg.y() * d2r, rot_deg.z() * d2r));
       }
       else if (geom_type == "rectangle")
       {
@@ -583,6 +624,8 @@ bool loadSceneFromYAML(const char *filename, SceneDescription &scene)
       scene.background_color = parser.getVec3("settings.background_color");
    if (parser.hasKey("settings.background_intensity"))
       scene.background_intensity = parser.getFloat("settings.background_intensity", 1.0f);
+   if (parser.hasKey("settings.samples_per_batch"))
+      scene.samples_per_batch = std::max(0, parser.getInt("settings.samples_per_batch", 0));
    // Accept both "settings.use_bvh" (canonical) and "scene.use_bvh" (legacy)
    {
       string bvh_raw;
@@ -884,6 +927,25 @@ bool saveSceneToYAML(const char *filename, const SceneDescription &scene)
          file << "    v: [" << geom.data.rectangle.v.x() << ", " << geom.data.rectangle.v.y() << ", "
               << geom.data.rectangle.v.z() << "]\n";
          break;
+
+      case GeometryType::SDF_PRIMITIVE:
+      {
+         static const char *const shape_names[] = {"sphere",     "box",        "torus",             "capsule",
+                                                   "cylinder",   "mandelbulb", "death_star",        "cut_hollow_sphere",
+                                                   "octahedron", "pyramid",    "custom"};
+         const auto &sdf = geom.data.sdf;
+         const int   t   = static_cast<int>(sdf.sdf_type);
+         file << "\"sdf\"\n";
+         file << "    material: \"material_" << geom.material_id << "\"\n";
+         file << "    shape: \"" << (t >= 0 && t < 11 ? shape_names[t] : "custom") << "\"\n";
+         file << "    center: [" << sdf.position.x() << ", " << sdf.position.y() << ", " << sdf.position.z() << "]\n";
+         file << "    params: [" << sdf.parameters.x() << ", " << sdf.parameters.y() << ", " << sdf.parameters.z()
+              << "]\n";
+         const double r2d = 180.0 / M_PI;
+         file << "    rotation: [" << sdf.rotation.x() * r2d << ", " << sdf.rotation.y() * r2d << ", "
+              << sdf.rotation.z() * r2d << "]\n";
+         break;
+      }
 
       default:
          file << "\"unknown\"\n";

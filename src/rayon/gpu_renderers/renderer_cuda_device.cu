@@ -42,7 +42,7 @@ __constant__ float g_golf_dimple_depth  = 0.25f;
 
 // MIS / NEE runtime controls
 __constant__ bool g_mis_enabled          = true;  ///< Global MIS on/off (disables NEE + emissive MIS weight)
-__constant__ int  g_nee_stride           = 3;      ///< Do NEE every N samples (contribution × N)
+__constant__ int  g_nee_stride           = 1;      ///< Do NEE every N samples (contribution × N)
 // Firefly clamp: > 0 = fixed per-sample luminance ceiling (camera moving: the batch is the whole
 // displayed image, so a relaxed clamp shows up directly); 0 = ceiling grows with the sample count.
 __constant__ float g_firefly_clamp_ceiling = 0.0f;

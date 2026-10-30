@@ -67,6 +67,7 @@ struct OptixState
    OptixProgramGroup miss_shadow_pg = nullptr;
    OptixProgramGroup hitgroup_sphere_pg = nullptr;
    OptixProgramGroup hitgroup_rect_pg = nullptr;
+   OptixProgramGroup hitgroup_sdf_pg = nullptr; // ray-marched SDF primitives
    OptixProgramGroup hitgroup_triangle_pg = nullptr; // built-in triangles: closest-hit only
 
    // Scene traversable: a one-level IAS over (at most) two GASes, because OptiX
@@ -97,7 +98,7 @@ struct OptixState
 
    // MIS / NEE runtime settings (cached between launches)
    bool  mis_enabled          = true;
-   int   nee_stride           = 3;
+   int   nee_stride           = 1;
    bool  has_volume           = false; // scene holds a VOLUME material (shadow rays track transmittance)
 
    // Adaptive sampling (converged-pixel skipping): per-pixel sample counts (negative = converged)
@@ -337,6 +338,16 @@ static void initializeOptiX()
    OPTIX_CHECK(optixProgramGroupCreate(g_state.context, &hitgroup_rect_desc, 1, &pg_options, optix_log, &optix_log_size,
                                         &g_state.hitgroup_rect_pg));
 
+   OptixProgramGroupDesc hitgroup_sdf_desc = {};
+   hitgroup_sdf_desc.kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
+   hitgroup_sdf_desc.hitgroup.moduleCH = g_state.module;
+   hitgroup_sdf_desc.hitgroup.entryFunctionNameCH = "__closesthit__ch";
+   hitgroup_sdf_desc.hitgroup.moduleIS = g_state.module;
+   hitgroup_sdf_desc.hitgroup.entryFunctionNameIS = "__intersection__sdf";
+   optix_log_size = sizeof(optix_log);
+   OPTIX_CHECK(optixProgramGroupCreate(g_state.context, &hitgroup_sdf_desc, 1, &pg_options, optix_log, &optix_log_size,
+                                        &g_state.hitgroup_sdf_pg));
+
    // Hit group for triangles: built-in (RT core) intersection, so no IS program
    OptixProgramGroupDesc hitgroup_triangle_desc = {};
    hitgroup_triangle_desc.kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
@@ -350,7 +361,8 @@ static void initializeOptiX()
    const uint32_t max_trace_depth = 1; // We loop in raygen, single trace per bounce
    OptixProgramGroup program_groups[] = {g_state.raygen_pg,          g_state.miss_pg,
                                           g_state.miss_shadow_pg,     g_state.hitgroup_sphere_pg,
-                                          g_state.hitgroup_rect_pg,   g_state.hitgroup_triangle_pg};
+                                          g_state.hitgroup_rect_pg,   g_state.hitgroup_triangle_pg,
+                                          g_state.hitgroup_sdf_pg};
    const unsigned int num_program_groups = sizeof(program_groups) / sizeof(program_groups[0]);
 
    OptixPipelineLinkOptions link_options = {};
@@ -516,7 +528,7 @@ static void buildGAS(const Scene::SceneDescription &scene)
    }
 
    // Partition geometry: custom primitives (own SBT record each) vs. hardware triangles.
-   // Unsupported types (SDF, CUBE, ...) are skipped with a one-time warning.
+   // Unsupported types (CUBE, TRIANGLE_MESH) are skipped with a one-time warning.
    std::vector<int> supported_indices; // custom primitives, in SBT order
    std::vector<int> triangle_indices;
    for (int i = 0; i < static_cast<int>(scene.geometries.size()); ++i)
@@ -526,6 +538,7 @@ static void buildGAS(const Scene::SceneDescription &scene)
       case Scene::GeometryType::SPHERE:
       case Scene::GeometryType::RECTANGLE:
       case Scene::GeometryType::DISPLACED_SPHERE:
+      case Scene::GeometryType::SDF_PRIMITIVE:
          supported_indices.push_back(i);
          break;
       case Scene::GeometryType::TRIANGLE:
@@ -600,8 +613,9 @@ static void buildGAS(const Scene::SceneDescription &scene)
       {
          const auto &g = scene.geometries[supported_indices[i]];
          HitGroupRecord &rec = hitgroup_records[i];
-         OptixProgramGroup pg =
-             (g.type == Scene::GeometryType::RECTANGLE) ? g_state.hitgroup_rect_pg : g_state.hitgroup_sphere_pg;
+         OptixProgramGroup pg = (g.type == Scene::GeometryType::RECTANGLE)     ? g_state.hitgroup_rect_pg
+                                : (g.type == Scene::GeometryType::SDF_PRIMITIVE) ? g_state.hitgroup_sdf_pg
+                                                                                  : g_state.hitgroup_sphere_pg;
          OPTIX_CHECK(optixSbtRecordPackHeader(pg, &rec));
 
          rec.data.material_idx = g.material_id;
@@ -618,6 +632,14 @@ static void buildGAS(const Scene::SceneDescription &scene)
             rec.data.geom_type = OptixGeomType::DISPLACED_SPHERE;
             rec.data.center = toFloat3(g.data.displaced_sphere.center);
             rec.data.radius = static_cast<float>(g.data.displaced_sphere.radius);
+            break;
+
+         case Scene::GeometryType::SDF_PRIMITIVE:
+            rec.data.geom_type = OptixGeomType::SDF;
+            rec.data.center    = toFloat3(g.data.sdf.position);
+            rec.data.u_vec     = toFloat3(g.data.sdf.parameters);
+            rec.data.v_vec     = toFloat3(g.data.sdf.rotation);
+            rec.data.sdf_shape = static_cast<int>(g.data.sdf.sdf_type);
             break;
 
          case Scene::GeometryType::RECTANGLE:
@@ -2076,6 +2098,8 @@ extern "C" void optixRendererCleanup()
       OPTIX_CHECK(optixProgramGroupDestroy(g_state.hitgroup_sphere_pg));
    if (g_state.hitgroup_rect_pg)
       OPTIX_CHECK(optixProgramGroupDestroy(g_state.hitgroup_rect_pg));
+   if (g_state.hitgroup_sdf_pg)
+      OPTIX_CHECK(optixProgramGroupDestroy(g_state.hitgroup_sdf_pg));
    if (g_state.hitgroup_triangle_pg)
       OPTIX_CHECK(optixProgramGroupDestroy(g_state.hitgroup_triangle_pg));
    if (g_state.module)

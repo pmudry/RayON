@@ -506,6 +506,7 @@ public:
     Vec3 camera_up;
     float camera_fov;
     std::string source_file;                  // YAML file this scene was loaded from ("" when built in code)
+    int samples_per_batch;                    // Interactive samples per batch wanted by the scene (0 = renderer default)
     
     // Rendering settings
     Vec3 background_color;
@@ -515,7 +516,8 @@ public:
 
     // Constructor
     SceneDescription()
-        : camera_position(0, 0, 0)
+        : samples_per_batch(0)
+        , camera_position(0, 0, 0)
         , camera_look_at(0, 0, -1)
         , camera_up(0, 1, 0)
         , camera_fov(90.0f)
@@ -771,6 +773,26 @@ public:
         geometries.push_back(geom);
     }
     
+    /// Radius of a sphere around the centre that contains the shape whatever its rotation.
+    /// Mirrors sdf_bound_radius() in gpu_renderers/sdf_primitives.cuh; keep the two in sync.
+    static double sdfBoundRadius(SDFType type, const Vec3& p) {
+        double r;
+        switch (type) {
+            case SDFType::SPHERE:            r = p.x(); break;
+            case SDFType::BOX:               r = p.length(); break;
+            case SDFType::TORUS:             r = p.x() + p.y(); break;
+            case SDFType::CAPSULE:           r = p.x() + 0.5 * p.y(); break;
+            case SDFType::CYLINDER:          r = std::sqrt(p.x() * p.x() + 0.25 * p.y() * p.y()); break;
+            case SDFType::MANDELBULB:        r = 1.3; break;
+            case SDFType::DEATH_STAR:        r = p.x(); break;
+            case SDFType::CUT_HOLLOW_SPHERE: r = p.x() + p.z(); break;
+            case SDFType::OCTAHEDRON:        r = p.x(); break;
+            case SDFType::PYRAMID:           r = std::sqrt(0.5 + p.x() * p.x()); break;
+            default: r = std::max({std::abs(p.x()), std::abs(p.y()), std::abs(p.z())}); break;
+        }
+        return 1.05 * r + 1e-3;
+    }
+
     void addSDFPrimitive(SDFType type, const Vec3& pos, const Vec3& params, int mat_id, const Vec3& rotation = Vec3(0, 0, 0)) {
         GeometryDesc geom;
         geom.type = GeometryType::SDF_PRIMITIVE;
@@ -781,11 +803,12 @@ public:
         geom.data.sdf.rotation = rotation;
         geom.data.sdf.max_distance = 10.0f;  // Default ray march distance
         geom.data.sdf.epsilon = 0.001f;       // Default surface precision
-        
-        // TODO: Compute proper bounding box for SDF
-        geom.bounds_min = pos - params;
-        geom.bounds_max = pos + params;
-        
+
+        // Rotation-independent bounding box: the shape's bounding sphere
+        const double R = sdfBoundRadius(type, params);
+        geom.bounds_min = pos - Vec3(R, R, R);
+        geom.bounds_max = pos + Vec3(R, R, R);
+
         geometries.push_back(geom);
     }
     

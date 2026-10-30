@@ -4,6 +4,7 @@
 #include "cuda_scene.cuh"
 #include "cuda_utils.cuh"
 #include "microfacet_ggx.cuh"
+#include "sdf_primitives.cuh"
 #include "volume_medium.cuh"
 
 #include <cfloat>
@@ -389,12 +390,43 @@ __device__ inline bool hit_triangle(const f3 &v0, const f3 &v1, const f3 &v2,
 // SCENE & MATERIAL APPLICATION
 //==============================================================================
 
+/// Ray-marched signed distance primitive (see sdf_primitives.cuh)
+__device__ __forceinline__ bool hit_sdf_primitive(const CudaScene::Geometry &geom, const ray_simple &r, float t_min,
+                                                  float t_max, hit_record_simple &rec)
+{
+   const auto &d = geom.data.sdf;
+   SdfPrim s;
+   s.shape = static_cast<int>(d.sdf_type);
+   s.cx = d.position.x;   s.cy = d.position.y;   s.cz = d.position.z;
+   s.p0 = d.parameters.x; s.p1 = d.parameters.y; s.p2 = d.parameters.z;
+   s.rx = d.rotation.x;   s.ry = d.rotation.y;   s.rz = d.rotation.z;
+   // The marcher wants a unit direction: scale the parameter range accordingly
+   const float len = r.dir.length();
+   if (len <= 0.0f)
+      return false;
+   const f3 dir = r.dir * (1.0f / len);
+   float t, nx, ny, nz;
+   if (!sdf_march(s, r.orig.x, r.orig.y, r.orig.z, dir.x, dir.y, dir.z, t_min * len, t_max * len, t, nx, ny, nz))
+      return false;
+   rec.t = t / len;
+   rec.p = r.orig + t * dir;
+   const f3 outward(nx, ny, nz);
+   rec.front_face = dot(dir, outward) < 0.0f;
+   rec.normal     = rec.front_face ? outward : f3(-outward.x, -outward.y, -outward.z);
+   const f3 helper = fabsf(rec.normal.y) < 0.9f ? f3(0.0f, 1.0f, 0.0f) : f3(1.0f, 0.0f, 0.0f);
+   rec.tangent    = normalize(cross(helper, rec.normal));
+   rec.uv         = f2(0.0f, 0.0f);
+   return true;
+}
+
 __device__ __forceinline__ bool intersect_geometry(const CudaScene::Geometry &geom, const ray_simple &r, float t_min,
                                                    float t_max, hit_record_simple &rec)
 {
    using namespace CudaScene;
    switch (geom.type)
    {
+   case GeometryType::SDF_PRIMITIVE:
+      return hit_sdf_primitive(geom, r, t_min, t_max, rec);
    case GeometryType::SPHERE:
       return hit_sphere(geom.data.sphere.center, geom.data.sphere.radius, r, t_min, t_max, rec);
    case GeometryType::RECTANGLE:
@@ -1323,7 +1355,6 @@ __device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scen
    float prev_bsdf_pdf  = 1.0f;
    bool  prev_is_delta  = true; // treat camera ray as delta — no prior NEE could target bounce 0
    int   volume_passes  = 0;    // medium back faces passed through (see VOLUME below)
-   float next_tmin      = 0.001f; // self-intersection guard of the next trace (see VOLUME below)
    f3    mis_origin     = r.orig; // where the last direction was sampled (light pdf for MIS)
 
    for (int bounce = 0; bounce < depth; bounce++)
@@ -1333,9 +1364,7 @@ __device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scen
 #endif
       hit_record_simple rec;
 
-      const bool hit_any = hit_scene(scene, current_ray, next_tmin, FLT_MAX, rec);
-      next_tmin          = 0.001f;
-      if (hit_any)
+      if (hit_scene(scene, current_ray, 0.001f, FLT_MAX, rec))
       {
          // Invisible geometry: camera rays pass through, bounced rays interact normally
          if (!rec.visible && bounce == 0)
@@ -1413,9 +1442,10 @@ __device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scen
                {
                   // Out through the far side of the medium: continue just beyond it. Any other
                   // surface met inside the medium is left for the next bounce to shade.
+                  // Set back so that the next trace (tmin 0.001) skips the far face but not a
+                  // surface just behind it (see the OptiX raygen for the reasoning)
                   const bool far_side = (ex.material == VOLUME && !ex.front_face);
-                  origin    = far_side ? ex.p + 0.0002f * dir : ex.p - 0.0002f * dir;
-                  next_tmin = 0.0001f; // a surface just behind the far side must not be skipped
+                  origin = far_side ? ex.p - 0.0008f * dir : ex.p - 0.0012f * dir;
                   escaped = true;
                   break;
                }

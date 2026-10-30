@@ -86,13 +86,14 @@ class RendererOptiXProgressive : public IRenderer
    struct Settings
    {
       int samples_per_batch = constants::INTERACTIVE_SAMPLES_PER_BATCH;
+      bool samples_per_batch_forced = false; ///< set on the command line: scenes may not override it
       bool auto_accumulate = true;
       bool adaptive_sampling = true; ///< converged-pixel skipping
       bool hdr_cache = true; ///< use .hdrcache sidecar to speed up repeated HDR loads
       GuiTheme theme = GuiTheme::NORD;
       bool mis_enabled           = true;
       bool motion_gate_mis       = false;
-      int  nee_stride            = 3;
+      int  nee_stride            = 1;
       MotionQualitySettings motion_quality{}; ///< quality reductions while the camera moves
    };
 
@@ -160,6 +161,14 @@ class RendererOptiXProgressive : public IRenderer
       bool needs_rerender = false;
       bool force_immediate_render = false;
       float samples_per_batch_float = static_cast<float>(samples_per_batch);
+      // A scene may ask for its own batch size (settings.samples_per_batch) unless the command
+      // line fixed one; the renderer default is used otherwise
+      auto sceneBatchSize = [&](const Scene::SceneDescription &sd)
+      {
+         return (sd.samples_per_batch > 0 && !settings_.samples_per_batch_forced) ? sd.samples_per_batch
+                                                                                 : settings_.samples_per_batch;
+      };
+      samples_per_batch_float = static_cast<float>(sceneBatchSize(scene));
       float current_sps = 0.0f;
       float current_ms_per_sample = 0.0f;
       float current_fps = 0.0f;
@@ -429,6 +438,7 @@ class RendererOptiXProgressive : public IRenderer
          camera_control.initializeCameraControls(look_from, look_at);
 
          background_intensity = active_scene.background_intensity;
+         samples_per_batch_float = static_cast<float>(sceneBatchSize(active_scene));
          ::setOptiXBackgroundColor((float)active_scene.background_color.x(), (float)active_scene.background_color.y(),
                                    (float)active_scene.background_color.z());
 
@@ -630,17 +640,18 @@ class RendererOptiXProgressive : public IRenderer
             // overhead + k x pixels x samples, with k (ms per pixel-sample) and the overhead (GUI,
             // upload, present) measured on the previous motion frame and smoothed. Each frame the
             // best (fraction, samples) pair is chosen for the budget, adapting the resolution
-            // first: with the full motion sample count, the highest fraction (in steps of 1/8
+            // first: with the full motion sample count, the highest fraction (in steps of 1/16
             // between min and max) that fits; only when even the floor does not fit are the
             // samples reduced, again with the highest fraction that fits. Going down is immediate;
             // going up needs several frames of headroom, and a raise that had to be undone blocks
             // further raises for a while, so the loop does not hunt when the model is optimistic
             // (a small frame under-uses the GPU, so k grows as the frame shrinks).
-            const float min_frac = std::clamp(motion_quality.min_fraction, 0.1f, motion_frac);
+            const float min_frac = std::clamp(motion_quality.min_fraction, 0.05f, motion_frac);
+            const int   min_spp  = std::clamp(motion_quality.min_spp, 1, std::max(1, motion_spp));
             if (dyn_spp <= 0)
                dyn_spp = motion_spp;
             dyn_fraction = std::clamp(dyn_fraction, min_frac, motion_frac);
-            dyn_spp      = std::clamp(dyn_spp, 1, std::max(1, motion_spp));
+            dyn_spp      = std::clamp(dyn_spp, min_spp, std::max(1, motion_spp));
             if (is_camera_moving && last_frame_motion && delta.count() > 0.0f && last_motion_pixels > 0)
             {
                const float target_ms = 1000.0f / std::max(1.0f, motion_quality.target_fps);
@@ -668,10 +679,10 @@ class RendererOptiXProgressive : public IRenderer
                   return motion_k_ms * px * (float)spp + motion_d_ms * px;
                };
                float best_frac = min_frac;
-               int   best_spp  = 1;
+               int   best_spp  = min_spp;
                bool  found     = false;
-               for (int spp = std::max(1, motion_spp); spp >= 1 && !found; --spp)
-                  for (float f = motion_frac; f >= min_frac - 1e-3f; f -= 0.125f)
+               for (int spp = std::max(1, motion_spp); spp >= min_spp && !found; --spp)
+                  for (float f = motion_frac; f >= min_frac - 1e-3f; f -= 0.0625f)
                      if (cost_at(f, spp) <= budget_ms)
                      {
                         best_frac = std::max(f, min_frac);

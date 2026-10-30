@@ -72,10 +72,11 @@ struct MotionQualitySettings
    // lowered to hold target_fps and raised back when there is headroom (see the OptiX host).
    bool  hold_target_fps  = true;  ///< Regulate samples and resolution to hold target_fps while moving
    float target_fps       = 60.0f; ///< Frame rate to hold while moving
-   float min_fraction     = 0.25f; ///< Lowest render fraction the regulator may use
+   float min_fraction     = 0.25f;  ///< Lowest render fraction the regulator may use (1/4: 1/16 of the pixels)
+   int   min_spp          = 4;     ///< Lowest samples per pixel per motion frame the regulator may use
    float current_fraction = 0.75f; ///< Readout: fraction used by the last motion frame
    int   current_spp      = 0;     ///< Readout: samples per pixel of the last motion frame
-   bool  refine_stages    = true;  ///< After the motion, climb through 1/2 and 3/4 resolution before full
+   bool  refine_stages    = false; ///< After the motion, climb through 1/2 and 3/4 resolution before full (off by default)
    float stage_seconds    = 0.1f;  ///< Duration of each intermediate resolution stage
    float fade_seconds     = 0.1f;  ///< Duration of the fade from one stage's image into the next
    float cooldown_seconds = 0.05f; ///< Time after the last camera event before the camera counts as still
@@ -330,7 +331,7 @@ class SDLGuiHandler
                if (samples_per_batch)
                {
                   pushSliderWidth();
-                  ImGui::SliderFloat("Samples/Batch", samples_per_batch, 1.0f, 80.0f, "%.0f");
+                  ImGui::SliderFloat("Samples/Batch", samples_per_batch, 2.0f, 120.0f, "%.0f");
                   ImGui::PopItemWidth();
                   ImGui::SetItemTooltip("Fixed samples per batch while the camera is still.");
                }
@@ -551,9 +552,12 @@ class SDLGuiHandler
             {
                if (reset_headers)
                   ImGui::SetNextItemOpen(!collapse_headers);
-               if (ImGui::CollapsingHeader("Camera Motion"))
+               const bool motion_open = ImGui::CollapsingHeader("Camera Motion");
+               ImGui::SetItemTooltip("Quality trade-offs that only apply while the camera moves.\n"
+                                     "The accumulation restarts on every move, so none of this\n"
+                                     "affects the final image.");
+               if (motion_open)
                {
-                  ImGui::TextDisabled("Accumulation restarts on every move: none of this affects the final image.");
                   if (motion_quality)
                   {
                      ImGui::SeparatorText("Resolution");
@@ -582,28 +586,41 @@ class SDLGuiHandler
                      {
                         pushSliderWidth();
                         ImGui::SliderFloat("Target##mq_fps", &motion_quality->target_fps, 20.0f, 144.0f, "%.0f fps");
-                        ImGui::SliderFloat("Min while moving##mq_minfrac", &motion_quality->min_fraction, 0.125f,
+                        ImGui::SliderFloat("Min while moving##mq_minfrac", &motion_quality->min_fraction, 0.0625f,
                                            motion_quality->motion_fraction, "%.3f", ImGuiSliderFlags_AlwaysClamp);
-                        ImGui::PopItemWidth();
                         ImGui::SetItemTooltip("Lowest render fraction the regulator may go down to (the\n"
                                               "\"Max while moving\" choice above is its ceiling).");
+                        // The floor of the samples per motion frame: the ceiling is the batch size
+                        const int spp_ceiling = samples_per_batch ? std::max(1, (int)*samples_per_batch) : 120;
+                        motion_quality->min_spp = std::clamp(motion_quality->min_spp, 1, spp_ceiling);
+                        ImGui::SliderInt("Min samples##mq_minspp", &motion_quality->min_spp, 1, spp_ceiling, "%d spp",
+                                         ImGuiSliderFlags_AlwaysClamp);
+                        ImGui::PopItemWidth();
+                        ImGui::SetItemTooltip("Lowest samples per pixel per frame the regulator may go down to\n"
+                                              "while moving (the Samples/Batch value is its ceiling).");
                         if (motion_quality->current_spp > 0)
                            ImGui::TextDisabled("Last motion frame: %.0f%% x %d spp", 100.0f * motion_quality->current_fraction,
                                                motion_quality->current_spp);
                      }
-                     ImGui::Checkbox("Intermediate stages (1/2, 3/4)##mq_refine", &motion_quality->refine_stages);
-                     ImGui::SetItemTooltip("When the camera stops, climb through the standard resolutions\n"
-                                           "above the motion one (1/2 and 3/4) before going full, each\n"
-                                           "stage fading into the previous image.");
-                     pushSliderWidth();
-                     ImGui::SliderFloat("Stage length##mq_stage", &motion_quality->stage_seconds, 0.1f, 1.5f, "%.2f s");
-                     ImGui::SetItemTooltip("How long each intermediate resolution stage lasts.");
-                     ImGui::SliderFloat("Fade##mq_fade", &motion_quality->fade_seconds, 0.1f, 2.0f, "%.2f s");
-                     ImGui::SetItemTooltip("How long the previous image stays blended in after a stage change.");
-                     ImGui::SliderFloat("Motion cooldown##mq_cool", &motion_quality->cooldown_seconds, 0.05f, 0.5f, "%.2f s");
-                     ImGui::SetItemTooltip("Time after the last camera event before the camera counts as still.\n"
-                                           "Bridges the gaps between mouse or key-repeat events.");
-                     ImGui::PopItemWidth();
+                     // The steps back to full quality once the camera stops, in their own sub-menu
+                     // (off by default: the image goes straight to full resolution)
+                     if (ImGui::TreeNode("Intermediate stages##mq_stages_menu"))
+                     {
+                        ImGui::Checkbox("Intermediate stages (1/2, 3/4)##mq_refine", &motion_quality->refine_stages);
+                        ImGui::SetItemTooltip("When the camera stops, climb through the standard resolutions\n"
+                                              "above the motion one (1/2 and 3/4) before going full, each\n"
+                                              "stage fading into the previous image.");
+                        pushSliderWidth();
+                        ImGui::SliderFloat("Stage length##mq_stage", &motion_quality->stage_seconds, 0.1f, 1.5f, "%.2f s");
+                        ImGui::SetItemTooltip("How long each intermediate resolution stage lasts.");
+                        ImGui::SliderFloat("Fade##mq_fade", &motion_quality->fade_seconds, 0.1f, 2.0f, "%.2f s");
+                        ImGui::SetItemTooltip("How long the previous image stays blended in after a stage change.");
+                        ImGui::SliderFloat("Motion cooldown##mq_cool", &motion_quality->cooldown_seconds, 0.05f, 0.5f, "%.2f s");
+                        ImGui::SetItemTooltip("Time after the last camera event before the camera counts as still.\n"
+                                              "Bridges the gaps between mouse or key-repeat events.");
+                        ImGui::PopItemWidth();
+                        ImGui::TreePop();
+                     }
 
                      ImGui::SeparatorText("Sampling while moving");
                      ImGui::Checkbox("One sample per frame##mq_spp", &motion_quality->single_sample);
@@ -665,7 +682,7 @@ class SDLGuiHandler
             // --- Camera Settings ---
             if (reset_headers)
                ImGui::SetNextItemOpen(!collapse_headers);
-            if (ImGui::CollapsingHeader("Camera Settings", ImGuiTreeNodeFlags_DefaultOpen))
+            if (ImGui::CollapsingHeader("Camera Settings"))
             {
                if (auto_orbit)
                {
@@ -730,7 +747,7 @@ class SDLGuiHandler
             // --- Environment & Materials ---
             if (reset_headers)
                ImGui::SetNextItemOpen(!collapse_headers);
-            if (ImGui::CollapsingHeader("Environment & Materials", ImGuiTreeNodeFlags_DefaultOpen))
+            if (ImGui::CollapsingHeader("Environment & Materials"))
             {
                // HDR sky selector
                if (hdr_env_index && hdr_env_names && hdr_env_count > 0)

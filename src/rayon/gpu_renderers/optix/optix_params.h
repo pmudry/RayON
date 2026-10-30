@@ -33,7 +33,8 @@ enum class OptixGeomType : unsigned char
 {
    SPHERE,
    RECTANGLE,
-   DISPLACED_SPHERE
+   DISPLACED_SPHERE,
+   SDF // ray-marched signed distance primitive (sdf_primitives.cuh)
 };
 
 // Per-geometry data stored in SBT hit group record (custom primitives only:
@@ -45,11 +46,12 @@ struct HitGroupData
    OptixGeomType geom_type;
    int material_idx; // Index into materials array
 
-   float3 center;  // Sphere center / rectangle corner
+   float3 center;  // Sphere center / rectangle corner / SDF centre
    float radius;   // Sphere radius
-   float3 u_vec;   // Rectangle edge u
-   float3 v_vec;   // Rectangle edge v
+   float3 u_vec;   // Rectangle edge u    / SDF shape parameters
+   float3 v_vec;   // Rectangle edge v    / SDF Euler rotation (radians, X Y Z order)
    float3 normal;  // Precomputed rectangle normal
+   int    sdf_shape; // SDF: shape code (SdfShape)
 };
 
 // Per-triangle shading attributes (read once per closest hit, never during traversal)

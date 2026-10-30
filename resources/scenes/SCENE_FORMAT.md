@@ -55,6 +55,7 @@ camera:
 | `background_intensity` | float | `1.0` | Multiplier applied to the background colour |
 | `use_bvh` | bool | `false` | Enable BVH acceleration (recommended for > 50 objects) |
 | `adaptive_sampling` | bool | `true` | Let converged pixels stop accumulating early |
+| `samples_per_batch` | int | `0` | Interactive batch size for this scene (`0` = renderer default; a `--samples-per-batch` on the command line wins) |
 
 ```yaml
 settings:
@@ -360,6 +361,36 @@ Any geometry entry accepts an optional `visible` flag (default `true`). Setting 
   displacement_scale: 0.15
   pattern_type: 0
 ```
+
+#### `sdf` — ray-marched signed distance primitive
+
+Shapes from Íñigo Quilez's distance functions, intersected by sphere tracing on both backends
+(`gpu_renderers/sdf_primitives.cuh`).
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `shape` | string | — | `sphere`, `box`, `torus`, `capsule`, `cylinder`, `mandelbulb`, `death_star`, `cut_hollow_sphere`, `octahedron`, `pyramid` |
+| `center` | vec3 | `[0,0,0]` | Position |
+| `rotation` | vec3 | `[0,0,0]` | Euler angles in degrees, applied in X, Y, Z order |
+| `params` | vec3 | `[0,0,0]` | Raw shape parameters (the named keys below are easier) |
+
+Named parameters per shape: `sphere` → `radius`; `box` → `half_extents` (vec3);
+`torus` → `major_radius`, `minor_radius`; `capsule` / `cylinder` → `radius`, `height`;
+`mandelbulb` → `power`, `iterations`; `death_star` → `radius`, `cutout_radius`, `cutout_distance`;
+`cut_hollow_sphere` → `radius`, `cut_height`, `thickness`; `octahedron` → `size`; `pyramid` → `height`.
+
+```yaml
+- type: "sdf"
+  material: "steel"
+  shape: "death_star"
+  center: [-3.5, 1.2, -4.5]
+  radius: 0.8
+  cutout_radius: 0.5
+  cutout_distance: 1.0
+  rotation: [0, 54, 0]
+```
+
+See `18_sdf_shapes.yaml`.
 
 #### `rectangle` — flat quadrilateral (also used for area lights)
 

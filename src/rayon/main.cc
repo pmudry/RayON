@@ -68,6 +68,7 @@ struct ProgramArgs
    int height = IMAGE_HEIGHT;
    int width = -1; // -1 means derive from height using 16:9
    int samples_per_batch = INTERACTIVE_SAMPLES_PER_BATCH;
+   bool samples_per_batch_forced = false; // --samples-per-batch given: scenes may not override it
    bool auto_accumulate = true;
    bool adaptive_sampling = true;
    bool hdr_cache = true;
@@ -76,7 +77,7 @@ struct ProgramArgs
    // MIS / NEE options
    bool mis_enabled           = true;
    bool motion_gate_mis       = false;
-   int  nee_stride            = 3;
+   int  nee_stride            = 1; // NEE every sample: a stride trades a few % of time for much more noise
    const char *scene_file = nullptr;
    const char *theme = nullptr;
 };
@@ -109,7 +110,7 @@ void dumpHelp()
    cout << "  --no-mis                  Disable Multiple-Importance Sampling (max throughput, noisier)\n";
    cout << "  --motion-gate-mis         Auto-disable MIS while the camera moves (interactive only; off by default)\n";
    cout << "  --nee-stride <N>          Beyond the first bounce, do NEE on 1 of every N samples, contribution \xc3\x97N\n"
-           "                            (default: 3; 1=every sample). The first bounce always does NEE.\n";
+           "                            (default: 1 = every sample). The first bounce always does NEE.\n";
 }
 
 ProgramArgs parseInput(int argc, char *argv[])
@@ -246,6 +247,7 @@ ProgramArgs parseInput(int argc, char *argv[])
       else if (strcmp(argv[i], "--samples-per-batch") == 0 && i + 1 < argc)
       {
          args.samples_per_batch = atoi(argv[++i]);
+         args.samples_per_batch_forced = true;
          if (args.samples_per_batch < 1)
          {
             cerr << "Invalid samples-per-batch value: " << args.samples_per_batch << " (must be >= 1)\n";
@@ -409,6 +411,7 @@ int main(int argc, char *argv[])
       RendererCUDAProgressive renderer;
       RendererCUDAProgressive::Settings settings;
       settings.samples_per_batch = args.samples_per_batch;
+      settings.samples_per_batch_forced = args.samples_per_batch_forced;
       settings.auto_accumulate = args.auto_accumulate;
       settings.adaptive_sampling = args.adaptive_sampling;
       settings.hdr_cache = args.hdr_cache;
@@ -441,6 +444,7 @@ int main(int argc, char *argv[])
       RendererOptiXProgressive renderer;
       RendererOptiXProgressive::Settings settings;
       settings.samples_per_batch = args.samples_per_batch;
+      settings.samples_per_batch_forced = args.samples_per_batch_forced;
       settings.auto_accumulate = args.auto_accumulate;
       settings.adaptive_sampling = args.adaptive_sampling;
       settings.hdr_cache = args.hdr_cache;

@@ -20,6 +20,7 @@ camera:
   fov: 40
 
 settings:
+  samples_per_batch: 6                  # interactive batch size for this scene (default is 8)
   background_color: [0.45, 0.65, 0.95]  # top of the gradient sky (the horizon stays white)
   background_intensity: 0.25            # sky brightness: fills the shadows, keep it well below the sun
   use_bvh: true

@@ -1,0 +1,97 @@
+# SDF shapes: ray-marched signed distance primitives (Íñigo Quilez's distance functions) on the
+# default scene's ground, under its area light. These used to be part of the built-in default
+# scene; both backends sphere-trace them (gpu_renderers/sdf_primitives.cuh).
+#
+#   ./rayon -m 5 --scene ../resources/scenes/18_sdf_shapes.yaml
+#   ./rayon -m 4 -s 256 -r 720 --scene ../resources/scenes/18_sdf_shapes.yaml
+#
+# Rotations are Euler angles in degrees, applied in X, Y, Z order.
+
+camera:
+  position: [-2, 2, 5]
+  look_at: [-0.5, 0.3, -3]
+  fov: 40
+
+settings:
+  background_intensity: 1.0
+  use_bvh: true
+
+materials:
+  - name: "ground"
+    type: "lambertian"
+    albedo: [0.44, 0.7, 0.95]
+  - name: "light"
+    type: "light"
+    emission: [4.8, 4.1, 3.7]
+  - name: "steel"
+    type: "metal"
+    albedo: [0.6, 0.6, 0.65]
+    roughness: 0.1
+  - name: "brass"
+    type: "rough_mirror"
+    albedo: [0.9, 0.7, 0.3]
+    roughness: 0.2
+  - name: "green"
+    type: "lambertian"
+    albedo: [0.2, 0.8, 0.4]
+  - name: "red_gloss"
+    type: "rough_mirror"
+    albedo: [0.8, 0.3, 0.3]
+    roughness: 0.15
+  - name: "orange"
+    type: "lambertian"
+    albedo: [1.0, 0.6, 0.2]
+
+geometry:
+  - type: "sphere"
+    material: "ground"
+    center: [0, -950.5, -1]
+    radius: 950.0
+
+  - type: "rectangle"
+    material: "light"
+    corner: [-1.0, 3.0, -2.0]
+    u: [2.5, 0, 0]
+    v: [0, 0, 1.5]
+
+  # Death Star: a sphere with a spherical cutout (along local +x), turned towards the camera
+  - type: "sdf"
+    material: "steel"
+    shape: "death_star"
+    center: [-3.5, 1.2, -4.5]
+    radius: 0.8
+    cutout_radius: 0.5
+    cutout_distance: 1.0
+    rotation: [0, -75, 0]
+
+  # Hollow sphere with its top cut off, tilted towards the camera
+  - type: "sdf"
+    material: "brass"
+    shape: "cut_hollow_sphere"
+    center: [0.0, 0.8, -5.0]
+    radius: 0.7
+    cut_height: 0.3
+    thickness: 0.1
+    rotation: [27, 0, 0]
+
+  - type: "sdf"
+    material: "green"
+    shape: "octahedron"
+    center: [2.5, 0.5, -2.0]
+    size: 0.6
+    rotation: [0, 45, 45]
+
+  - type: "sdf"
+    material: "red_gloss"
+    shape: "pyramid"
+    center: [3.0, 0.0, -4.0]
+    height: 0.8
+    rotation: [0, 72, 0]
+
+  - type: "sdf"
+    material: "orange"
+    shape: "torus"
+    center: [1.5, 0.7, -3.5]
+    major_radius: 0.6
+    minor_radius: 0.2
+    rotation: [54, 36, 0]

@@ -121,6 +121,21 @@ static CudaScene::Geometry convertGeometry(const GeometryDesc &desc)
              static_cast<float>(desc.data.rectangle.v.z()));
       break;
 
+   case GeometryType::SDF_PRIMITIVE:
+      geom.data.sdf.sdf_type   = static_cast<CudaScene::SDFType>(static_cast<uint8_t>(desc.data.sdf.sdf_type));
+      geom.data.sdf.position   = f3(static_cast<float>(desc.data.sdf.position.x()),
+                                    static_cast<float>(desc.data.sdf.position.y()),
+                                    static_cast<float>(desc.data.sdf.position.z()));
+      geom.data.sdf.parameters = f3(static_cast<float>(desc.data.sdf.parameters.x()),
+                                    static_cast<float>(desc.data.sdf.parameters.y()),
+                                    static_cast<float>(desc.data.sdf.parameters.z()));
+      geom.data.sdf.rotation   = f3(static_cast<float>(desc.data.sdf.rotation.x()),
+                                    static_cast<float>(desc.data.sdf.rotation.y()),
+                                    static_cast<float>(desc.data.sdf.rotation.z()));
+      geom.data.sdf.max_distance = desc.data.sdf.max_distance;
+      geom.data.sdf.epsilon      = desc.data.sdf.epsilon;
+      break;
+
    case GeometryType::DISPLACED_SPHERE:
       geom.data.displaced_sphere.center = f3(static_cast<float>(desc.data.displaced_sphere.center.x()),
                                              static_cast<float>(desc.data.displaced_sphere.center.y()),

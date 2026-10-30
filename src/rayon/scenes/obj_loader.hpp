@@ -251,10 +251,6 @@ class OBJLoader
          // Silently skip: s, g, o, l, etc.
       }
 
-      std::cout << "OBJ Loader: Loaded " << triangle_count << " triangles from " << filename
-                << " (" << vertices.size() << " verts, " << normals.size() << " normals, "
-                << texcoords.size() << " UVs)\n";
-
       return triangle_count;
    }
 

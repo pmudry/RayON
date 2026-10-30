@@ -20,7 +20,7 @@ namespace constants
     inline constexpr int MAX_DEPTH = 16;          // Maximum ray bounce depth
 
     // Interactive renderer defaults (mode 3)
-    inline constexpr int INTERACTIVE_SAMPLES_PER_BATCH = 6;  // Fixed samples per batch in interactive mode
+    inline constexpr int INTERACTIVE_SAMPLES_PER_BATCH = 8;  // Fixed samples per batch in interactive mode
     // Per-sample luminance ceiling while the camera moves (the still image uses a ceiling that
     // grows with the sample count instead, unbiased in the limit). Kept at the historical level:
     // a low ceiling darkens bright regions noticeably between motion and rest. Isolated bright

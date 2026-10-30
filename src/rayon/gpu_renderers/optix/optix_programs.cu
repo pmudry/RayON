@@ -7,6 +7,7 @@
 #include <curand_kernel.h>
 
 #include "optix_params.h"
+#include "../sdf_primitives.cuh"
 #include "volume_medium.cuh"
 // OptiX PTX is a separate GPU binary; it needs its own copy of the table.
 #define SOBOL_DEFINE_DIRECTIONS
@@ -648,15 +649,13 @@ extern "C" __global__ void __raygen__rg()
 
       bool guide_done = false; // this sample's denoiser guide has been recorded
       int  volume_passes = 0;  // medium back faces passed through (see VOLUME below)
-      float next_tmin    = 0.001f; // self-intersection guard of the next trace (see VOLUME below)
 
       for (int bounce = 0; bounce < params.max_depth; ++bounce)
       {
          PRDRadiance prd;
          prd.hit = false;
 
-         trace(params.traversable, cur_origin, cur_direction, next_tmin, 1e16f, &prd);
-         next_tmin = 0.001f;
+         trace(params.traversable, cur_origin, cur_direction, 0.001f, 1e16f, &prd);
 
          if (bounce == 0 && prd.hit)
             primary_hits += 1.0f;
@@ -789,15 +788,15 @@ extern "C" __global__ void __raygen__rg()
                }
                if (!scattered)
                {
-                  // Out through the far side of the medium: continue just beyond it. Any other
-                  // surface met inside the medium is left for the next bounce to shade. The
-                  // offsets stay tiny and the next trace uses a matching tmin: a surface lying
-                  // just behind the far side (the ground under a cloud) must not be skipped.
+                  // Out through the far side of the medium, or stopped by another surface inside
+                  // it (left for the next bounce to shade). The next trace starts with tmin 0.001
+                  // from a point set back along the ray so that the far face itself falls inside
+                  // the skipped band while a surface just behind it (the ground under a cloud)
+                  // does not: 0.0002 units beyond the face are skipped, nothing more.
                   const bool far_side = ex.material_idx >= 0 &&
                                         params.materials[ex.material_idx].type == OptixMaterialType::VOLUME &&
                                         !ex.front_face;
-                  origin    = far_side ? ex.hit_point + 0.0002f * dir : ex.hit_point - 0.0002f * dir;
-                  next_tmin = 0.0001f;
+                  origin = far_side ? ex.hit_point - 0.0008f * dir : ex.hit_point - 0.0012f * dir;
                   escaped = true;
                   break;
                }
@@ -1421,6 +1420,12 @@ extern "C" __global__ void __closesthit__ch()
    float3 ray_origin = optixGetWorldRayOrigin();
    prd->hit_point = ray_origin + t_hit * ray_dir;
 
+   // --- SDF primitive: the hit sits within the marcher's tolerance of the surface, and the
+   // bounce rays start right at the hit point: nudge it off the surface along the shading
+   // normal (towards the ray's side) so neither the bounce nor the shadow ray re-hits it
+   if (sbt_data->geom_type == OptixGeomType::SDF)
+      prd->hit_point = prd->hit_point + 3e-4f * prd->hit_normal;
+
    // --- Displaced sphere: post-intersection position and normal correction ---
    if (sbt_data->geom_type == OptixGeomType::DISPLACED_SPHERE)
    {
@@ -1544,6 +1549,34 @@ extern "C" __global__ void __intersection__sphere()
    optixReportIntersection(root, 0, // hit kind
                            __float_as_int(outward_normal.x), __float_as_int(outward_normal.y),
                            __float_as_int(outward_normal.z));
+}
+
+//==============================================================================
+// INTERSECTION — ray-marched signed distance primitive
+//==============================================================================
+
+extern "C" __global__ void __intersection__sdf()
+{
+   const HitGroupData *sbt_data = reinterpret_cast<const HitGroupData *>(optixGetSbtDataPointer());
+   SdfPrim s;
+   s.shape = sbt_data->sdf_shape;
+   s.cx = sbt_data->center.x; s.cy = sbt_data->center.y; s.cz = sbt_data->center.z;
+   s.p0 = sbt_data->u_vec.x;  s.p1 = sbt_data->u_vec.y;  s.p2 = sbt_data->u_vec.z;
+   s.rx = sbt_data->v_vec.x;  s.ry = sbt_data->v_vec.y;  s.rz = sbt_data->v_vec.z;
+
+   // Rays are traced with unit directions (no instance transforms), so t is a distance
+   const float3 o   = optixGetObjectRayOrigin();
+   const float3 d   = optixGetObjectRayDirection();
+   const float  len = length3(d);
+   if (len <= 0.0f)
+      return;
+   const float3 dir = d / len;
+   const float tmin = optixGetRayTmin() * len, tmax = optixGetRayTmax() * len;
+   float t, nx, ny, nz;
+   if (!sdf_march(s, o.x, o.y, o.z, dir.x, dir.y, dir.z, tmin, tmax, t, nx, ny, nz))
+      return;
+   optixReportIntersection(t / len, 2, // hit kind 2 = SDF
+                           __float_as_int(nx), __float_as_int(ny), __float_as_int(nz));
 }
 
 //==============================================================================
