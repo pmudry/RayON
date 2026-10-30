@@ -14,6 +14,7 @@
 
 // Extern declarations for device-side global constants (defined once in renderer_cuda_device.cu)
 extern __constant__ float g_light_intensity;
+extern __constant__ float g_light_falloff;
 extern __constant__ float g_background_intensity;
 extern __constant__ float3 g_background_color;
 extern __constant__ float g_metal_fuzziness;
@@ -885,6 +886,15 @@ struct LightSampleGPU
  * @param u_sel  Uniform [0,1) for CDF light selection
  * @param u1,u2  Uniform [0,1) for sampling a point on the chosen light
  */
+/// Artistic distance falloff of the lights (g_light_falloff): the geometry already gives the
+/// physical inverse square, so the factor is 1 at exponent 2 and d^(2 - falloff) otherwise,
+/// pivoting at one scene unit. Applied to every light contribution past the camera ray, both the
+/// NEE samples and the emitter hits, so MIS stays consistent.
+static __device__ __forceinline__ float light_falloff_factor(float dist)
+{
+   return (g_light_falloff == 2.0f) ? 1.0f : powf(fmaxf(dist, 1e-3f), 2.0f - g_light_falloff);
+}
+
 static __device__ LightSampleGPU sample_light_gpu(const CudaScene::Scene &scene,
                                                   const f3 &shading_p,
                                                   float u_sel, float u1, float u2)
@@ -1005,7 +1015,7 @@ static __device__ LightSampleGPU sample_light_gpu(const CudaScene::Scene &scene,
          ls.pdf       = select_pdf / solid_angle;
       }
    }
-
+   ls.emission = ls.emission * light_falloff_factor(ls.dist);
    return ls;
 }
 
@@ -1532,6 +1542,9 @@ __device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scen
                   w = a / (a + b); // power heuristic
                }
             }
+            // Camera rays see the emitter as is; lighting of surfaces and media gets the falloff
+            if (bounce > 0)
+               w *= light_falloff_factor((rec.p - mis_origin).length());
             accumulated_color = accumulated_color + accumulated_attenuation * emitted * w;
          }
 

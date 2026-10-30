@@ -56,11 +56,11 @@ materials:
     type: "lambertian"
     albedo: [0.659, 0.565, 0.753]
 
-  # Tiny emitter: 12 cm square, very bright. Emission scaled so the total
-  # power is comparable to the default scene's 2.5 x 1.5 m panel.
+  # Tiny emitter: a 6 cm radius bulb, very bright. Radiance chosen so the floor gets the
+  # same irradiance as from the former 12 cm square panel (L * pi * r^2 = 900 * 0.0144).
   - name: "pin_light"
     type: "light"
-    emission: [900.0, 820.0, 700.0]
+    emission: [1150.0, 1050.0, 900.0]
     albedo: [1.0, 1.0, 1.0]
 
 geometry:
@@ -104,9 +104,8 @@ geometry:
     center: [0.8, 0.3, 1.2]
     radius: 0.3
 
-  # The light: a 12 cm square, 2.8 m up, facing down
-  - type: "rectangle"
+  # The light: a small bulb 2.8 m up (a sphere light samples in all directions)
+  - type: "sphere"
     material: "pin_light"
-    corner: [-0.06, 2.8, -0.26]
-    u: [0.12, 0.0, 0.0]
-    v: [0.0, 0.0, 0.12]
+    center: [0.0, 2.8, -0.2]
+    radius: 0.06

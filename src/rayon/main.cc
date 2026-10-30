@@ -85,29 +85,31 @@ struct ProgramArgs
 void dumpHelp()
 {
    cout << "Options:\n";
-   cout << "  -h, --help, /?         Show this help message\n";
-   cout << "  -m <method>            Rendering method: 2=CUDA offline, 3=CUDA interactive,\n"
-           "                         4=OptiX offline, 5=OptiX interactive (default: 5 when built with OptiX, else 3)\n";
-   cout << "                         4=OptiX offline, 5=OptiX interactive (if built with OptiX)\n";
-   cout << "  --menu                 Show interactive method selection menu\n";
-   cout << "  -r <WxH>               Arbitrary resolution, e.g. 1920x1080 or 800x600\n";
-   cout << "  -r <height>            Preset height (16:9): 2160, 1080, 720, 360, 180 (default: "
-        << IMAGE_HEIGHT << ")\n";
-   cout << "  --scene <file>         Load scene from YAML file (default: built-in scene)\n";
+   cout << "  -h, --help, /?            Show this help message\n";
+   cout << "  -m <method>               Rendering method: 2 = CUDA offline, 3 = CUDA interactive,\n"
+           "                            4 = OptiX offline, 5 = OptiX interactive (if built with OptiX)\n"
+           "                            (default: 5 when built with OptiX, else 3)\n";
+   cout << "  --menu                    Show the interactive method selection menu\n";
+   cout << "  -r <WxH>                  Arbitrary resolution, e.g. 1920x1080 or 800x600\n";
+   cout << "  -r <height>               Preset height (16:9): 2160, 1080, 720, 360, 180 (default: " << IMAGE_HEIGHT
+        << ")\n";
+   cout << "  --scene <file>            Load a scene from a YAML file (default: built-in scene)\n";
+   cout << "  --sampler <sobol|pcg>     GPU sampler: sobol = low-discrepancy (default), pcg = classic PRNG\n";
+   cout << "  --no-hdr-cache            Disable the disk cache of HDR sky textures (always re-decode .hdr)\n";
    cout << "\n";
    cout << "Offline rendering (modes 2, 4):\n";
-   cout << "  -s <samples>           Samples per pixel (default: " << SAMPLES_PER_PIXEL << ")\n";
+   cout << "  -s <samples>              Samples per pixel (default: " << SAMPLES_PER_PIXEL << ")\n";
    cout << "\n";
-   cout << "Interactive rendering (mode 3):\n";
-      cout << "  --samples-per-batch <n>   Fixed samples per batch for interactive rendering (default: "
-         << INTERACTIVE_SAMPLES_PER_BATCH << ")\n";
+   cout << "Interactive rendering (modes 3, 5):\n";
+   cout << "  --samples-per-batch <n>   Samples per batch, overrides the scene's settings.samples_per_batch\n"
+           "                            (default: "
+        << INTERACTIVE_SAMPLES_PER_BATCH << ")\n";
    cout << "  --no-adaptive-sampling    Disable converged-pixel skipping\n";
-   cout << "  --no-auto-accumulate      Disable automatic sample accumulation\n";
-   cout << "  --no-hdr-cache            Disable disk cache for HDR sky textures (always re-decode .hdr)\n";
-   cout << "  --sampler <sobol|pcg>     GPU sampler type: sobol = low-discrepancy (default), pcg = classic PRNG\n";
+   cout << "  --no-auto-accumulate      Disable automatic sample accumulation when the camera is still\n";
    cout << "  --theme <name>            GUI theme: light, classic, nord, dracula, gruvbox, catppuccin\n";
-   cout << "MIS / NEE options (GPU modes 2, 3, 5):\n";
-   cout << "  --no-mis                  Disable Multiple-Importance Sampling (max throughput, noisier)\n";
+   cout << "\n";
+   cout << "MIS / NEE options (all modes):\n";
+   cout << "  --no-mis                  Disable multiple importance sampling (max throughput, noisier)\n";
    cout << "  --motion-gate-mis         Auto-disable MIS while the camera moves (interactive only; off by default)\n";
    cout << "  --nee-stride <N>          Beyond the first bounce, do NEE on 1 of every N samples, contribution \xc3\x97N\n"
            "                            (default: 1 = every sample). The first bounce always does NEE.\n";

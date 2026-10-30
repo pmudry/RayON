@@ -258,22 +258,11 @@ batches in interactive mode. On the DGX Spark the display path dropped from ~3 m
 
 ## 12 — Adaptive depth
 
-**What it is:** `MAX_DEPTH` (maximum ray-bounce count) starts at 4 in interactive mode and
-increments by 1 after each completed sample stage (when `--adaptive-depth` is passed).
-
-**Why it helps:** high bounce counts are needed for accurate caustics and multiple
-inter-reflections, but they are expensive. Starting low keeps the first frames fast and
-responsive; increasing depth only after the image has begun to converge avoids wasting GPU
-cycles on deep paths before coarser lighting is established.
-
-```
-Stage 1 (first batch):  MAX_DEPTH = 4   ← fast, direct lighting
-Stage 2:                MAX_DEPTH = 5
-Stage 3:                MAX_DEPTH = 6   ← first-order caustics
-Stage 4+:               MAX_DEPTH = 7–8 ← full quality
-```
-
-Enable with `--adaptive-depth`.
+**Removed.** Earlier versions could start interactive rendering at 4 bounces and add one
+bounce per sample stage (`--adaptive-depth`). The motion regulator of the "Camera Motion"
+section replaced it: while the camera moves, the batch size and the render resolution are
+lowered to hold the target frame rate, and the full bounce depth is kept at all times, so the
+lighting never changes character between the moving and the still image.
 
 ---
 

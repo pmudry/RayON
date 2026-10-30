@@ -54,6 +54,7 @@ camera:
 | `background_color` | vec3 | `[0.5, 0.7, 1.0]` | Sky/background colour (linear RGB) |
 | `background_intensity` | float | `1.0` | Multiplier applied to the background colour (GUI "Ambient Light") |
 | `light_intensity` | float | `1.0` | Multiplier applied to every light's emission (GUI "Lights inten.") |
+| `light_falloff` | float | `2.0` | Distance exponent of the lights' reach (GUI "Lights falloff"). `2` is the physical inverse square; lower values carry the light farther, higher values confine it around the source. Pivots at one scene unit from the light; emitters seen by the camera are unchanged. An artistic control, not energy conserving |
 | `use_bvh` | bool | `false` | Enable BVH acceleration (recommended for > 50 objects) |
 | `adaptive_sampling` | bool | `true` | Let converged pixels stop accumulating early |
 | `samples_per_batch` | int | `0` | Interactive batch size for this scene (`0` = renderer default; a `--samples-per-batch` on the command line wins) |

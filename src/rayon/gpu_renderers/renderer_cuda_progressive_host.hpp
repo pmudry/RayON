@@ -97,6 +97,7 @@ class RendererCUDAProgressive : public IRenderer
       int current_samples = 0;
       float gamma = 2.0f;
       float light_intensity = scene.light_intensity;
+      float light_falloff   = scene.light_falloff;
       float background_intensity = scene.background_intensity;
       float metal_fuzziness = 1.0f;
       float glass_refraction_index = 1.5f;
@@ -150,6 +151,7 @@ class RendererCUDAProgressive : public IRenderer
       auto applySceneSettings = [&]()
       {
          ::setLightIntensity(light_intensity);
+         ::setLightFalloff(light_falloff);
          ::setBackgroundIntensity(background_intensity);
          ::setMetalFuzziness(metal_fuzziness);
          ::setGlassRefractionIndex(glass_refraction_index);
@@ -415,6 +417,7 @@ class RendererCUDAProgressive : public IRenderer
          // Apply scene-specific rendering settings
          background_intensity = active_scene.background_intensity;
          light_intensity      = active_scene.light_intensity;
+         light_falloff        = active_scene.light_falloff;
          samples_per_batch_float = static_cast<float>(sceneBatchSize(active_scene));
          ::setBackgroundColor((float)active_scene.background_color.x(), (float)active_scene.background_color.y(),
                               (float)active_scene.background_color.z());
@@ -479,6 +482,7 @@ class RendererCUDAProgressive : public IRenderer
                {
                   // Reset to defaults
                   light_intensity = 1.0f;
+                  light_falloff = 2.0f;
                   background_intensity = 1.0f;
                   metal_fuzziness = 1.0f;
                   glass_refraction_index = 1.5f;
@@ -725,6 +729,7 @@ class RendererCUDAProgressive : public IRenderer
          float old_aperture = dof_aperture;
          float old_focus = dof_focus_distance;
          float old_light = light_intensity;
+         float old_falloff = light_falloff;
          float old_background = background_intensity;
          float old_fuzz = metal_fuzziness;
          float old_ior = glass_refraction_index;
@@ -775,13 +780,14 @@ class RendererCUDAProgressive : public IRenderer
                            &mis_enabled, &motion_gate_mis, &nee_stride,
                            &use_sobol, nullptr, &motion_despeckle, &motion_despeckle_ratio,
                            volume_mat_idx >= 0 ? &volume_settings : nullptr,
-                           &save_camera_request, active_scene.source_file.c_str(), camera_save_status.c_str());
+                           &save_camera_request, active_scene.source_file.c_str(), camera_save_status.c_str(),
+                           &light_falloff);
 
          if (save_camera_request)
          {
             save_camera_request = false;
             if (Scene::saveViewToYAML(active_scene.source_file.c_str(), look_from, look_at, camera.vfov,
-                                      background_intensity, light_intensity))
+                                      background_intensity, light_intensity, light_falloff))
                camera_save_status = "Saved to " + active_scene.source_file;
             else
                camera_save_status = "Could not write " + active_scene.source_file;
@@ -845,8 +851,8 @@ class RendererCUDAProgressive : public IRenderer
 
          // Detect if ImGui changed any scene parameter
          if (dof_enabled != old_dof || dof_aperture != old_aperture || dof_focus_distance != old_focus ||
-             light_intensity != old_light || background_intensity != old_background || metal_fuzziness != old_fuzz ||
-             glass_refraction_index != old_ior || cam_fov_ui != old_cam_fov ||
+             light_intensity != old_light || light_falloff != old_falloff || background_intensity != old_background ||
+             metal_fuzziness != old_fuzz || glass_refraction_index != old_ior || cam_fov_ui != old_cam_fov ||
              golf_dimple_count != old_golf_dimple_count || golf_dimple_radius != old_golf_dimple_radius ||
              golf_dimple_depth != old_golf_dimple_depth)
          {

@@ -114,14 +114,20 @@ CPU uses `double` (Vec3), GPU uses `float` — conversion at kernel boundary.
 -s <samples>             # Samples per pixel for offline modes (default: SAMPLES_PER_PIXEL)
 -r <WxH>|<height>        # Resolution: WxH (e.g. 1920x1080) or height for 16:9 (e.g. 720)
 --scene <yaml_file>      # Load scene from YAML (files live under resources/scenes/)
---samples-per-batch <n>  # Max samples per interactive batch (auto-scales to hit --target-fps)
---target-fps <fps>       # Interactive mode target FPS (default: 60)
---adaptive-depth         # Progressively increase max ray bounce depth
+--sampler <sobol|pcg>    # GPU sampler (default: sobol)
+--no-hdr-cache           # Always re-decode .hdr skies (no .hdrcache)
+--samples-per-batch <n>  # Interactive samples per batch, overrides settings.samples_per_batch (default: 8)
 --no-adaptive-sampling   # Disable converged-pixel skipping
 --no-auto-accumulate     # Disable automatic sample accumulation when stationary
 --theme <name>           # GUI theme: light, classic, nord, dracula, gruvbox, catppuccin
 --menu                   # Show interactive method selection menu
+--no-mis                 # Disable multiple importance sampling
+--motion-gate-mis        # Disable MIS while the camera moves (interactive)
+--nee-stride <N>         # NEE on 1 of every N samples beyond the first bounce (default: 1)
 ```
+
+The target frame rate while moving and the motion quality floors are GUI settings ("Camera Motion"
+section), not command-line flags.
 
 ## Material & Geometry Types
 

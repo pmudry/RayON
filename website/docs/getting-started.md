@@ -103,28 +103,27 @@ Rendered images are saved automatically to `build/rendered_images/` as timestamp
 
 | Flag | Default | Description |
 |---|---|---|
-| `-m <method>` | 3 (or 2) | Renderer: `2`=CUDA, `3`=CUDA interactive, `4`=OptiX, `5`=OptiX interactive |
+| `-m <method>` | 5 (3 without OptiX) | Renderer: `2`=CUDA, `3`=CUDA interactive, `4`=OptiX, `5`=OptiX interactive |
 | `--menu` | — | Show interactive renderer-selection menu instead of using the default |
 | `--scene <yaml>` | built-in | Load a scene from a YAML file |
 | `-s <n>` | 64 | Samples per pixel (offline modes 2, 4) |
 | `-r <h>` | 720 | Image height; aspect ratio 16:9 auto-applied (`-r 1080`) |
 | `-r <WxH>` | — | Arbitrary resolution (`-r 1920x1080`, `-r 800x600`) |
-| `--samples-per-batch <n>` | 10 | Fixed samples per batch for interactive mode |
-| `--adaptive-depth` | off | Progressively increase max ray bounce depth |
+| `--samples-per-batch <n>` | 8 | Samples per batch for interactive mode (overrides the scene's `settings.samples_per_batch`) |
+| `--sampler <sobol\|pcg>` | `sobol` | GPU sampler: low-discrepancy Sobol' or classic PCG |
 | `--no-adaptive-sampling` | off | Disable converged-pixel skipping (adaptive sampling) |
 | `--no-auto-accumulate` | off | Disable automatic sample accumulation when stationary |
 | `--no-hdr-cache` | off | Disable `.hdrcache` disk cache — always re-decode the `.hdr` file from scratch |
 | `--theme <name>` | `nord` | ImGui colour theme: `light`, `classic`, `nord`, `dracula`, `gruvbox`, `catppuccin` |
 | `-h`, `--help` | — | Print help and exit |
 
-### MIS / NEE options (GPU modes 2, 3, 5)
+### MIS / NEE options (all modes)
 
 | Flag | Default | Description |
 |---|---|---|
 | `--no-mis` | MIS on | Disable Multiple Importance Sampling and NEE (noisier but faster per sample) |
-| `--no-motion-gate-mis` | auto-gate on | Keep MIS active during camera motion (interactive modes only) |
-| `--nee-first-bounce` | all bounces | Restrict NEE shadow rays to the first path bounce only |
-| `--nee-stride <N>` | `1` | Fire a shadow ray on 1-of-every-N samples and scale contribution by N |
+| `--motion-gate-mis` | off | Disable MIS while the camera moves (interactive modes only) |
+| `--nee-stride <N>` | `1` | Beyond the first bounce, fire a shadow ray on 1-of-every-N samples and scale the contribution by N |
 
 ### Examples
 
@@ -136,8 +135,8 @@ Rendered images are saved automatically to `build/rendered_images/` as timestamp
 ./rayon -m 2 --scene ../resources/scenes/default_scene.yaml -s 8 -r 360
 
 # Interactive session with manual batch size
-./rayon --scene ../resources/scenes/default_scene.yaml --samples-per-batch 12 --adaptive-depth
-# > interactive window opens directly (mode 3)
+./rayon --scene ../resources/scenes/default_scene.yaml --samples-per-batch 12
+# > interactive window opens directly (mode 5, or 3 without OptiX)
 
 # Interactive with custom theme and no adaptive sampling
 ./rayon --theme dracula --no-adaptive-sampling

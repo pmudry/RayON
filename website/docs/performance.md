@@ -120,10 +120,8 @@ timestamp,commit,branch,gpu,resolution,samples,method,sampler,run,time_s
 ## Tuning tips
 
 - **Enable BVH** for any scene with more than ~15 objects: `use_bvh: true` in YAML.
-- **Start with a high target-fps** in interactive mode (`--target-fps 120`) for a very responsive
-  orbit/pan experience — the batch size auto-scales down to keep up.
-- **Adaptive depth** (`--adaptive-depth`) starts at 4 bounces and increments after each sample
-  stage — gives a good balance between responsiveness and physically accurate caustics.
+- **Raise the Target FPS** in the GUI's "Camera Motion" section for a very responsive orbit/pan
+  experience — the batch size and the render resolution auto-scale down to keep up.
 - **Block size** — the default 32×4 is tuned for warp alignment. Changing it often regresses performance.
 - **Fast math** — `--use_fast_math` is currently disabled by default because a small number of
   scenes show artefacts in glass materials. Enable only if you do not have refractive surfaces.

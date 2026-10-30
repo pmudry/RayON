@@ -36,6 +36,8 @@ extern "C"
 
    // Set global light intensity (affects area light emission)
    void setLightIntensity(float intensity);
+   // Distance exponent of the lights' reach (2 = physical inverse square; lower reaches farther)
+   void setLightFalloff(float falloff);
 
    // Set quasi-random sampler: true = Sobol' (default), false = PCG
    void setSobolSampler(bool use_sobol);

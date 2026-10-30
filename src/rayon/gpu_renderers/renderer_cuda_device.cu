@@ -19,6 +19,7 @@
 //==================== HOST MODIFIED PARAMETERS ====================
 // Global device constants (single definition here)
 __constant__ float g_light_intensity = 1.0f;
+__constant__ float g_light_falloff = 2.0f;
 __constant__ float g_background_intensity = 1.0f;
 __constant__ float3 g_background_color = {0.5f, 0.7f, 1.0f};
 __constant__ float g_metal_fuzziness = 0.8f;
@@ -96,6 +97,11 @@ extern "C" void cleanupCudaStreams()
 
 //==================== HOST INTERFACE FUNCTIONS ====================
 extern "C" void setLightIntensity(float intensity) { cudaMemcpyToSymbol(g_light_intensity, &intensity, sizeof(float)); }
+extern "C" void setLightFalloff(float falloff)
+{
+   falloff = falloff < 0.0f ? 0.0f : falloff;
+   cudaMemcpyToSymbol(g_light_falloff, &falloff, sizeof(float));
+}
 
 extern "C" void setBackgroundColor(float r, float g, float b)
 {

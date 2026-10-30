@@ -48,8 +48,9 @@ After each stage completes, the renderer pauses **500 ms** before starting the n
 for user input. This keeps the UI responsive — a mouse drag will immediately interrupt the
 accumulation and reset to 8 SPP.
 
-During camera motion, the batch size is automatically reduced to the minimum needed to hit
-`--target-fps`. Once the camera is stationary, each subsequent frame adds another stage.
+During camera motion, the batch size and the render resolution are automatically reduced to
+hold the Target FPS of the "Camera Motion" GUI section. Once the camera is stationary, each
+subsequent frame adds another stage.
 
 ---
 
@@ -104,9 +105,8 @@ on device throughout the session.
 
 ## Adaptive depth
 
-With `--adaptive-depth`, `MAX_DEPTH` (maximum bounce count) starts at 4 and increases
-by 1 after each completed sample stage. This reduces the initial compute cost and progressively
-enables more complex light paths (caustics, multiple inter-reflections) as the image converges.
+Removed: earlier versions could start at 4 bounces and add one per sample stage
+(`--adaptive-depth`). The motion regulator above replaced it; the bounce depth is now constant.
 
 ```
 Stage 1 (8 SPP):   MAX_DEPTH = 4   ← fast, direct lighting only

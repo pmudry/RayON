@@ -184,6 +184,7 @@ struct OptixLaunchParams
 
    // Dynamic material multipliers (set per-frame from GUI sliders)
    float light_intensity;      // Multiplier on emissive materials
+   float light_falloff;        // Distance exponent of the lights' reach (2 = inverse square, physical)
    float metal_fuzziness;      // Multiplier on roughness of metallic materials
    float glass_ior_multiplier; // Multiplier on refractive index of glass/dielectric
 

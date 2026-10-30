@@ -10,9 +10,6 @@ mouse-driven camera controls and an ImGui control panel.
 ```bash
 # Interactive mode is the default when SDL2 is present:
 ./rayon --scene ../resources/scenes/default_scene.yaml
-
-# With adaptive depth for progressive quality:
-./rayon --adaptive-depth
 ```
 
 !!! note "SDL2 required"
@@ -40,8 +37,7 @@ current fixed `samples-per-batch` value.
 
 | Flag | Default | Effect |
 |---|---|---|
-| `--samples-per-batch <n>` | 10 | Fixed samples per batch for interactive rendering |
-| `--adaptive-depth` | off | Progressively increase max bounce depth per stage |
+| `--samples-per-batch <n>` | 8 | Samples per batch (overrides the scene's `settings.samples_per_batch`) |
 | `--no-adaptive-sampling` | off | Disable converged-pixel skipping (adaptive sampling) |
 | `--no-auto-accumulate` | off | Disable automatic sample increase when stationary |
 
@@ -49,7 +45,7 @@ current fixed `samples-per-batch` value.
 
 ```bash
 ./rayon --scene ../resources/scenes/09_color_bleed_box.yaml \
-    --samples-per-batch 24 --adaptive-depth
+    --samples-per-batch 24
 ```
 
 **Example: very responsive orbit for scene exploration:**

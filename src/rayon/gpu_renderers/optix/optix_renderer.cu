@@ -99,6 +99,7 @@ struct OptixState
    // MIS / NEE runtime settings (cached between launches)
    bool  mis_enabled          = true;
    int   nee_stride           = 1;
+   float light_falloff        = 2.0f;
    bool  has_volume           = false; // scene holds a VOLUME material (shadow rays track transmittance)
 
    // Adaptive sampling (converged-pixel skipping): per-pixel sample counts (negative = converged)
@@ -1103,6 +1104,7 @@ static float3 g_optix_background_color = make_float3(0.5f, 0.7f, 1.0f);
 extern "C" void setOptiXBackgroundColor(float r, float g, float b) { g_optix_background_color = make_float3(r, g, b); }
 extern "C" void setOptiXFireflyClampCeiling(float ceiling) { g_optix_firefly_clamp_ceiling = ceiling; }
 extern "C" void setOptiXNEEStride(int stride)              { g_state.nee_stride = (stride < 1) ? 1 : stride; }
+extern "C" void setOptiXLightFalloff(float falloff)        { g_state.light_falloff = (falloff < 0.0f) ? 0.0f : falloff; }
 
 /// Converged-pixel skipping. Buffers are (re)allocated by optixRendererResetAccum().
 extern "C" void setOptiXAdaptiveSampling(bool enabled, int min_samples, float threshold)
@@ -1478,6 +1480,7 @@ extern "C" unsigned long long optixRendererLaunch(int width, int height, int num
    launch_params.light_cdfs         = g_state.d_light_cdfs;
    launch_params.mis_enabled        = g_state.mis_enabled;
    launch_params.nee_stride         = g_state.nee_stride;
+   launch_params.light_falloff      = g_state.light_falloff;
    launch_params.has_volume         = g_state.has_volume;
    launch_params.geom_to_light_map  = g_state.d_geom_to_light;
    launch_params.num_geom_entries   = g_state.num_geom_entries;

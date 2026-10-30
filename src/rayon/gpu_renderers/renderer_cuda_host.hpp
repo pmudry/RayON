@@ -28,6 +28,8 @@ class RendererCUDA : public IRenderer
       CudaScene::Scene *gpu_scene = Scene::CudaSceneBuilder::buildGPUScene(request.scene);
 
       ::setBackgroundIntensity(request.scene.background_intensity);
+      ::setLightIntensity(request.scene.light_intensity);
+      ::setLightFalloff(request.scene.light_falloff);
       ::setBackgroundColor((float)request.scene.background_color.x(), (float)request.scene.background_color.y(),
                            (float)request.scene.background_color.z());
 

@@ -303,6 +303,15 @@ __device__ __forceinline__ void build_onb(const float3 &n, float3 &u, float3 &v)
    v = make_float3(b, sign + n.y * n.y * a, -n.y);
 }
 
+/// Artistic distance falloff of the lights (params.light_falloff): the geometry already gives the
+/// physical inverse square, so the factor is 1 at exponent 2 and d^(2 - falloff) otherwise,
+/// pivoting at one scene unit. Applied to every light contribution past the camera ray, both the
+/// NEE samples and the emitter hits, so MIS stays consistent.
+__device__ __forceinline__ float light_falloff_factor(float dist)
+{
+   return (params.light_falloff == 2.0f) ? 1.0f : powf(fmaxf(dist, 1e-3f), 2.0f - params.light_falloff);
+}
+
 __device__ OptiXLightSample sample_light_optix(const float3 &shading_p, float u_sel, float u1, float u2)
 {
    OptiXLightSample ls;
@@ -394,6 +403,7 @@ __device__ OptiXLightSample sample_light_optix(const float3 &shading_p, float u_
          ls.pdf       = select_pdf / solid_angle;
       }
    }
+   ls.emission = ls.emission * light_falloff_factor(ls.dist);
    return ls;
 }
 
@@ -893,7 +903,9 @@ extern "C" __global__ void __raygen__rg()
                   }
                }
             }
-            color = color + throughput * mat.emission * params.light_intensity * w;
+            // Camera rays see the emitter as is; lighting of surfaces and media gets the falloff
+            const float fall = bounce > 0 ? light_falloff_factor(length3(prd.hit_point - mis_origin)) : 1.0f;
+            color = color + throughput * mat.emission * params.light_intensity * (w * fall);
             break;
          }
 

@@ -673,6 +673,8 @@ bool loadSceneFromYAML(const char *filename, SceneDescription &scene)
       scene.background_intensity = parser.getFloat("settings.background_intensity", 1.0f);
    if (parser.hasKey("settings.light_intensity"))
       scene.light_intensity = parser.getFloat("settings.light_intensity", 1.0f);
+   if (parser.hasKey("settings.light_falloff"))
+      scene.light_falloff = std::max(0.0f, parser.getFloat("settings.light_falloff", 2.0f));
    if (parser.hasKey("settings.samples_per_batch"))
       scene.samples_per_batch = std::max(0, parser.getInt("settings.samples_per_batch", 0));
    // Accept both "settings.use_bvh" (canonical) and "scene.use_bvh" (legacy)
@@ -803,7 +805,7 @@ string fmtNumber(double v)
 } // namespace
 
 bool saveViewToYAML(const char *filename, const Vec3 &position, const Vec3 &look_at, float fov,
-                    float background_intensity, float light_intensity)
+                    float background_intensity, float light_intensity, float light_falloff)
 {
    ifstream in(filename);
    if (!in)
@@ -820,7 +822,9 @@ bool saveViewToYAML(const char *filename, const Vec3 &position, const Vec3 &look
    { return "[" + fmtNumber(v.x()) + ", " + fmtNumber(v.y()) + ", " + fmtNumber(v.z()) + "]"; };
    setBlockValues(lines, "camera", {{"position", vec(position)}, {"look_at", vec(look_at)}, {"fov", fmtNumber(fov)}});
    setBlockValues(lines, "settings",
-                  {{"background_intensity", fmtNumber(background_intensity)}, {"light_intensity", fmtNumber(light_intensity)}});
+                  {{"background_intensity", fmtNumber(background_intensity)},
+                   {"light_intensity", fmtNumber(light_intensity)},
+                   {"light_falloff", fmtNumber(light_falloff)}});
 
    ofstream out(filename, ios::trunc);
    if (!out)
@@ -832,7 +836,7 @@ bool saveViewToYAML(const char *filename, const Vec3 &position, const Vec3 &look
       out << l << "\n";
    cout << "Scene view saved to " << filename << ": camera " << vec(position) << " -> " << vec(look_at) << ", fov "
         << fmtNumber(fov) << ", background_intensity " << fmtNumber(background_intensity) << ", light_intensity "
-        << fmtNumber(light_intensity) << "\n";
+        << fmtNumber(light_intensity) << ", light_falloff " << fmtNumber(light_falloff) << "\n";
    return true;
 }
 

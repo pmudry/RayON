@@ -43,6 +43,7 @@ extern "C"
    void setOptiXBackgroundColor(float r, float g, float b);
    void setOptiXMISEnabled(bool enabled);
    void setOptiXNEEStride(int stride);
+   void setOptiXLightFalloff(float falloff);
 }
 
 class RendererOptiX : public IRenderer
@@ -63,6 +64,7 @@ class RendererOptiX : public IRenderer
 
       // Zero the device accumulation buffer — no host↔device transfer needed
       optixRendererResetAccum(frame.image_width, frame.image_height);
+      ::setOptiXLightFalloff(request.scene.light_falloff);
 
       int num_materials = static_cast<int>(request.scene.materials.size());
 
@@ -96,7 +98,7 @@ class RendererOptiX : public IRenderer
              false,   // dof_enabled
              0.0f,    // dof_aperture
              10.0f,   // dof_focus_distance
-             1.0f,    // light_intensity
+             request.scene.light_intensity,
              1.0f,    // metal_fuzziness
              1.0f);   // glass_ior_multiplier
 

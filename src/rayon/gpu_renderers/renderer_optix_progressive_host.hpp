@@ -73,6 +73,7 @@ extern "C"
    void setOptiXMISEnabled(bool enabled);
    void setOptiXFireflyClampCeiling(float ceiling);
    void setOptiXNEEStride(int stride);
+   void setOptiXLightFalloff(float falloff);
    void setOptiXAdaptiveSampling(bool enabled, int min_samples, float threshold);
    bool optixRendererHandoverPrior(int new_width, int new_height, float strength);
    int  optixRendererCountConvergedPixels();
@@ -148,6 +149,7 @@ class RendererOptiXProgressive : public IRenderer
       int current_samples = 0;
       float gamma = 2.0f;
       float light_intensity = scene.light_intensity;        // UI only — baked into SBT at build time
+      float light_falloff   = scene.light_falloff;          // distance exponent of the lights' reach
       float background_intensity = scene.background_intensity;
       float metal_fuzziness = 1.0f;        // UI only — baked into SBT at build time
       float glass_refraction_index = 1.5f; // UI only — baked into SBT at build time
@@ -439,6 +441,7 @@ class RendererOptiXProgressive : public IRenderer
 
          background_intensity = active_scene.background_intensity;
          light_intensity      = active_scene.light_intensity;
+         light_falloff        = active_scene.light_falloff;
          samples_per_batch_float = static_cast<float>(sceneBatchSize(active_scene));
          ::setOptiXBackgroundColor((float)active_scene.background_color.x(), (float)active_scene.background_color.y(),
                                    (float)active_scene.background_color.z());
@@ -511,7 +514,7 @@ class RendererOptiXProgressive : public IRenderer
                }
                else if (event.key.keysym.sym == SDLK_r)
                {
-                  light_intensity = 1.0f; background_intensity = 1.0f;
+                  light_intensity = 1.0f; background_intensity = 1.0f; light_falloff = 2.0f;
                   metal_fuzziness = 1.0f; glass_refraction_index = 1.5f;
                   dof_enabled = false; dof_aperture = 0.1f; dof_focus_distance = 10.0f;
                   show_spps_counter = true;
@@ -848,6 +851,7 @@ class RendererOptiXProgressive : public IRenderer
             bool  denoise_now;
             float denoise_blend;
             denoiseFor(current_samples + frame_spp, reduce, denoise_now, denoise_blend);
+            ::setOptiXLightFalloff(light_falloff);
             renderBatch(frame, config.width, config.height, config.depth, display_view, current_samples,
                         max_samples, frame_spp, gamma, context, num_materials_active, background_intensity,
                         dof_enabled, dof_aperture, dof_focus_distance, light_intensity, metal_fuzziness,
@@ -905,6 +909,7 @@ class RendererOptiXProgressive : public IRenderer
          float old_aperture = dof_aperture;
          float old_focus = dof_focus_distance;
          float old_light = light_intensity;
+         float old_falloff = light_falloff;
          float old_background = background_intensity;
          float old_fuzz = metal_fuzziness;
          float old_ior = glass_refraction_index;
@@ -950,13 +955,14 @@ class RendererOptiXProgressive : public IRenderer
                            &mis_enabled, &motion_gate_mis, &nee_stride,
                            &use_sobol, &motion_quality, &motion_despeckle, &motion_despeckle_ratio,
                            volume_mat_idx >= 0 ? &volume_settings : nullptr,
-                           &save_camera_request, active_scene.source_file.c_str(), camera_save_status.c_str());
+                           &save_camera_request, active_scene.source_file.c_str(), camera_save_status.c_str(),
+                           &light_falloff);
 
          if (save_camera_request)
          {
             save_camera_request = false;
             if (Scene::saveViewToYAML(active_scene.source_file.c_str(), look_from, look_at, camera.vfov,
-                                      background_intensity, light_intensity))
+                                      background_intensity, light_intensity, light_falloff))
                camera_save_status = "Saved to " + active_scene.source_file;
             else
                camera_save_status = "Could not write " + active_scene.source_file;
@@ -1007,7 +1013,7 @@ class RendererOptiXProgressive : public IRenderer
 
          // Detect if ImGui changed rendering parameters
          if (dof_enabled != old_dof || dof_aperture != old_aperture || dof_focus_distance != old_focus ||
-             light_intensity != old_light || background_intensity != old_background ||
+             light_intensity != old_light || light_falloff != old_falloff || background_intensity != old_background ||
              metal_fuzziness != old_fuzz || glass_refraction_index != old_ior || cam_fov_ui != old_cam_fov)
          {
             if (cam_fov_ui != old_cam_fov)

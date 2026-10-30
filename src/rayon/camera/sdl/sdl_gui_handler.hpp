@@ -275,7 +275,7 @@ class SDLGuiHandler
                       bool *motion_despeckle = nullptr, float *motion_despeckle_ratio = nullptr,
                       VolumeMaterialSettings *volume = nullptr,
                       bool *save_camera_request = nullptr, const char *scene_yaml_path = nullptr,
-                      const char *camera_save_status = nullptr)
+                      const char *camera_save_status = nullptr, float *light_falloff = nullptr)
    {
       SDL_UpdateTexture(texture, nullptr, image.data(), image_width * image_channels);
       SDL_RenderClear(renderer);
@@ -761,6 +761,15 @@ class SDLGuiHandler
                {
                   pushSliderWidth();
                   ImGui::SliderFloat("Lights inten.", light_intensity, 0.1f, 3.0f, "%.1f");
+                  if (light_falloff)
+                  {
+                     ImGui::SliderFloat("Lights falloff", light_falloff, 0.5f, 4.0f, "%.2f");
+                     ImGui::SetItemTooltip("Distance exponent of the lights' reach. 2 = physical inverse\n"
+                                           "square. Lower: the light carries farther (open room). Higher: it\n"
+                                           "dies out around the source (lamp in the dark). Unchanged at one\n"
+                                           "scene unit from the light; the emitters themselves look the same.\n"
+                                           "Saved per scene with the camera (settings.light_falloff).");
+                  }
                   ImGui::SliderFloat("Ambient Light", background_intensity, 0.0f, 5.0f, "%.2f");
                   ImGui::SliderFloat("Metal Fuzz", metal_fuzziness, 0.0f, 5.0f, "%.2f");
                   ImGui::SliderFloat("Glass IOR", glass_ior, 1.0f, 2.5f, "%.2f");
