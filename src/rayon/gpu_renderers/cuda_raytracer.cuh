@@ -1138,8 +1138,11 @@ __device__ __forceinline__ bool scatter_material(const hit_record_simple &rec, c
    case ROUGH_MIRROR:
    {
       // Reflection with roughness-perturbed normal (microfacet approximation)
+      // The perturbation is uniform inside the unit ball (radius cbrt(u)), as in OptiX: a glossier
+      // look than a point on the sphere, whose length would always be the full roughness
       float2 srm = rand_float2(state, sample_n, pixel_hash, (uint32_t)bounce, SOBOL_EFFECT_ROUGH_MIRROR);
-      f3 perturbed_normal = normalize(rec.normal + rec.roughness * g_metal_fuzziness * sphere_from_square(srm.x, srm.y));
+      f3 perturb = sphere_from_square(srm.x, srm.y) * cbrtf(rand_float(state));
+      f3 perturbed_normal = normalize(rec.normal + rec.roughness * g_metal_fuzziness * perturb);
       f3 reflected = reflect(normalize(current_ray.dir), perturbed_normal);
       scattered_ray = ray_simple(rec.p, reflected);
       attenuation = rec.color;
@@ -1319,7 +1322,7 @@ __device__ __forceinline__ bool scatter_material(const hit_record_simple &rec, c
          // Coat specular reflection (GGX-like roughness perturbation)
          float2 scd = rand_float2(state, sample_n, pixel_hash, (uint32_t)bounce, SOBOL_EFFECT_CLEAR_COAT_DIR);
          f3 perturbed_normal = (rec.roughness > 1e-3f)
-            ? normalize(rec.normal + rec.roughness * sphere_from_square(scd.x, scd.y))
+            ? normalize(rec.normal + rec.roughness * (sphere_from_square(scd.x, scd.y) * cbrtf(rand_float(state))))
             : rec.normal;
          f3 reflected = reflect(unit_dir, perturbed_normal);
          scattered_ray = ray_simple(rec.p + 0.0001f * rec.normal, reflected);
