@@ -1632,7 +1632,10 @@ __device__ void caustic_splat(const float3 &x, const float3 &n, const float3 &al
    if (params.pixel_sample_counts && params.pixel_sample_counts[pixel_idx] < 0 &&
        !(params.conv_streak && params.conv_streak[pixel_idx] == ADAPTIVE_RECHECK_MARK))
       return;
-   if (trace_shadow(params.traversable, x, to_cam, 0.0001f, dist - 0.001f))
+   // Leave from just above the surface, as NEE shadow rays do: a hit point that rounds below the
+   // surface (the 950-unit ground sphere of the default scene) would otherwise see the surface
+   // itself and drop the splat, in a moire of rounding cells
+   if (trace_shadow(params.traversable, x + 0.0001f * n, to_cam, 0.0001f, dist - 0.001f))
       return;
 
    // Pixel importance of the pinhole camera, per solid angle: plane^2 / (pixel area cos^3);
