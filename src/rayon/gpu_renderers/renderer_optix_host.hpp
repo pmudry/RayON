@@ -45,6 +45,7 @@ extern "C"
    void setOptiXNEEStride(int stride);
    void setOptiXLightFalloff(float falloff);
    void setOptiXIndirectClamp(float ceiling);
+   void setOptiXCaustics(bool enabled);
 }
 
 class RendererOptiX : public IRenderer

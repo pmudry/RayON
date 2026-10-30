@@ -77,6 +77,7 @@ struct ProgramArgs
    bool use_sobol = true; // Sobol' quasi-random sampler (false = classic PCG)
    // MIS / NEE options
    bool mis_enabled           = true;
+   bool caustics              = true; // OptiX caustic pass (light tracing through mirrors and glass)
    bool motion_gate_mis       = false;
    int  nee_stride            = 1; // NEE every sample: a stride trades a few % of time for much more noise
    const char *scene_file = nullptr;
@@ -116,6 +117,8 @@ void dumpHelp()
    cout << "\n";
    cout << "MIS / NEE options (all modes):\n";
    cout << "  --no-mis                  Disable multiple importance sampling (max throughput, noisier)\n";
+   cout << "  --no-caustics             OptiX: no caustic pass (light paths through mirrors and glass);\n"
+           "                            caustics are then left to the camera paths, noisy and clamped\n";
    cout << "  --motion-gate-mis         Auto-disable MIS while the camera moves (interactive only; off by default)\n";
    cout << "  --nee-stride <N>          Beyond the first bounce, do NEE on 1 of every N samples, contribution \xc3\x97N\n"
            "                            (default: 1 = every sample). The first bounce always does NEE.\n";
@@ -223,6 +226,10 @@ ProgramArgs parseInput(int argc, char *argv[])
       else if (strcmp(argv[i], "--no-mis") == 0)
       {
          args.mis_enabled = false;
+      }
+      else if (strcmp(argv[i], "--no-caustics") == 0)
+      {
+         args.caustics = false;
       }
       else if (strcmp(argv[i], "--motion-gate-mis") == 0)
       {
@@ -448,6 +455,7 @@ int main(int argc, char *argv[])
       // Apply MIS/NEE settings to the OptiX renderer state before rendering.
       ::setOptiXMISEnabled(args.mis_enabled);
       ::setOptiXNEEStride(args.nee_stride);
+      ::setOptiXCaustics(args.caustics);
       RendererOptiX renderer;
       coordinator.render(renderer, localImage);
       break;
@@ -458,6 +466,7 @@ int main(int argc, char *argv[])
    {
       cout << "Using OptiX GPU with interactive SDL display..." << "\n";
       camera.samples_per_pixel = INTERACTIVE_MAX_SPP;
+      ::setOptiXCaustics(args.caustics);
       RendererOptiXProgressive renderer;
       RendererOptiXProgressive::Settings settings;
       settings.samples_per_batch = args.samples_per_batch;

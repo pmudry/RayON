@@ -82,6 +82,27 @@ page shows the effect on four scenes with a slider.
 
 ---
 
+## Caustics (OptiX)
+
+A shadow ray cannot pass through glass or bounce off a mirror, so the light focused by a glass
+sphere onto the floor (a caustic) is only found when a diffuse bounce happens to go through the
+glass and hit the lamp: speckle that the indirect clamp below then dims. OptiX adds a **caustic
+pass** after each batch: light paths leave the lamps towards the mirrors and glass (aimed at their
+bounding spheres), follow their perfectly specular surfaces, and at the first diffuse surface are
+joined to the camera and added to the pixel they land in. The camera paths leave exactly those
+paths (lamp → mirrors/glass → diffuse surface seen directly → camera) to the pass, so nothing is
+counted twice and the result is unbiased: the caustic converges smoothly instead of as speckle.
+
+- Covered: smooth mirrors and metals, glass, thin films. Glossy surfaces (roughness > 0), clear
+  coat and media stay with the camera paths, as do caustics seen through glass or in a mirror.
+- Lamps only: caustics of the HDR sky stay with the camera paths.
+- Off while depth of field is on (the pass assumes a pinhole camera), and with `--no-caustics`.
+- Cost: a quarter of a light path per camera sample, a few percent of the frame time.
+
+| Option | Where | Default |
+|---|---|---|
+| Caustic pass | `--no-caustics` | on (OptiX modes) |
+
 ## Light intensity and falloff
 
 Two per-scene settings adjust all the lights at once, live from the GUI, saved with the camera.

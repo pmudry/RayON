@@ -220,6 +220,15 @@ struct OptixLaunchParams
    int *geom_to_light_map;
    int  num_geom_entries;       // size of geom_to_light_map array
 
+   // Caustic light pass (__raygen__caustics): light paths leave a lamp towards the mirrors and
+   // glass, bounce off their delta surfaces and, at the first diffuse surface, are joined to the
+   // camera. When it runs, the camera paths leave it exactly those paths (light -> delta+ ->
+   // diffuse seen directly -> camera), see caustic_owned() in optix_programs.cu.
+   bool          caustics_active;      // the pass runs after this launch's camera pass
+   unsigned int  caustic_paths;        // light paths traced by the pass (its launch width)
+   const float4 *caustic_targets;      // bounding spheres (xyz centre, w radius) of the geometry with delta materials
+   int           num_caustic_targets;
+
    // Hardware triangles: vertex positions (3 per triangle, same order as the GAS build input)
    // and per-triangle shading attributes, both indexed by optixGetPrimitiveIndex().
    const float3            *tri_vertices;

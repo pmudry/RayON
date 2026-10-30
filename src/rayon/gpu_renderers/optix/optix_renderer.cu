@@ -64,6 +64,7 @@ struct OptixState
    OptixShaderBindingTable sbt = {};
 
    OptixProgramGroup raygen_pg = nullptr;
+   OptixProgramGroup raygen_caustics_pg = nullptr; // light tracing pass of the caustics
    OptixProgramGroup miss_pg = nullptr;
    OptixProgramGroup miss_shadow_pg = nullptr;
    OptixProgramGroup hitgroup_sphere_pg = nullptr;
@@ -83,12 +84,26 @@ struct OptixState
 
    // Device buffers
    CUdeviceptr d_sbt_raygen = 0;
+   CUdeviceptr d_sbt_raygen_caustics = 0;
    CUdeviceptr d_sbt_miss = 0;
    CUdeviceptr d_sbt_hitgroup = 0;
    OptixMaterialData *d_materials = nullptr;
    std::vector<OptixMaterialData> host_materials; // mirror of d_materials for in-place updates
    cudaTextureObject_t *d_textures = nullptr;
    int num_textures = 0;
+
+   // Caustic pass: bounding spheres of the geometry whose material may be a delta surface. The
+   // candidates (one per custom primitive, one per triangle material) are kept so that a live
+   // material change can re-filter them (uploadCausticTargets).
+   struct CausticCandidate
+   {
+      int    material_id;
+      float4 sphere; // xyz centre, w radius
+   };
+   std::vector<CausticCandidate> caustic_candidates;
+   float4 *d_caustic_targets  = nullptr;
+   int     num_caustic_targets = 0;
+   bool    caustics_enabled    = true;
 
    // Light list for NEE / MIS
    OptixLightData *d_lights = nullptr;
@@ -306,6 +321,15 @@ static void initializeOptiX()
    OPTIX_CHECK(
        optixProgramGroupCreate(g_state.context, &raygen_desc, 1, &pg_options, optix_log, &optix_log_size, &g_state.raygen_pg));
 
+   // Raygen of the caustic pass (light tracing), launched with its own SBT raygen record
+   OptixProgramGroupDesc raygen_caustics_desc = {};
+   raygen_caustics_desc.kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
+   raygen_caustics_desc.raygen.module = g_state.module;
+   raygen_caustics_desc.raygen.entryFunctionName = "__raygen__caustics";
+   optix_log_size = sizeof(optix_log);
+   OPTIX_CHECK(optixProgramGroupCreate(g_state.context, &raygen_caustics_desc, 1, &pg_options, optix_log,
+                                        &optix_log_size, &g_state.raygen_caustics_pg));
+
    // Miss
    OptixProgramGroupDesc miss_desc = {};
    miss_desc.kind = OPTIX_PROGRAM_GROUP_KIND_MISS;
@@ -367,7 +391,7 @@ static void initializeOptiX()
 
    // Create pipeline
    const uint32_t max_trace_depth = 1; // We loop in raygen, single trace per bounce
-   OptixProgramGroup program_groups[] = {g_state.raygen_pg,          g_state.miss_pg,
+   OptixProgramGroup program_groups[] = {g_state.raygen_pg,          g_state.raygen_caustics_pg, g_state.miss_pg,
                                           g_state.miss_shadow_pg,     g_state.hitgroup_sphere_pg,
                                           g_state.hitgroup_rect_pg,   g_state.hitgroup_triangle_pg,
                                           g_state.hitgroup_sdf_pg};
@@ -405,6 +429,12 @@ static void initializeOptiX()
    CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(g_state.d_sbt_miss), ms_records, sizeof(ms_records),
                           cudaMemcpyHostToDevice));
 
+   RayGenRecord rg_caustics_record;
+   OPTIX_CHECK(optixSbtRecordPackHeader(g_state.raygen_caustics_pg, &rg_caustics_record));
+   CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&g_state.d_sbt_raygen_caustics), sizeof(RayGenRecord)));
+   CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(g_state.d_sbt_raygen_caustics), &rg_caustics_record,
+                          sizeof(RayGenRecord), cudaMemcpyHostToDevice));
+
    g_state.sbt.raygenRecord = g_state.d_sbt_raygen;
    g_state.sbt.missRecordBase = g_state.d_sbt_miss;
    g_state.sbt.missRecordStrideInBytes = sizeof(MissRecord);
@@ -418,6 +448,39 @@ static void initializeOptiX()
 
    g_state.initialized = true;
    printf("OptiX renderer initialized successfully\n");
+}
+
+/// Materials that can make a delta surface (see is_caustic_specular_optix in optix_programs.cu)
+static bool isCausticSpecular(OptixMaterialType t)
+{
+   return t == OptixMaterialType::MIRROR || t == OptixMaterialType::METAL || t == OptixMaterialType::ROUGH_MIRROR ||
+          t == OptixMaterialType::GLASS || t == OptixMaterialType::DIELECTRIC ||
+          t == OptixMaterialType::ANISOTROPIC_METAL || t == OptixMaterialType::THIN_FILM;
+}
+
+// Upload the bounding spheres of the candidates whose material is currently caustic-specular: the
+// directions the caustic pass aims its light paths at. Called after a scene build and after every
+// live material change (a mesh swapped to glass must start receiving light paths).
+static void uploadCausticTargets()
+{
+   std::vector<float4> targets;
+   for (const auto &c : g_state.caustic_candidates)
+      if (c.material_id >= 0 && c.material_id < (int)g_state.host_materials.size() &&
+          isCausticSpecular(g_state.host_materials[c.material_id].type))
+         targets.push_back(c.sphere);
+   if (g_state.d_caustic_targets)
+   {
+      CUDA_CHECK(cudaFree(g_state.d_caustic_targets));
+      g_state.d_caustic_targets = nullptr;
+   }
+   g_state.num_caustic_targets = static_cast<int>(targets.size());
+   if (!targets.empty())
+   {
+      CUDA_CHECK(cudaMalloc(&g_state.d_caustic_targets, targets.size() * sizeof(float4)));
+      CUDA_CHECK(cudaMemcpy(g_state.d_caustic_targets, targets.data(), targets.size() * sizeof(float4),
+                             cudaMemcpyHostToDevice));
+      CUDA_CHECK(cudaDeviceSynchronize()); // the render stream does not wait for legacy-stream copies
+   }
 }
 
 // Build GAS from scene description
@@ -578,6 +641,42 @@ static void buildGAS(const Scene::SceneDescription &scene)
 
    const int num_geoms = static_cast<int>(supported_indices.size());
    const int num_tris  = static_cast<int>(triangle_indices.size()) + 12 * static_cast<int>(volume_boxes.size());
+
+   // Caustic pass candidates: every custom primitive, and the triangles grouped by material, each
+   // bounded by the sphere around its box (whatever the material now: a live swap may change it)
+   g_state.caustic_candidates.clear();
+   {
+      auto sphere_of = [](float3 lo, float3 hi, float margin) {
+         const float3 c = make_float3(0.5f * (lo.x + hi.x), 0.5f * (lo.y + hi.y), 0.5f * (lo.z + hi.z));
+         const float  r = 0.5f * sqrtf((hi.x - lo.x) * (hi.x - lo.x) + (hi.y - lo.y) * (hi.y - lo.y) +
+                                       (hi.z - lo.z) * (hi.z - lo.z));
+         return make_float4(c.x, c.y, c.z, r * margin + 1e-3f);
+      };
+      for (int i : supported_indices)
+      {
+         const auto &g = scene.geometries[i];
+         // Displaced spheres move their hit points outwards (up to 0.35 radius): extra margin
+         const float margin = (g.type == Scene::GeometryType::DISPLACED_SPHERE) ? 1.4f : 1.01f;
+         g_state.caustic_candidates.push_back({g.material_id, sphere_of(toFloat3(g.bounds_min), toFloat3(g.bounds_max), margin)});
+      }
+      std::map<int, std::pair<float3, float3>> mesh_boxes;
+      for (int i : triangle_indices)
+      {
+         const auto &g = scene.geometries[i];
+         const float3 lo = toFloat3(g.bounds_min), hi = toFloat3(g.bounds_max);
+         auto it = mesh_boxes.find(g.material_id);
+         if (it == mesh_boxes.end())
+            mesh_boxes[g.material_id] = {lo, hi};
+         else
+         {
+            float3 &a = it->second.first, &b = it->second.second;
+            a = make_float3(std::min(a.x, lo.x), std::min(a.y, lo.y), std::min(a.z, lo.z));
+            b = make_float3(std::max(b.x, hi.x), std::max(b.y, hi.y), std::max(b.z, hi.z));
+         }
+      }
+      for (const auto &kv : mesh_boxes)
+         g_state.caustic_candidates.push_back({kv.first, sphere_of(kv.second.first, kv.second.second, 1.01f)});
+   }
    if (num_geoms == 0 && num_tris == 0)
       return;
 
@@ -1104,6 +1203,8 @@ static void buildGAS(const Scene::SceneDescription &scene)
       }
    }
 
+   uploadCausticTargets();
+
    // All uploads above use the legacy default stream. Pageable cudaMemcpy returns before the DMA
    // has necessarily landed, and the render stream is non-blocking (it does not synchronise with
    // the legacy stream), so fence here before the first launch can read any of these buffers.
@@ -1129,6 +1230,7 @@ extern "C" void setOptiXFireflyClampCeiling(float ceiling) { g_optix_firefly_cla
 extern "C" void setOptiXNEEStride(int stride)              { g_state.nee_stride = (stride < 1) ? 1 : stride; }
 extern "C" void setOptiXLightFalloff(float falloff)        { g_state.light_falloff = (falloff < 0.0f) ? 0.0f : falloff; }
 extern "C" void setOptiXIndirectClamp(float ceiling)      { g_state.indirect_clamp = (ceiling < 0.0f) ? 0.0f : ceiling; }
+extern "C" void setOptiXCaustics(bool enabled)             { g_state.caustics_enabled = enabled; }
 
 /// Converged-pixel skipping. Buffers are (re)allocated by optixRendererResetAccum().
 extern "C" void setOptiXAdaptiveSampling(bool enabled, int min_samples, float threshold)
@@ -1174,6 +1276,7 @@ extern "C" void optixRendererUpdateMaterial(int idx, const Scene::MaterialDesc &
    CUDA_CHECK(cudaMemcpyAsync(g_state.d_materials + idx, &d, sizeof(OptixMaterialData), cudaMemcpyHostToDevice,
                               getOptiXStream()));
    CUDA_CHECK(cudaStreamSynchronize(getOptiXStream()));
+   uploadCausticTargets(); // the material may have become (or stopped being) a mirror or glass
 }
 
 extern "C" void optixRendererBuildScene(const Scene::SceneDescription &scene)
@@ -1520,6 +1623,15 @@ extern "C" unsigned long long optixRendererLaunch(int width, int height, int num
    launch_params.geom_to_light_map  = g_state.d_geom_to_light;
    launch_params.num_geom_entries   = g_state.num_geom_entries;
 
+   // Caustic pass: off with a thin lens (the splat assumes a pinhole camera), without lights or
+   // delta targets. Light paths: a quarter of the camera samples, in one block per sample.
+   const bool lens = dof_enabled && dof_aperture > 0.0f;
+   launch_params.caustics_active     = g_state.caustics_enabled && !lens && g_state.num_lights > 0 &&
+                                   g_state.num_caustic_targets > 0;
+   launch_params.caustic_paths       = std::max(1u, (unsigned int)width * height / 4) * (unsigned int)samples_to_add;
+   launch_params.caustic_targets     = g_state.d_caustic_targets;
+   launch_params.num_caustic_targets = g_state.num_caustic_targets;
+
    // Hardware triangles
    launch_params.tri_vertices  = g_state.d_tri_vertices;
    launch_params.tri_data      = g_state.d_tri_data;
@@ -1533,6 +1645,15 @@ extern "C" unsigned long long optixRendererLaunch(int width, int height, int num
 
    OPTIX_CHECK(optixLaunch(g_state.pipeline, stream, g_state.d_launch_params, sizeof(OptixLaunchParams), &g_state.sbt,
                             width, height, 1));
+   if (launch_params.caustics_active)
+   {
+      // Light paths of the caustic pass, splatted into the same accumulation buffer before the
+      // per-pixel counts advance (same stream: ordered after the camera pass)
+      OptixShaderBindingTable sbt_caustics = g_state.sbt;
+      sbt_caustics.raygenRecord            = g_state.d_sbt_raygen_caustics;
+      OPTIX_CHECK(optixLaunch(g_state.pipeline, stream, g_state.d_launch_params, sizeof(OptixLaunchParams),
+                              &sbt_caustics, launch_params.caustic_paths, 1, 1));
+   }
 
    {
       const int num_pixels = width * height;
@@ -2233,6 +2354,10 @@ extern "C" void optixRendererCleanup()
    }
    if (g_state.d_sbt_raygen)
       CUDA_CHECK(cudaFree(reinterpret_cast<void *>(g_state.d_sbt_raygen)));
+   if (g_state.d_sbt_raygen_caustics)
+      CUDA_CHECK(cudaFree(reinterpret_cast<void *>(g_state.d_sbt_raygen_caustics)));
+   if (g_state.d_caustic_targets)
+      CUDA_CHECK(cudaFree(g_state.d_caustic_targets));
    if (g_state.d_sbt_miss)
       CUDA_CHECK(cudaFree(reinterpret_cast<void *>(g_state.d_sbt_miss)));
    if (g_state.d_sbt_hitgroup)
@@ -2257,6 +2382,8 @@ extern "C" void optixRendererCleanup()
       OPTIX_CHECK(optixPipelineDestroy(g_state.pipeline));
    if (g_state.raygen_pg)
       OPTIX_CHECK(optixProgramGroupDestroy(g_state.raygen_pg));
+   if (g_state.raygen_caustics_pg)
+      OPTIX_CHECK(optixProgramGroupDestroy(g_state.raygen_caustics_pg));
    if (g_state.miss_pg)
       OPTIX_CHECK(optixProgramGroupDestroy(g_state.miss_pg));
    if (g_state.miss_shadow_pg)

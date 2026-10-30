@@ -890,6 +890,33 @@ __device__ __forceinline__ bool scatter_specular_optix(const OptixMaterialData &
    return did_scatter;
 }
 
+/// A vertex the caustic pass can bounce through: a caustic-specular material whose scattering is a
+/// delta distribution, so that tracing it from the light estimates the same thing as from the
+/// camera. Glossy versions (roughness > 0) stay with the camera paths.
+__device__ __forceinline__ bool is_caustic_delta_optix(const OptixMaterialData &mat)
+{
+   if (!is_caustic_specular_optix(mat.type))
+      return false;
+   if (mat.type == OptixMaterialType::ROUGH_MIRROR || mat.type == OptixMaterialType::METAL)
+      return mat.roughness * params.metal_fuzziness == 0.0f;
+   if (mat.type == OptixMaterialType::ANISOTROPIC_METAL)
+   {
+      // Same test as the near-smooth branch of scatter_specular_optix()
+      const float aspect = sqrtf(fmaxf(1e-4f, 1.0f - 0.9f * mat.anisotropy));
+      const float r2     = mat.roughness * mat.roughness;
+      return fmaxf(fmaxf(1e-4f, r2 / aspect), fmaxf(1e-4f, r2 * aspect)) < 1e-3f;
+   }
+   return true;
+}
+
+/// Light-list index of a custom-primitive hit, -1 when it is not a NEE light
+__device__ __forceinline__ int light_index_of_hit(const PRDRadiance &prd)
+{
+   const int prim = prd.hit_prim_idx;
+   return (prim >= 0 && prim < params.num_geom_entries && params.geom_to_light_map) ? params.geom_to_light_map[prim]
+                                                                                     : -1;
+}
+
 extern "C" __global__ void __raygen__rg()
 {
    // One thread per pixel, looping over the batch's samples. (A width x height x spp launch with
@@ -1016,6 +1043,11 @@ extern "C" __global__ void __raygen__rg()
       // Everything gathered after is indirect and gets its own ceiling at the end of the sample.
       bool   indirect_started = false;
       float3 direct_color     = make_float3(0.0f, 0.0f, 0.0f);
+      // Caustic pass bookkeeping: 1 = the camera ray met a diffuse surface first, 2 = and only
+      // delta surfaces since; 0 = not a path of the pass. A path in state 2 that reaches a NEE light
+      // belongs to the caustic pass and is not counted here.
+      int  caustic_state  = 0;
+      bool passed_through = false; // the camera ray crossed invisible geometry or a medium first
 
       for (int bounce = 0; bounce < params.max_depth; ++bounce)
       {
@@ -1028,6 +1060,7 @@ extern "C" __global__ void __raygen__rg()
          // bounced rays interact normally
          if (bounce == 0 && prd.hit && !prd.visible)
          {
+            passed_through = true; // the caustic pass cannot see through it
             cur_origin = prd.hit_point + 0.01f * normalize3(cur_direction);
             --bounce;
             continue;
@@ -1081,6 +1114,23 @@ extern "C" __global__ void __raygen__rg()
             break;
          }
          const OptixMaterialData &mat = params.materials[prd.material_idx];
+
+         if (params.caustics_active)
+         {
+            if (bounce == 0)
+            {
+               if (mat.type == OptixMaterialType::VOLUME)
+                  passed_through = true;
+               caustic_state = (!passed_through && (mat.type == OptixMaterialType::LAMBERTIAN ||
+                                                    mat.type == OptixMaterialType::SDF_MATERIAL))
+                                   ? 1
+                                   : 0;
+            }
+            else if (caustic_state > 0 && is_caustic_delta_optix(mat))
+               caustic_state = 2;
+            else if (mat.type != OptixMaterialType::LIGHT)
+               caustic_state = 0;
+         }
 
          // Denoiser guide: the albedo and normal of the first surface that is not a perfect
          // specular (mirror / glass) — what shows through a window or a mirror is what the
@@ -1252,6 +1302,11 @@ extern "C" __global__ void __raygen__rg()
 
          if (mat.type == OptixMaterialType::LIGHT)
          {
+            // Light -> delta surfaces -> the diffuse surface the camera sees: the caustic pass
+            // carries this path
+            if (params.caustics_active && caustic_state == 2 && light_index_of_hit(prd) >= 0)
+               break;
+
             // MIS weight for BSDF-sampled emissive hit
             float w = 1.0f;
             if (params.mis_enabled && bounce > 0 && !prev_is_delta && params.num_lights > 0)
@@ -1509,6 +1564,193 @@ extern "C" __global__ void __raygen__rg()
       params.albedo_buffer[pixel_idx] = make_float4(ga.x + guide_albedo.x, ga.y + guide_albedo.y, ga.z + guide_albedo.z, 0.0f);
       float4 gn = params.normal_buffer[pixel_idx];
       params.normal_buffer[pixel_idx] = make_float4(gn.x + guide_normal.x, gn.y + guide_normal.y, gn.z + guide_normal.z, 0.0f);
+   }
+}
+
+//==============================================================================
+// CAUSTIC PASS — light tracing (one light path per launch index)
+//
+// A light path leaves a point of a NEE light towards the delta surfaces (mirrors, glass), follows
+// them with the camera paths' own scattering code, and at the first diffuse surface after at least
+// one of them is joined to the camera by an occlusion ray: its contribution lands in the pixel the
+// surface projects to. These are the paths light -> delta+ -> diffuse -> camera that the camera
+// paths would only find by chance (a diffuse bounce through the glass onto the lamp); raygen
+// leaves them to this pass (caustic_state 2). Both passes run on the same accumulation buffer,
+// this one scaled so that it adds the same number of "samples" per pixel as the camera pass.
+//==============================================================================
+
+/// Solid-angle pdf of the target mixture at direction w from p: the average, over the targets, of
+/// the uniform-cone pdf of each target's bounding sphere when w lies in its cone
+__device__ float caustic_direction_pdf(const float3 &p, const float3 &w)
+{
+   float sum = 0.0f;
+   for (int k = 0; k < params.num_caustic_targets; ++k)
+   {
+      const float4 t  = params.caustic_targets[k];
+      const float3 to = make_float3(t.x, t.y, t.z) - p;
+      const float  d2 = dot3(to, to);
+      if (d2 <= t.w * t.w)
+         sum += 0.07957747154f; // inside the bounding sphere: uniform over all directions
+      else
+      {
+         const float cos_max = sqrtf(fmaxf(0.0f, 1.0f - t.w * t.w / d2));
+         if (dot3(w, to) >= cos_max * sqrtf(d2))
+            sum += 1.0f / (2.0f * M_PIf * fmaxf(1.0f - cos_max, 1e-7f));
+      }
+   }
+   return sum / (float)params.num_caustic_targets;
+}
+
+/// Add the light path vertex x (diffuse, facing n, albedo a, throughput beta) to the pixel it
+/// projects to, when the camera sees it directly
+__device__ void caustic_splat(const float3 &x, const float3 &n, const float3 &albedo, const float3 &beta)
+{
+   float3       to_cam = params.camera_center - x;
+   const float  dist   = length3(to_cam);
+   if (dist < 1e-4f)
+      return;
+   to_cam = to_cam / dist;
+   const float cos_x = dot3(n, to_cam); // the surface must face the camera on the lit side
+   if (cos_x <= 0.0f)
+      return;
+
+   // Projection onto the pixel lattice: the plane through pixel00 facing the camera
+   const float3 fwd    = -params.cam_w;
+   const float  plane  = dot3(params.pixel00_loc - params.camera_center, fwd);
+   const float  cos_c  = -dot3(to_cam, fwd);
+   if (plane <= 0.0f || cos_c <= 1e-6f)
+      return;
+   const float3 q    = params.camera_center - to_cam * (plane / cos_c) - params.pixel00_loc;
+   const float  du2  = dot3(params.pixel_delta_u, params.pixel_delta_u);
+   const float  dv2  = dot3(params.pixel_delta_v, params.pixel_delta_v);
+   const int    px   = (int)floorf(dot3(q, params.pixel_delta_u) / du2 + 0.5f);
+   const int    py   = (int)floorf(dot3(q, params.pixel_delta_v) / dv2 + 0.5f);
+   if (px < 0 || py < 0 || px >= (int)params.width || py >= (int)params.height)
+      return;
+   const unsigned int pixel_idx = (unsigned int)py * params.width + (unsigned int)px;
+   // Same skip rule as raygen: a converged pixel takes no samples this launch, so no splats either
+   if (params.pixel_sample_counts && params.pixel_sample_counts[pixel_idx] < 0 &&
+       !(params.conv_streak && params.conv_streak[pixel_idx] == ADAPTIVE_RECHECK_MARK))
+      return;
+   if (trace_shadow(params.traversable, x, to_cam, 0.0001f, dist - 0.001f))
+      return;
+
+   // Pixel importance of the pinhole camera, per solid angle: plane^2 / (pixel area cos^3);
+   // the geometry term to the camera point is cos_x / dist^2
+   const float pixel_area = sqrtf(du2 * dv2);
+   const float importance = plane * plane / (pixel_area * cos_c * cos_c * cos_c);
+   const float scale = importance * cos_x / (dist * dist) * (1.0f / M_PIf) *
+                       ((float)params.samples_per_launch / (float)params.caustic_paths);
+   const float3 c = beta * albedo * scale;
+   float *acc = reinterpret_cast<float *>(params.accum_buffer + pixel_idx);
+   atomicAdd(acc + 0, c.x);
+   atomicAdd(acc + 1, c.y);
+   atomicAdd(acc + 2, c.z);
+}
+
+extern "C" __global__ void __raygen__caustics()
+{
+   const unsigned int path = optixGetLaunchIndex().x;
+   if (path >= params.caustic_paths || params.num_lights == 0)
+      return;
+   // Each sample of the camera pass comes with a fixed block of light paths, numbered globally:
+   // the stream of a light path never depends on how the samples were split into launches
+   const unsigned long long per_sample = params.caustic_paths / (unsigned int)params.samples_per_launch;
+   const unsigned long long global     = (unsigned long long)params.total_samples_so_far * per_sample + path;
+   unsigned int seed = pcg_hash((uint32_t)global ^ pcg_hash((uint32_t)(global >> 32) ^ 0x5bd1e995u ^
+                                                            (params.sobol_sequence_seed * 0x9e3779b9u)));
+
+   // A point on a light, chosen by power like NEE
+   const float u_sel = rand_float(seed);
+   int li = params.num_lights - 1;
+   for (int i = 0; i < params.num_lights; ++i)
+      if (u_sel < params.light_cdfs[i + 1]) { li = i; break; }
+   const float p_sel = params.light_cdfs[li + 1] - params.light_cdfs[li];
+   if (p_sel <= 0.0f)
+      return;
+   const OptixLightData &light = params.lights[li];
+   float3 y, n_y;
+   float  pdf_area;
+   if (light.geom_type == OptixLightGeomType::RECTANGLE)
+   {
+      y        = light.corner + rand_float(seed) * light.u_vec + rand_float(seed) * light.v_vec;
+      n_y      = light.normal;
+      pdf_area = 1.0f / fmaxf(light.area, 1e-8f);
+   }
+   else
+   {
+      n_y      = rand_unit_vector(seed);
+      y        = light.center + light.radius * n_y;
+      pdf_area = 1.0f / fmaxf(4.0f * M_PIf * light.radius * light.radius, 1e-8f);
+   }
+
+   // A direction towards one of the delta targets (pdf: the mixture over all of them)
+   if (params.num_caustic_targets == 0)
+      return;
+   float3       w;
+   const int    k  = min((int)(rand_float(seed) * (float)params.num_caustic_targets), params.num_caustic_targets - 1);
+   const float4 t  = params.caustic_targets[k];
+   const float3 to = make_float3(t.x, t.y, t.z) - y;
+   const float  d2 = dot3(to, to);
+   if (d2 <= t.w * t.w)
+      w = rand_unit_vector(seed);
+   else
+   {
+      const float  cos_max = sqrtf(fmaxf(0.0f, 1.0f - t.w * t.w / d2));
+      const float  cos_t   = 1.0f - rand_float(seed) * (1.0f - cos_max);
+      const float  sin_t   = sqrtf(fmaxf(0.0f, 1.0f - cos_t * cos_t));
+      const float  phi     = 2.0f * M_PIf * rand_float(seed);
+      const float3 a       = to * rsqrtf(d2);
+      float3 b1, b2;
+      build_onb(a, b1, b2);
+      w = normalize3(sin_t * cosf(phi) * b1 + sin_t * sinf(phi) * b2 + cos_t * a);
+   }
+   const float pdf_w = caustic_direction_pdf(y, w);
+   float cos_y = dot3(w, n_y);
+   if (light.geom_type == OptixLightGeomType::RECTANGLE)
+      cos_y = fabsf(cos_y); // the panel emits on both faces
+   if (cos_y <= 0.0f || pdf_w <= 0.0f)
+      return; // into the sphere light itself: nothing leaves that way
+
+   float3 beta = light.emission * params.light_intensity * (cos_y / (p_sel * pdf_area * pdf_w));
+   float3 origin = y, dir = w;
+   int    n_delta = 0; // delta vertices passed
+
+   // The camera side counts the path when the emitter is reached at bounce n_delta + 1 < max_depth
+   for (int v = 0; v <= params.max_depth - 2; ++v)
+   {
+      PRDRadiance prd;
+      prd.hit = false;
+      trace(params.traversable, origin, dir, 0.001f, 1e16f, &prd);
+      if (!prd.hit || prd.material_idx < 0)
+         return;
+      if (v == 0) // falloff on the segment next to the light, as the camera side measures it
+         beta = beta * light_falloff_factor(length3(prd.hit_point - y));
+      const OptixMaterialData &mat = params.materials[prd.material_idx];
+
+      const bool diffuse = mat.type == OptixMaterialType::LAMBERTIAN || mat.type == OptixMaterialType::SDF_MATERIAL;
+      if (diffuse && prd.visible && n_delta > 0)
+      {
+         caustic_splat(prd.hit_point, prd.hit_normal, prd.hit_color, beta);
+         return;
+      }
+      if (!is_caustic_delta_optix(mat))
+         return; // anything else (diffuse first, glossy, clear coat, medium...) is the camera paths' job
+
+      float3 scatter_dir, attenuation;
+      if (!scatter_specular_optix(mat, prd, dir, [&]() { return rand_float(seed); }, scatter_dir, attenuation))
+         return;
+      beta = beta * attenuation;
+      ++n_delta;
+      origin = prd.hit_point;
+      dir    = scatter_dir;
+      if (n_delta > 1)
+      {
+         const float surv = fminf(fmaxf(beta.x, fmaxf(beta.y, beta.z)), 0.95f);
+         if (rand_float(seed) > surv)
+            return;
+         beta = beta / surv;
+      }
    }
 }
 

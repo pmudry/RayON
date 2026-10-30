@@ -127,6 +127,7 @@ CPU uses `double` (Vec3), GPU uses `float` — conversion at kernel boundary.
 --no-auto-accumulate     # Disable automatic sample accumulation when stationary
 --theme <name>           # GUI theme: light, classic, nord, dracula, gruvbox, catppuccin
 --menu                   # Show interactive method selection menu
+--no-caustics            # OptiX: no caustic pass (light tracing through mirrors and glass)
 --no-mis                 # Disable multiple importance sampling
 --motion-gate-mis        # Disable MIS while the camera moves (interactive)
 --nee-stride <N>         # NEE on 1 of every N samples beyond the first bounce (default: 1)
