@@ -12,13 +12,16 @@
 #include "mtl_loader.hpp"
 #include "scene_description.hpp"
 #include <algorithm>
+#include <charconv>
 #include <cmath>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <map>
-#include <sstream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace Scene
@@ -46,11 +49,25 @@ class OBJLoader
    static int loadOBJ(const std::string &filename, SceneDescription &scene, int fallback_mat_id,
                        const Vec3 &position = Vec3(0, 0, 0), const Vec3 &scale = Vec3(1, 1, 1))
    {
-      std::ifstream file(filename);
-      if (!file.is_open())
+      // The whole file in memory, parsed in place: a scan of a million faces spends its time in
+      // per-line stream objects otherwise
+      std::string text;
       {
-         std::cerr << "OBJ Loader: Cannot open file: " << filename << "\n";
-         return -1;
+         std::ifstream file(filename, std::ios::binary);
+         if (!file.is_open())
+         {
+            std::cerr << "OBJ Loader: Cannot open file: " << filename << "\n";
+            return -1;
+         }
+         text.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+      }
+
+      // One geometry per triangle: reserve for the faces (at least one triangle each) up front
+      {
+         size_t faces = (text.compare(0, 2, "f ") == 0) ? 1 : 0;
+         for (const char *q = text.c_str(); (q = std::strstr(q, "\nf ")) != nullptr; q += 3)
+            ++faces;
+         scene.geometries.reserve(scene.geometries.size() + faces);
       }
 
       // Determine directory of the OBJ file for relative path resolution
@@ -96,23 +113,28 @@ class OBJLoader
          return scene_id;
       };
 
-      std::string line;
-      while (std::getline(file, line))
+      std::vector<int> v_idx, vt_idx, vn_idx; // face corners, reused from face to face
+      size_t pos = 0;
+      while (pos < text.size())
       {
+         size_t eol = text.find('\n', pos);
+         if (eol == std::string::npos) eol = text.size();
+         std::string_view line(text.data() + pos, eol - pos);
+         pos = eol + 1;
+
          // Strip comment
          auto hash = line.find('#');
-         if (hash != std::string::npos) line.resize(hash);
+         if (hash != std::string_view::npos) line = line.substr(0, hash);
 
-         if (line.empty()) continue;
-
-         std::istringstream iss(line);
-         std::string prefix;
-         iss >> prefix;
+         const char *cur = line.data();
+         const char *end = cur + line.size();
+         const std::string_view prefix = nextToken(cur, end);
+         if (prefix.empty()) continue;
 
          if (prefix == "v")
          {
             double x, y, z;
-            if (iss >> x >> y >> z)
+            if (parseDouble(cur, end, x) && parseDouble(cur, end, y) && parseDouble(cur, end, z))
                vertices.emplace_back(x * scale.x() + position.x(),
                                      y * scale.y() + position.y(),
                                      z * scale.z() + position.z());
@@ -120,24 +142,21 @@ class OBJLoader
          else if (prefix == "vn")
          {
             double x, y, z;
-            if (iss >> x >> y >> z)
+            if (parseDouble(cur, end, x) && parseDouble(cur, end, y) && parseDouble(cur, end, z))
                normals.emplace_back(x, y, z);
          }
          else if (prefix == "vt")
          {
-            double u, v;
-            if (iss >> u >> v)
+            double u, v = 0.0; // a one-component "vt u" is legal: keep it, or every later index shifts
+            if (parseDouble(cur, end, u))
+            {
+               parseDouble(cur, end, v);
                texcoords.emplace_back(u, v, 0.0);
+            }
          }
          else if (prefix == "mtllib")
          {
-            std::string mtl_file;
-            std::getline(iss, mtl_file);
-            // Trim
-            size_t s = mtl_file.find_first_not_of(" \t");
-            if (s != std::string::npos) mtl_file = mtl_file.substr(s);
-            size_t e = mtl_file.find_last_not_of(" \t\r\n");
-            if (e != std::string::npos) mtl_file = mtl_file.substr(0, e + 1);
+            std::string mtl_file = trimmed(std::string_view(cur, end - cur));
 
             std::string mtl_path = mtl_file;
             if (!obj_dir.empty() && !mtl_file.empty() && !std::filesystem::path(mtl_file).is_absolute())
@@ -154,12 +173,7 @@ class OBJLoader
          }
          else if (prefix == "usemtl")
          {
-            std::string mat_name;
-            std::getline(iss, mat_name);
-            size_t s = mat_name.find_first_not_of(" \t");
-            if (s != std::string::npos) mat_name = mat_name.substr(s);
-            size_t e = mat_name.find_last_not_of(" \t\r\n");
-            if (e != std::string::npos) mat_name = mat_name.substr(0, e + 1);
+            std::string mat_name = trimmed(std::string_view(cur, end - cur));
 
             if (!mat_name.empty())
                active_mat_id = resolveMtlMaterial(mat_name);
@@ -178,16 +192,18 @@ class OBJLoader
             }
 
             // Face — support triangles and quads (fan triangulation)
-            std::vector<int> v_idx, vt_idx, vn_idx;
-            std::string token;
+            v_idx.clear();
+            vt_idx.clear();
+            vn_idx.clear();
 
-            while (iss >> token)
+            for (std::string_view token = nextToken(cur, end); !token.empty(); token = nextToken(cur, end))
             {
                int vi = 0, vti = 0, vni = 0;
                parseFaceVertex(token, vi, vti, vni);
 
                if (vi > 0) vi -= 1;
                else if (vi < 0) vi = static_cast<int>(vertices.size()) + vi;
+               else vi = -1; // 0 or unreadable: not a vertex (the triangle is dropped below)
 
                if (vti > 0) vti -= 1;
                else if (vti < 0) vti = static_cast<int>(texcoords.size()) + vti;
@@ -255,24 +271,57 @@ class OBJLoader
    }
 
  private:
+   static bool isBlank(char c) { return c == ' ' || c == '\t' || c == '\r'; }
+
+   /// Next whitespace-separated token of [cur, end), advancing cur past it (empty at the end)
+   static std::string_view nextToken(const char *&cur, const char *end)
+   {
+      while (cur < end && isBlank(*cur)) ++cur;
+      const char *start = cur;
+      while (cur < end && !isBlank(*cur)) ++cur;
+      return std::string_view(start, cur - start);
+   }
+
+   /// Read one number from [cur, end); false when there is none
+   static bool parseDouble(const char *&cur, const char *end, double &out)
+   {
+      while (cur < end && isBlank(*cur)) ++cur;
+      if (cur < end && *cur == '+') ++cur; // from_chars does not take a leading '+'
+      const auto res = std::from_chars(cur, end, out);
+      if (res.ec != std::errc()) return false;
+      cur = res.ptr;
+      return true;
+   }
+
+   static std::string trimmed(std::string_view s)
+   {
+      while (!s.empty() && isBlank(s.front())) s.remove_prefix(1);
+      while (!s.empty() && isBlank(s.back())) s.remove_suffix(1);
+      return std::string(s);
+   }
+
    /**
     * @brief Parse a face vertex token: v, v/vt, v/vt/vn, or v//vn
-    *        Returns 0 for absent components (caller converts to -1 after checking).
+    *        Returns 0 for absent or unreadable components (caller converts to -1 after checking).
     */
-   static void parseFaceVertex(const std::string &token, int &vi, int &vti, int &vni)
+   static void parseFaceVertex(std::string_view token, int &vi, int &vti, int &vni)
    {
       vi = vti = vni = 0;
-      std::istringstream stream(token);
-      std::string part;
-
-      if (std::getline(stream, part, '/'))
-         if (!part.empty()) vi = std::stoi(part);
-
-      if (std::getline(stream, part, '/'))
-         if (!part.empty()) vti = std::stoi(part);
-
-      if (std::getline(stream, part, '/'))
-         if (!part.empty()) vni = std::stoi(part);
+      int *parts[3] = {&vi, &vti, &vni};
+      const char *cur = token.data();
+      const char *end = cur + token.size();
+      for (int k = 0; k < 3; ++k)
+      {
+         const char *slash = static_cast<const char *>(std::memchr(cur, '/', end - cur));
+         const char *stop = slash ? slash : end;
+         if (stop > cur)
+         {
+            const char *num = (*cur == '+') ? cur + 1 : cur;
+            if (std::from_chars(num, stop, *parts[k]).ec != std::errc()) *parts[k] = 0;
+         }
+         if (!slash) break;
+         cur = slash + 1;
+      }
    }
 };
 
