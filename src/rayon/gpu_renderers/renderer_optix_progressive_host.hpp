@@ -75,6 +75,7 @@ extern "C"
    void setOptiXNEEStride(int stride);
    void setOptiXLightFalloff(float falloff);
    void setOptiXIndirectClamp(float ceiling);
+   void setOptiXCaustics(bool enabled);
    void setOptiXAdaptiveSampling(bool enabled, int min_samples, float threshold);
    bool optixRendererHandoverPrior(int new_width, int new_height, float strength);
    int  optixRendererCountConvergedPixels();
@@ -97,6 +98,7 @@ class RendererOptiXProgressive : public IRenderer
       bool mis_enabled           = true;
       bool motion_gate_mis       = false;
       int  nee_stride            = 1;
+      bool caustics              = true; ///< caustic pass (light tracing through mirrors and glass)
       MotionQualitySettings motion_quality{}; ///< quality reductions while the camera moves
    };
 
@@ -185,6 +187,7 @@ class RendererOptiXProgressive : public IRenderer
       bool mis_enabled           = settings_.mis_enabled;
       bool motion_gate_mis       = settings_.motion_gate_mis;
       int  nee_stride            = settings_.nee_stride;
+      bool caustics              = settings_.caustics;
       bool use_sobol             = true; // default: Sobol sampler
       MotionQualitySettings motion_quality = settings_.motion_quality;
       bool  motion_despeckle       = true;                             // display-time despeckle of motion frames
@@ -1087,6 +1090,7 @@ class RendererOptiXProgressive : public IRenderer
          bool old_motion_gate_mis       = motion_gate_mis;
          int  old_nee_stride            = nee_stride;
          bool old_use_sobol             = use_sobol;
+         bool old_caustics              = caustics;
 
          bool auto_orbit = camera_control.isAutoOrbitEnabled();
          float cam_pos[3] = {(float)look_from.x(), (float)look_from.y(), (float)look_from.z()};
@@ -1117,7 +1121,7 @@ class RendererOptiXProgressive : public IRenderer
                            &use_sobol, &motion_quality, &motion_despeckle, &motion_despeckle_ratio,
                            volume_mat_idx >= 0 ? &volume_settings : nullptr,
                            &save_camera_request, active_scene.source_file.c_str(), camera_save_status.c_str(),
-                           &light_falloff, &indirect_clamp);
+                           &light_falloff, &indirect_clamp, &caustics);
 
          if (save_camera_request)
          {
@@ -1208,6 +1212,11 @@ class RendererOptiXProgressive : public IRenderer
             camera_changed = true;
          if (use_sobol != old_use_sobol)
             camera_changed = true; // applied through FrameConfig on the next frame
+         if (caustics != old_caustics)
+         {
+            ::setOptiXCaustics(caustics);
+            camera_changed = true;
+         }
 
          // Arrow overlay removed (CPU renderer archived on legacy/cpu-renderer branch)
       }

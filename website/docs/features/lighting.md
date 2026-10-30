@@ -101,7 +101,7 @@ counted twice and the result is unbiased: the caustic converges smoothly instead
 
 | Option | Where | Default |
 |---|---|---|
-| Caustic pass | `--no-caustics` | on (OptiX modes) |
+| Caustic pass | GUI *MIS / NEE* (OptiX interactive), `--no-caustics` | on (OptiX modes) |
 
 `21_caustics.yaml` shows it best: render it with and without `--no-caustics`.
 

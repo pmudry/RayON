@@ -479,6 +479,7 @@ int main(int argc, char *argv[])
       settings.mis_enabled           = args.mis_enabled;
       settings.motion_gate_mis       = args.motion_gate_mis;
       settings.nee_stride            = args.nee_stride;
+      settings.caustics              = args.caustics;
       renderer.setSettings(settings);
       coordinator.render(renderer, localImage);
       break;

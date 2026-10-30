@@ -276,7 +276,7 @@ class SDLGuiHandler
                       VolumeMaterialSettings *volume = nullptr,
                       bool *save_camera_request = nullptr, const char *scene_yaml_path = nullptr,
                       const char *camera_save_status = nullptr, float *light_falloff = nullptr,
-                      float *indirect_clamp = nullptr)
+                      float *indirect_clamp = nullptr, bool *caustics = nullptr)
    {
       SDL_UpdateTexture(texture, nullptr, image.data(), image_width * image_channels);
       SDL_RenderClear(renderer);
@@ -549,6 +549,14 @@ class SDLGuiHandler
                                                 "can target, at the price of dimmer caustics. Saved per scene with\n"
                                                 "the camera (settings.indirect_clamp).");
                            ImGui::PopItemWidth();
+                        }
+                        if (caustics)
+                        {
+                           ImGui::Checkbox("Caustic pass##caustics", caustics);
+                           ImGui::SetItemTooltip("Trace light from the lamps through mirrors and glass and join it\n"
+                                                "to the camera: smooth, unbiased caustics for a few percent of the\n"
+                                                "frame time. Off: the camera paths find them by chance (speckle,\n"
+                                                "dimmed by the indirect clamp). Also off with depth of field.");
                         }
                         ImGui::TreePop();
                      }
