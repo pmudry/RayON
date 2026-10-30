@@ -1037,7 +1037,7 @@ class SDLGuiHandler
       toast_until_ms = SDL_GetTicks() + duration_ms;
    }
 
-   /// Present one frame right away: the last image dimmed, with `text` in a box at the centre.
+   /// Present one frame right away: the last image dimmed, with `text` in the toast's box at the bottom.
    /// For the blocking steps of the main thread (scene load, BVH build), which otherwise leave the
    /// window frozen on its last frame. Call outside updateDisplay()/present().
    void showBusyMessage(const std::string &text)
@@ -1052,17 +1052,7 @@ class SDLGuiHandler
       ImDrawList  *draw = ImGui::GetForegroundDrawList();
       const ImVec2 disp = ImGui::GetIO().DisplaySize;
       draw->AddRectFilled(ImVec2(0.0f, 0.0f), disp, IM_COL32(0, 0, 0, 110));
-      ImFont      *font      = ImGui::GetFont();
-      const float  fs        = ImGui::GetFontSize() * 1.5f;
-      const ImVec2 text_size = font->CalcTextSizeA(fs, FLT_MAX, 0.0f, text.c_str());
-      const float  pad_x = 22.0f, pad_y = 14.0f;
-      const float  box_w = text_size.x + 2.0f * pad_x;
-      const float  box_h = text_size.y + 2.0f * pad_y;
-      const float  box_x = (disp.x - box_w) * 0.5f;
-      const float  box_y = (disp.y - box_h) * 0.5f;
-      draw->AddRectFilled(ImVec2(box_x, box_y), ImVec2(box_x + box_w, box_y + box_h), IM_COL32(0, 0, 0, 190), 8.0f);
-      draw->AddRect(ImVec2(box_x, box_y), ImVec2(box_x + box_w, box_y + box_h), IM_COL32(255, 255, 255, 60), 8.0f);
-      draw->AddText(font, fs, ImVec2(box_x + pad_x, box_y + pad_y), IM_COL32(240, 240, 240, 255), text.c_str());
+      drawBottomMessage(text, 1.0f);
       ImGui::Render();
       ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), renderer);
       SDL_RenderPresent(renderer);
@@ -1116,11 +1106,16 @@ class SDLGuiHandler
          return;
       }
       // Fade out over the last 400 ms
-      const float  remaining = static_cast<float>(toast_until_ms - now);
-      const float  alpha     = std::min(1.0f, remaining / 400.0f);
+      const float remaining = static_cast<float>(toast_until_ms - now);
+      drawBottomMessage(toast_text, std::min(1.0f, remaining / 400.0f));
+   }
+
+   /// A message in a dark box at the bottom centre of the view (toasts and the busy message)
+   void drawBottomMessage(const std::string &text, float alpha)
+   {
       ImFont      *font      = ImGui::GetFont();
       const float  fs        = ImGui::GetFontSize() * 1.25f;
-      const ImVec2 text_size = font->CalcTextSizeA(fs, FLT_MAX, 0.0f, toast_text.c_str());
+      const ImVec2 text_size = font->CalcTextSizeA(fs, FLT_MAX, 0.0f, text.c_str());
       const float  pad_x = 12.0f, pad_y = 7.0f, margin = 14.0f;
       const ImVec2 disp  = ImGui::GetIO().DisplaySize;
       const float  box_w = text_size.x + 2.0f * pad_x;
@@ -1131,7 +1126,7 @@ class SDLGuiHandler
       draw->AddRectFilled(ImVec2(box_x, box_y), ImVec2(box_x + box_w, box_y + box_h),
                           IM_COL32(0, 0, 0, static_cast<int>(140 * alpha)), 6.0f);
       draw->AddText(font, fs, ImVec2(box_x + pad_x, box_y + pad_y),
-                    IM_COL32(235, 235, 235, static_cast<int>(240 * alpha)), toast_text.c_str());
+                    IM_COL32(235, 235, 235, static_cast<int>(240 * alpha)), text.c_str());
    }
 
    // Throttled display values for SPP/s and FPS — updated at most 10×/s.
