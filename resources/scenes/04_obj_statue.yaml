@@ -2,11 +2,12 @@
 # Tests Feature G (triangle intersection), H (OBJ loading), and I (YAML+OBJ)
 
 camera:
-  position: [1.665, 3.064, 4.292]
-  look_at: [-0.313, 0.615, 0.15]
+  position: [-4.552, 1.321, 3.963]
+  look_at: [-0.383, 0.393, -1.138]
   fov: 40
 
 settings:
+  light_falloff: 2
   light_intensity: 0.6
   background_color: [0.1, 0.1, 0.15]
   background_intensity: 0
@@ -99,9 +100,12 @@ geometry:
     material: "triangle_blue"
     # material: "coat_glossy"
     # material: "worn"
-    file: "../models/victory.obj"
-    position: [0, -1, 0]
-    scale: [1, 1, 1]
+    # file: "../models/victory.obj"
+    # position: [0, -1, 0]
+    # scale: [1, 1, 1]
+    file: "../models/cupid_yup.obj"   # test: Y-up copy of cupid.obj (raw scan is Z-up), ~430 x 1110 x 790 units
+    position: [0.64, -1, -1.18]       # centre X/Z of the bbox brought to the origin, base on the ground
+    scale: [0.003, 0.003, 0.003]      # ~3.3 units tall, like victory.obj
 
   # # Standalone triangle for testing direct triangle geometry
   # - type: "triangle"
