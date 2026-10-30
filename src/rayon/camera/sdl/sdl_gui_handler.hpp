@@ -729,12 +729,13 @@ class SDLGuiHandler
                      const bool can_save = scene_yaml_path && scene_yaml_path[0] != '\0';
                      if (!can_save)
                         ImGui::BeginDisabled();
-                     if (ImGui::Button("Save camera to scene YAML"))
+                     if (ImGui::Button("Save camera & lights to scene YAML"))
                         *save_camera_request = true;
                      if (!can_save)
                         ImGui::EndDisabled();
                      if (can_save)
-                        ImGui::SetItemTooltip("Writes position, look_at and fov into\n%s\n(only the camera block is touched).",
+                        ImGui::SetItemTooltip("Writes the camera (position, look_at, fov) and the light settings\n"
+                                              "(Lights inten., Ambient Light) into\n%s\n(only those lines are touched).",
                                               scene_yaml_path);
                      else
                         ImGui::SetItemTooltip("The current scene was not loaded from a YAML file.");

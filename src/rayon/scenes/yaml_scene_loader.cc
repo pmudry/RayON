@@ -624,6 +624,8 @@ bool loadSceneFromYAML(const char *filename, SceneDescription &scene)
       scene.background_color = parser.getVec3("settings.background_color");
    if (parser.hasKey("settings.background_intensity"))
       scene.background_intensity = parser.getFloat("settings.background_intensity", 1.0f);
+   if (parser.hasKey("settings.light_intensity"))
+      scene.light_intensity = parser.getFloat("settings.light_intensity", 1.0f);
    if (parser.hasKey("settings.samples_per_batch"))
       scene.samples_per_batch = std::max(0, parser.getInt("settings.samples_per_batch", 0));
    // Accept both "settings.use_bvh" (canonical) and "scene.use_bvh" (legacy)
@@ -673,46 +675,24 @@ bool loadSceneFromYAML(const char *filename, SceneDescription &scene)
    return scene.validate();
 }
 
-bool saveCameraToYAML(const char *filename, const Vec3 &position, const Vec3 &look_at, float fov)
+namespace
 {
-   ifstream in(filename);
-   if (!in)
-   {
-      cerr << "ERROR: Cannot open scene file for camera update: " << filename << "\n";
-      return false;
-   }
-   vector<string> lines;
-   for (string line; getline(in, line);)
-      lines.push_back(line);
-   in.close();
-
-   auto fmt = [](double v)
-   {
-      ostringstream os;
-      os.setf(ios::fixed);
-      os.precision(3);
-      os << v;
-      string t = os.str(); // trim trailing zeros: 2.100 -> 2.1, 40.000 -> 40
-      t.erase(t.find_last_not_of('0') + 1);
-      if (!t.empty() && t.back() == '.')
-         t.pop_back();
-      return t == "-0" ? string("0") : t;
-   };
-   const string pos_line  = "  position: [" + fmt(position.x()) + ", " + fmt(position.y()) + ", " + fmt(position.z()) + "]";
-   const string look_line = "  look_at: [" + fmt(look_at.x()) + ", " + fmt(look_at.y()) + ", " + fmt(look_at.z()) + "]";
-   const string fov_line  = "  fov: " + fmt(fov);
-
-   // Locate the camera block: from the top-level "camera:" line to the next top-level key
+// Rewrite the given `key: value` lines of a top-level YAML block in place (lines are added
+// after the block header when missing, the block itself is appended when missing); every
+// other line of the file is kept as is.
+void setBlockValues(vector<string> &lines, const string &block, const vector<pair<string, string>> &values)
+{
    auto indent_of = [](const string &l) { return l.find_first_not_of(' '); };
    auto key_of    = [](const string &l)
    {
-      string t = l.substr(l.find_first_not_of(' ') == string::npos ? 0 : l.find_first_not_of(' '));
+      const size_t first = l.find_first_not_of(' ');
+      string t = l.substr(first == string::npos ? 0 : first);
       const size_t colon = t.find(':');
       return colon == string::npos ? string() : t.substr(0, colon);
    };
    size_t begin = lines.size();
    for (size_t i = 0; i < lines.size(); ++i)
-      if (indent_of(lines[i]) == 0 && key_of(lines[i]) == "camera")
+      if (indent_of(lines[i]) == 0 && key_of(lines[i]) == block)
       {
          begin = i;
          break;
@@ -721,42 +701,75 @@ bool saveCameraToYAML(const char *filename, const Vec3 &position, const Vec3 &lo
    {
       if (!lines.empty() && !lines.back().empty())
          lines.push_back("");
-      lines.push_back("camera:");
-      lines.push_back(pos_line);
-      lines.push_back(look_line);
-      lines.push_back(fov_line);
+      lines.push_back(block + ":");
+      for (const auto &kv : values)
+         lines.push_back("  " + kv.first + ": " + kv.second);
+      return;
    }
-   else
+   size_t end = begin + 1;
+   while (end < lines.size())
    {
-      size_t end = begin + 1;
-      while (end < lines.size())
-      {
-         const size_t ind = indent_of(lines[end]);
-         if (ind == 0 && !lines[end].empty() && lines[end][0] != '#')
-            break; // next top-level key
-         ++end;
-      }
-      bool have_pos = false, have_look = false, have_fov = false;
-      for (size_t i = begin + 1; i < end; ++i)
-      {
-         const string key = key_of(lines[i]);
-         if (indent_of(lines[i]) == string::npos || lines[i][indent_of(lines[i])] == '#')
-            continue;
-         if (key == "position")
-            lines[i] = pos_line, have_pos = true;
-         else if (key == "look_at")
-            lines[i] = look_line, have_look = true;
-         else if (key == "fov")
-            lines[i] = fov_line, have_fov = true;
-      }
-      // Insert the missing ones right after the "camera:" line (reverse order keeps them sorted)
-      if (!have_fov)
-         lines.insert(lines.begin() + begin + 1, fov_line);
-      if (!have_look)
-         lines.insert(lines.begin() + begin + 1, look_line);
-      if (!have_pos)
-         lines.insert(lines.begin() + begin + 1, pos_line);
+      const size_t ind = indent_of(lines[end]);
+      if (ind == 0 && !lines[end].empty() && lines[end][0] != '#')
+         break; // next top-level key
+      ++end;
    }
+   vector<bool> done(values.size(), false);
+   for (size_t i = begin + 1; i < end; ++i)
+   {
+      const size_t ind = indent_of(lines[i]);
+      if (ind == string::npos || lines[i][ind] == '#')
+         continue;
+      const string key = key_of(lines[i]);
+      for (size_t k = 0; k < values.size(); ++k)
+         if (key == values[k].first)
+         {
+            // Keep a trailing comment if there is one
+            const size_t hash    = lines[i].find(" #");
+            const string comment = hash == string::npos ? string() : lines[i].substr(hash);
+            lines[i] = "  " + key + ": " + values[k].second + comment;
+            done[k]  = true;
+         }
+   }
+   // Missing keys go right after the block header, in the given order
+   for (size_t k = values.size(); k-- > 0;)
+      if (!done[k])
+         lines.insert(lines.begin() + begin + 1, "  " + values[k].first + ": " + values[k].second);
+}
+
+string fmtNumber(double v)
+{
+   ostringstream os;
+   os.setf(ios::fixed);
+   os.precision(3);
+   os << v;
+   string t = os.str(); // trim trailing zeros: 2.100 -> 2.1, 40.000 -> 40
+   t.erase(t.find_last_not_of('0') + 1);
+   if (!t.empty() && t.back() == '.')
+      t.pop_back();
+   return t == "-0" ? string("0") : t;
+}
+} // namespace
+
+bool saveViewToYAML(const char *filename, const Vec3 &position, const Vec3 &look_at, float fov,
+                    float background_intensity, float light_intensity)
+{
+   ifstream in(filename);
+   if (!in)
+   {
+      cerr << "ERROR: Cannot open scene file for update: " << filename << "\n";
+      return false;
+   }
+   vector<string> lines;
+   for (string line; getline(in, line);)
+      lines.push_back(line);
+   in.close();
+
+   auto vec = [](const Vec3 &v)
+   { return "[" + fmtNumber(v.x()) + ", " + fmtNumber(v.y()) + ", " + fmtNumber(v.z()) + "]"; };
+   setBlockValues(lines, "camera", {{"position", vec(position)}, {"look_at", vec(look_at)}, {"fov", fmtNumber(fov)}});
+   setBlockValues(lines, "settings",
+                  {{"background_intensity", fmtNumber(background_intensity)}, {"light_intensity", fmtNumber(light_intensity)}});
 
    ofstream out(filename, ios::trunc);
    if (!out)
@@ -766,8 +779,9 @@ bool saveCameraToYAML(const char *filename, const Vec3 &position, const Vec3 &lo
    }
    for (const auto &l : lines)
       out << l << "\n";
-   cout << "Camera saved to " << filename << ": position " << pos_line.substr(12) << ", look_at "
-        << look_line.substr(11) << ", fov " << fmt(fov) << "\n";
+   cout << "Scene view saved to " << filename << ": camera " << vec(position) << " -> " << vec(look_at) << ", fov "
+        << fmtNumber(fov) << ", background_intensity " << fmtNumber(background_intensity) << ", light_intensity "
+        << fmtNumber(light_intensity) << "\n";
    return true;
 }
 

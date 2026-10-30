@@ -2,13 +2,14 @@
 # Five colored neon strip lights in ISC palette, dispatched horizontally
 
 camera:
-  position: [0, 3, 8]
-  look_at: [0, 1, 0]
+  position: [3.034, 6.684, 7.332]
+  look_at: [0.123, 1.092, -0.402]
   fov: 45
 
 settings:
+  light_intensity: 2.2
   background_color: [0.02, 0.02, 0.04]
-  background_intensity: 0.05
+  background_intensity: 0
   use_bvh: true
 
 materials:

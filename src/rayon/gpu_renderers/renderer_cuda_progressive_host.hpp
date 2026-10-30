@@ -96,7 +96,7 @@ class RendererCUDAProgressive : public IRenderer
       bool accumulation_enabled = auto_accumulate;
       int current_samples = 0;
       float gamma = 2.0f;
-      float light_intensity = 1.0f;
+      float light_intensity = scene.light_intensity;
       float background_intensity = scene.background_intensity;
       float metal_fuzziness = 1.0f;
       float glass_refraction_index = 1.5f;
@@ -414,6 +414,7 @@ class RendererCUDAProgressive : public IRenderer
 
          // Apply scene-specific rendering settings
          background_intensity = active_scene.background_intensity;
+         light_intensity      = active_scene.light_intensity;
          samples_per_batch_float = static_cast<float>(sceneBatchSize(active_scene));
          ::setBackgroundColor((float)active_scene.background_color.x(), (float)active_scene.background_color.y(),
                               (float)active_scene.background_color.z());
@@ -779,7 +780,8 @@ class RendererCUDAProgressive : public IRenderer
          if (save_camera_request)
          {
             save_camera_request = false;
-            if (Scene::saveCameraToYAML(active_scene.source_file.c_str(), look_from, look_at, camera.vfov))
+            if (Scene::saveViewToYAML(active_scene.source_file.c_str(), look_from, look_at, camera.vfov,
+                                      background_intensity, light_intensity))
                camera_save_status = "Saved to " + active_scene.source_file;
             else
                camera_save_status = "Could not write " + active_scene.source_file;

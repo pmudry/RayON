@@ -52,7 +52,8 @@ camera:
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `background_color` | vec3 | `[0.5, 0.7, 1.0]` | Sky/background colour (linear RGB) |
-| `background_intensity` | float | `1.0` | Multiplier applied to the background colour |
+| `background_intensity` | float | `1.0` | Multiplier applied to the background colour (GUI "Ambient Light") |
+| `light_intensity` | float | `1.0` | Multiplier applied to every light's emission (GUI "Lights inten.") |
 | `use_bvh` | bool | `false` | Enable BVH acceleration (recommended for > 50 objects) |
 | `adaptive_sampling` | bool | `true` | Let converged pixels stop accumulating early |
 | `samples_per_batch` | int | `0` | Interactive batch size for this scene (`0` = renderer default; a `--samples-per-batch` on the command line wins) |

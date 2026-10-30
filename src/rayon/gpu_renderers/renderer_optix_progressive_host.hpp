@@ -147,7 +147,7 @@ class RendererOptiXProgressive : public IRenderer
       bool accumulation_enabled = auto_accumulate;
       int current_samples = 0;
       float gamma = 2.0f;
-      float light_intensity = 1.0f;        // UI only — baked into SBT at build time
+      float light_intensity = scene.light_intensity;        // UI only — baked into SBT at build time
       float background_intensity = scene.background_intensity;
       float metal_fuzziness = 1.0f;        // UI only — baked into SBT at build time
       float glass_refraction_index = 1.5f; // UI only — baked into SBT at build time
@@ -438,6 +438,7 @@ class RendererOptiXProgressive : public IRenderer
          camera_control.initializeCameraControls(look_from, look_at);
 
          background_intensity = active_scene.background_intensity;
+         light_intensity      = active_scene.light_intensity;
          samples_per_batch_float = static_cast<float>(sceneBatchSize(active_scene));
          ::setOptiXBackgroundColor((float)active_scene.background_color.x(), (float)active_scene.background_color.y(),
                                    (float)active_scene.background_color.z());
@@ -954,7 +955,8 @@ class RendererOptiXProgressive : public IRenderer
          if (save_camera_request)
          {
             save_camera_request = false;
-            if (Scene::saveCameraToYAML(active_scene.source_file.c_str(), look_from, look_at, camera.vfov))
+            if (Scene::saveViewToYAML(active_scene.source_file.c_str(), look_from, look_at, camera.vfov,
+                                      background_intensity, light_intensity))
                camera_save_status = "Saved to " + active_scene.source_file;
             else
                camera_save_status = "Could not write " + active_scene.source_file;

@@ -1,8 +1,8 @@
 camera:
-  position: [0.0, 1.2, 6.5]
-  look_at: [0.0, 0.7, 0.0]
+  position: [-4.364, 3.992, -4.534]
+  look_at: [-0.336, 0.491, -0.788]
   up: [0.0, 1.0, 0.0]
-  fov: 45.0
+  fov: 45
 
 settings:
   background_color: [0.02, 0.02, 0.03]

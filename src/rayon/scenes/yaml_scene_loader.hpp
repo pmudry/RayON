@@ -32,13 +32,14 @@ bool loadSceneFromYAML(const char* filename, SceneDescription& scene);
 bool saveSceneToYAML(const char* filename, const SceneDescription& scene);
 
 /**
- * @brief Write a camera (position, look_at, fov) into an existing YAML scene file, in place.
+ * @brief Write the current view into an existing YAML scene file, in place: the camera
+ * (position, look_at, fov) and the light settings (background_intensity, light_intensity).
  *
- * Only the `camera:` block is touched: its position / look_at / fov lines are rewritten (or
- * added), every other line of the file, comments included, is kept as is. A file without a
- * camera block gets one appended.
+ * Only those lines of the `camera:` and `settings:` blocks are rewritten (or added, the block
+ * itself being appended when missing); every other line, comments included, is kept as is.
  * @return true if the file was rewritten
  */
-bool saveCameraToYAML(const char* filename, const Vec3& position, const Vec3& look_at, float fov);
+bool saveViewToYAML(const char* filename, const Vec3& position, const Vec3& look_at, float fov,
+                    float background_intensity, float light_intensity);
 
 } // namespace Scene

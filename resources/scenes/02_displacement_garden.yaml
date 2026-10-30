@@ -2,11 +2,12 @@ camera:
   position: [-4.24, 2.56, 4.05]
   look_at: [-0.7, 0.33, -0.91]
   up: [0.0, 1.0, 0.0]
-  fov: 42.0
+  fov: 42
 
 settings:
+  light_intensity: 1
   background_color: [0.08, 0.12, 0.18]
-  background_intensity: 0.25
+  background_intensity: 0
   use_bvh: true
 
 materials:

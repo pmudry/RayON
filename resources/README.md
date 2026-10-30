@@ -45,7 +45,6 @@ Minimal test scene with:
 - `material_laboratory.yaml`: Roughness/metal/glass comparison setup.
 - `caustics_chapel.yaml`: Dark interior with glass and strong area light.
 - `displacement_garden.yaml`: Displaced sphere lineup with increasing displacement.
-- `pattern_gallery.yaml`: Fibonacci/checker/stripes procedural material gallery.
 - `invisible_light_studio.yaml`: Studio look using invisible area light geometry.
 - `mirror_tunnel.yaml`: Multi-bounce reflection corridor.
 - `color_bleed_box.yaml`: Cornell-style color bleed stress scene.

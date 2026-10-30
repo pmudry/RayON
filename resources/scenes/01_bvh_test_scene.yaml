@@ -2,12 +2,13 @@
 # 150 spheres in a centered grid with ISC colors, mirror, and glass
 
 camera:
-  position: [-10.7, 5.75, 8.75]
-  look_at: [0.29, -1.62, -0.97]
+  position: [-9.331, 5.815, 9.366]
+  look_at: [0.606, -2.704, -0.546]
   up: [0, 1, 0]
   fov: 25
 
 settings:
+  light_intensity: 1.3
   background_color: [0.4, 0.6, 0.9]
   background_intensity: 0.18
   use_bvh: true
