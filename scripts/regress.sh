@@ -22,7 +22,7 @@ SPP=64
 
 SCENES=(default_scene 02_displacement_garden 04_obj_dragon 05_material_laboratory 11_soap_bubbles
         12_clearcoat_pokemonball 14_texture_test2 16_nee_small_light 17_cloud_bunny 18_sdf_shapes
-        20_emissive_mesh 21_caustics)
+        20_emissive_mesh 21_caustics 22_caustic_ring)
 UPDATE=0
 MODES=""
 TOL=0.001

@@ -103,7 +103,9 @@ counted twice and the result is unbiased: the caustic converges smoothly instead
 |---|---|---|
 | Caustic pass | GUI *MIS / NEE* (OptiX interactive), `--no-caustics` | on (OptiX modes) |
 
-`21_caustics.yaml` shows it best: render it with and without `--no-caustics`.
+`22_caustic_ring.yaml` shows it best (a mirror ring draws the cusped "cup" caustic under a 5 cm
+lamp, which the camera paths alone almost never find), and `21_caustics.yaml` a glass ball under
+a panel: render them with and without `--no-caustics`.
 
 ## Light intensity and falloff
 
