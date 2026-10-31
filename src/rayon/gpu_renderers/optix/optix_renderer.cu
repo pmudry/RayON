@@ -841,6 +841,7 @@ static void buildGAS(const Scene::SceneDescription &scene)
 
          OptixTriangleData &td = tri_data[i];
          td.material_idx = scene.geometries[triangle_indices[i]].material_id;
+         td.pivot        = toFloat3(scene.geometries[triangle_indices[i]].pivot);
          td.visible      = scene.geometries[triangle_indices[i]].visible ? 1 : 0;
          td.has_normals  = t.has_normals ? 1 : 0;
          td.has_uvs      = t.has_uvs ? 1 : 0;
@@ -997,6 +998,7 @@ static void buildGAS(const Scene::SceneDescription &scene)
          materials[i].flip_color = make_float3(static_cast<float>(m.flip_color.x()),
                                                static_cast<float>(m.flip_color.y()),
                                                static_cast<float>(m.flip_color.z()));
+         materials[i].brush = m.brush;
          materials[i].volume.density        = m.density;
          materials[i].volume.noise_scale    = m.noise_scale;
          materials[i].volume.noise_strength = m.noise_strength;
@@ -1285,6 +1287,7 @@ extern "C" void optixRendererUpdateMaterial(int idx, const Scene::MaterialDesc &
    d.film_thickness = m.film_thickness;
    d.film_ior       = m.film_ior;
    d.flip_color     = make_float3((float)m.flip_color.x(), (float)m.flip_color.y(), (float)m.flip_color.z());
+   d.brush          = m.brush;
    d.volume.density        = m.density; // the SDF binding is kept as uploaded
    d.volume.noise_scale    = m.noise_scale;
    d.volume.noise_strength = m.noise_strength;

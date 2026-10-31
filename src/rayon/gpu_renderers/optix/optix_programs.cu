@@ -190,6 +190,25 @@ __device__ __forceinline__ float G_GGX_opt(const float3 &wo, const float3 &wi, f
    return 1.0f / (1.0f + Lambda_GGX_opt(wo, alpha_x, alpha_y) + Lambda_GGX_opt(wi, alpha_x, alpha_y));
 }
 
+/// Anisotropic GGX normal distribution D(wm) for a unit microfacet normal in the shading frame
+__device__ __forceinline__ float D_GGX_opt(const float3 &wm, float alpha_x, float alpha_y)
+{
+   if (wm.z <= 0.0f)
+      return 0.0f;
+   const float x = wm.x / alpha_x, y = wm.y / alpha_y;
+   const float d = x * x + y * y + wm.z * wm.z;
+   return 1.0f / (3.14159265f * alpha_x * alpha_y * d * d);
+}
+
+/// Roughnesses along the tangent and the bitangent of an anisotropic metal
+__device__ __forceinline__ void aniso_alphas_opt(float roughness, float anisotropy, float &alpha_x, float &alpha_y)
+{
+   const float aspect = sqrtf(fmaxf(1e-4f, 1.0f - 0.9f * anisotropy));
+   const float r2     = roughness * roughness;
+   alpha_x = fmaxf(1e-4f, r2 / aspect);
+   alpha_y = fmaxf(1e-4f, r2 * aspect);
+}
+
 __device__ __forceinline__ float3 Sample_wm_GGX_opt(const float3 &wo, float alpha_x, float alpha_y,
                                                      float u1, float u2)
 {
@@ -842,10 +861,8 @@ __device__ __forceinline__ bool scatter_specular_optix(const OptixMaterialData &
    else if (mat.type == OptixMaterialType::ANISOTROPIC_METAL)
    {
       // Full anisotropic GGX microfacet conductor (PBR Book §9.6)
-      float aspect = sqrtf(fmaxf(1e-4f, 1.0f - 0.9f * mat.anisotropy));
-      float r2 = mat.roughness * mat.roughness;
-      float alpha_x = fmaxf(1e-4f, r2 / aspect);
-      float alpha_y = fmaxf(1e-4f, r2 * aspect);
+      float alpha_x, alpha_y;
+      aniso_alphas_opt(mat.roughness, mat.anisotropy, alpha_x, alpha_y);
 
       float3 N = prd.hit_normal;
 
@@ -983,11 +1000,16 @@ __device__ __forceinline__ float glossy_lobe_pdf_optix(const float3 &n, const fl
    return pdf_m / (4.0f * fmaxf(fabsf(dot3(wo, m)), 1e-6f));
 }
 
-/// A glossy lobe that light sampling can serve: rough mirrors and metals, the coat of a clear coat.
-/// Their smooth versions are delta distributions and stay with the BSDF. (Anisotropic GGX metals
-/// are left out for now: a VNDF-pdf version came out 0.3% darker than BSDF sampling alone.)
+/// A glossy lobe that light sampling can serve: rough mirrors and metals, the coat of a clear coat,
+/// anisotropic GGX metals. Their smooth versions are delta distributions and stay with the BSDF.
 __device__ __forceinline__ bool has_glossy_lobe_optix(const OptixMaterialData &mat)
 {
+   if (mat.type == OptixMaterialType::ANISOTROPIC_METAL)
+   {
+      float ax, ay;
+      aniso_alphas_opt(mat.roughness, mat.anisotropy, ax, ay);
+      return fmaxf(ax, ay) >= 1e-3f; // below: the mirror branch of scatter_specular_optix
+   }
    if (mat.type == OptixMaterialType::ROUGH_MIRROR || mat.type == OptixMaterialType::METAL ||
        mat.type == OptixMaterialType::HAMMERED)
       return mat.roughness * params.metal_fuzziness > 0.0f;
@@ -1006,6 +1028,34 @@ __device__ bool glossy_lobe_eval_optix(const OptixMaterialData &mat, const PRDRa
                                        const float3 &wl, float3 &f_cos, float &pdf)
 {
    const float3 n = prd.hit_normal;
+   if (mat.type == OptixMaterialType::ANISOTROPIC_METAL)
+   {
+      // VNDF sampling of scatter_specular_optix: wm ~ G1(wo) max(0, wo.wm) D(wm) / wo.z, reflected,
+      // so pdf(wi) = G1(wo) D(wm) / (4 wo.z); f cos = F D G / (4 wo.z), whose ratio F G / G1 is the
+      // sampler's weight. Same shading frame as the sampler.
+      pdf = 0.0f;
+      float ax, ay;
+      aniso_alphas_opt(mat.roughness, mat.anisotropy, ax, ay);
+      const float3 T  = normalize3(prd.hit_tangent - dot3(prd.hit_tangent, n) * n);
+      const float3 B  = cross3(n, T);
+      const float3 wo = make_float3(-dot3(d_in, T), -dot3(d_in, B), -dot3(d_in, n));
+      const float3 wi = make_float3(dot3(wl, T), dot3(wl, B), dot3(wl, n));
+      if (wo.z <= 0.0f || wi.z <= 0.0f)
+         return false;
+      const float3 h  = wo + wi;
+      const float  hl = length3(h);
+      if (hl < 1e-6f)
+         return false;
+      const float3 wm = h / hl;
+      const float  D  = D_GGX_opt(wm, ax, ay);
+      if (!(D > 0.0f))
+         return false;
+      const float inv4wo = 1.0f / (4.0f * wo.z);
+      pdf = G1_GGX_opt(wo, ax, ay) * D * inv4wo;
+      const float3 F = FrComplex_opt(fmaxf(dot3(wo, wm), 0.0f), mat.eta, mat.k);
+      f_cos = prd.hit_color * F * (D * G_GGX_opt(wo, wi, ax, ay) * inv4wo);
+      return pdf > 0.0f;
+   }
    if (is_coated_optix(mat.type))
    {
       // Schlick Fresnel of the coat, as in raygen's clear-coat branch
@@ -2053,6 +2103,25 @@ __device__ __forceinline__ float3 azimuthal_tangent(const float3 &N)
    return normalize3(T);
 }
 
+/// Tangent of a "spun" brushed metal (turned discs, lathe-finished cylinders): the scratches run in
+/// circles S around the vertical axis through `pivot`, and the GGX lobe is widest along the
+/// tangent, so the tangent is taken across the scratches, N x S. A lamp's reflection then
+/// stretches the way it does on real turned metal: radially on a disc, along the axis on the side
+/// of a cylinder. On the axis itself (no circle), the azimuthal tangent.
+__device__ __forceinline__ float3 spun_tangent(const float3 &p, const float3 &pivot, const float3 &N)
+{
+   const float3 S = cross3(make_float3(0.0f, 1.0f, 0.0f), p - pivot);
+   const float3 T = cross3(N, S);
+   return (dot3(T, T) < 1e-10f) ? azimuthal_tangent(N) : normalize3(T);
+}
+
+/// The material asks for spun brushing
+__device__ __forceinline__ bool is_spun_brush(int mat_idx)
+{
+   return mat_idx >= 0 && params.materials[mat_idx].type == OptixMaterialType::ANISOTROPIC_METAL &&
+          params.materials[mat_idx].brush == 1;
+}
+
 // Resolve the material index and the albedo (texture / procedural pattern applied).
 // Everything else about the material is read by raygen from params.materials.
 __device__ __forceinline__ void resolve_material(PRDRadiance *prd, int mat_idx, const float2 &uv,
@@ -2136,7 +2205,8 @@ extern "C" __global__ void __closesthit__triangle()
    if (dot3(prd->hit_normal, ray_dir) >= 0.0f)
       prd->hit_normal = prd->front_face ? face_normal : -face_normal;
    prd->hit_point  = optixGetWorldRayOrigin() + optixGetRayTmax() * ray_dir;
-   prd->hit_tangent = azimuthal_tangent(prd->hit_normal);
+   prd->hit_tangent = is_spun_brush(td.material_idx) ? spun_tangent(prd->hit_point, td.pivot, prd->hit_normal)
+                                                     : azimuthal_tangent(prd->hit_normal);
 
    resolve_material(prd, td.material_idx, uv, make_float3(0.0f, 0.0f, 0.0f));
 }
@@ -2240,8 +2310,13 @@ extern "C" __global__ void __closesthit__ch()
    }
 
    // Surface tangent for anisotropic materials (geometry-specific)
-   prd->hit_tangent = (sbt_data->geom_type == OptixGeomType::RECTANGLE) ? normalize3(sbt_data->u_vec)
-                                                                         : azimuthal_tangent(prd->hit_normal);
+   if (sbt_data->geom_type == OptixGeomType::RECTANGLE)
+      prd->hit_tangent = is_spun_brush(sbt_data->material_idx)
+                             ? spun_tangent(prd->hit_point, sbt_data->center + 0.5f * (sbt_data->u_vec + sbt_data->v_vec),
+                                            prd->hit_normal)
+                             : normalize3(sbt_data->u_vec);
+   else
+      prd->hit_tangent = azimuthal_tangent(prd->hit_normal); // a sphere's spun tangent is the same
 
    // Custom primitives carry no UVs; the Fibonacci-dot pattern is centred on the sphere.
    resolve_material(prd, sbt_data->material_idx, make_float2(0.0f, 0.0f), sbt_data->center);

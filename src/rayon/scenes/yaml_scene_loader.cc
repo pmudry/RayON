@@ -397,6 +397,8 @@ static bool loadMaterials(const SimpleYAMLParser &parser, SceneDescription &scen
       mat.film_thickness = parser.getFloat(prefix + ".film_thickness", 400.0f);
       mat.film_ior = parser.getFloat(prefix + ".film_ior", 1.33f);
       mat.flip_color = parser.getVec3(prefix + ".flip_color", mat.albedo);
+      if (parser.hasKey(prefix + ".brush"))
+         mat.brush = removeQuotes(parser.getString(prefix + ".brush")) == "spun" ? 1 : 0;
       // Participating medium: `g` is the usual name for the phase asymmetry, `anisotropy` also works
       mat.density = parser.getFloat(prefix + ".density", 2.0f);
       mat.noise_scale = parser.getFloat(prefix + ".noise_scale", 2.0f);
@@ -658,6 +660,8 @@ static bool loadGeometry(const SimpleYAMLParser &parser, SceneDescription &scene
             cerr << "ERROR: Failed to load OBJ file: " << obj_path << "\n";
             continue; // Skip success log and generic visibility assignment
          }
+         for (int gi = geom_start; gi < static_cast<int>(scene.geometries.size()); ++gi)
+            scene.geometries[gi].pivot = obj_position;
          if (!visible)
          {
             // Apply visibility to all triangles added by this OBJ
@@ -992,8 +996,10 @@ bool saveSceneToYAML(const char *filename, const SceneDescription &scene)
       file << "    albedo: [" << mat.albedo.x() << ", " << mat.albedo.y() << ", " << mat.albedo.z() << "]\n";
       if (mat.type == MaterialType::HAMMERED)
          file << "    dimple_size: " << mat.pattern_param1 << "\n    dimple_depth: " << mat.pattern_param2 << "\n";
+      if (mat.brush == 1)
+         file << "    brush: \"spun\"\n";
       if (mat.type == MaterialType::CHAMELEON)
-         file << "    flip_color: [" << mat.flip_color.x() << ", " << mat.flip_color.y() << ", " << mat.flip_color.z()
+file << "    flip_color: [" << mat.flip_color.x() << ", " << mat.flip_color.y() << ", " << mat.flip_color.z()
               << "]\n";
       if (mat.emission.x() > 0 || mat.emission.y() > 0 || mat.emission.z() > 0)
       {

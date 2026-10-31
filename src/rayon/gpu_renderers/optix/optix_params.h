@@ -63,6 +63,7 @@ struct OptixTriangleData
 {
    float3 n0, n1, n2;    // Per-vertex normals (valid when has_normals)
    float2 uv0, uv1, uv2; // Per-vertex texture coordinates (valid when has_uvs)
+   float3 pivot;    // position of the OBJ (axis of a spun brushed metal)
    int material_idx;
    int has_normals; // 1 = interpolate per-vertex normals, 0 = use face normal
    int has_uvs;     // 1 = has UV coords, 0 = no UV
@@ -91,6 +92,7 @@ struct OptixMaterialData
    float film_thickness; // THIN_FILM: thickness in nm
    float film_ior;       // THIN_FILM: film refractive index
    float3 flip_color;    // CHAMELEON: base colour at grazing angles (albedo is the face-on one)
+   int    brush;         // ANISOTROPIC_METAL: 0 = cross(up, N), 1 = spun around the object's vertical axis
    VolumeParams volume;  // VOLUME: medium parameters + SDF texture (anisotropy = HG g, albedo = scattering albedo)
 
    int texture_id; // Diffuse texture index (-1 = none)

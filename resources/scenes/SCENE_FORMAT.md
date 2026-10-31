@@ -182,6 +182,17 @@ Additional fields: `roughness`, `anisotropy` [0–1], and either `preset` **or**
 
 `preset` values: `"gold"`, `"silver"`, `"copper"`, `"aluminum"`.
 
+`brush` (optional, OptiX): the direction of the brushing.
+- Default: the lobe follows the latitude around the vertical axis (`cross(up, N)`), as before.
+- `"spun"`: turned metal, with scratches in circles around the vertical axis of the object. That
+  axis goes through the OBJ's `position`, or through the centre of a rectangle. A lamp's
+  reflection stretches into a radial streak on a disc, and along the axis on the side of a
+  cylinder. The effect needs a fairly high `roughness` (around 0.3): with a smooth metal both
+  directions are sharp, and the streak stays short.
+
+In the OptiX modes, anisotropic metals sample the lights (NEE, MIS-weighted against their GGX
+lobe), so small lamps converge without fireflies. Scene `01_anisotropic_showcase.yaml` shows it.
+
 ```yaml
 # Named preset
 - name: "brushed_aluminum"
@@ -189,6 +200,14 @@ Additional fields: `roughness`, `anisotropy` [0–1], and either `preset` **or**
   roughness: 0.3
   anisotropy: 0.8
   preset: "aluminum"
+
+# Turned disc / lathe-finished cylinder
+- name: "turned_aluminum"
+  type: "anisotropic_metal"
+  roughness: 0.3
+  anisotropy: 0.95
+  preset: "aluminum"
+  brush: "spun"
 
 # Manual complex IOR (measured data, RGB)
 - name: "exotic_metal"

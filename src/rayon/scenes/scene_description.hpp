@@ -97,6 +97,8 @@ struct MaterialDesc {
     ProceduralPattern pattern;    // Pattern type
     Vec3 pattern_color;           // Secondary color for pattern
     Vec3 flip_color;              // CHAMELEON: base colour at grazing angles (albedo is the face-on one)
+    int brush = 0;                // ANISOTROPIC_METAL: 0 = along the latitude (cross(up, N)), 1 = spun
+                                  // (circles around the vertical axis of the object: turned discs)
     float pattern_param1;         // Pattern-specific parameter 1 (e.g., dot count, scale)
     float pattern_param2;         // Pattern-specific parameter 2 (e.g., dot radius)
     
@@ -439,6 +441,8 @@ struct GeometryDesc {
     
     // Axis-aligned bounding box (for BVH)
     Vec3 bounds_min, bounds_max;
+    // Triangles: the position of the OBJ they come from (axis of a "spun" brushed metal)
+    Vec3 pivot = Vec3(0, 0, 0);
     
     GeometryDesc() : type(GeometryType::SPHERE), material_id(0) {
         bounds_min = Vec3(-1, -1, -1);
