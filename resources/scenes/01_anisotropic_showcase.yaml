@@ -1,0 +1,131 @@
+# Anisotropic metal showcase
+# Four turned aluminium pucks, anisotropy 0, 0.4, 0.7, 0.95 from left to right (roughness 0.3),
+# with spun brushing (circles around their axis): the reflection of a small lamp is a dot on the
+# isotropic one and stretches into a radial streak as the anisotropy grows. Behind them, brushed
+# spheres (latitude brushing) turn the same lamps into long vertical streaks.
+
+camera:
+  position: [0, 3.2, 7.5]
+  look_at: [0, 0.5, 0]
+  fov: 36
+
+settings:
+  light_intensity: 1
+  use_bvh: true
+  background_color: [0.05, 0.055, 0.07]
+  background_intensity: 0.12
+  tone_mapping: "aces"
+  exposure: 1
+
+materials:
+  - name: "floor"
+    type: "clear_coat"
+    albedo: [0.02, 0.02, 0.025]
+    roughness: 0.2
+    refractive_index: 1.5
+  - name: "lamp_warm"
+    type: "light"
+    emission: [260, 235, 200]
+  - name: "lamp_cool"
+    type: "light"
+    emission: [170, 200, 260]
+  - name: "puck_0"
+    type: "anisotropic_metal"
+    roughness: 0.3
+    anisotropy: 0.0
+    preset: "aluminum"
+    brush: "spun"
+  - name: "puck_1"
+    type: "anisotropic_metal"
+    roughness: 0.3
+    anisotropy: 0.4
+    preset: "aluminum"
+    brush: "spun"
+  - name: "puck_2"
+    type: "anisotropic_metal"
+    roughness: 0.3
+    anisotropy: 0.7
+    preset: "aluminum"
+    brush: "spun"
+  - name: "puck_3"
+    type: "anisotropic_metal"
+    roughness: 0.3
+    anisotropy: 0.95
+    preset: "aluminum"
+    brush: "spun"
+  - name: "ball_0"
+    type: "anisotropic_metal"
+    roughness: 0.3
+    anisotropy: 0.0
+    preset: "gold"
+  - name: "ball_1"
+    type: "anisotropic_metal"
+    roughness: 0.3
+    anisotropy: 0.95
+    preset: "gold"
+
+geometry:
+  - type: "rectangle"
+    material: "floor"
+    corner: [-50, 0, -50]
+    u: [100, 0, 0]
+    v: [0, 0, 100]
+  # One small lamp behind each puck, where the camera sees it mirrored in the top (the view ray
+  # off the cap's centre, reflected: x about 2.1 times the puck's). Hidden from the camera; the dot or streak it leaves on the
+  # cap is the whole point of the scene
+  - type: "sphere"
+    material: "lamp_warm"
+    center: [-5.7, 3.55, -6.3]
+    radius: 0.12
+    visible: false
+  - type: "sphere"
+    material: "lamp_cool"
+    center: [-1.9, 3.55, -6.3]
+    radius: 0.12
+    visible: false
+  - type: "sphere"
+    material: "lamp_warm"
+    center: [1.9, 3.55, -6.3]
+    radius: 0.12
+    visible: false
+  - type: "sphere"
+    material: "lamp_cool"
+    center: [5.7, 3.55, -6.3]
+    radius: 0.12
+    visible: false
+  # A lamp high on the right for the spheres and the sides of the pucks
+  - type: "sphere"
+    material: "lamp_warm"
+    center: [5, 4, 3]
+    radius: 0.15
+    visible: false
+  # Pucks (cylinder.obj: radius 1, height 1.5), scaled to discs 1.5 wide and 0.45 high
+  - type: "obj"
+    material: "puck_0"
+    file: "../models/cylinder.obj"
+    position: [-2.7, 0.225, 1]
+    scale: [0.75, 0.3, 0.75]
+  - type: "obj"
+    material: "puck_1"
+    file: "../models/cylinder.obj"
+    position: [-0.9, 0.225, 1]
+    scale: [0.75, 0.3, 0.75]
+  - type: "obj"
+    material: "puck_2"
+    file: "../models/cylinder.obj"
+    position: [0.9, 0.225, 1]
+    scale: [0.75, 0.3, 0.75]
+  - type: "obj"
+    material: "puck_3"
+    file: "../models/cylinder.obj"
+    position: [2.7, 0.225, 1]
+    scale: [0.75, 0.3, 0.75]
+  # Brushed spheres behind
+  - type: "sphere"
+    material: "ball_0"
+    center: [-1.8, 0.7, -2.6]
+    radius: 0.7
+  - type: "sphere"
+    material: "ball_1"
+    center: [1.8, 0.7, -2.6]
+    radius: 0.7
