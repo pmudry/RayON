@@ -909,6 +909,46 @@ __device__ __forceinline__ bool is_caustic_delta_optix(const OptixMaterialData &
    return true;
 }
 
+/// Roughness of the glossy lobe of a rough mirror or metal, 0 when it is a perfect mirror (delta)
+__device__ __forceinline__ float glossy_roughness_optix(const OptixMaterialData &mat)
+{
+   if (mat.type == OptixMaterialType::ROUGH_MIRROR || mat.type == OptixMaterialType::METAL)
+      return mat.roughness * params.metal_fuzziness;
+   return 0.0f;
+}
+
+/// Solid-angle pdf of scatter_specular_optix()'s rough-mirror lobe: the normal n + r * p, p uniform
+/// in the unit ball, reflects the unit direction d_in to wo. The perturbed normal m is the half
+/// vector of (-d_in, wo); its pdf integrates the ball's density 3 / (4 pi r^3) along the ray t * m
+/// over the chord inside the ball |t m - n| < r, and the reflection maps it to wo with the usual
+/// 1 / (4 |wo.m|). The lobe's weight is its albedo, so f * cos = albedo * pdf (wo above the surface).
+__device__ __forceinline__ float glossy_lobe_pdf_optix(const float3 &n, const float3 &d_in, const float3 &wo, float r)
+{
+   if (r <= 0.0f || dot3(wo, n) <= 0.0f)
+      return 0.0f;
+   const float3 h = wo - d_in;
+   const float  hl = length3(h);
+   if (hl < 1e-6f)
+      return 0.0f;
+   // reflect(d, m) == reflect(d, -m): at grazing incidence the sampled normal faces away from the
+   // ray and wo - d_in points along -m, so take the side of the ball around n (one side for r < 1)
+   float3 m = h / hl;
+   float  c = dot3(m, n);
+   if (c < 0.0f)
+   {
+      m = -m;
+      c = -c;
+   }
+   const float disc = c * c - (1.0f - r * r);
+   if (disc < 0.0f)
+      return 0.0f;
+   const float s  = sqrtf(disc);
+   const float t2 = c + s;
+   const float t1 = fmaxf(0.0f, c - s);
+   const float pdf_m = (t2 * t2 * t2 - t1 * t1 * t1) / (4.0f * 3.14159265f * r * r * r);
+   return pdf_m / (4.0f * fmaxf(fabsf(dot3(wo, m)), 1e-6f));
+}
+
 /// Light-list index of a custom-primitive hit, -1 when it is not a NEE light
 __device__ __forceinline__ int light_index_of_hit(const PRDRadiance &prd)
 {
@@ -1437,19 +1477,54 @@ extern "C" __global__ void __raygen__rg()
 
          // --- NEE: direct light sampling for non-delta materials ---
          bool is_delta = is_delta_material_optix(mat.type);
+         // The first bounce carries most of the direct light and always gets NEE; deeper
+         // bounces do it on 1 of every nee_stride samples (contribution x stride, unbiased).
+         // Applying the stride at bounce 0 shows up as bright speckle at low sample counts.
+         bool do_nee = true;
+         float nee_scale = 1.0f;
+         if (bounce > 0 && params.nee_stride > 1)
+         {
+            do_nee = ((abs_sample % (uint32_t)params.nee_stride) == 0u);
+            nee_scale = (float)params.nee_stride;
+         }
+
+         // Glossy NEE: a rough mirror or metal reflecting a small bright source (the sun of an HDR
+         // sky, a lamp) found it only by chance through its own lobe, leaving fireflies that took
+         // thousands of samples to fade. Its lobe pdf is known in closed form, so it gets light
+         // sampling too, MIS-weighted against that lobe (the weight at the next emissive hit or sky
+         // escape uses prev_bsdf_pdf below). It stays a "delta" vertex for everything else: no
+         // diffuse NEE, the indirect clamp and the caustic pass see it as before.
+         const float glossy_r = glossy_roughness_optix(mat);
+         if (params.mis_enabled && glossy_r > 0.0f && do_nee && nee_available())
+         {
+            float max_att = fmaxf(throughput.x, fmaxf(throughput.y, throughput.z));
+            if (max_att > 1e-4f)
+            {
+               float nee_u1  = sobol_rand_float(ss, seed);
+               float nee_u2  = sobol_rand_float(ss, seed);
+               float nee_sel = rand_float(seed);
+
+               OptiXLightSample ls = sample_nee_optix(prd.hit_point, nee_sel, nee_u1, nee_u2);
+               const float p_mat = (ls.pdf > 0.0f) ? glossy_lobe_pdf_optix(prd.hit_normal, normalize3(cur_direction),
+                                                                           ls.direction, glossy_r)
+                                                   : 0.0f;
+               if (p_mat > 0.0f)
+               {
+                  const float T_sh = shadow_transmittance_optix(prd.hit_point + 0.0001f * prd.hit_normal, ls.direction,
+                                                                ls.dist - 0.002f, seed);
+                  if (T_sh > 0.0f)
+                  {
+                     const float a     = ls.pdf * ls.pdf;
+                     const float w_nee = a / (a + p_mat * p_mat);
+                     color = color + throughput * prd.hit_color * ls.emission *
+                                         (p_mat * w_nee * nee_scale * T_sh / ls.pdf);
+                  }
+               }
+            }
+         }
+
          if (params.mis_enabled && !is_delta && nee_available())
          {
-            // The first bounce carries most of the direct light and always gets NEE; deeper
-            // bounces do it on 1 of every nee_stride samples (contribution x stride, unbiased).
-            // Applying the stride at bounce 0 shows up as bright speckle at low sample counts.
-            bool do_nee = true;
-            float nee_scale = 1.0f;
-            if (bounce > 0 && params.nee_stride > 1)
-            {
-               do_nee = ((abs_sample % (uint32_t)params.nee_stride) == 0u);
-               nee_scale = (float)params.nee_stride;
-            }
-
             if (do_nee)
             {
                float max_att = fmaxf(throughput.x, fmaxf(throughput.y, throughput.z));
@@ -1492,10 +1567,18 @@ extern "C" __global__ void __raygen__rg()
          throughput = throughput * attenuation;
          cur_origin = prd.hit_point;
          mis_origin = prd.hit_point;
+         const float3 cur_direction_in = normalize3(cur_direction);
          cur_direction = scatter_dir;
 
          // Track BSDF PDF for MIS weighting at the next emissive hit
-         if (is_delta || !sampled_diffuse)
+         if (params.mis_enabled && glossy_r > 0.0f && nee_available())
+         {
+            // Glossy lobe sampled, the glossy NEE above covers the same directions (on 1 of every
+            // nee_stride samples beyond the first bounce, scaled up: the weight applies to all)
+            prev_bsdf_pdf = glossy_lobe_pdf_optix(prd.hit_normal, cur_direction_in, scatter_dir, glossy_r);
+            prev_is_delta = (prev_bsdf_pdf <= 0.0f);
+         }
+         else if (is_delta || !sampled_diffuse)
          {
             prev_bsdf_pdf = 1.0f;
             prev_is_delta = true;
