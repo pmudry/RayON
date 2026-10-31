@@ -13,14 +13,17 @@ scene:
   description: "Glass and mirror spheres under a small lamp: the caustics of the OptiX caustic pass"
 
 camera:
-  position: [0.0, 2.2, 4.0]
-  look_at: [0.3, 0.2, 0.0]
+  position: [-0.456, 2.164, 3.966]
+  look_at: [-0.156, 0.164, -0.034]
   up: [0.0, 1.0, 0.0]
-  fov: 40.0
+  fov: 40
 
 settings:
+  light_intensity: 1
+  light_falloff: 2
+  indirect_clamp: 50
   background_color: [0.0, 0.0, 0.0]
-  background_intensity: 0.0
+  background_intensity: 0
   use_bvh: true
 
 materials:
