@@ -14,6 +14,11 @@ camera:
   fov: 38
 
 settings:
+  light_intensity: 1
+  light_falloff: 2
+  indirect_clamp: 50
+  tone_mapping: "aces"
+  exposure: 1
   samples_per_batch: 2                   # interactive batch size for this scene (ray marching is costly)
   background_color: [0.10, 0.12, 0.18]   # only seen if a ray escapes the room
   background_intensity: 0.35

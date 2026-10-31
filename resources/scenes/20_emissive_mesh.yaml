@@ -79,16 +79,16 @@ geometry:
   # Floor
   - type: "rectangle"
     material: "floor"
-    corner: [-6.0, 0.0, -6.0]
-    u: [12.0, 0.0, 0.0]
-    v: [0.0, 0.0, 12.0]
+    corner: [-100.0, 0.0, -3.0]
+    u: [200.0, 0.0, 0.0]
+    v: [0.0, 0.0, 103.0]
 
   # Back wall
   - type: "rectangle"
     material: "back_wall"
-    corner: [-6.0, 0.0, -3.0]
-    u: [12.0, 0.0, 0.0]
-    v: [0.0, 6.0, 0.0]
+    corner: [-100.0, 0.0, -3.0]
+    u: [200.0, 0.0, 0.0]
+    v: [0.0, 50.0, 0.0]
 
   # Matte spheres, close together so they shadow each other
   - type: "sphere"

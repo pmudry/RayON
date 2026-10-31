@@ -19,6 +19,8 @@ camera:
   fov: 44
 
 settings:
+  tone_mapping: "aces"
+  exposure: 1
   light_intensity: 1
   light_falloff: 2.06
   indirect_clamp: 50

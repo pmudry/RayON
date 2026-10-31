@@ -13,6 +13,9 @@ scene:
     fov: 46.0
   
 settings:
+  indirect_clamp: 50
+  tone_mapping: "aces"
+  exposure: 1
   light_intensity: 1
   light_falloff: 2
   background_color: [0.25, 0.35, 0.55]
