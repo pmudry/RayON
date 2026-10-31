@@ -529,6 +529,8 @@ public:
     float light_intensity;                    // Multiplier on every light's emission (GUI "Lights inten.")
     float light_falloff;                      // Distance exponent of the lights' reach: 2 = physical inverse square
     float indirect_clamp;                     // OptiX: per-sample ceiling on light gathered after the first diffuse bounce (0 = off)
+    int tone_mapping;                         // Display curve, a ToneMapOperator (0 = none: gamma + clip)
+    float exposure;                           // Display exposure multiplier before the curve
     std::string hdr_sky;                      // Interactive modes: HDR map of resources/hdri/ to start with (part of its name), "" = gradient
     bool use_bvh;                             // Enable scene BVH
     bool adaptive_sampling;                   // Enable adaptive sampling
@@ -546,6 +548,8 @@ public:
         , light_intensity(1.0f)
         , light_falloff(2.0f)
         , indirect_clamp(50.0f)
+        , tone_mapping(0)
+        , exposure(1.0f)
         , use_bvh(false)
         , adaptive_sampling(true)
     {}

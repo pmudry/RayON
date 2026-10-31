@@ -11,6 +11,7 @@
 #include "data_structures/color.hpp"
 #include "data_structures/interval.hpp"
 #include "render_target.hpp"
+#include "tone_mapping.hpp"
 
 namespace render
 {
@@ -46,6 +47,7 @@ inline void convertAccumBufferToImage(const RenderTargetView &target, const std:
       return;
 
    static const Interval intensity_range(0.0, 0.999);
+   const ToneMapSettings tone_map = displayToneMap();
 
    auto &image = *target.pixels;
    for (int j = 0; j < target.height; ++j)
@@ -60,6 +62,7 @@ inline void convertAccumBufferToImage(const RenderTargetView &target, const std:
          float g = accum_buffer[accum_idx + 1] / num_samples;
          float b = accum_buffer[accum_idx + 2] / num_samples;
 
+         applyToneMap(r, g, b, tone_map.op, tone_map.exposure);
          r = applyGammaCorrection(r, gamma);
          g = applyGammaCorrection(g, gamma);
          b = applyGammaCorrection(b, gamma);

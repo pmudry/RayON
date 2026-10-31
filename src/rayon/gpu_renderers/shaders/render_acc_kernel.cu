@@ -24,7 +24,7 @@ __device__ __forceinline__ float luminance601(float3 c) { return 0.299f * c.x + 
 __global__ void gammaCorrectKernel(const float4 *__restrict__ accum_buffer, unsigned char *display_image, int width,
                                    int height, int num_samples, int channels, float gamma,
                                    const int *pixel_sample_counts, bool despeckle, float despeckle_ratio,
-                                   float despeckle_floor)
+                                   float despeckle_floor, int tone_map_op, float exposure)
 {
    int x = blockIdx.x * blockDim.x + threadIdx.x;
    int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -60,7 +60,8 @@ __global__ void gammaCorrectKernel(const float4 *__restrict__ accum_buffer, unsi
 
    float inv_gamma = 1.0f / gamma;
 
-   // Gamma correction + tone mapping
+   // Tone mapping + gamma correction
+   applyToneMap(mean.x, mean.y, mean.z, tone_map_op, exposure);
    float r = fminf(powf(fmaxf(mean.x, 0.0f), inv_gamma), 0.999f);
    float g = fminf(powf(fmaxf(mean.y, 0.0f), inv_gamma), 0.999f);
    float b = fminf(powf(fmaxf(mean.z, 0.0f), inv_gamma), 0.999f);

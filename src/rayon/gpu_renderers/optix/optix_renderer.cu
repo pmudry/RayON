@@ -4,6 +4,7 @@
 #include "optix_params.h"
 #include "volume_sdf.cuh"
 #include "scene_description.hpp"
+#include "tone_mapping.hpp"
 
 #include <optix.h>
 #include <optix_function_table_definition.h>
@@ -1808,7 +1809,7 @@ __global__ void optixResolveKernel(const float4 *__restrict__ accum_buffer,
 // blocky and the step to the next resolution stage is less visible.
 __global__ void optixGammaCorrectKernel(const float4 *__restrict__ resolved, unsigned char *display_image,
                                          int render_width, int render_height, int width, int height,
-                                         int channels, float gamma)
+                                         int channels, float gamma, int tone_map_op, float exposure)
 {
    int x = blockIdx.x * blockDim.x + threadIdx.x;
    int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -1838,6 +1839,7 @@ __global__ void optixGammaCorrectKernel(const float4 *__restrict__ resolved, uns
    }
    float inv_gamma = 1.0f / gamma;
 
+   applyToneMap(mean.x, mean.y, mean.z, tone_map_op, exposure);
    float r = fminf(powf(fmaxf(mean.x, 0.0f), inv_gamma), 0.999f);
    float g = fminf(powf(fmaxf(mean.y, 0.0f), inv_gamma), 0.999f);
    float b = fminf(powf(fmaxf(mean.z, 0.0f), inv_gamma), 0.999f);
@@ -2010,8 +2012,10 @@ extern "C" void optixRendererConvertAccumToDisplay(unsigned char *display_image,
    const bool denoised = denoise && denoiseResolved(render_width, render_height, denoise_blend, stream);
    if (denoised)
       display_src = g_state.d_denoised;
+   const ToneMapSettings tone_map = displayToneMap();
    optixGammaCorrectKernel<<<blocks, threads, 0, stream>>>(display_src, g_state.d_display, render_width,
-                                                            render_height, width, height, channels, gamma);
+                                                            render_height, width, height, channels, gamma,
+                                                            tone_map.op, tone_map.exposure);
 
    // Async D2H copy via pinned memory, then single stream sync
    cudaMemcpyAsync(g_state.pinned_display, g_state.d_display, display_size, cudaMemcpyDeviceToHost, stream);

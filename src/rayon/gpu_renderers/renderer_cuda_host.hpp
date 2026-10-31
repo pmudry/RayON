@@ -30,6 +30,7 @@ class RendererCUDA : public IRenderer
       ::setBackgroundIntensity(request.scene.background_intensity);
       ::setLightIntensity(request.scene.light_intensity);
       ::setLightFalloff(request.scene.light_falloff);
+      displayToneMap() = {request.scene.tone_mapping, request.scene.exposure};
       ::setBackgroundColor((float)request.scene.background_color.x(), (float)request.scene.background_color.y(),
                            (float)request.scene.background_color.z());
 

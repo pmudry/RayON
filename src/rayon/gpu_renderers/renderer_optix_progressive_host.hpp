@@ -155,6 +155,8 @@ class RendererOptiXProgressive : public IRenderer
       float light_intensity = scene.light_intensity;        // UI only — baked into SBT at build time
       float light_falloff   = scene.light_falloff;          // distance exponent of the lights' reach
       float indirect_clamp  = scene.indirect_clamp;         // ceiling on light gathered after the first diffuse bounce
+      ToneMapSettings tone_map{scene.tone_mapping, scene.exposure}; // display curve (GUI, display only)
+      displayToneMap() = tone_map;
       float background_intensity = scene.background_intensity;
       float metal_fuzziness = 1.0f;        // UI only — baked into SBT at build time
       float glass_refraction_index = 1.5f; // UI only — baked into SBT at build time
@@ -579,6 +581,7 @@ class RendererOptiXProgressive : public IRenderer
          light_intensity      = active_scene.light_intensity;
          light_falloff        = active_scene.light_falloff;
          indirect_clamp       = active_scene.indirect_clamp;
+         tone_map             = {active_scene.tone_mapping, active_scene.exposure};
          samples_per_batch_float = static_cast<float>(sceneBatchSize(active_scene));
          adaptive_threshold      = sceneAdaptiveThreshold(active_scene);
          ::setOptiXBackgroundColor((float)active_scene.background_color.x(), (float)active_scene.background_color.y(),
@@ -666,6 +669,7 @@ class RendererOptiXProgressive : public IRenderer
                {
                   light_intensity = 1.0f; background_intensity = 1.0f; light_falloff = 2.0f;
                   indirect_clamp = constants::INDIRECT_CLAMP_DEFAULT;
+                  tone_map = ToneMapSettings{};
                   metal_fuzziness = 1.0f; glass_refraction_index = 1.5f;
                   dof_enabled = false; dof_aperture = 0.1f; dof_focus_distance = 10.0f;
                   show_spps_counter = true;
@@ -1121,13 +1125,15 @@ class RendererOptiXProgressive : public IRenderer
                            &use_sobol, &motion_quality, &motion_despeckle, &motion_despeckle_ratio,
                            volume_mat_idx >= 0 ? &volume_settings : nullptr,
                            &save_camera_request, active_scene.source_file.c_str(), camera_save_status.c_str(),
-                           &light_falloff, &indirect_clamp, &caustics);
+                           &light_falloff, &indirect_clamp, &caustics, &tone_map);
+         displayToneMap() = tone_map; // display only: no accumulation reset
 
          if (save_camera_request)
          {
             save_camera_request = false;
             if (Scene::saveViewToYAML(active_scene.source_file.c_str(), look_from, look_at, camera.vfov,
-                                      background_intensity, light_intensity, light_falloff, indirect_clamp))
+                                      background_intensity, light_intensity, light_falloff, indirect_clamp,
+                                      tone_map.op, tone_map.exposure))
                camera_save_status = "Saved to " + active_scene.source_file;
             else
                camera_save_status = "Could not write " + active_scene.source_file;

@@ -68,6 +68,7 @@ class RendererOptiX : public IRenderer
       optixRendererResetAccum(frame.image_width, frame.image_height);
       ::setOptiXLightFalloff(request.scene.light_falloff);
       ::setOptiXIndirectClamp(request.scene.indirect_clamp);
+      displayToneMap() = {request.scene.tone_mapping, request.scene.exposure};
 
       int num_materials = static_cast<int>(request.scene.materials.size());
 

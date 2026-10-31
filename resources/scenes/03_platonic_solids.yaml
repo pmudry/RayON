@@ -1,5 +1,8 @@
-# Platonic Solids showcase - ISC colors, anisotropic metals
+# Platonic Solids showcase - one material per solid, studio lighting
 # The five Platonic solids: tetrahedron, cube, octahedron, dodecahedron, icosahedron
+# Glass, ISC-blue lacquer, brushed gold, soap-film iridescence and polished copper on a dark
+# lacquered floor, under a three-lamp studio rig (warm key, cool rim, soft fill). ACES tone mapping
+# keeps the faces that mirror a lamp below white, so their edges stay antialiased.
 
 camera:
   position: [0, 3, 9]
@@ -7,111 +10,150 @@ camera:
   fov: 40
 
 settings:
-  background_color: [0.04, 0.04, 0.8]
-  background_intensity: 0.1
+  background_color: [0.10, 0.11, 0.14]
+  background_intensity: 0.12
+  tone_mapping: "aces"
+  exposure: 0.85
   adaptive_sampling: false
   use_bvh: true
 
 materials:
-  - name: "ground"
+  # Dark lacquer: the solids and the lamps mirror softly in it
+  - name: "floor"
+    type: "clear_coat"
+    albedo: [0.05, 0.05, 0.06]
+    roughness: 0.06
+    refractive_index: 1.5
+
+  - name: "wall"
     type: "lambertian"
-    albedo: [0.35, 0.35, 0.38]
+    albedo: [0.12, 0.12, 0.14]
 
-  - name: "isc_yellow"
-    type: "anisotropic_metal"
-    albedo: [0.969, 0.945, 0.624]
-    preset: "silver"
-    roughness: 0.35
-    anisotropy: 0.92
+  - name: "glass"
+    type: "glass"
+    refractive_index: 1.5
 
-  - name: "isc_blue"
-    type: "anisotropic_metal"
+  # ISC "Informatique logicielle" blue, as car paint
+  - name: "isc_blue_lacquer"
+    type: "clear_coat"
     albedo: [0.549, 0.776, 0.902]
-    preset: "silver"
-    roughness: 0.35
-    anisotropy: 0.92
+    roughness: 0.02
+    refractive_index: 1.5
 
-  - name: "isc_violet"
+  - name: "brushed_gold"
     type: "anisotropic_metal"
-    albedo: [0.659, 0.565, 0.753]
-    preset: "silver"
-    roughness: 0.35
-    anisotropy: 0.92
+    preset: "gold"
+    roughness: 0.25
+    anisotropy: 0.8
 
-  - name: "isc_rose"
+  - name: "soap_film"
+    type: "thin_film"
+    film_thickness: 480.0
+    film_ior: 1.33
+    refractive_index: 1.0
+
+  - name: "polished_copper"
     type: "anisotropic_metal"
-    albedo: [0.886, 0.671, 0.729]
-    preset: "silver"
-    roughness: 0.35
-    anisotropy: 0.92
+    preset: "copper"
+    roughness: 0.12
+    anisotropy: 0.0
 
-  - name: "isc_green"
-    type: "anisotropic_metal"
-    albedo: [0.596, 0.780, 0.749]
-    preset: "silver"
-    roughness: 0.35
-    anisotropy: 0.92
-
-  - name: "area_light"
+  # Studio rig
+  - name: "key_light"
     type: "light"
-    color: [1.0, 0.875, 0.75]
-    emission_intensity: 8
+    color: [1.0, 0.86, 0.7]
+    emission_intensity: 9
 
+  - name: "top_light"
+    type: "light"
+    color: [1.0, 0.97, 0.92]
+    emission_intensity: 5
+
+  - name: "rim_light"
+    type: "light"
+    color: [0.65, 0.8, 1.0]
+    emission_intensity: 14
+
+  - name: "fill_light"
+    type: "light"
+    color: [0.9, 0.93, 1.0]
+    emission_intensity: 2.5
 
 geometry:
   - type: "rectangle"
-    material: "ground"
+    material: "floor"
     corner: [-200000000, -0.5, -200000000]
     u: [400000000, 0, 0]
     v: [0, 0, 400000000]
 
   # Back wall
   - type: "rectangle"
-    material: "ground"
+    material: "wall"
     corner: [-200000000, -0.5, -18]
     u: [400000000, 0, 0]
     v: [0, 200000000, 0]
 
-  # Main area light (overhead, slightly forward)
+  # Key: warm softbox, front left, above, facing the solids
   - type: "rectangle"
-    material: "area_light"
-    corner: [-3, 5, -2]
-    u: [6, 0, 0]
-    v: [0, 0, 4]
+    material: "key_light"
+    corner: [-5.036, 4.039, 6.943]
+    u: [-2.354, 0.000, -2.590]
+    v: [1.425, 2.922, -1.296]
+
+  # Top: overhead softbox, mirrored by the upper faces of the metals and the glass
+  - type: "rectangle"
+    material: "top_light"
+    corner: [-4.5, 5.5, -1.5]
+    u: [9.0, 0.0, 0.0]
+    v: [0.0, 0.0, 3.0]
+
+  # Rim: cool strip behind and above the row (out of frame), outlines the edges
+  - type: "rectangle"
+    material: "rim_light"
+    corner: [-5.5, 7.718, -3.695]
+    u: [11.0, 0.0, 0.0]
+    v: [0.0, 0.564, 1.390]
+
+  # Fill: large dim panel, front right, opens the shadows
+  - type: "rectangle"
+    material: "fill_light"
+    corner: [8.165, 0.545, 4.815]
+    u: [-2.713, 0.000, 2.939]
+    v: [-0.617, 3.911, -0.570]
 
 # === The five Platonic solids, left to right ===
 
-  # 1. Tetrahedron (4 faces) - ISC Yellow
+  # 1. Tetrahedron (4 faces) - glass
   - type: "obj"
-    material: "isc_yellow"
+    material: "glass"
     file: "../models/tetrahedron.obj"
     position: [-4, 0.8, 0]
     scale: [0.8, 0.8, 0.8]
 
-  # 2. Cube (6 faces) - ISC Blue
+  # 2. Cube (6 faces) - ISC blue lacquer
   - type: "obj"
-    material: "isc_blue"
+    material: "isc_blue_lacquer"
     file: "../models/cube.obj"
     position: [-2, 0.8, 0]
     scale: [0.8, 0.8, 0.8]
 
-  # 3. Octahedron (8 faces) - ISC Violet
+  # 3. Octahedron (8 faces) - brushed gold
   - type: "obj"
-    material: "isc_violet"
+    material: "brushed_gold"
     file: "../models/octahedron.obj"
     position: [0, 0.8, 0]
     scale: [0.8, 0.8, 0.8]
 
-  # 4. Dodecahedron (12 faces) - ISC Rose
+  # 4. Dodecahedron (12 faces) - soap film
   - type: "obj"
-    material: "isc_rose"
+    material: "soap_film"
     file: "../models/dodecahedron.obj"
     position: [2, 0.8, 0]
     scale: [0.8, 0.8, 0.8]
 
-  # 5. Icosahedron (20 faces) - ISC Green
+  # 5. Icosahedron (20 faces) - polished copper
   - type: "obj"
-    material: "isc_green"
+    material: "polished_copper"
     file: "../models/icosahedron.obj"
     position: [4, 0.8, 0]
     scale: [0.8, 0.8, 0.8]

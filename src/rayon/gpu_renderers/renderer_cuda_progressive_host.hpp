@@ -99,6 +99,8 @@ class RendererCUDAProgressive : public IRenderer
       float gamma = 2.0f;
       float light_intensity = scene.light_intensity;
       float light_falloff   = scene.light_falloff;
+      ToneMapSettings tone_map{scene.tone_mapping, scene.exposure}; // display curve (GUI, display only)
+      displayToneMap() = tone_map;
       float background_intensity = scene.background_intensity;
       float metal_fuzziness = 1.0f;
       float glass_refraction_index = 1.5f;
@@ -469,6 +471,7 @@ class RendererCUDAProgressive : public IRenderer
          background_intensity = active_scene.background_intensity;
          light_intensity      = active_scene.light_intensity;
          light_falloff        = active_scene.light_falloff;
+         tone_map             = {active_scene.tone_mapping, active_scene.exposure};
          samples_per_batch_float = static_cast<float>(sceneBatchSize(active_scene));
          adaptive_threshold      = sceneAdaptiveThreshold(active_scene);
          ::setBackgroundColor((float)active_scene.background_color.x(), (float)active_scene.background_color.y(),
@@ -536,6 +539,7 @@ class RendererCUDAProgressive : public IRenderer
                   // Reset to defaults
                   light_intensity = 1.0f;
                   light_falloff = 2.0f;
+                  tone_map = ToneMapSettings{};
                   background_intensity = 1.0f;
                   metal_fuzziness = 1.0f;
                   glass_refraction_index = 1.5f;
@@ -835,13 +839,15 @@ class RendererCUDAProgressive : public IRenderer
                            &use_sobol, nullptr, &motion_despeckle, &motion_despeckle_ratio,
                            volume_mat_idx >= 0 ? &volume_settings : nullptr,
                            &save_camera_request, active_scene.source_file.c_str(), camera_save_status.c_str(),
-                           &light_falloff);
+                           &light_falloff, nullptr, nullptr, &tone_map);
+         displayToneMap() = tone_map; // display only: no accumulation reset
 
          if (save_camera_request)
          {
             save_camera_request = false;
             if (Scene::saveViewToYAML(active_scene.source_file.c_str(), look_from, look_at, camera.vfov,
-                                      background_intensity, light_intensity, light_falloff))
+                                      background_intensity, light_intensity, light_falloff, -1.0f, tone_map.op,
+                                      tone_map.exposure))
                camera_save_status = "Saved to " + active_scene.source_file;
             else
                camera_save_status = "Could not write " + active_scene.source_file;

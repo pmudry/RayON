@@ -56,6 +56,8 @@ camera:
 | `light_intensity` | float | `1.0` | Multiplier applied to every light's emission (GUI "Lights inten.") |
 | `light_falloff` | float | `2.0` | Distance exponent of the lights' reach (GUI "Lights falloff"). `2` is the physical inverse square; lower values carry the light farther, higher values confine it around the source. Pivots at one scene unit from the light; emitters seen by the camera are unchanged. An artistic control, not energy conserving |
 | `indirect_clamp` | float | `50.0` | OptiX only. Per-sample luminance ceiling on the light gathered after the first diffuse bounce (GUI "Indirect clamp"), `0` = off. Tames the speckle of caustics (a light or the sun reached through glass or off a mirror), which no light sampling can target, at the price of dimmer caustics |
+| `tone_mapping` | string | `"none"` | Display curve before gamma (GUI "Tone map"): `none` (clip at white), `aces` (filmic, soft highlight roll-off: faces mirroring a light keep antialiased edges), `reinhard` (gentle, flatter). Display only, the render itself is unchanged |
+| `exposure` | float | `1.0` | Display exposure multiplier applied before the tone curve (GUI "Exposure") |
 | `use_bvh` | bool | `false` | Enable BVH acceleration (recommended for > 50 objects) |
 | `adaptive_sampling` | bool | `true` | Let converged pixels stop accumulating early |
 | `adaptive_threshold` | float | `0` | Interactive modes: adaptive sampling threshold for this scene, the standard error of a pixel's mean in display space below which it stops accumulating (GUI "Threshold"). A number (`0.002`) or a fraction of the display range (`"0.5/255"`); `0` = renderer default (`0.01`, about 2.5/255). Lower values let more pixels keep sampling, for scenes whose fine detail converges late |

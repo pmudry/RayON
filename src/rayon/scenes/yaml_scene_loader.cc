@@ -6,6 +6,7 @@
 #include "yaml_scene_loader.hpp"
 #include "obj_loader.hpp"
 #include "volume_grid.hpp"
+#include "tone_mapping.hpp"
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
@@ -706,6 +707,10 @@ bool loadSceneFromYAML(const char *filename, SceneDescription &scene)
       scene.light_falloff = std::max(0.0f, parser.getFloat("settings.light_falloff", 2.0f));
    if (parser.hasKey("settings.indirect_clamp"))
       scene.indirect_clamp = std::max(0.0f, parser.getFloat("settings.indirect_clamp", 50.0f));
+   if (parser.hasKey("settings.tone_mapping"))
+      scene.tone_mapping = toneMapFromName(removeQuotes(parser.getString("settings.tone_mapping")));
+   if (parser.hasKey("settings.exposure"))
+      scene.exposure = std::max(0.01f, parser.getFloat("settings.exposure", 1.0f));
    if (parser.hasKey("settings.samples_per_batch"))
       scene.samples_per_batch = std::max(0, parser.getInt("settings.samples_per_batch", 0));
    if (parser.hasKey("settings.adaptive_threshold"))
@@ -851,7 +856,8 @@ string fmtNumber(double v)
 } // namespace
 
 bool saveViewToYAML(const char *filename, const Vec3 &position, const Vec3 &look_at, float fov,
-                    float background_intensity, float light_intensity, float light_falloff, float indirect_clamp)
+                    float background_intensity, float light_intensity, float light_falloff, float indirect_clamp,
+                    int tone_mapping, float exposure)
 {
    ifstream in(filename);
    if (!in)
@@ -872,6 +878,19 @@ bool saveViewToYAML(const char *filename, const Vec3 &position, const Vec3 &look
                                             {"light_falloff", fmtNumber(light_falloff)}};
    if (indirect_clamp >= 0.0f) // negative: the caller does not manage this setting, leave the file's value
       settings.push_back({"indirect_clamp", fmtNumber(indirect_clamp)});
+   if (tone_mapping >= 0) // negative: not managed by the caller
+   {
+      // Written when it differs from the default or the file already sets it: a plain gamma + clip
+      // scene does not gain two lines on every save
+      const bool in_file = std::any_of(lines.begin(), lines.end(), [](const string &l)
+                                       { return l.find("tone_mapping:") != string::npos ||
+                                                l.find("exposure:") != string::npos; });
+      if (tone_mapping != 0 || exposure != 1.0f || in_file)
+      {
+         settings.push_back({"tone_mapping", string("\"") + toneMapYamlName(tone_mapping) + "\""});
+         settings.push_back({"exposure", fmtNumber(exposure)});
+      }
+   }
    setBlockValues(lines, "settings", settings);
 
    ofstream out(filename, ios::trunc);

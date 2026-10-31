@@ -13,6 +13,7 @@
 #pragma once
 
 #include "constants.hpp"
+#include "tone_mapping.hpp"
 #ifdef SDL2_FOUND
 
 #include <SDL.h>
@@ -276,7 +277,8 @@ class SDLGuiHandler
                       VolumeMaterialSettings *volume = nullptr,
                       bool *save_camera_request = nullptr, const char *scene_yaml_path = nullptr,
                       const char *camera_save_status = nullptr, float *light_falloff = nullptr,
-                      float *indirect_clamp = nullptr, bool *caustics = nullptr)
+                      float *indirect_clamp = nullptr, bool *caustics = nullptr,
+                      ToneMapSettings *tone_map = nullptr)
    {
       SDL_UpdateTexture(texture, nullptr, image.data(), image_width * image_channels);
       SDL_RenderClear(renderer);
@@ -791,6 +793,19 @@ class SDLGuiHandler
                                            "Saved per scene with the camera (settings.light_falloff).");
                   }
                   ImGui::SliderFloat("Ambient Light", background_intensity, 0.0f, 5.0f, "%.2f");
+                  if (tone_map)
+                  {
+                     ImGui::Combo("Tone map", &tone_map->op, toneMapNames(), 3);
+                     ImGui::SetItemTooltip("Display curve applied to each pixel before gamma. None clips at\n"
+                                           "white: a face reflecting a light stays pure white up to its edge,\n"
+                                           "which then looks jagged. ACES filmic rolls highlights off softly\n"
+                                           "(edges stay antialiased); Reinhard is gentler and flatter.\n"
+                                           "Display only, no re-render. Saved per scene with the camera\n"
+                                           "(settings.tone_mapping, settings.exposure).");
+                     ImGui::SliderFloat("Exposure", &tone_map->exposure, 0.1f, 4.0f, "%.2f",
+                                        ImGuiSliderFlags_Logarithmic);
+                     ImGui::SetItemTooltip("Linear multiplier before the tone curve (display only).");
+                  }
                   ImGui::SliderFloat("Metal Fuzz", metal_fuzziness, 0.0f, 5.0f, "%.2f");
                   ImGui::SliderFloat("Glass IOR", glass_ior, 1.0f, 2.5f, "%.2f");
                   ImGui::PopItemWidth();

@@ -6,6 +6,7 @@
 #include "cuda_utils.cuh"
 
 #include "shaders/render_acc_kernel.cuh"
+#include "tone_mapping.hpp"
 
 #include <cstdint>
 #include <cstdio>
@@ -601,7 +602,8 @@ extern "C" void convertAccumToDisplayCUDA(void *d_accum_buffer, unsigned char *d
 
    gammaCorrectKernel<<<blocks, threads, 0, stream>>>(
        static_cast<float4 *>(d_accum_buffer), d_display, width, height, num_samples,
-       channels, gamma, static_cast<const int *>(d_pixel_sample_counts), despeckle, despeckle_ratio, despeckle_floor);
+       channels, gamma, static_cast<const int *>(d_pixel_sample_counts), despeckle, despeckle_ratio, despeckle_floor,
+       displayToneMap().op, displayToneMap().exposure);
 
    if (s_display_stream && s_pinned_display)
    {
