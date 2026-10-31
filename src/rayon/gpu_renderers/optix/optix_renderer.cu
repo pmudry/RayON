@@ -190,6 +190,7 @@ struct OptixState
    float *d_env_conditional_cdf = nullptr;
    int    env_w = 0;
    int    env_h = 0;
+   bool   debug = false; ///< RAYON_OPTIX_DEBUG: validation, exceptions, per-pass sync
 
    // Dedicated CUDA stream for OptiX launches — avoids blocking the default stream
    // and enables stream-specific synchronization instead of cudaDeviceSynchronize().
@@ -288,6 +289,15 @@ static void initializeOptiX()
    OptixDeviceContextOptions ctx_options = {};
    ctx_options.logCallbackFunction = &optixLogCallback;
    ctx_options.logCallbackLevel = 4;
+   // RAYON_OPTIX_DEBUG=1: validation mode, exceptions on (stack overflow, trace depth; the default
+   // exception program prints the launch index) and a sync after each pass of a batch, which then
+   // names the pass that faulted. Slower; for chasing illegal memory accesses.
+   g_state.debug = std::getenv("RAYON_OPTIX_DEBUG") != nullptr;
+   if (g_state.debug)
+   {
+      ctx_options.validationMode = OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_ALL;
+      printf("OptiX debug: validation mode, exceptions and per-pass sync on (RAYON_OPTIX_DEBUG)\n");
+   }
    OPTIX_CHECK(optixDeviceContextCreate(cuCtx, &ctx_options, &g_state.context));
 
    // Load PTX and create module
@@ -297,14 +307,15 @@ static void initializeOptiX()
 
    OptixModuleCompileOptions module_options = {};
    module_options.optLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_3; // Maximum optimization
-   module_options.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE;
+   module_options.debugLevel = g_state.debug ? OPTIX_COMPILE_DEBUG_LEVEL_MINIMAL : OPTIX_COMPILE_DEBUG_LEVEL_NONE;
 
    OptixPipelineCompileOptions pipeline_options = {};
    pipeline_options.usesMotionBlur = false;
    pipeline_options.traversableGraphFlags = OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING;
    pipeline_options.numPayloadValues = 2;   // PRD pointer (2 x uint32); shadow rays use only payload 0
    pipeline_options.numAttributeValues = 3; // Custom primitives report their normal (3 x float)
-   pipeline_options.exceptionFlags = OPTIX_EXCEPTION_FLAG_NONE;
+   pipeline_options.exceptionFlags =
+       g_state.debug ? (OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW | OPTIX_EXCEPTION_FLAG_TRACE_DEPTH) : OPTIX_EXCEPTION_FLAG_NONE;
    pipeline_options.pipelineLaunchParamsVariableName = "params";
 
    optix_log_size = sizeof(optix_log);
@@ -1655,6 +1666,18 @@ extern "C" unsigned long long optixRendererLaunch(int width, int height, int num
 
    OPTIX_CHECK(optixLaunch(g_state.pipeline, stream, g_state.d_launch_params, sizeof(OptixLaunchParams), &g_state.sbt,
                             width, height, 1));
+   // RAYON_OPTIX_DEBUG: sync after each pass so that a fault is pinned to the pass that made it
+   auto debugSync = [&](const char *pass)
+   {
+      if (!g_state.debug)
+         return;
+      const cudaError_t e = cudaStreamSynchronize(stream);
+      if (e != cudaSuccess)
+         fprintf(stderr, "OptiX debug: %s FAILED: %s (%dx%d, %d spp/launch, caustics %d, %d caustic targets)\n", pass,
+                 cudaGetErrorString(e), width, height, samples_to_add, (int)launch_params.caustics_active,
+                 launch_params.num_caustic_targets);
+   };
+   debugSync("camera pass (__raygen__rg)");
    if (launch_params.caustics_active)
    {
       // Light paths of the caustic pass, splatted into the same accumulation buffer before the
@@ -1663,6 +1686,7 @@ extern "C" unsigned long long optixRendererLaunch(int width, int height, int num
       sbt_caustics.raygenRecord            = g_state.d_sbt_raygen_caustics;
       OPTIX_CHECK(optixLaunch(g_state.pipeline, stream, g_state.d_launch_params, sizeof(OptixLaunchParams),
                               &sbt_caustics, launch_params.caustic_paths, 1, 1));
+      debugSync("caustic pass (__raygen__caustics)");
    }
 
    {
@@ -1673,6 +1697,7 @@ extern "C" unsigned long long optixRendererLaunch(int width, int height, int num
           num_pixels, samples_to_add, total_samples_so_far + samples_to_add, g_state.adaptive_enabled,
           g_state.adaptive_min_samples, g_state.adaptive_threshold);
    }
+   debugSync("adaptive update kernel");
 
    // Stream-specific sync instead of cudaDeviceSynchronize() — only waits for
    // this stream, allowing other work (display pipeline) to proceed.

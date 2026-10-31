@@ -1826,14 +1826,14 @@ __device__ void caustic_splat(const float3 &x, const float3 &n, const float3 &al
    const float3 q    = params.camera_center - to_cam * (plane / cos_c) - params.pixel00_loc;
    const float  du2  = dot3(params.pixel_delta_u, params.pixel_delta_u);
    const float  dv2  = dot3(params.pixel_delta_v, params.pixel_delta_v);
-   const int    px   = (int)floorf(dot3(q, params.pixel_delta_u) / du2 + 0.5f);
-   const int    py   = (int)floorf(dot3(q, params.pixel_delta_v) / dv2 + 0.5f);
-   if (px < 0 || py < 0 || px >= (int)params.width || py >= (int)params.height)
-      return;
-   const unsigned int pixel_idx = (unsigned int)py * params.width + (unsigned int)px;
-   // Same skip rule as raygen: a converged pixel takes no samples this launch, so no splats either
-   if (params.pixel_sample_counts && params.pixel_sample_counts[pixel_idx] < 0 &&
-       !(params.conv_streak && params.conv_streak[pixel_idx] == ADAPTIVE_RECHECK_MARK))
+   const float  fx   = dot3(q, params.pixel_delta_u) / du2 + 0.5f;
+   const float  fy   = dot3(q, params.pixel_delta_v) / dv2 + 0.5f;
+   // Coarse test before the shadow ray, with a pixel of margin: it only spares traces for points off
+   // screen. The exact pixel is taken and bounds-checked after the trace, next to the writes: the
+   // compiler rematerialises values across optixTrace, and with fast math a recomputed coordinate
+   // may round to the other side of a border (py -1 after a check that saw 0: an accumulation
+   // write 2^32 - 510 pixels away, the illegal memory access of the interactive modes)
+   if (!(fx > -1.0f && fy > -1.0f && fx < (float)params.width + 1.0f && fy < (float)params.height + 1.0f))
       return;
    // Leave from just above the surface, as NEE shadow rays do: a hit point that rounds below the
    // surface (the 950-unit ground sphere of the default scene) would otherwise see the surface
@@ -1842,6 +1842,15 @@ __device__ void caustic_splat(const float3 &x, const float3 &n, const float3 &al
    unsigned int  film_seed = 0u; // unused: the join meets no medium
    const float3  T_cam     = shadow_transmittance_optix(x + 0.0001f * n, to_cam, dist - 0.001f, film_seed, true);
    if (fmaxf(T_cam.x, fmaxf(T_cam.y, T_cam.z)) <= 0.0f)
+      return;
+   const int px = (int)floorf(fx);
+   const int py = (int)floorf(fy);
+   if (px < 0 || py < 0 || px >= (int)params.width || py >= (int)params.height)
+      return;
+   const unsigned int pixel_idx = (unsigned int)py * params.width + (unsigned int)px;
+   // Same skip rule as raygen: a converged pixel takes no samples this launch, so no splats either
+   if (params.pixel_sample_counts && params.pixel_sample_counts[pixel_idx] < 0 &&
+       !(params.conv_streak && params.conv_streak[pixel_idx] == ADAPTIVE_RECHECK_MARK))
       return;
 
    // Pixel importance of the pinhole camera, per solid angle: plane^2 / (pixel area cos^3);

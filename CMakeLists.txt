@@ -259,10 +259,12 @@ set_property(TARGET rayon PROPERTY CUDA_SEPARABLE_COMPILATION ON)
                 -ptx
                 -std=c++17
                 # Always optimised: there is no device debugger for OptiX programs, and -O0 PTX
-                # makes the OptiX backend several times slower (Debug keeps -lineinfo for Nsight)
+                # makes the OptiX backend several times slower. -lineinfo costs nothing at run time and
+                # lets compute-sanitizer --check-optix and Nsight name the faulting source line
                 -O3
+                -lineinfo
                 # one argument in every configuration: an empty "" argument makes nvcc abort
-                $<IF:$<CONFIG:Debug>,-lineinfo,--use_fast_math>
+                $<IF:$<CONFIG:Debug>,-DRAYON_DEBUG_BUILD,--use_fast_math>
                 -I${OptiX_INCLUDE_DIR}
                 ${OPTIX_INCLUDE_FLAGS}
                 -o ${OPTIX_PTX_OUTPUT}
