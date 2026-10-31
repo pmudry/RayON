@@ -118,6 +118,7 @@ struct OptixState
    float light_falloff        = 2.0f;
    float indirect_clamp       = 50.0f;
    bool  has_volume           = false; // scene holds a VOLUME material (shadow rays track transmittance)
+   bool  has_thin_film        = false; // scene holds a THIN_FILM material (shadow rays pass through films)
 
    // Adaptive sampling (converged-pixel skipping): per-pixel sample counts (negative = converged)
    // and the per-pixel sum of squared sample luminance for the convergence test.
@@ -941,7 +942,8 @@ static void buildGAS(const Scene::SceneDescription &scene)
    {
       std::vector<OptixMaterialData> materials(num_materials);
       std::vector<float3> pattern_points; // FIBONACCI_DOTS directions, all materials concatenated
-      g_state.has_volume = false;
+      g_state.has_volume    = false;
+      g_state.has_thin_film = false;
       const int num_volume_materials = static_cast<int>(
           std::count_if(scene.materials.begin(), scene.materials.end(),
                         [](const Scene::MaterialDesc &m) { return m.type == Scene::MaterialType::VOLUME; }));
@@ -950,6 +952,8 @@ static void buildGAS(const Scene::SceneDescription &scene)
          const auto &m = scene.materials[i];
          if (m.type == Scene::MaterialType::VOLUME)
             g_state.has_volume = true;
+         if (m.type == Scene::MaterialType::THIN_FILM)
+            g_state.has_thin_film = true;
          materials[i].pattern_table_offset = 0;
          if (static_cast<int>(m.pattern) == 1) // FIBONACCI_DOTS: precompute the dot directions once
          {
@@ -1620,6 +1624,7 @@ extern "C" unsigned long long optixRendererLaunch(int width, int height, int num
    launch_params.light_falloff      = g_state.light_falloff;
    launch_params.indirect_clamp     = g_state.indirect_clamp;
    launch_params.has_volume         = g_state.has_volume;
+   launch_params.has_thin_film      = g_state.has_thin_film;
    launch_params.geom_to_light_map  = g_state.d_geom_to_light;
    launch_params.num_geom_entries   = g_state.num_geom_entries;
 

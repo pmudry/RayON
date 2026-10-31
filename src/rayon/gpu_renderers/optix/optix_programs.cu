@@ -622,15 +622,59 @@ __device__ float ratio_track_optix(const OptixMaterialData &m, float3 p, float3 
    return T;
 }
 
-// Transmittance from origin over `dist` units along dir: 1 when clear, 0 when an opaque surface
-// is in the way, in between through volumes. Without a volume in the scene this is the plain
-// occlusion test (one any-hit style trace).
-__device__ float shadow_transmittance_optix(float3 origin, float3 dir, float dist, unsigned int &seed)
+/// Reflectance of a thin film (Airy formula at 650, 550 and 450 nm) for the cosine of incidence.
+/// Its transmission goes straight on (the film has the same medium on both sides): 1 - R.
+__device__ __forceinline__ float3 thin_film_reflectance_optix(const OptixMaterialData &mat, float cos_i)
 {
-   if (!params.has_volume)
-      return trace_shadow(params.traversable, origin, dir, 0.0001f, dist) ? 0.0f : 1.0f;
-   float T = 1.0f, t0 = 0.0f;
-   for (int i = 0; i < 2 * VOLUME_MAX_PASSES; ++i)
+   cos_i = fmaxf(cos_i, 0.001f);
+
+   float n0 = mat.refractive_index; // exterior medium (air ≈ 1.0)
+   float n1 = mat.film_ior;         // film (soap/water ≈ 1.33)
+   float d  = mat.film_thickness;   // film thickness in nm
+
+   float sin_t_sq = (n0 / n1) * (n0 / n1) * (1.0f - cos_i * cos_i);
+   float cos_t = (sin_t_sq >= 1.0f) ? 0.0f : sqrtf(1.0f - sin_t_sq);
+
+   float r01_v = (n0 - n1) / (n0 + n1); r01_v *= r01_v;
+   float x01 = 1.0f - cos_i;
+   float R01 = r01_v + (1.0f - r01_v) * (x01 * x01 * x01 * x01 * x01);
+
+   float r12_v = (n1 - n0) / (n1 + n0); r12_v *= r12_v;
+   float x12 = 1.0f - cos_t;
+   float R12 = r12_v + (1.0f - r12_v) * (x12 * x12 * x12 * x12 * x12);
+
+   // Product of the two amplitude coefficients r01 * r12. For a film between two media of
+   // the same index (soap in air) r12 = -r01, so it is negative: the reflection on the
+   // denser side carries a pi phase shift and a vanishing film turns black.
+   float rr = -sqrtf(R01 * R12);
+
+   // Airy formula for a single wavelength lambda (nm)
+   auto airy = [&](float lambda) -> float {
+      float delta = (4.0f * M_PIf * n1 * d * cos_t) / lambda;
+      float c = cosf(delta);
+      float num = R01 + R12 + 2.0f * rr * c;
+      float den = 1.0f + R01 * R12 + 2.0f * rr * c;
+      return num / fmaxf(den, 1e-8f);
+   };
+
+   return make_float3(airy(650.0f), airy(550.0f), airy(450.0f));
+}
+
+// Transmittance from origin over `dist` units along dir: 1 when clear, 0 when an opaque surface
+// is in the way, in between through volumes and thin films (soap bubbles let 1 - R through, per
+// channel, on a straight line). Without either in the scene this is the plain occlusion test (one
+// any-hit style trace). films_only: what a camera ray sees through, visible films and nothing else
+// (the caustic pass's join to the camera).
+__device__ float3 shadow_transmittance_optix(float3 origin, float3 dir, float dist, unsigned int &seed,
+                                             bool films_only = false)
+{
+   constexpr int SHADOW_MAX_FILMS = 8; // bubbles crossed (two faces each) before giving up
+   const float3 ZERO = make_float3(0.0f, 0.0f, 0.0f);
+   if ((films_only || !params.has_volume) && !params.has_thin_film)
+      return trace_shadow(params.traversable, origin, dir, 0.0001f, dist) ? ZERO : make_float3(1.0f, 1.0f, 1.0f);
+   float3 T  = make_float3(1.0f, 1.0f, 1.0f);
+   float  t0 = 0.0f;
+   for (int i = 0; i < 2 * VOLUME_MAX_PASSES + 2 * SHADOW_MAX_FILMS; ++i)
    {
       if (dist - t0 <= 0.0002f)
          return T;
@@ -640,11 +684,20 @@ __device__ float shadow_transmittance_optix(float3 origin, float3 dir, float dis
       trace(params.traversable, from, dir, 0.0001f, dist - t0, &h);
       if (!h.hit)
          return T;
-      if (h.material_idx < 0 || params.materials[h.material_idx].type != OptixMaterialType::VOLUME)
-         return 0.0f; // opaque surface
-      const OptixMaterialData &m = params.materials[h.material_idx];
+      const OptixMaterialType type =
+          (h.material_idx < 0) ? OptixMaterialType::LAMBERTIAN : params.materials[h.material_idx].type;
       const float3 d_hit = h.hit_point - from;
       const float  t_hit = t0 + sqrtf(dot3(d_hit, d_hit));
+      if (type == OptixMaterialType::THIN_FILM && (h.visible || !films_only))
+      {
+         const float3 R = thin_film_reflectance_optix(params.materials[h.material_idx], fabsf(dot3(dir, h.hit_normal)));
+         T  = T * make_float3(1.0f - R.x, 1.0f - R.y, 1.0f - R.z);
+         t0 = t_hit + 0.001f;
+         continue;
+      }
+      if (type != OptixMaterialType::VOLUME || films_only)
+         return ZERO; // opaque surface (or, for films_only, anything the camera ray does not see through)
+      const OptixMaterialData &m = params.materials[h.material_idx];
       if (h.front_face)
       {
          // Entering a medium: track up to its far side, or to the end of the segment
@@ -653,14 +706,14 @@ __device__ float shadow_transmittance_optix(float3 origin, float3 dir, float dis
          if (dist - t_hit > 0.0002f)
             trace(params.traversable, h.hit_point, dir, 0.0001f, dist - t_hit, &ex);
          if (ex.hit && (ex.material_idx < 0 || params.materials[ex.material_idx].type != OptixMaterialType::VOLUME))
-            return 0.0f; // opaque surface inside the medium
+            return ZERO; // opaque surface inside the medium
          float t_exit = dist;
          if (ex.hit)
          {
             const float3 d_ex = ex.hit_point - h.hit_point;
             t_exit = t_hit + sqrtf(dot3(d_ex, d_ex));
          }
-         T *= ratio_track_optix(m, h.hit_point, dir, t_exit - t_hit, seed);
+         T = T * ratio_track_optix(m, h.hit_point, dir, t_exit - t_hit, seed);
          if (!ex.hit)
             return T;
          t0 = t_exit + 0.001f;
@@ -668,11 +721,11 @@ __device__ float shadow_transmittance_optix(float3 origin, float3 dir, float dis
       else
       {
          // Started inside the medium: track up to this far side
-         T *= ratio_track_optix(m, from, dir, t_hit - t0, seed);
+         T = T * ratio_track_optix(m, from, dir, t_hit - t0, seed);
          t0 = t_hit + 0.001f;
       }
-      if (T <= 0.0f)
-         return 0.0f;
+      if (fmaxf(T.x, fmaxf(T.y, T.z)) <= 0.0f)
+         return ZERO;
    }
    return T;
 }
@@ -683,8 +736,8 @@ __device__ float shadow_transmittance_optix(float3 origin, float3 dir, float dis
 // traced. Only a surviving estimate pays an occlusion-only ray for opaque surfaces inside the box
 // (the ground under a cloud), and then the general path from the box face to the light. Each
 // factor is an independent estimate of its own segment, so the product stays unbiased.
-__device__ float volume_nee_transmittance_optix(const OptixMaterialData &m, float3 p, float3 dir, float dist,
-                                                unsigned int &seed)
+__device__ float3 volume_nee_transmittance_optix(const OptixMaterialData &m, float3 p, float3 dir, float dist,
+                                                 unsigned int &seed)
 {
    if (!m.volume.boxed)
       return shadow_transmittance_optix(p, dir, dist, seed);
@@ -697,17 +750,18 @@ __device__ float volume_nee_transmittance_optix(const OptixMaterialData &m, floa
    const float t_box = fmaxf(0.0f, fminf(fminf(tx, ty), tz));
    const float t_med = fminf(t_box, dist);
 
-   float T = ratio_track_optix(m, p, dir, t_med, seed);
-   if (T <= 0.0f)
-      return 0.0f;
+   const float3 ZERO = make_float3(0.0f, 0.0f, 0.0f);
+   const float  T_med = ratio_track_optix(m, p, dir, t_med, seed);
+   if (T_med <= 0.0f)
+      return ZERO;
    // Opaque surfaces between p and the box face (the face itself stays outside the interval)
    constexpr float FACE_GAP = 0.0005f;
    if (t_med > 2.0f * FACE_GAP && trace_shadow(params.traversable, p, dir, 0.0001f, t_med - FACE_GAP))
-      return 0.0f;
+      return ZERO;
    // Beyond the box: anything on the way to the light, as usual
    if (dist > t_box + FACE_GAP)
-      T *= shadow_transmittance_optix(p + (t_box + FACE_GAP) * dir, dir, dist - t_box - FACE_GAP, seed);
-   return T;
+      return shadow_transmittance_optix(p + (t_box + FACE_GAP) * dir, dir, dist - t_box - FACE_GAP, seed) * T_med;
+   return make_float3(T_med, T_med, T_med);
 }
 
 /// Materials whose scattering is not estimated by NEE (mirrors, metals, glass, thin films): the
@@ -835,55 +889,24 @@ __device__ __forceinline__ bool scatter_specular_optix(const OptixMaterialData &
       // Full Airy thin-film interference (soap bubbles / oil slicks).
       // Stochastic reflect/transmit sampled from per-wavelength reflectance.
       float3 unit_dir = normalize3(cur_direction);
-      float cos_i = fmaxf(fabsf(dot3(-unit_dir, prd.hit_normal)), 0.001f);
+      const float3 R  = thin_film_reflectance_optix(mat, fabsf(dot3(-unit_dir, prd.hit_normal)));
+      // Reflection chosen with the largest channel's reflectance: a reflected sample then weighs at
+      // most 1 per channel. With the average, a film reflecting mostly red sent its rare reflections
+      // with red boosted ~3x — coloured fireflies wherever the film mirrors the lamp or a lit floor.
+      const float p_refl = fminf(fmaxf(R.x, fmaxf(R.y, R.z)), 0.999f);
 
-      float n0 = mat.refractive_index; // exterior medium (air ≈ 1.0)
-      float n1 = mat.film_ior;         // film (soap/water ≈ 1.33)
-      float d  = mat.film_thickness;   // film thickness in nm
-
-      float sin_i = sqrtf(fmaxf(0.0f, 1.0f - cos_i * cos_i));
-      float sin_t_sq = (n0 / n1) * (n0 / n1) * (1.0f - cos_i * cos_i);
-      float cos_t = (sin_t_sq >= 1.0f) ? 0.0f : sqrtf(1.0f - sin_t_sq);
-      (void)sin_i;
-
-      float r01_v = (n0 - n1) / (n0 + n1); r01_v *= r01_v;
-      float x01 = 1.0f - cos_i;
-      float R01 = r01_v + (1.0f - r01_v) * (x01 * x01 * x01 * x01 * x01);
-
-      float r12_v = (n1 - n0) / (n1 + n0); r12_v *= r12_v;
-      float x12 = 1.0f - cos_t;
-      float R12 = r12_v + (1.0f - r12_v) * (x12 * x12 * x12 * x12 * x12);
-
-      // Product of the two amplitude coefficients r01 * r12. For a film between two media of
-      // the same index (soap in air) r12 = -r01, so it is negative: the reflection on the
-      // denser side carries a pi phase shift and a vanishing film turns black.
-      float rr = -sqrtf(R01 * R12);
-
-      // Airy formula for a single wavelength lambda (nm)
-      auto airy = [&](float lambda) -> float {
-         float delta = (4.0f * M_PIf * n1 * d * cos_t) / lambda;
-         float c = cosf(delta);
-         float num = R01 + R12 + 2.0f * rr * c;
-         float den = 1.0f + R01 * R12 + 2.0f * rr * c;
-         return num / fmaxf(den, 1e-8f);
-      };
-
-      float Rr = airy(650.0f), Rg = airy(550.0f), Rb = airy(450.0f);
-      float avg_R = (Rr + Rg + Rb) / 3.0f;
-
-      if (rnd() < avg_R)
+      if (rnd() < p_refl)
       {
          // Reflect — carry iridescent color
          scatter_dir = reflect3(unit_dir, prd.hit_normal);
-         attenuation = make_float3(Rr, Rg, Rb) * (1.0f / fmaxf(avg_R, 0.001f));
+         attenuation = R * (1.0f / fmaxf(p_refl, 0.001f));
          did_scatter = (dot3(scatter_dir, prd.hit_normal) > 0.0f);
       }
       else
       {
          // Transmit — pass straight through
          scatter_dir = unit_dir;
-         attenuation = make_float3(1.0f - Rr, 1.0f - Rg, 1.0f - Rb)
-                       * (1.0f / fmaxf(1.0f - avg_R, 0.001f));
+         attenuation = make_float3(1.0f - R.x, 1.0f - R.y, 1.0f - R.z) * (1.0f / (1.0f - p_refl));
          did_scatter = true;
       }
    }
@@ -909,12 +932,13 @@ __device__ __forceinline__ bool is_caustic_delta_optix(const OptixMaterialData &
    return true;
 }
 
-/// Roughness of the glossy lobe of a rough mirror or metal, 0 when it is a perfect mirror (delta)
-__device__ __forceinline__ float glossy_roughness_optix(const OptixMaterialData &mat)
+/// A straight transmission through a thin film, which shadow rays cross too (see
+/// shadow_transmittance_optix): NEE covers the light seen through it, so MIS and the caustic pass
+/// treat the film as absent. The normal faces the incoming ray, a reflection stays on its side.
+__device__ __forceinline__ bool is_film_pass_optix(const OptixMaterialData &mat, const PRDRadiance &prd,
+                                                   const float3 &scatter_dir)
 {
-   if (mat.type == OptixMaterialType::ROUGH_MIRROR || mat.type == OptixMaterialType::METAL)
-      return mat.roughness * params.metal_fuzziness;
-   return 0.0f;
+   return params.has_thin_film && mat.type == OptixMaterialType::THIN_FILM && dot3(scatter_dir, prd.hit_normal) < 0.0f;
 }
 
 /// Solid-angle pdf of scatter_specular_optix()'s rough-mirror lobe: the normal n + r * p, p uniform
@@ -947,6 +971,45 @@ __device__ __forceinline__ float glossy_lobe_pdf_optix(const float3 &n, const fl
    const float t1 = fmaxf(0.0f, c - s);
    const float pdf_m = (t2 * t2 * t2 - t1 * t1 * t1) / (4.0f * 3.14159265f * r * r * r);
    return pdf_m / (4.0f * fmaxf(fabsf(dot3(wo, m)), 1e-6f));
+}
+
+/// A glossy lobe that light sampling can serve: rough mirrors and metals, the coat of a clear coat.
+/// Their smooth versions are delta distributions and stay with the BSDF. (Anisotropic GGX metals
+/// are left out for now: a VNDF-pdf version came out 0.3% darker than BSDF sampling alone.)
+__device__ __forceinline__ bool has_glossy_lobe_optix(const OptixMaterialData &mat)
+{
+   if (mat.type == OptixMaterialType::ROUGH_MIRROR || mat.type == OptixMaterialType::METAL)
+      return mat.roughness * params.metal_fuzziness > 0.0f;
+   if (mat.type == OptixMaterialType::CLEAR_COAT)
+      return mat.roughness > 0.0f;
+   return false;
+}
+
+/// The glossy lobe of has_glossy_lobe_optix() towards the unit direction wl, for a ray arriving along
+/// the unit direction d_in: f * cos and the solid-angle pdf of the lobe's own sampling, its selection
+/// probability included (the Fresnel coin of a clear coat). The two describe the same sampler as
+/// scatter_specular_optix() / the clear-coat branch of raygen, so the MIS weights pair up: the
+/// normal is perturbed in a ball and the sample weighs its albedo (coat: 1), so f * cos =
+/// albedo * pdf, the pdf from glossy_lobe_pdf_optix(). Returns false when wl lies outside the lobe.
+__device__ bool glossy_lobe_eval_optix(const OptixMaterialData &mat, const PRDRadiance &prd, const float3 &d_in,
+                                       const float3 &wl, float3 &f_cos, float &pdf)
+{
+   const float3 n = prd.hit_normal;
+   if (mat.type == OptixMaterialType::CLEAR_COAT)
+   {
+      // Schlick Fresnel of the coat, as in raygen's clear-coat branch
+      const float cos_theta = fminf(dot3(-d_in, n), 1.0f);
+      float r0 = (1.0f - mat.refractive_index) / (1.0f + mat.refractive_index);
+      r0 = r0 * r0;
+      const float cx      = 1.0f - cos_theta;
+      const float fresnel = r0 + (1.0f - r0) * (cx * cx * cx * cx * cx);
+      pdf   = fresnel * glossy_lobe_pdf_optix(n, d_in, wl, mat.roughness);
+      f_cos = make_float3(pdf, pdf, pdf); // the coat is clear
+      return pdf > 0.0f;
+   }
+   pdf   = glossy_lobe_pdf_optix(n, d_in, wl, mat.roughness * params.metal_fuzziness);
+   f_cos = prd.hit_color * pdf;
+   return pdf > 0.0f;
 }
 
 /// Light-list index of a custom-primitive hit, -1 when it is not a NEE light
@@ -1064,6 +1127,7 @@ extern "C" __global__ void __raygen__rg()
       float3 cur_origin = ray_origin;
       float3 cur_direction = ray_direction;
       float3 mis_origin = ray_origin; // where the last direction was sampled (light pdf for MIS)
+      bool   mis_from_camera = true;  // no scattering vertex yet (thin films passed through do not count)
 
       // MIS tracking
       float prev_bsdf_pdf = 1.0f;
@@ -1088,6 +1152,7 @@ extern "C" __global__ void __raygen__rg()
       // belongs to the caustic pass and is not counted here.
       int  caustic_state  = 0;
       bool passed_through = false; // the camera ray crossed invisible geometry or a medium first
+      bool films_only     = true;  // every vertex so far was a straight pass through a thin film
 
       for (int bounce = 0; bounce < params.max_depth; ++bounce)
       {
@@ -1155,9 +1220,10 @@ extern "C" __global__ void __raygen__rg()
          }
          const OptixMaterialData &mat = params.materials[prd.material_idx];
 
+         const int caustic_state_before = caustic_state; // restored when a thin film is passed through
          if (params.caustics_active)
          {
-            if (bounce == 0)
+            if (bounce == 0 || films_only) // the camera ray's first vertex, seen through any films
             {
                if (mat.type == OptixMaterialType::VOLUME)
                   passed_through = true;
@@ -1285,13 +1351,13 @@ extern "C" __global__ void __raygen__rg()
                   OptiXLightSample ls = sample_nee_optix(origin, nee_sel, nee_u1, nee_u2);
                   if (ls.pdf > 0.0f)
                   {
-                     const float T = volume_nee_transmittance_optix(mat, origin, ls.direction, ls.dist - 0.002f, seed);
-                     if (T > 0.0f)
+                     const float3 T = volume_nee_transmittance_optix(mat, origin, ls.direction, ls.dist - 0.002f, seed);
+                     if (fmaxf(T.x, fmaxf(T.y, T.z)) > 0.0f)
                      {
                         const float ph = hg_phase(mat.anisotropy, dot3(dir, ls.direction));
                         const float a = ls.pdf * ls.pdf, b = ph * ph;
                         const float w = (a + b > 0.0f) ? a / (a + b) : 1.0f;
-                        color = color + throughput * ls.emission * (ph * T * w / ls.pdf);
+                        color = color + throughput * ls.emission * T * (ph * w / ls.pdf);
                      }
                   }
                }
@@ -1334,6 +1400,7 @@ extern "C" __global__ void __raygen__rg()
                prev_bsdf_pdf = last_phase_pdf;
                prev_is_delta = false;
                mis_origin    = scatter_point;
+               mis_from_camera = false;
             }
             else if (++volume_passes <= VOLUME_MAX_PASSES)
                --bounce; // crossed without scattering: not a bounce (keeps the surface behind at depth 0)
@@ -1368,7 +1435,7 @@ extern "C" __global__ void __raygen__rg()
                }
             }
             // Camera rays see the emitter as is; lighting of surfaces and media gets the falloff
-            const float fall = bounce > 0 ? light_falloff_factor(length3(prd.hit_point - mis_origin)) : 1.0f;
+            const float fall = mis_from_camera ? 1.0f : light_falloff_factor(length3(prd.hit_point - mis_origin));
             color = color + throughput * mat.emission * params.light_intensity * (w * fall);
             break;
          }
@@ -1475,6 +1542,15 @@ extern "C" __global__ void __raygen__rg()
             break;
          }
 
+         // Straight through a thin film (a soap bubble): for MIS, the light falloff and the caustic
+         // pass the path carries on as if the film were not there — the light pdf at the next
+         // emissive hit or sky escape is still measured from the last real scattering vertex.
+         const bool film_pass = is_film_pass_optix(mat, prd, scatter_dir);
+         if (film_pass)
+            caustic_state = caustic_state_before;
+         else
+            films_only = false;
+
          // --- NEE: direct light sampling for non-delta materials ---
          bool is_delta = is_delta_material_optix(mat.type);
          // The first bounce carries most of the direct light and always gets NEE; deeper
@@ -1488,14 +1564,15 @@ extern "C" __global__ void __raygen__rg()
             nee_scale = (float)params.nee_stride;
          }
 
-         // Glossy NEE: a rough mirror or metal reflecting a small bright source (the sun of an HDR
-         // sky, a lamp) found it only by chance through its own lobe, leaving fireflies that took
-         // thousands of samples to fade. Its lobe pdf is known in closed form, so it gets light
+         // Glossy NEE: a rough mirror, metal or lacquer coat reflecting a small bright source (the sun
+         // of an HDR sky, a lamp) found it only by chance through its own lobe, leaving fireflies that
+         // took thousands of samples to fade. Its lobe pdf is known in closed form, so it gets light
          // sampling too, MIS-weighted against that lobe (the weight at the next emissive hit or sky
-         // escape uses prev_bsdf_pdf below). It stays a "delta" vertex for everything else: no
-         // diffuse NEE, the indirect clamp and the caustic pass see it as before.
-         const float glossy_r = glossy_roughness_optix(mat);
-         if (params.mis_enabled && glossy_r > 0.0f && do_nee && nee_available())
+         // escape uses prev_bsdf_pdf below). Otherwise the vertex is treated as before: metals stay
+         // "delta" for the diffuse NEE, the indirect clamp and the caustic pass; a clear coat keeps
+         // its diffuse NEE beside this one (one strategy pair per lobe).
+         const bool glossy = has_glossy_lobe_optix(mat);
+         if (params.mis_enabled && glossy && do_nee && nee_available())
          {
             float max_att = fmaxf(throughput.x, fmaxf(throughput.y, throughput.z));
             if (max_att > 1e-4f)
@@ -1505,19 +1582,18 @@ extern "C" __global__ void __raygen__rg()
                float nee_sel = rand_float(seed);
 
                OptiXLightSample ls = sample_nee_optix(prd.hit_point, nee_sel, nee_u1, nee_u2);
-               const float p_mat = (ls.pdf > 0.0f) ? glossy_lobe_pdf_optix(prd.hit_normal, normalize3(cur_direction),
-                                                                           ls.direction, glossy_r)
-                                                   : 0.0f;
-               if (p_mat > 0.0f)
+               float3 f_cos;
+               float  p_mat = 0.0f;
+               if (ls.pdf > 0.0f &&
+                   glossy_lobe_eval_optix(mat, prd, normalize3(cur_direction), ls.direction, f_cos, p_mat))
                {
-                  const float T_sh = shadow_transmittance_optix(prd.hit_point + 0.0001f * prd.hit_normal, ls.direction,
+                  const float3 T_sh = shadow_transmittance_optix(prd.hit_point + 0.0001f * prd.hit_normal, ls.direction,
                                                                 ls.dist - 0.002f, seed);
-                  if (T_sh > 0.0f)
+                  if (fmaxf(T_sh.x, fmaxf(T_sh.y, T_sh.z)) > 0.0f)
                   {
                      const float a     = ls.pdf * ls.pdf;
                      const float w_nee = a / (a + p_mat * p_mat);
-                     color = color + throughput * prd.hit_color * ls.emission *
-                                         (p_mat * w_nee * nee_scale * T_sh / ls.pdf);
+                     color = color + throughput * f_cos * ls.emission * T_sh * (w_nee * nee_scale / ls.pdf);
                   }
                }
             }
@@ -1541,9 +1617,9 @@ extern "C" __global__ void __raygen__rg()
                   if (cos_th > 0.0f)
                   {
                      // Shadow ray (transmittance through any volume on the way)
-                     const float T_sh = shadow_transmittance_optix(prd.hit_point + 0.0001f * prd.hit_normal,
+                     const float3 T_sh = shadow_transmittance_optix(prd.hit_point + 0.0001f * prd.hit_normal,
                                                                    ls.direction, ls.dist - 0.002f, seed);
-                     if (T_sh > 0.0f)
+                     if (fmaxf(T_sh.x, fmaxf(T_sh.y, T_sh.z)) > 0.0f)
                      {
                         // Diffuse lobe only: f = w_d * albedo / pi, pdf = w_d * cos(theta) / pi
                         float3 f_nee = prd.hit_color * (diffuse_lobe / 3.14159265f);
@@ -1551,7 +1627,7 @@ extern "C" __global__ void __raygen__rg()
                         float a      = ls.pdf * ls.pdf;
                         float b      = p_mat * p_mat;
                         float w_nee  = (a + b > 0.0f) ? (a / (a + b)) : 1.0f;
-                        color = color + throughput * f_nee * ls.emission * (cos_th * w_nee * nee_scale * T_sh / ls.pdf);
+                        color = color + throughput * f_nee * ls.emission * T_sh * (cos_th * w_nee * nee_scale / ls.pdf);
                      }
                   }
                }
@@ -1566,16 +1642,27 @@ extern "C" __global__ void __raygen__rg()
 
          throughput = throughput * attenuation;
          cur_origin = prd.hit_point;
-         mis_origin = prd.hit_point;
+         if (!film_pass)
+         {
+            mis_origin      = prd.hit_point;
+            mis_from_camera = false;
+         }
          const float3 cur_direction_in = normalize3(cur_direction);
          cur_direction = scatter_dir;
 
          // Track BSDF PDF for MIS weighting at the next emissive hit
-         if (params.mis_enabled && glossy_r > 0.0f && nee_available())
+         if (film_pass)
+         {
+            // Unchanged: the direction still comes from the last real scattering vertex
+         }
+         else if (params.mis_enabled && glossy && nee_available() &&
+                  !(mat.type == OptixMaterialType::CLEAR_COAT && sampled_diffuse))
          {
             // Glossy lobe sampled, the glossy NEE above covers the same directions (on 1 of every
             // nee_stride samples beyond the first bounce, scaled up: the weight applies to all)
-            prev_bsdf_pdf = glossy_lobe_pdf_optix(prd.hit_normal, cur_direction_in, scatter_dir, glossy_r);
+            float3 f_cos;
+            prev_bsdf_pdf = 0.0f;
+            glossy_lobe_eval_optix(mat, prd, cur_direction_in, scatter_dir, f_cos, prev_bsdf_pdf);
             prev_is_delta = (prev_bsdf_pdf <= 0.0f);
          }
          else if (is_delta || !sampled_diffuse)
@@ -1718,7 +1805,10 @@ __device__ void caustic_splat(const float3 &x, const float3 &n, const float3 &al
    // Leave from just above the surface, as NEE shadow rays do: a hit point that rounds below the
    // surface (the 950-unit ground sphere of the default scene) would otherwise see the surface
    // itself and drop the splat, in a moire of rounding cells
-   if (trace_shadow(params.traversable, x + 0.0001f * n, to_cam, 0.0001f, dist - 0.001f))
+   // Thin films on the way let 1 - R through, as the camera paths see this surface through them
+   unsigned int  film_seed = 0u; // unused: the join meets no medium
+   const float3  T_cam     = shadow_transmittance_optix(x + 0.0001f * n, to_cam, dist - 0.001f, film_seed, true);
+   if (fmaxf(T_cam.x, fmaxf(T_cam.y, T_cam.z)) <= 0.0f)
       return;
 
    // Pixel importance of the pinhole camera, per solid angle: plane^2 / (pixel area cos^3);
@@ -1727,7 +1817,7 @@ __device__ void caustic_splat(const float3 &x, const float3 &n, const float3 &al
    const float importance = plane * plane / (pixel_area * cos_c * cos_c * cos_c);
    const float scale = importance * cos_x / (dist * dist) * (1.0f / M_PIf) *
                        ((float)params.samples_per_launch / (float)params.caustic_paths);
-   const float3 c = beta * albedo * scale;
+   const float3 c = beta * albedo * T_cam * scale;
    float *acc = reinterpret_cast<float *>(params.accum_buffer + pixel_idx);
    atomicAdd(acc + 0, c.x);
    atomicAdd(acc + 1, c.y);
@@ -1801,6 +1891,9 @@ extern "C" __global__ void __raygen__caustics()
    float3 beta = light.emission * params.light_intensity * (cos_y / (p_sel * pdf_area * pdf_w));
    float3 origin = y, dir = w;
    int    n_delta = 0; // delta vertices passed
+   int    n_bent  = 0; // of which change the direction (not a straight pass through a thin film)
+   bool   fall_pending = true; // light falloff not applied yet
+   float  fall_dist    = 0.0f; // distance from the light so far, through thin films
 
    // The camera side counts the path when the emitter is reached at bounce n_delta + 1 < max_depth
    for (int v = 0; v <= params.max_depth - 2; ++v)
@@ -1810,13 +1903,18 @@ extern "C" __global__ void __raygen__caustics()
       trace(params.traversable, origin, dir, 0.001f, 1e16f, &prd);
       if (!prd.hit || prd.material_idx < 0)
          return;
-      if (v == 0) // falloff on the segment next to the light, as the camera side measures it
-         beta = beta * light_falloff_factor(length3(prd.hit_point - y));
+      // Falloff on the segment next to the light, as the camera side measures it: from the light to
+      // the first vertex that is not a straight pass through a thin film
+      if (fall_pending)
+         fall_dist += length3(prd.hit_point - origin);
       const OptixMaterialData &mat = params.materials[prd.material_idx];
 
       const bool diffuse = mat.type == OptixMaterialType::LAMBERTIAN || mat.type == OptixMaterialType::SDF_MATERIAL;
-      if (diffuse && prd.visible && n_delta > 0)
+      // Light reaching it straight through thin films only is NEE's (shadow rays cross films)
+      if (diffuse && prd.visible && n_bent > 0)
       {
+         if (fall_pending)
+            beta = beta * light_falloff_factor(fall_dist);
          caustic_splat(prd.hit_point, prd.hit_normal, prd.hit_color, beta);
          return;
       }
@@ -1828,6 +1926,15 @@ extern "C" __global__ void __raygen__caustics()
          return;
       beta = beta * attenuation;
       ++n_delta;
+      if (!is_film_pass_optix(mat, prd, scatter_dir))
+      {
+         ++n_bent;
+         if (fall_pending)
+         {
+            beta         = beta * light_falloff_factor(fall_dist);
+            fall_pending = false;
+         }
+      }
       origin = prd.hit_point;
       dir    = scatter_dir;
       if (n_delta > 1)

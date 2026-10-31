@@ -215,6 +215,7 @@ struct OptixLaunchParams
    bool mis_enabled;            // Master MIS toggle
    int  nee_stride;             // NEE on 1 of every N samples (contribution x N)
    bool has_volume;             // Scene holds a VOLUME material: shadow rays estimate transmittance
+   bool has_thin_film;          // Scene holds a THIN_FILM material: shadow rays pass through films
 
    // Reverse lookup: custom-primitive index → light list index (-1 if not a light)
    int *geom_to_light_map;
