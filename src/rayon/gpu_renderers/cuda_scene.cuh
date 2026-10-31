@@ -39,7 +39,10 @@ enum class MaterialType : uint8_t
    ANISOTROPIC_METAL,
    THIN_FILM,
    CLEAR_COAT,  // Two-layer: glossy dielectric coat over diffuse base
-   VOLUME       // Scattering medium filling a closed mesh
+   VOLUME,      // Scattering medium filling a closed mesh
+   CHAMELEON,   // CLEAR_COAT whose base colour flips with the view angle (chameleon_paint.cuh)
+   GLOW_GLASS,  // GLASS filled with a glowing medium: emission per unit length, volume.density absorbs
+   HAMMERED     // ROUGH_MIRROR with procedural hammer marks (pattern_param1 = size, param2 = depth)
 };
 
 /**
@@ -72,6 +75,7 @@ struct Material
    // Thin-film interference parameters
    float film_thickness;   // Film thickness in nanometers
    float film_ior;         // Refractive index of the thin film
+   f3 flip_color;          // CHAMELEON: base colour at grazing angles (albedo is the face-on one)
 
    // Participating medium (VOLUME): see volume_medium.cuh. The SDF texture is bound at upload.
    VolumeParams volume;
@@ -85,7 +89,7 @@ struct Material
    __host__ __device__ Material()
        : type(MaterialType::LAMBERTIAN), albedo(0, 0, 0), emission(0, 0, 0), roughness(0), metallic(0),
          refractive_index(1), transmission(0), anisotropy(0), eta(0, 0, 0), k(0, 0, 0),
-         texture_id(-1), film_thickness(400.0f), film_ior(1.33f),
+         texture_id(-1), film_thickness(400.0f), film_ior(1.33f), flip_color(0, 0, 0),
          volume{2.0f, 2.0f, 0.5f, 0.35f, 0.6f, 0.6f, 0, nullptr, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}},
          pattern(ProceduralPattern::NONE), pattern_color(0, 0, 0),
          pattern_param1(0), pattern_param2(0)

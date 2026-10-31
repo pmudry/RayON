@@ -57,9 +57,9 @@ camera:
 ```
 
 !!! tip "Save the camera from the GUI"
-    In interactive mode, frame the view you like and press **Save camera & lights to scene
-    YAML** in the *Scene* section. The `camera:` lines and the light settings of the file are
-    rewritten in place, comments included.
+    In interactive mode, frame the view you like and press **Save camera, lights & tone map
+    to scene YAML** in the *Scene* section. The `camera:` lines, the light settings and the tone
+    map (`tone_mapping`, `exposure`) of the file are rewritten in place, comments included.
 
 ---
 

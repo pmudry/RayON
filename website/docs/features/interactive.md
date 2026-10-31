@@ -77,9 +77,10 @@ The panel sits at the right of the window. Every section is a collapsible header
 
 The scene combo lists every YAML file found in `resources/scenes/`; the arrow keys cycle through
 it. The current camera position and look-at point are displayed, and the button
-**Save camera & lights to scene YAML** writes them back into the file the scene was loaded from,
-together with the light settings. Only the `camera:` lines (`position`, `look_at`, `fov`) and
-the `settings:` keys `background_intensity`, `light_intensity`, `light_falloff` (and `indirect_clamp` on OptiX) are rewritten;
+**Save camera, lights & tone map to scene YAML** writes them back into the file the scene was loaded from,
+together with the light settings and the tone map. Only the `camera:` lines (`position`, `look_at`, `fov`) and
+the `settings:` keys `background_intensity`, `light_intensity`, `light_falloff`, `tone_mapping`, `exposure`
+(and `indirect_clamp` on OptiX) are rewritten;
 comments and everything else are kept. This is how the bundled scenes got their viewpoints.
 
 ### Performance Monitoring

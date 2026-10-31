@@ -147,6 +147,8 @@ class RendererCUDAProgressive : public IRenderer
       // Volume (cloud / smoke) material of the scene, editable from the GUI (-1 = none)
       int                    volume_mat_idx = -1;
       VolumeMaterialSettings volume_settings;
+      int                      hammered_mat_idx = -1;
+      HammeredMaterialSettings hammered_settings;
       int   golf_dimple_count       = 128;
       float golf_dimple_radius      = 0.155f;
       float golf_dimple_depth       = 0.25f;
@@ -413,6 +415,17 @@ class RendererCUDAProgressive : public IRenderer
          for (size_t i = 0; i < active_scene.materials.size() && volume_mat_idx < 0; ++i)
             if (active_scene.materials[i].type == Scene::MaterialType::VOLUME)
                volume_mat_idx = (int)i;
+         // First hammered-metal material, edited live in the GUI
+         hammered_mat_idx = -1;
+         for (size_t i = 0; i < active_scene.materials.size() && hammered_mat_idx < 0; ++i)
+            if (active_scene.materials[i].type == Scene::MaterialType::HAMMERED)
+               hammered_mat_idx = (int)i;
+         if (hammered_mat_idx >= 0)
+         {
+            const auto &m = active_scene.materials[hammered_mat_idx];
+            hammered_settings = {{(float)m.albedo.x(), (float)m.albedo.y(), (float)m.albedo.z()},
+                                 m.roughness, m.pattern_param1, m.pattern_param2, false};
+         }
          if (volume_mat_idx >= 0)
          {
             const auto &m = active_scene.materials[volume_mat_idx];
@@ -583,6 +596,15 @@ class RendererCUDAProgressive : public IRenderer
                {
                   current_scene_index = (current_scene_index + 1) % scene_count;
                   scene_switched_by_key = true;
+               }
+               else if (event.key.keysym.sym == SDLK_INSERT || event.key.keysym.sym == SDLK_DELETE)
+               {
+                  // Ins / Del: next / previous display tone curve (display only, no re-render)
+                  const int step = (event.key.keysym.sym == SDLK_INSERT) ? 1 : TONE_MAP_COUNT - 1;
+                  tone_map.op    = (tone_map.op + step) % TONE_MAP_COUNT;
+                  displayToneMap() = tone_map;
+                  needs_rerender   = true;
+                  gui.showToast(std::string("Tone map: ") + toneMapNames()[tone_map.op]);
                }
                else if (event.key.keysym.sym == SDLK_KP_PLUS || event.key.keysym.sym == SDLK_EQUALS)
                {
@@ -839,8 +861,13 @@ class RendererCUDAProgressive : public IRenderer
                            &use_sobol, nullptr, &motion_despeckle, &motion_despeckle_ratio,
                            volume_mat_idx >= 0 ? &volume_settings : nullptr,
                            &save_camera_request, active_scene.source_file.c_str(), camera_save_status.c_str(),
-                           &light_falloff, nullptr, nullptr, &tone_map);
-         displayToneMap() = tone_map; // display only: no accumulation reset
+                           &light_falloff, nullptr, nullptr, &tone_map,
+                           hammered_mat_idx >= 0 ? &hammered_settings : nullptr);
+         // Display only: no accumulation reset, but the finished image must be converted again (a
+         // converged render adds no samples, so nothing else would refresh it)
+         if (tone_map.op != displayToneMap().op || tone_map.exposure != displayToneMap().exposure)
+            needs_rerender = true;
+         displayToneMap() = tone_map;
 
          if (save_camera_request)
          {
@@ -858,6 +885,18 @@ class RendererCUDAProgressive : public IRenderer
             camera_save_status.clear();
 
          // Cloud / smoke parameters edited in the GUI: update the material in place and restart
+         // Hammered metal edited in the GUI: update the material in place and restart
+         if (hammered_settings.changed && hammered_mat_idx >= 0)
+         {
+            auto &m          = active_scene.materials[hammered_mat_idx];
+            m.albedo         = Vec3(hammered_settings.color[0], hammered_settings.color[1], hammered_settings.color[2]);
+            m.roughness      = hammered_settings.roughness;
+            m.pattern_param1 = hammered_settings.size;
+            m.pattern_param2 = hammered_settings.depth;
+            Scene::CudaSceneBuilder::updateMaterial(gpu_scene, hammered_mat_idx, m);
+            hammered_settings.changed = false;
+            camera_changed = true;
+         }
          if (volume_settings.changed && volume_mat_idx >= 0)
          {
             auto &m          = active_scene.materials[volume_mat_idx];

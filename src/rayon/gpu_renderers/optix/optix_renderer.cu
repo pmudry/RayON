@@ -983,6 +983,9 @@ static void buildGAS(const Scene::SceneDescription &scene)
                                        static_cast<float>(m.k.z()));
          materials[i].film_thickness = m.film_thickness;
          materials[i].film_ior = m.film_ior;
+         materials[i].flip_color = make_float3(static_cast<float>(m.flip_color.x()),
+                                               static_cast<float>(m.flip_color.y()),
+                                               static_cast<float>(m.flip_color.z()));
          materials[i].volume.density        = m.density;
          materials[i].volume.noise_scale    = m.noise_scale;
          materials[i].volume.noise_strength = m.noise_strength;
@@ -1270,6 +1273,7 @@ extern "C" void optixRendererUpdateMaterial(int idx, const Scene::MaterialDesc &
    d.k   = make_float3((float)m.k.x(), (float)m.k.y(), (float)m.k.z());
    d.film_thickness = m.film_thickness;
    d.film_ior       = m.film_ior;
+   d.flip_color     = make_float3((float)m.flip_color.x(), (float)m.flip_color.y(), (float)m.flip_color.z());
    d.volume.density        = m.density; // the SDF binding is kept as uploaded
    d.volume.noise_scale    = m.noise_scale;
    d.volume.noise_strength = m.noise_strength;

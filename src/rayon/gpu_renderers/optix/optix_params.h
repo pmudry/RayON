@@ -25,7 +25,10 @@ enum class OptixMaterialType : unsigned char
    ANISOTROPIC_METAL, // GGX microfacet metal — approximated as rough mirror in OptiX
    THIN_FILM,         // Thin-film interference — approximated as mirror in OptiX
    CLEAR_COAT,        // Dielectric coat over diffuse base (Schlick Fresnel blend)
-   VOLUME             // Scattering medium filling a closed mesh (see volume_medium.cuh)
+   VOLUME,            // Scattering medium filling a closed mesh (see volume_medium.cuh)
+   CHAMELEON,         // CLEAR_COAT whose base colour flips with the view angle (see chameleon_paint.cuh)
+   GLOW_GLASS,        // GLASS filled with a glowing medium: emission per unit length, volume.density absorbs
+   HAMMERED           // ROUGH_MIRROR with procedural hammer marks (pattern_param1 = size, param2 = depth)
 };
 
 // Custom-primitive geometry types (triangles go through the built-in intersector)
@@ -87,6 +90,7 @@ struct OptixMaterialData
    float3 k;             // ANISOTROPIC_METAL: complex IOR imaginary/extinction (R,G,B)
    float film_thickness; // THIN_FILM: thickness in nm
    float film_ior;       // THIN_FILM: film refractive index
+   float3 flip_color;    // CHAMELEON: base colour at grazing angles (albedo is the face-on one)
    VolumeParams volume;  // VOLUME: medium parameters + SDF texture (anisotropy = HG g, albedo = scattering albedo)
 
    int texture_id; // Diffuse texture index (-1 = none)

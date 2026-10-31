@@ -35,7 +35,7 @@ bool saveSceneToYAML(const char* filename, const SceneDescription& scene);
  * @brief Write the current view into an existing YAML scene file, in place: the camera
  * (position, look_at, fov) and the light settings (background_intensity, light_intensity,
  * light_falloff, and indirect_clamp when it is given: a negative value leaves that key alone; likewise
- * tone_mapping and exposure, written only when they differ from the defaults or the file has them).
+ * tone_mapping and exposure, always written when tone_mapping is given, "none" included).
  *
  * Only those lines of the `camera:` and `settings:` blocks are rewritten (or added, the block
  * itself being appended when missing); every other line, comments included, is kept as is.

@@ -140,7 +140,9 @@ section), not command-line flags.
 
 ### Material Types (enum `MaterialType` in `scene_description.hpp`)
 LAMBERTIAN, METAL, MIRROR, ROUGH_MIRROR, GLASS, DIELECTRIC, LIGHT, CONSTANT, SHOW_NORMALS,
-SDF_MATERIAL, ANISOTROPIC_METAL, THIN_FILM, CLEAR_COAT, VOLUME (scattering medium inside a closed mesh)
+SDF_MATERIAL, ANISOTROPIC_METAL, THIN_FILM, CLEAR_COAT, VOLUME (scattering medium inside a closed mesh),
+CHAMELEON (clear coat whose base colour flips from `albedo` face-on to `flip_color` at grazing angles),
+GLOW_GLASS (glass filled with a glowing, absorbing medium), HAMMERED (rough metal with procedural hammer marks)
 
 Procedural patterns (stored in `MaterialDesc`): FIBONACCI_DOTS, CHECKERBOARD, STRIPES
 

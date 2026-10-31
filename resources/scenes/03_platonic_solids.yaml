@@ -1,8 +1,10 @@
 # Platonic Solids showcase - one material per solid, studio lighting
 # The five Platonic solids: tetrahedron, cube, octahedron, dodecahedron, icosahedron
-# Glass, ISC-blue lacquer, brushed gold, soap-film iridescence and polished copper on a dark
+# Glass, ISC-blue lacquer, brushed gold, ISC-green glow glass and hammered copper on a dark
 # lacquered floor, under a three-lamp studio rig (warm key, cool rim, soft fill). ACES tone mapping
 # keeps the faces that mirror a lamp below white, so their edges stay antialiased.
+# ISC colours are given in sRGB (e.g. RGB(140, 198, 230)); as albedos they are squared (display
+# gamma 2), or they would come out washed out.
 
 camera:
   position: [0, 3, 9]
@@ -33,10 +35,10 @@ materials:
     type: "glass"
     refractive_index: 1.5
 
-  # ISC "Informatique logicielle" blue, as car paint
+  # ISC "Informatique logicielle" blue RGB(140, 198, 230), as car paint
   - name: "isc_blue_lacquer"
     type: "clear_coat"
-    albedo: [0.549, 0.776, 0.902]
+    albedo: [0.301, 0.602, 0.814]
     roughness: 0.02
     refractive_index: 1.5
 
@@ -46,17 +48,30 @@ materials:
     roughness: 0.25
     anisotropy: 0.8
 
-  - name: "soap_film"
-    type: "thin_film"
-    film_thickness: 480.0
-    film_ior: 1.33
-    refractive_index: 1.0
+  # Chameleon paint: ISC "Reseaux et systemes" violet RGB(168, 144, 192) seen face-on, turning to
+  # ISC "Ingenierie des donnees" yellow RGB(247, 241, 159) as the faces turn away, under a coat
+  - name: "isc_chameleon"
+    type: "chameleon"
+    albedo: [0.434, 0.319, 0.567]
+    flip_color: [0.939, 0.893, 0.389]
+    roughness: 0.04
+    refractive_index: 1.5
 
-  - name: "polished_copper"
-    type: "anisotropic_metal"
-    preset: "copper"
-    roughness: 0.12
-    anisotropy: 0.0
+  # Glow glass: clear glass filled with a softly glowing ISC-green medium (RGB(152, 199, 191),
+  # squared): thick parts glow more than the edges, and it lights the floor a little
+  - name: "isc_glow_glass"
+    type: "glow_glass"
+    refractive_index: 1.5
+    emission: [0.36, 0.61, 0.56]
+    density: 0.8
+
+  # Hammered copper: a rough copper whose hammer marks tilt the reflections face by face
+  - name: "hammered_copper"
+    type: "hammered"
+    albedo: [0.955, 0.638, 0.538]
+    roughness: 0.19
+    dimple_size: 0.031
+    dimple_depth: 0.17
 
   # Studio rig
   - name: "key_light"
@@ -144,16 +159,16 @@ geometry:
     position: [0, 0.8, 0]
     scale: [0.8, 0.8, 0.8]
 
-  # 4. Dodecahedron (12 faces) - soap film
+  # 4. Dodecahedron (12 faces) - ISC glow glass
   - type: "obj"
-    material: "soap_film"
+    material: "isc_glow_glass"
     file: "../models/dodecahedron.obj"
     position: [2, 0.8, 0]
     scale: [0.8, 0.8, 0.8]
 
-  # 5. Icosahedron (20 faces) - polished copper
+  # 5. Icosahedron (20 faces) - hammered copper
   - type: "obj"
-    material: "polished_copper"
+    material: "hammered_copper"
     file: "../models/icosahedron.obj"
     position: [4, 0.8, 0]
     scale: [0.8, 0.8, 0.8]

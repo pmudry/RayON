@@ -106,6 +106,16 @@ struct VolumeMaterialSettings
    bool  changed        = false;                 ///< Set by the GUI, cleared by the host once applied
 };
 
+/// Live controls of the scene's hammered-metal material, filled and applied like the volume ones
+struct HammeredMaterialSettings
+{
+   float color[3]  = {0.955f, 0.638f, 0.538f}; ///< Metal colour (albedo)
+   float roughness = 0.19f;                    ///< Glossiness of the metal itself
+   float size      = 0.031f;                   ///< Size of a hammer mark (scene units)
+   float depth     = 0.17f;                    ///< Tilt of the marks' walls
+   bool  changed   = false;                    ///< Set by the GUI, cleared by the host once applied
+};
+
 class SDLGuiHandler
 {
  public:
@@ -278,7 +288,7 @@ class SDLGuiHandler
                       bool *save_camera_request = nullptr, const char *scene_yaml_path = nullptr,
                       const char *camera_save_status = nullptr, float *light_falloff = nullptr,
                       float *indirect_clamp = nullptr, bool *caustics = nullptr,
-                      ToneMapSettings *tone_map = nullptr)
+                      ToneMapSettings *tone_map = nullptr, HammeredMaterialSettings *hammered = nullptr)
    {
       SDL_UpdateTexture(texture, nullptr, image.data(), image_width * image_channels);
       SDL_RenderClear(renderer);
@@ -751,13 +761,14 @@ class SDLGuiHandler
                      const bool can_save = scene_yaml_path && scene_yaml_path[0] != '\0';
                      if (!can_save)
                         ImGui::BeginDisabled();
-                     if (ImGui::Button("Save camera & lights to scene YAML"))
+                     if (ImGui::Button("Save camera, lights & tone map to scene YAML"))
                         *save_camera_request = true;
                      if (!can_save)
                         ImGui::EndDisabled();
                      if (can_save)
                         ImGui::SetItemTooltip("Writes the camera (position, look_at, fov) and the light settings\n"
-                                              "(Lights inten., Lights falloff, Ambient Light) into\n%s\n(only those lines are touched).",
+                                              "(Lights inten., Lights falloff, Ambient Light) and the tone map\n"
+                                              "(curve: none / ACES / Reinhard, and its exposure) into\n%s\n(only those lines are touched).",
                                               scene_yaml_path);
                      else
                         ImGui::SetItemTooltip("The current scene was not loaded from a YAML file.");
@@ -795,8 +806,9 @@ class SDLGuiHandler
                   ImGui::SliderFloat("Ambient Light", background_intensity, 0.0f, 5.0f, "%.2f");
                   if (tone_map)
                   {
-                     ImGui::Combo("Tone map", &tone_map->op, toneMapNames(), 3);
-                     ImGui::SetItemTooltip("Display curve applied to each pixel before gamma. None clips at\n"
+                     ImGui::Combo("Tone map", &tone_map->op, toneMapNames(), TONE_MAP_COUNT);
+                     ImGui::SetItemTooltip("Ins / Del: next / previous curve.\n"
+                                           "Display curve applied to each pixel before gamma. None clips at\n"
                                            "white: a face reflecting a light stays pure white up to its edge,\n"
                                            "which then looks jagged. ACES filmic rolls highlights off softly\n"
                                            "(edges stay antialiased); Reinhard is gentler and flatter.\n"
@@ -851,7 +863,7 @@ class SDLGuiHandler
             }
 
             // --- Procedural Patterns ---
-            if (golf_dimple_count)
+            if (golf_dimple_count || hammered)
             {
                if (reset_headers)
                   ImGui::SetNextItemOpen(!collapse_headers);
@@ -868,6 +880,25 @@ class SDLGuiHandler
                      ImGui::SliderFloat("Dimple Depth##golf", golf_dimple_depth, 0.0f, 1.0f, "%.3f");
                      ImGui::SetItemTooltip("Depth of each dimple (displacement scale).");
                      ImGui::PopItemWidth();
+                  }
+                  if (hammered)
+                  {
+                     ImGui::SeparatorText("Hammered Metal");
+                     pushSliderWidth();
+                     bool moved = false;
+                     moved |= ImGui::ColorEdit3("Color##ham", hammered->color, ImGuiColorEditFlags_Float);
+                     ImGui::SetItemTooltip("Colour of the metal (linear albedo).");
+                     moved |= ImGui::SliderFloat("Roughness##ham", &hammered->roughness, 0.0f, 0.5f, "%.3f");
+                     ImGui::SetItemTooltip("Glossiness of the metal itself: 0 = mirror-like marks.");
+                     moved |= ImGui::SliderFloat("Mark Size##ham", &hammered->size, 0.02f, 0.5f, "%.3f",
+                                                 ImGuiSliderFlags_Logarithmic);
+                     ImGui::SetItemTooltip("Size of a hammer mark in scene units (material field dimple_size).");
+                     moved |= ImGui::SliderFloat("Mark Depth##ham", &hammered->depth, 0.0f, 1.5f, "%.2f");
+                     ImGui::SetItemTooltip("Tilt of the marks' walls: 0 = smooth metal, higher = deeper,\n"
+                                           "sharper facets (material field dimple_depth).");
+                     ImGui::PopItemWidth();
+                     if (moved)
+                        hammered->changed = true;
                   }
                }
             }
@@ -959,6 +990,7 @@ class SDLGuiHandler
                ImGui::BulletText("Left/Right: Previous/Next Scene");
                ImGui::BulletText("Numpad +/-: Next/Prev HDR Sky");
                ImGui::BulletText("PgUp/PgDn: Next/Prev Mesh Material (OptiX)");
+               ImGui::BulletText("Ins/Del: Next/Prev Tone Map");
                ImGui::BulletText("O: Auto orbit");
                ImGui::BulletText("F: Toggle SPP/s Counter");
                ImGui::BulletText("L: Toggle Logo");

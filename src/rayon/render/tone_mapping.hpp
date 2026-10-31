@@ -24,6 +24,8 @@ enum class ToneMapOperator : int
    REINHARD = 2, ///< L / (1 + L) on luminance: gentle, keeps hues, flatter highlights
 };
 
+constexpr int TONE_MAP_COUNT = 3; ///< Number of ToneMapOperator values (GUI combo, Ins/Del cycling)
+
 struct ToneMapSettings
 {
    int   op       = static_cast<int>(ToneMapOperator::NONE);

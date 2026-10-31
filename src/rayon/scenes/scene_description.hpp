@@ -42,7 +42,10 @@ enum class MaterialType : uint8_t {
     ANISOTROPIC_METAL,   // Physically-based anisotropic conductor (GGX)
     THIN_FILM,           // Thin-film interference (soap bubbles, oil slicks)
     CLEAR_COAT,          // Two-layer: glossy dielectric coat over diffuse base
-    VOLUME               // Scattering medium (smoke, cloud) filling a closed mesh
+    VOLUME,              // Scattering medium (smoke, cloud) filling a closed mesh
+    CHAMELEON,           // Clear coat whose base colour turns from albedo (face-on) to flip_color (grazing)
+    GLOW_GLASS,          // Glass filled with a glowing, absorbing medium (emission per unit length, density)
+    HAMMERED             // Rough metal with procedural hammer marks (pattern_param1 = mark size, param2 = depth)
 };
 
 /**
@@ -93,6 +96,7 @@ struct MaterialDesc {
     // Procedural pattern support
     ProceduralPattern pattern;    // Pattern type
     Vec3 pattern_color;           // Secondary color for pattern
+    Vec3 flip_color;              // CHAMELEON: base colour at grazing angles (albedo is the face-on one)
     float pattern_param1;         // Pattern-specific parameter 1 (e.g., dot count, scale)
     float pattern_param2;         // Pattern-specific parameter 2 (e.g., dot radius)
     
@@ -123,6 +127,7 @@ struct MaterialDesc {
         , grid_max(0, 0, 0)
         , pattern(ProceduralPattern::NONE)
         , pattern_color(0, 0, 0)
+        , flip_color(0, 0, 0)
         , pattern_param1(0.0f)
         , pattern_param2(0.0f)
     {}

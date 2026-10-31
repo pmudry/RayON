@@ -245,6 +245,56 @@ The coat is achromatic; `albedo` controls the diffuse base colour visible throug
   roughness: 0.2
 ```
 
+#### `chameleon` — colour-flip paint: a clear coat whose base colour changes with the view angle
+
+Additional fields: `flip_color` (base colour at grazing angles; `albedo` is the face-on one),
+`roughness` and `refractive_index` as for `clear_coat`. The base colour moves smoothly from `albedo`
+seen face-on to `flip_color` from about 75 degrees on, like pearlescent car paint or a beetle
+shell: the faces of a polyhedron each take their own shade. Everything else (coat, sampling) is the
+clear coat.
+
+```yaml
+- name: "isc_chameleon"
+  type: "chameleon"
+  albedo: [0.434, 0.319, 0.567]      # ISC violet, squared from sRGB (display gamma 2)
+  flip_color: [0.939, 0.893, 0.389]  # ISC yellow
+  roughness: 0.04
+  refractive_index: 1.5
+```
+
+#### `glow_glass` — glass filled with a glowing medium
+
+Refracts like `glass` (`refractive_index`); inside, a medium emits `emission` per unit length and
+absorbs with `density` (per scene unit). Along a path of length d inside it gathers
+`emission * (1 - exp(-density * d)) / density` and lets `exp(-density * d)` through: thick parts
+glow more than thin edges, and the object softly lights its surroundings (through the paths that
+cross it; it is not a NEE light). Scaled by the global light intensity.
+
+```yaml
+- name: "isc_glow_glass"
+  type: "glow_glass"
+  refractive_index: 1.5
+  emission: [0.36, 0.61, 0.56]   # ISC green, squared from sRGB
+  density: 0.8
+```
+
+#### `hammered` — hammered metal
+
+A rough metal (`albedo`, `roughness`, as `rough_mirror`) covered with procedural hammer marks, like
+the golf ball's dimples but on any surface and without touching the geometry: space is cut into
+jittered cells of size `dimple_size` (scene units, default 0.031), each a shallow bowl whose walls
+tilt the normal by `dimple_depth` (default 0.17); `roughness` defaults to 0.19. Neighbouring marks meet in sharp ridges. Interactive modes: "Hammered Metal" in
+the "Procedural Patterns" section (colour, roughness, mark size and depth, live).
+
+```yaml
+- name: "hammered_copper"
+  type: "hammered"
+  albedo: [0.955, 0.638, 0.538]
+  roughness: 0.19
+  dimple_size: 0.031
+  dimple_depth: 0.17
+```
+
 ---
 
 #### `volume` — scattering medium inside a closed mesh (smoke, cloud)

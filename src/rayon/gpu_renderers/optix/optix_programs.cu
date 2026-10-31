@@ -9,6 +9,9 @@
 #include "optix_params.h"
 #include "../sdf_primitives.cuh"
 #include "volume_medium.cuh"
+#include "chameleon_paint.cuh"
+#include "glow_glass.cuh"
+#include "hammered_metal.cuh"
 // OptiX PTX is a separate GPU binary; it needs its own copy of the table.
 #define SOBOL_DEFINE_DIRECTIONS
 #include "../sobol_sampler.cuh"
@@ -573,7 +576,14 @@ __device__ OptiXLightSample sample_nee_optix(const float3 &shading_p, float u_se
 __device__ __forceinline__ bool is_delta_material_optix(OptixMaterialType mat)
 {
    return mat != OptixMaterialType::LAMBERTIAN && mat != OptixMaterialType::SDF_MATERIAL
-       && mat != OptixMaterialType::CLEAR_COAT;
+       && mat != OptixMaterialType::CLEAR_COAT && mat != OptixMaterialType::CHAMELEON;
+}
+
+/// A diffuse base under a glossy dielectric coat: CLEAR_COAT, and CHAMELEON (the same coat over a
+/// base colour that depends on the view angle, picked at the hit)
+__device__ __forceinline__ bool is_coated_optix(OptixMaterialType mat)
+{
+   return mat == OptixMaterialType::CLEAR_COAT || mat == OptixMaterialType::CHAMELEON;
 }
 
 //==============================================================================
@@ -789,8 +799,8 @@ __device__ __forceinline__ bool scatter_specular_optix(const OptixMaterialData &
       attenuation = prd.hit_color;
       did_scatter = (dot3(scatter_dir, prd.hit_normal) > 0.0f);
    }
-   else if (mat.type == OptixMaterialType::ROUGH_MIRROR ||
-            mat.type == OptixMaterialType::METAL) // METAL honours its roughness, as in CUDA
+   else if (mat.type == OptixMaterialType::ROUGH_MIRROR || mat.type == OptixMaterialType::METAL ||
+            mat.type == OptixMaterialType::HAMMERED) // METAL honours its roughness, as in CUDA
    {
       float3 unit_dir = normalize3(cur_direction);
       float eff_roughness = mat.roughness * params.metal_fuzziness;
@@ -807,8 +817,8 @@ __device__ __forceinline__ bool scatter_specular_optix(const OptixMaterialData &
       attenuation = prd.hit_color;
       did_scatter = (dot3(scatter_dir, prd.hit_normal) > 0.0f);
    }
-   else if (mat.type == OptixMaterialType::GLASS ||
-            mat.type == OptixMaterialType::DIELECTRIC)
+   else if (mat.type == OptixMaterialType::GLASS || mat.type == OptixMaterialType::DIELECTRIC ||
+            mat.type == OptixMaterialType::GLOW_GLASS) // the glowing interior is handled by raygen
    {
       attenuation = make_float3(1.0f, 1.0f, 1.0f);
       float eff_ior = mat.refractive_index * params.glass_ior_multiplier;
@@ -978,9 +988,10 @@ __device__ __forceinline__ float glossy_lobe_pdf_optix(const float3 &n, const fl
 /// are left out for now: a VNDF-pdf version came out 0.3% darker than BSDF sampling alone.)
 __device__ __forceinline__ bool has_glossy_lobe_optix(const OptixMaterialData &mat)
 {
-   if (mat.type == OptixMaterialType::ROUGH_MIRROR || mat.type == OptixMaterialType::METAL)
+   if (mat.type == OptixMaterialType::ROUGH_MIRROR || mat.type == OptixMaterialType::METAL ||
+       mat.type == OptixMaterialType::HAMMERED)
       return mat.roughness * params.metal_fuzziness > 0.0f;
-   if (mat.type == OptixMaterialType::CLEAR_COAT)
+   if (is_coated_optix(mat.type))
       return mat.roughness > 0.0f;
    return false;
 }
@@ -995,7 +1006,7 @@ __device__ bool glossy_lobe_eval_optix(const OptixMaterialData &mat, const PRDRa
                                        const float3 &wl, float3 &f_cos, float &pdf)
 {
    const float3 n = prd.hit_normal;
-   if (mat.type == OptixMaterialType::CLEAR_COAT)
+   if (is_coated_optix(mat.type))
    {
       // Schlick Fresnel of the coat, as in raygen's clear-coat branch
       const float cos_theta = fminf(dot3(-d_in, n), 1.0f);
@@ -1219,6 +1230,25 @@ extern "C" __global__ void __raygen__rg()
             break;
          }
          const OptixMaterialData &mat = params.materials[prd.material_idx];
+         const float3 geo_normal = prd.hit_normal; // before any shading-normal tilt (hammer marks)
+         if (mat.type == OptixMaterialType::HAMMERED)
+            hammer_normal(prd.hit_point.x, prd.hit_point.y, prd.hit_point.z, mat.pattern_param1, mat.pattern_param2,
+                          prd.hit_normal.x, prd.hit_normal.y, prd.hit_normal.z);
+         else if (mat.type == OptixMaterialType::CHAMELEON)
+         {
+            // Base colour from the view angle; from here on the hit is a clear coat of that colour
+            const float t = chameleon_flip(fabsf(dot3(normalize3(cur_direction), prd.hit_normal)));
+            prd.hit_color = (1.0f - t) * mat.albedo + t * mat.flip_color;
+         }
+         else if (mat.type == OptixMaterialType::GLOW_GLASS && !prd.front_face)
+         {
+            // Leaving through a back face: the segment since the last vertex ran inside the glowing
+            // medium (entry, or an internal reflection). Its light, then its absorption.
+            float       T;
+            const float glow = glow_segment(length3(prd.hit_point - cur_origin), mat.volume.density, T);
+            color      = color + throughput * mat.emission * (params.light_intensity * glow);
+            throughput = throughput * T;
+         }
 
          const int caustic_state_before = caustic_state; // restored when a thin film is passed through
          if (params.caustics_active)
@@ -1485,12 +1515,13 @@ extern "C" __global__ void __raygen__rg()
             attenuation = prd.hit_color;
             did_scatter = true;
          }
-         else if (is_caustic_specular_optix(mat.type))
+         else if (is_caustic_specular_optix(mat.type) || mat.type == OptixMaterialType::GLOW_GLASS ||
+                  mat.type == OptixMaterialType::HAMMERED)
          {
             did_scatter = scatter_specular_optix(mat, prd, cur_direction, [&]() { return sobol_rand_float(ss, seed); },
                                                  scatter_dir, attenuation);
          }
-         else if (mat.type == OptixMaterialType::CLEAR_COAT)
+         else if (is_coated_optix(mat.type))
          {
             // Two-layer: Schlick Fresnel decides specular coat vs diffuse base
             float3 unit_dir = normalize3(cur_direction);
@@ -1537,7 +1568,9 @@ extern "C" __global__ void __raygen__rg()
             }
          }
 
-         if (!did_scatter)
+         // A tilted shading normal (hammer marks) can reflect below the real surface: such a ray
+         // would cross the object, so the path ends there (the glossy NEE skips those directions too)
+         if (!did_scatter || (mat.type == OptixMaterialType::HAMMERED && dot3(scatter_dir, geo_normal) <= 0.0f))
          {
             break;
          }
@@ -1584,7 +1617,7 @@ extern "C" __global__ void __raygen__rg()
                OptiXLightSample ls = sample_nee_optix(prd.hit_point, nee_sel, nee_u1, nee_u2);
                float3 f_cos;
                float  p_mat = 0.0f;
-               if (ls.pdf > 0.0f &&
+               if (ls.pdf > 0.0f && dot3(ls.direction, geo_normal) > 0.0f &&
                    glossy_lobe_eval_optix(mat, prd, normalize3(cur_direction), ls.direction, f_cos, p_mat))
                {
                   const float3 T_sh = shadow_transmittance_optix(prd.hit_point + 0.0001f * prd.hit_normal, ls.direction,
@@ -1656,7 +1689,7 @@ extern "C" __global__ void __raygen__rg()
             // Unchanged: the direction still comes from the last real scattering vertex
          }
          else if (params.mis_enabled && glossy && nee_available() &&
-                  !(mat.type == OptixMaterialType::CLEAR_COAT && sampled_diffuse))
+                  !(is_coated_optix(mat.type) && sampled_diffuse))
          {
             // Glossy lobe sampled, the glossy NEE above covers the same directions (on 1 of every
             // nee_stride samples beyond the first bounce, scaled up: the weight applies to all)

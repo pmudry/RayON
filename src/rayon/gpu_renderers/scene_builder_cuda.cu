@@ -64,6 +64,8 @@ static CudaScene::Material convertMaterial(const MaterialDesc &desc)
    // Copy thin-film interference parameters
    mat.film_thickness = desc.film_thickness;
    mat.film_ior = desc.film_ior;
+   mat.flip_color = f3(static_cast<float>(desc.flip_color.x()), static_cast<float>(desc.flip_color.y()),
+                       static_cast<float>(desc.flip_color.z()));
 
    // Participating medium (the SDF texture is bound by the caller when needed)
    mat.volume.density        = desc.density;

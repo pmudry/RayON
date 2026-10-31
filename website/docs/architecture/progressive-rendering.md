@@ -124,7 +124,7 @@ camera moves, with the display-time despeckle as its only concession.
 
 The orbit keeps the camera on a sphere around the look-at point in spherical coordinates;
 the pan moves both points along the camera's right and up vectors. Any change restarts the
-accumulation; the GUI's **Save camera & lights** button writes the current view into the scene
+accumulation; the GUI's **Save camera, lights & tone map** button writes the current view into the scene
 file.
 
 ---

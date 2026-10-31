@@ -6,6 +6,9 @@
 #include "microfacet_ggx.cuh"
 #include "sdf_primitives.cuh"
 #include "volume_medium.cuh"
+#include "chameleon_paint.cuh"
+#include "glow_glass.cuh"
+#include "hammered_metal.cuh"
 
 #include <cfloat>
 #include <cmath>
@@ -101,6 +104,14 @@ struct hit_record_simple
 
    // Participating medium (only meaningful when material == VOLUME; anisotropy = HG g)
    VolumeParams volume;
+
+   // GLOW_GLASS (material == GLASS with glow_absorption >= 0): glow per unit length inside, absorption
+   f3 glow;
+   float glow_absorption = -1.0f; // negative: plain glass (also for hits that skip apply_material)
+
+   // HAMMERED (material == ROUGH_MIRROR with hammered set): normal is the tilted shading normal
+   bool hammered = false;
+   f3 geo_normal;
 
    // Index into scene.geometries[] — used by MIS to compute light PDF for emissive hits
    int geom_idx;
@@ -492,10 +503,12 @@ __device__ inline f3 apply_procedural_pattern(CudaScene::ProceduralPattern patte
 }
 
 __device__ __forceinline__ void apply_material(const CudaScene::Material &mat, hit_record_simple &rec,
-                                               const f3 &geometry_center,
+                                               const f3 &ray_dir, const f3 &geometry_center,
                                                const cudaTextureObject_t *d_textures, int num_textures)
 {
    using namespace CudaScene;
+   rec.glow_absorption = -1.0f;
+   rec.hammered        = false;
    switch (mat.type)
    {
    case MaterialType::LAMBERTIAN:
@@ -508,14 +521,28 @@ __device__ __forceinline__ void apply_material(const CudaScene::Material &mat, h
       break;
    case MaterialType::METAL:
    case MaterialType::ROUGH_MIRROR:
+   case MaterialType::HAMMERED:
       rec.material = ROUGH_MIRROR;
       rec.color = mat.albedo;
       rec.roughness = mat.roughness; // 0 = polished, as in OptiX
+      if (mat.type == MaterialType::HAMMERED)
+      {
+         rec.hammered   = true;
+         rec.geo_normal = rec.normal;
+         hammer_normal(rec.p.x, rec.p.y, rec.p.z, mat.pattern_param1, mat.pattern_param2, rec.normal.x,
+                       rec.normal.y, rec.normal.z);
+      }
       break;
    case MaterialType::GLASS:
    case MaterialType::DIELECTRIC:
+   case MaterialType::GLOW_GLASS:
       rec.material = GLASS;
       rec.refractive_index = mat.refractive_index;
+      if (mat.type == MaterialType::GLOW_GLASS)
+      {
+         rec.glow            = mat.emission;
+         rec.glow_absorption = mat.volume.density;
+      }
       break;
    case MaterialType::LIGHT:
       rec.material = LIGHT;
@@ -548,8 +575,15 @@ __device__ __forceinline__ void apply_material(const CudaScene::Material &mat, h
       rec.refractive_index = mat.refractive_index;
       break;
    case MaterialType::CLEAR_COAT:
+   case MaterialType::CHAMELEON:
       rec.material = CLEAR_COAT;
       rec.color = mat.albedo;           // base diffuse color
+      if (mat.type == MaterialType::CHAMELEON)
+      {
+         // Base colour from the view angle; from here on the hit is a clear coat of that colour
+         const float t = chameleon_flip(fabsf(dot(normalize(ray_dir), rec.normal)));
+         rec.color = (1.0f - t) * mat.albedo + t * mat.flip_color;
+      }
       rec.roughness = mat.roughness;    // coat roughness
       rec.refractive_index = mat.refractive_index > 1.0f ? mat.refractive_index : 1.5f; // coat IOR
       break;
@@ -691,7 +725,8 @@ __device__ inline bool hit_scene(const CudaScene::Scene &scene, const ray_simple
             geom_center = geom.data.sphere.center;
          }
       }
-      apply_material(scene.materials[closest_material_id], rec, geom_center, scene.d_textures, scene.num_textures);
+      apply_material(scene.materials[closest_material_id], rec, r.dir, geom_center, scene.d_textures,
+                     scene.num_textures);
       rec.visible  = closest_visible;
       rec.geom_idx = closest_geom_idx;
    }
@@ -1528,12 +1563,26 @@ __device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scen
             continue;
          }
 
+         // GLOW_GLASS left through a back face: the segment since the last vertex ran inside the
+         // glowing medium (entry, or an internal reflection). Its light, then its absorption.
+         if (rec.material == GLASS && rec.glow_absorption >= 0.0f && !rec.front_face)
+         {
+            float       T;
+            const float glow = glow_segment((rec.p - current_ray.orig).length(), rec.glow_absorption, T);
+            accumulated_color       = accumulated_color + accumulated_attenuation * rec.glow * (g_light_intensity * glow);
+            accumulated_attenuation = accumulated_attenuation * T;
+         }
+
          f3 attenuation;
          ray_simple scattered_ray;
          f3 emitted;
 
          bool did_scatter = scatter_material(rec, current_ray, scattered_ray, attenuation, emitted, state,
                                               sample_n, pixel_hash, bounce);
+         // A tilted shading normal (hammer marks) can reflect below the real surface: such a ray
+         // would cross the object, so the path ends there
+         if (did_scatter && rec.hammered && dot(scattered_ray.dir, rec.geo_normal) <= 0.0f)
+            did_scatter = false;
 
          // --- Emissive contribution with MIS weight ---
          if (emitted.length_squared() > 0.0f)

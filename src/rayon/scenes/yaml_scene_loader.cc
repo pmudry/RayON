@@ -105,6 +105,12 @@ static MaterialType parseMaterialType(const string &type_str)
       return MaterialType::THIN_FILM;
    if (type_str == "clear_coat")
       return MaterialType::CLEAR_COAT;
+   if (type_str == "chameleon")
+      return MaterialType::CHAMELEON;
+   if (type_str == "glow_glass")
+      return MaterialType::GLOW_GLASS;
+   if (type_str == "hammered" || type_str == "hammered_metal")
+      return MaterialType::HAMMERED;
    if (type_str == "volume" || type_str == "smoke" || type_str == "cloud")
       return MaterialType::VOLUME;
    return MaterialType::LAMBERTIAN;
@@ -390,6 +396,7 @@ static bool loadMaterials(const SimpleYAMLParser &parser, SceneDescription &scen
       mat.k = parser.getVec3(prefix + ".k", Vec3(0, 0, 0));
       mat.film_thickness = parser.getFloat(prefix + ".film_thickness", 400.0f);
       mat.film_ior = parser.getFloat(prefix + ".film_ior", 1.33f);
+      mat.flip_color = parser.getVec3(prefix + ".flip_color", mat.albedo);
       // Participating medium: `g` is the usual name for the phase asymmetry, `anisotropy` also works
       mat.density = parser.getFloat(prefix + ".density", 2.0f);
       mat.noise_scale = parser.getFloat(prefix + ".noise_scale", 2.0f);
@@ -468,6 +475,15 @@ static bool loadMaterials(const SimpleYAMLParser &parser, SceneDescription &scen
          }
       }
 
+      if (mat.type == MaterialType::HAMMERED)
+      {
+         // Hammer marks: size of a mark (scene units) and tilt of its walls, kept in the pattern
+         // parameters (a hammered metal carries no pattern)
+         mat.pattern_param1 = std::max(1e-3f, parser.getFloat(prefix + ".dimple_size", 0.031f));
+         mat.pattern_param2 = std::max(0.0f, parser.getFloat(prefix + ".dimple_depth", 0.17f));
+         if (!parser.hasKey(prefix + ".roughness"))
+            mat.roughness = 0.19f;
+      }
       int mat_id = scene.addMaterial(mat);
       material_name_to_id[mat_name] = mat_id;
       if (static_cast<int>(scene.material_names.size()) <= mat_id)
@@ -880,16 +896,9 @@ bool saveViewToYAML(const char *filename, const Vec3 &position, const Vec3 &look
       settings.push_back({"indirect_clamp", fmtNumber(indirect_clamp)});
    if (tone_mapping >= 0) // negative: not managed by the caller
    {
-      // Written when it differs from the default or the file already sets it: a plain gamma + clip
-      // scene does not gain two lines on every save
-      const bool in_file = std::any_of(lines.begin(), lines.end(), [](const string &l)
-                                       { return l.find("tone_mapping:") != string::npos ||
-                                                l.find("exposure:") != string::npos; });
-      if (tone_mapping != 0 || exposure != 1.0f || in_file)
-      {
-         settings.push_back({"tone_mapping", string("\"") + toneMapYamlName(tone_mapping) + "\""});
-         settings.push_back({"exposure", fmtNumber(exposure)});
-      }
+      // Always written, "none" included, so the file states the curve the view was saved with
+      settings.push_back({"tone_mapping", string("\"") + toneMapYamlName(tone_mapping) + "\""});
+      settings.push_back({"exposure", fmtNumber(exposure)});
    }
    setBlockValues(lines, "settings", settings);
 
@@ -903,7 +912,10 @@ bool saveViewToYAML(const char *filename, const Vec3 &position, const Vec3 &look
       out << l << "\n";
    cout << "Scene view saved to " << filename << ": camera " << vec(position) << " -> " << vec(look_at) << ", fov "
         << fmtNumber(fov) << ", background_intensity " << fmtNumber(background_intensity) << ", light_intensity "
-        << fmtNumber(light_intensity) << ", light_falloff " << fmtNumber(light_falloff) << "\n";
+        << fmtNumber(light_intensity) << ", light_falloff " << fmtNumber(light_falloff);
+   if (tone_mapping >= 0)
+      cout << ", tone_mapping " << toneMapYamlName(tone_mapping) << ", exposure " << fmtNumber(exposure);
+   cout << "\n";
    return true;
 }
 
@@ -961,6 +973,15 @@ bool saveSceneToYAML(const char *filename, const SceneDescription &scene)
       case MaterialType::VOLUME:
          file << "\"volume\"";
          break;
+      case MaterialType::CHAMELEON:
+         file << "\"chameleon\"";
+         break;
+      case MaterialType::GLOW_GLASS:
+         file << "\"glow_glass\"";
+         break;
+      case MaterialType::HAMMERED:
+         file << "\"hammered\"";
+         break;
       default:
          file << "\"lambertian\"";
          break;
@@ -969,6 +990,11 @@ bool saveSceneToYAML(const char *filename, const SceneDescription &scene)
 
       // Material properties
       file << "    albedo: [" << mat.albedo.x() << ", " << mat.albedo.y() << ", " << mat.albedo.z() << "]\n";
+      if (mat.type == MaterialType::HAMMERED)
+         file << "    dimple_size: " << mat.pattern_param1 << "\n    dimple_depth: " << mat.pattern_param2 << "\n";
+      if (mat.type == MaterialType::CHAMELEON)
+         file << "    flip_color: [" << mat.flip_color.x() << ", " << mat.flip_color.y() << ", " << mat.flip_color.z()
+              << "]\n";
       if (mat.emission.x() > 0 || mat.emission.y() > 0 || mat.emission.z() > 0)
       {
          file << "    emission: [" << mat.emission.x() << ", " << mat.emission.y() << ", " << mat.emission.z() << "]\n";
