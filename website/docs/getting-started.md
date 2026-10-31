@@ -168,7 +168,7 @@ The 24 scenes in `resources/scenes/` double as a feature tour. Load any of them 
 | `16_nee_small_light.yaml` | Five matte spheres under a tiny bulb: what next event estimation buys |
 | `17_cloud_bunny.yaml` | The volume material: the bunny as a cumulus, procedural shape noise |
 | `18_sdf_shapes.yaml` | Gallery of the ten ray-marched SDF primitives in a studio room |
-| `19_vdb_bunny.yaml` | The OpenVDB `bunny_cloud` density grid (needs a one-time conversion, see [Volumes](features/volumes.md)) |
+| `17_vdb_bunny.yaml` | The OpenVDB `bunny_cloud` density grid (needs a one-time conversion, see [Volumes](features/volumes.md)) |
 | `20_emissive_mesh.yaml` | A glowing OBJ bunny beside a tiny bulb: emissive meshes light the scene through bounces, NEE samples only the bulb |
 | `21_caustics.yaml` | Glass and mirror spheres under a small lamp: the caustics of the OptiX caustic pass (compare with `--no-caustics`) |
 | `22_caustic_ring.yaml` | The cup caustic: a mirror ring and glass balls under a small low lamp, almost black without the caustic pass |

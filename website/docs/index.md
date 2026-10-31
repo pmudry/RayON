@@ -77,7 +77,7 @@ light settings back into the scene file.
   </figure>
   <figure>
     <img src="assets/images/vdb_bunny.png" alt="The OpenVDB bunny cloud density grid rendered in RayON">
-    <figcaption><strong>VDB bunny</strong> — the same transport on a density grid from OpenVDB, the reference image of the pbrt book. Scene <code>19_vdb_bunny.yaml</code>.</figcaption>
+    <figcaption><strong>VDB bunny</strong> — the same transport on a density grid from OpenVDB, the reference image of the pbrt book. Scene <code>17_vdb_bunny.yaml</code>.</figcaption>
   </figure>
   <figure>
     <img src="assets/images/sdf_gallery.png" alt="Ten ray-marched signed distance shapes in a studio room">

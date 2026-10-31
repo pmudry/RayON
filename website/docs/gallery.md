@@ -14,7 +14,7 @@ Renders from the bundled scenes, grouped by what they show. Every image can be r
       </figure>
       <figure>
         <img src="../assets/images/vdb_bunny.png" alt="OpenVDB bunny cloud density grid">
-        <figcaption><strong>VDB bunny</strong> — <code>19_vdb_bunny.yaml</code>. The OpenVDB <code>bunny_cloud</code> grid, 289×286×219 cells, read straight into the 3D density texture. OptiX, 512 spp, 720p.</figcaption>
+        <figcaption><strong>VDB bunny</strong> — <code>17_vdb_bunny.yaml</code>. The OpenVDB <code>bunny_cloud</code> grid, 289×286×219 cells, read straight into the 3D density texture. OptiX, 512 spp, 720p.</figcaption>
       </figure>
       <figure>
         <img src="../assets/images/full_bunny.png" alt="The VDB bunny cloud at 2048 samples per pixel in 1080p">

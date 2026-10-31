@@ -13,7 +13,7 @@ for development.
   </figure>
   <figure>
     <img src="../../assets/images/vdb_bunny.png" alt="OpenVDB bunny cloud density grid rendered in RayON">
-    <figcaption><strong>Density from data</strong> — <code>19_vdb_bunny.yaml</code>: OpenVDB's <code>bunny_cloud.vdb</code>, the model behind the pbrt book's cloud image. OptiX, 512 spp, 720p, 40 s.</figcaption>
+    <figcaption><strong>Density from data</strong> — <code>17_vdb_bunny.yaml</code>: OpenVDB's <code>bunny_cloud.vdb</code>, the model behind the pbrt book's cloud image. OptiX, 512 spp, 720p, 40 s.</figcaption>
   </figure>
 </div>
 
@@ -104,7 +104,7 @@ sudo apt install python3-openvdb          # OpenVDB Python bindings (Ubuntu / De
 curl -L -o /tmp/bunny_cloud.vdb \
   https://media.githubusercontent.com/media/AcademySoftwareFoundation/openvdb-website/master/download/models/bunny_cloud.vdb
 python3 tools/vdb_to_volume.py /tmp/bunny_cloud.vdb resources/volumes/bunny_cloud.vol --cells 300
-./build/rayon -m 5 --scene resources/scenes/19_vdb_bunny.yaml
+./build/rayon -m 5 --scene resources/scenes/17_vdb_bunny.yaml
 ```
 
 `bunny_cloud.vdb` is 577×572×438 voxels of 0.08 units; `--cells 300` box-filters it by 2 to

@@ -103,7 +103,7 @@ material (single run each, the GPU otherwise idle):
 | Scene | Samples | Time | Notes |
 |---|---|---|---|
 | `17_cloud_bunny.yaml` | 512 | 11 s | procedural volume, baked field, empty-space skipping |
-| `19_vdb_bunny.yaml` | 512 | 40 s | density grid, no empty-space skipping yet |
+| `17_vdb_bunny.yaml` | 512 | 40 s | density grid, no empty-space skipping yet |
 | `18_sdf_shapes.yaml` | 384 | 23 s | ten ray-marched shapes incl. a mandelbulb |
 | `16_nee_small_light.yaml` (360p) | 64 | 0.17 s | five matte spheres, one bulb |
 

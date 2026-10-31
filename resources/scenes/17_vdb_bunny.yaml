@@ -5,8 +5,8 @@
 # it straight into the 3D texture the tracking loops read. No mesh is needed: the loader adds
 # the grid's box as the medium boundary. Blender smoke caches go through the same tool.
 #
-#   ./rayon -m 5 --scene ../resources/scenes/19_vdb_bunny.yaml
-#   ./rayon -m 4 -s 512 -r 720 --scene ../resources/scenes/19_vdb_bunny.yaml
+#   ./rayon -m 5 --scene ../resources/scenes/17_vdb_bunny.yaml
+#   ./rayon -m 4 -s 512 -r 720 --scene ../resources/scenes/17_vdb_bunny.yaml
 #
 # The grid is normalised to [0, 1]; `density` scales it (extinction per scene unit at value 1).
 # `grid_scale` and `grid_position` place the grid in the scene: the source box spans

@@ -65,16 +65,16 @@ geometry:
   # Ground plane
   - type: "rectangle"
     material: "ground"
-    corner: [-20, -0.5, -15]
-    u: [40, 0, 0]
-    v: [0, 0, 35]
+    corner: [-200, -0.5, -15]
+    u: [400, 0, 0]
+    v: [0, 0, 215]
 
   # Back wall
   - type: "rectangle"
     material: "wall"
-    corner: [-20, -0.5, -1.5]
-    u: [40, 0, 0]
-    v: [0, 15, 0]
+    corner: [-200, -0.5, -1.5]
+    u: [400, 0, 0]
+    v: [0, 100, 0]
 
   # Stanford Bunny (centered on the ground)
   - type: "obj"

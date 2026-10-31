@@ -79,7 +79,451 @@ materials:
     roughness: 0.4
     anisotropy: 0.9
     preset: "copper"
-      
+
+  # ---------------------------------------------------------------------------
+  # Every other surface material of the other scenes (lights, plain floors/walls, volumes and
+  # the golf-ball pattern left out, PgUp/PgDn skips those). Interactive OptiX (-m 5): PgUp/PgDn
+  # swaps the statue through all of them; or set the obj "material:" below.
+  # ---------------------------------------------------------------------------
+
+  # From 01_anisotropic_metals_test.yaml
+  - name: "wall_red"
+    type: "lambertian"
+    albedo: [0.85, 0.12, 0.12]
+  - name: "wall_blue"
+    type: "lambertian"
+    albedo: [0.12, 0.12, 0.85]
+  - name: "al_r010_a000"
+    type: "anisotropic_metal"
+    roughness: 0.1
+    anisotropy: 0.0
+    preset: "aluminum"
+  - name: "al_r010_a033"
+    type: "anisotropic_metal"
+    roughness: 0.1
+    anisotropy: 0.33
+    preset: "aluminum"
+  - name: "al_r010_a066"
+    type: "anisotropic_metal"
+    roughness: 0.1
+    anisotropy: 0.66
+    preset: "aluminum"
+  - name: "al_r010_a095"
+    type: "anisotropic_metal"
+    roughness: 0.1
+    anisotropy: 0.95
+    preset: "aluminum"
+  - name: "al_r030_a000"
+    type: "anisotropic_metal"
+    roughness: 0.3
+    anisotropy: 0.0
+    preset: "aluminum"
+  - name: "al_r030_a033"
+    type: "anisotropic_metal"
+    roughness: 0.3
+    anisotropy: 0.33
+    preset: "aluminum"
+  - name: "al_r030_a066"
+    type: "anisotropic_metal"
+    roughness: 0.3
+    anisotropy: 0.66
+    preset: "aluminum"
+  - name: "al_r030_a095"
+    type: "anisotropic_metal"
+    roughness: 0.3
+    anisotropy: 0.95
+    preset: "aluminum"
+  - name: "al_r050_a000"
+    type: "anisotropic_metal"
+    roughness: 0.5
+    anisotropy: 0.0
+    preset: "aluminum"
+  - name: "al_r050_a033"
+    type: "anisotropic_metal"
+    roughness: 0.5
+    anisotropy: 0.33
+    preset: "aluminum"
+  - name: "al_r050_a066"
+    type: "anisotropic_metal"
+    roughness: 0.5
+    anisotropy: 0.66
+    preset: "aluminum"
+  - name: "al_r050_a095"
+    type: "anisotropic_metal"
+    roughness: 0.5
+    anisotropy: 0.95
+    preset: "aluminum"
+  - name: "al_r080_a000"
+    type: "anisotropic_metal"
+    roughness: 0.8
+    anisotropy: 0.0
+    preset: "aluminum"
+  - name: "al_r080_a033"
+    type: "anisotropic_metal"
+    roughness: 0.8
+    anisotropy: 0.33
+    preset: "aluminum"
+  - name: "al_r080_a066"
+    type: "anisotropic_metal"
+    roughness: 0.8
+    anisotropy: 0.66
+    preset: "aluminum"
+  - name: "al_r080_a095"
+    type: "anisotropic_metal"
+    roughness: 0.8
+    anisotropy: 0.95
+    preset: "aluminum"
+
+  # From 01_anisotropic_scene_obj.yaml
+  - name: "gold_r010_a000"
+    type: "anisotropic_metal"
+    roughness: 0.1
+    anisotropy: 0.0
+    preset: "gold"
+  - name: "gold_r010_a033"
+    type: "anisotropic_metal"
+    roughness: 0.1
+    anisotropy: 0.33
+    preset: "gold"
+  - name: "gold_r010_a066"
+    type: "anisotropic_metal"
+    roughness: 0.1
+    anisotropy: 0.66
+    preset: "gold"
+  - name: "gold_r010_a095"
+    type: "anisotropic_metal"
+    roughness: 0.1
+    anisotropy: 0.95
+    preset: "gold"
+  - name: "gold_r030_a000"
+    type: "anisotropic_metal"
+    roughness: 0.3
+    anisotropy: 0.0
+    preset: "gold"
+  - name: "gold_r030_a033"
+    type: "anisotropic_metal"
+    roughness: 0.3
+    anisotropy: 0.33
+    preset: "gold"
+  - name: "gold_r030_a066"
+    type: "anisotropic_metal"
+    roughness: 0.3
+    anisotropy: 0.66
+    preset: "gold"
+  - name: "gold_r030_a095"
+    type: "anisotropic_metal"
+    roughness: 0.3
+    anisotropy: 0.95
+    preset: "gold"
+  - name: "gold_r050_a000"
+    type: "anisotropic_metal"
+    roughness: 0.5
+    anisotropy: 0.0
+    preset: "gold"
+  - name: "gold_r050_a033"
+    type: "anisotropic_metal"
+    roughness: 0.5
+    anisotropy: 0.33
+    preset: "gold"
+  - name: "gold_r050_a066"
+    type: "anisotropic_metal"
+    roughness: 0.5
+    anisotropy: 0.66
+    preset: "gold"
+  - name: "gold_r050_a095"
+    type: "anisotropic_metal"
+    roughness: 0.5
+    anisotropy: 0.95
+    preset: "gold"
+  - name: "gold_r080_a000"
+    type: "anisotropic_metal"
+    roughness: 0.8
+    anisotropy: 0.0
+    preset: "gold"
+  - name: "gold_r080_a033"
+    type: "anisotropic_metal"
+    roughness: 0.8
+    anisotropy: 0.33
+    preset: "gold"
+  - name: "gold_r080_a066"
+    type: "anisotropic_metal"
+    roughness: 0.8
+    anisotropy: 0.66
+    preset: "gold"
+  - name: "gold_r080_a095"
+    type: "anisotropic_metal"
+    roughness: 0.8
+    anisotropy: 0.95
+    preset: "gold"
+
+  # From 01_bvh_test_scene.yaml
+  - name: "isc_yellow"
+    type: "lambertian"
+    albedo: [0.969, 0.945, 0.624]
+  - name: "isc_blue"
+    type: "lambertian"
+    albedo: [0.549, 0.776, 0.902]
+  - name: "isc_violet"
+    type: "lambertian"
+    albedo: [0.659, 0.565, 0.753]
+  - name: "isc_rose"
+    type: "lambertian"
+    albedo: [0.886, 0.671, 0.729]
+  - name: "isc_green"
+    type: "lambertian"
+    albedo: [0.596, 0.78, 0.749]
+  - name: "metal"
+    type: "metal"
+    albedo: [0.95, 0.95, 0.95]
+    roughness: 0.05
+  - name: "glass_15"
+    type: "glass"
+    refractive_index: 1.5
+
+  # From 02_displacement_garden.yaml
+  - name: "matte"
+    type: "lambertian"
+    albedo: [0.75, 0.74, 0.72]
+  - name: "blue_metal"
+    type: "rough_mirror"
+    albedo: [0.45, 0.62, 0.95]
+    roughness: 0.15
+    metallic: 1.0
+
+  # From 03_platonic_solids.yaml
+  - name: "isc_blue_lacquer"
+    type: "clear_coat"
+    albedo: [0.301, 0.602, 0.814]
+    roughness: 0.02
+    refractive_index: 1.5
+  - name: "brushed_gold"
+    type: "anisotropic_metal"
+    preset: "gold"
+    roughness: 0.25
+    anisotropy: 0.8
+  - name: "isc_chameleon"
+    type: "chameleon"
+    albedo: [0.434, 0.319, 0.567]
+    flip_color: [0.939, 0.893, 0.389]
+    roughness: 0.04
+    refractive_index: 1.5
+  - name: "isc_glow_glass"
+    type: "glow_glass"
+    refractive_index: 1.5
+    emission: [0.36, 0.61, 0.56]
+    density: 0.8
+  - name: "hammered_copper"
+    type: "hammered"
+    albedo: [0.955, 0.638, 0.538]
+    roughness: 0.19
+    dimple_size: 0.031
+    dimple_depth: 0.17
+
+  # From 05_material_laboratory.yaml
+  - name: "metal_0"
+    type: "rough_mirror"
+    albedo: [0.9, 0.85, 0.78]
+    roughness: 0.01
+    metallic: 1.0
+  - name: "metal_1"
+    type: "rough_mirror"
+    albedo: [0.9, 0.85, 0.78]
+    roughness: 0.08
+    metallic: 1.0
+  - name: "metal_2"
+    type: "rough_mirror"
+    albedo: [0.9, 0.85, 0.78]
+    roughness: 0.2
+    metallic: 1.0
+
+  # From 06_caustics_chapel.yaml
+  - name: "glass_15_clear"
+    type: "glass"
+    albedo: [1.0, 1.0, 1.0]
+    refractive_index: 1.5
+    transmission: 1.0
+  - name: "bronze"
+    type: "rough_mirror"
+    albedo: [0.82, 0.58, 0.3]
+    roughness: 0.06
+    metallic: 1.0
+
+  # From 09_color_bleed_box.yaml
+  - name: "white"
+    type: "lambertian"
+    albedo: [0.75, 0.75, 0.75]
+  - name: "red"
+    type: "lambertian"
+    albedo: [0.8, 0.15, 0.15]
+  - name: "green"
+    type: "lambertian"
+    albedo: [0.18, 0.75, 0.22]
+  - name: "blue"
+    type: "lambertian"
+    albedo: [0.15, 0.25, 0.8]
+
+  # From 10_isc_neons_bunny.yaml
+  - name: "bunny"
+    type: "rough_mirror"
+    albedo: [0.92, 0.92, 0.92]
+    roughness: 0.35
+    metallic: 0.2
+
+  # From 11_soap_bubbles.yaml
+  - name: "bubble_300"
+    type: "thin_film"
+    film_thickness: 300.0
+    film_ior: 1.33
+    refractive_index: 1.0
+  - name: "bubble_400"
+    type: "thin_film"
+    film_thickness: 400.0
+    film_ior: 1.33
+    refractive_index: 1.0
+  - name: "bubble_500"
+    type: "thin_film"
+    film_thickness: 500.0
+    film_ior: 1.33
+    refractive_index: 1.0
+  - name: "bubble_600"
+    type: "thin_film"
+    film_thickness: 600.0
+    film_ior: 1.33
+    refractive_index: 1.0
+  - name: "bubble_350"
+    type: "thin_film"
+    film_thickness: 350.0
+    film_ior: 1.33
+    refractive_index: 1.0
+  - name: "bubble_250"
+    type: "thin_film"
+    film_thickness: 250.0
+    film_ior: 1.33
+    refractive_index: 1.0
+  - name: "bubble_450"
+    type: "thin_film"
+    film_thickness: 450.0
+    film_ior: 1.33
+    refractive_index: 1.0
+  - name: "bubble_550"
+    type: "thin_film"
+    film_thickness: 550.0
+    film_ior: 1.33
+    refractive_index: 1.0
+
+  # From 12_clearcoat_pokemonball.yaml
+  - name: "coat_rough"
+    type: "clear_coat"
+    albedo: [0.85, 0.1, 0.08]
+    roughness: 0.5
+    refractive_index: 1.5
+  - name: "diffuse_red"
+    type: "lambertian"
+    albedo: [0.85, 0.1, 0.08]
+
+  # From 15_mis_furnace_test.yaml
+  - name: "white_diffuse"
+    type: "lambertian"
+    albedo: [1.0, 1.0, 1.0]
+  - name: "dark_diffuse"
+    type: "lambertian"
+    albedo: [0.18, 0.18, 0.18]
+  - name: "rough_mirror_50"
+    type: "rough_mirror"
+    albedo: [1.0, 1.0, 1.0]
+    roughness: 0.5
+    metallic: 1.0
+  - name: "rough_mirror_05"
+    type: "rough_mirror"
+    albedo: [1.0, 1.0, 1.0]
+    roughness: 0.05
+    metallic: 1.0
+  - name: "clearcoat_white"
+    type: "clear_coat"
+    albedo: [1.0, 1.0, 1.0]
+    roughness: 0.05
+    refractive_index: 1.5
+
+  # From 18_sdf_shapes.yaml
+  - name: "gold"
+    type: "anisotropic_metal"
+    preset: "gold"
+    roughness: 0.22
+    anisotropy: 0.6
+  - name: "ceramic"
+    type: "clear_coat"
+    albedo: [0.78, 0.78, 0.8]
+    roughness: 0.08
+  - name: "terracotta"
+    type: "clear_coat"
+    albedo: [0.74, 0.42, 0.28]
+    roughness: 0.1
+  - name: "brass"
+    type: "rough_mirror"
+    albedo: [0.9, 0.72, 0.35]
+    roughness: 0.2
+  - name: "sdf_isc_blue"
+    type: "clear_coat"
+    albedo: [0.55, 0.78, 0.9]
+    roughness: 0.05
+  - name: "sdf_isc_rose"
+    type: "clear_coat"
+    albedo: [0.89, 0.67, 0.73]
+    roughness: 0.25
+  - name: "sdf_isc_violet"
+    type: "clear_coat"
+    albedo: [0.66, 0.56, 0.75]
+    roughness: 0.05
+  - name: "sdf_isc_yellow"
+    type: "lambertian"
+    albedo: [0.97, 0.95, 0.62]
+  - name: "sdf_isc_green"
+    type: "lambertian"
+    albedo: [0.6, 0.78, 0.75]
+
+  # From 21_caustics.yaml
+  - name: "mirror"
+    type: "mirror"
+    albedo: [0.95, 0.95, 0.95]
+
+  # From 22_caustic_ring.yaml
+  - name: "chrome"
+    type: "mirror"
+    albedo: [0.95, 0.93, 0.88]
+
+  # From bvh_stress_courtyard.yaml
+  - name: "pyr_slate"
+    type: "rough_mirror"
+    albedo: [0.55, 0.56, 0.6]
+    roughness: 0.25
+    metallic: 1.0
+  - name: "pyr_steel"
+    type: "rough_mirror"
+    albedo: [0.68, 0.7, 0.73]
+    roughness: 0.18
+    metallic: 1.0
+  - name: "pyr_blue"
+    type: "rough_mirror"
+    albedo: [0.42, 0.52, 0.72]
+    roughness: 0.22
+    metallic: 1.0
+  - name: "pyr_gunmetal"
+    type: "rough_mirror"
+    albedo: [0.45, 0.47, 0.5]
+    roughness: 0.3
+    metallic: 1.0
+
+  # From default_scene.yaml
+  - name: "golden_rough"
+    type: "rough_mirror"
+    albedo: [1.0, 0.85, 0.47]
+    roughness: 0.03
+    metallic: 1.0
+  - name: "blue_rough"
+    type: "rough_mirror"
+    albedo: [0.3, 0.3, 0.91]
+    roughness: 0.3
+    metallic: 1.0
 
 geometry:
   # Ground plane

@@ -115,7 +115,7 @@ courte » du projet (section 3, étape 2) a été faite sans lier OpenVDB au pro
 Python rééchantillonne la grille `density` d'un `.vdb` en un tableau dense que RayON charge
 directement dans la texture 3D que lisent les boucles de tracking.
 
-![Scène 19_vdb_bunny : bunny_cloud.vdb d'OpenVDB, OptiX, 512 spp, 720p, 40 s](../images/vdb_bunny.png)
+![Scène 17_vdb_bunny : bunny_cloud.vdb d'OpenVDB, OptiX, 512 spp, 720p, 40 s](../images/vdb_bunny.png)
 
 - `tools/vdb_to_volume.py` (pyopenvdb + numpy) : lit la grille, la filtre par un facteur
   entier pour tenir dans `--cells` cellules, normalise en [0, 1] et écrit un fichier `.vol`
@@ -179,7 +179,7 @@ un VDB sur CPU, le rééchantillonner dans cette texture, et rendre.
    Lire `volume_medium.cuh` et le bloc `VOLUME` de `optix_programs.cu` en parallèle de
    l'artifact.
 2. **Route courte : VDB → texture 3D** (1 semaine, déjà faite en version minimale, section
-   1.6). Reproduire le lapin VDB (`tools/vdb_to_volume.py`, scène `19_vdb_bunny.yaml`),
+   1.6). Reproduire le lapin VDB (`tools/vdb_to_volume.py`, scène `17_vdb_bunny.yaml`),
    comprendre le format `.vol` et le chemin grille → `VolumeParams::field`, puis comparer avec
    pbrt-v4 sur la même scène (`bunny-cloud`). Améliorations possibles sans toucher aux
    kernels : lire le `.vdb` directement en C++ (lier OpenVDB, ou NanoVDB seul qui lit les
@@ -225,7 +225,7 @@ un VDB sur CPU, le rééchantillonner dans cette texture, et rendre.
 | `src/rayon/scenes/scene_description.hpp`, `yaml_scene_loader.cc` | `MaterialDesc::volume()`, clés YAML          |
 | `src/rayon/camera/sdl/sdl_gui_handler.hpp`         | section GUI « Cloud / Smoke » (`VolumeMaterialSettings`)   |
 | `resources/scenes/17_cloud_bunny.yaml`             | scène de référence (forme procédurale)                     |
-| `resources/scenes/19_vdb_bunny.yaml`, `resources/volumes/README.md` | lapin VDB par grille brute, recette Blender |
+| `resources/scenes/17_vdb_bunny.yaml`, `resources/volumes/README.md` | lapin VDB par grille brute, recette Blender |
 
 ### Pièges rencontrés, à connaître
 

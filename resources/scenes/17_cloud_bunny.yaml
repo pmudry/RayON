@@ -21,7 +21,7 @@ camera:
 
 settings:
   samples_per_batch: 2                  # interactive batch size for this scene (default is 8)
-  background_color: [0.45, 0.65, 0.95]  # top of the gradient sky (the horizon stays white)
+  background_color: [0.30, 0.52, 0.62]  # top of the gradient sky, a hint of petrol blue (the horizon stays white)
   background_intensity: 0.25            # sky brightness: fills the shadows, keep it well below the sun
   use_bvh: true
 
@@ -46,7 +46,7 @@ materials:
 
   - name: "ground"
     type: "lambertian"
-    albedo: [0.42, 0.45, 0.38]
+    albedo: [0.34, 0.44, 0.46]
 
 geometry:
   # bunny-3.obj spans x [-0.94, 0.61], y [0.33, 1.86], z [-0.61, 0.59]; scaled x2 and

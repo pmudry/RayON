@@ -9,7 +9,7 @@ sudo apt install python3-openvdb          # OpenVDB Python bindings (Ubuntu / De
 curl -L -o /tmp/bunny_cloud.vdb \
   https://media.githubusercontent.com/media/AcademySoftwareFoundation/openvdb-website/master/download/models/bunny_cloud.vdb
 python3 tools/vdb_to_volume.py /tmp/bunny_cloud.vdb resources/volumes/bunny_cloud.vol --cells 300
-./build/rayon -m 5 --scene resources/scenes/19_vdb_bunny.yaml
+./build/rayon -m 5 --scene resources/scenes/17_vdb_bunny.yaml
 ```
 
 `bunny_cloud.vdb` (OpenVDB sample models, <https://www.openvdb.org/download/>) is the grid
