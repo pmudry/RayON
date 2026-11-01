@@ -242,7 +242,7 @@ The dominant reflected colour depends on thickness:
 
 #### `clear_coat` — lacquered/car-paint: glossy dielectric coat over diffuse base
 
-Additional fields: `roughness` (coat surface, default 0.05), `refractive_index` (coat IOR, default 1.5).
+Additional fields: `roughness` (coat surface, default 0.0), `refractive_index` (coat IOR, default 1.5).
 
 The coat is achromatic; `albedo` controls the diffuse base colour visible through it.
 

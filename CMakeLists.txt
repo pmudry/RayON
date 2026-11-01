@@ -196,7 +196,8 @@ set_property(TARGET rayon PROPERTY CUDA_SEPARABLE_COMPILATION ON)
     # CUDA compiler flags for optimization and warning suppression
     target_compile_options(rayon PRIVATE
         $<$<COMPILE_LANGUAGE:CUDA>:
-        -maxrregcount 80               # Profiled: 80 regs best balance of occupancy vs. spilling
+        -maxrregcount 80               # Kernels without __launch_bounds__ only: renderAccKernel sets its own
+                                       # bounds (256 threads), which take precedence over this cap
         -Xcompiler=-fno-strict-aliasing -rdynamic  # Relax aliasing rules, export symbols for backtrace
         --expt-relaxed-constexpr       # Allow relaxed constexpr in device code
         --expt-extended-lambda         # Enable extended lambda support

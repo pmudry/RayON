@@ -389,7 +389,10 @@ static bool loadMaterials(const SimpleYAMLParser &parser, SceneDescription &scen
       }
       mat.roughness = parser.getFloat(prefix + ".roughness", 0.0f);
       mat.metallic = parser.getFloat(prefix + ".metallic", 0.0f);
-      mat.refractive_index = parser.getFloat(prefix + ".refractive_index", 1.0f);
+      // A coat with no refractive_index is a 1.5 dielectric (SCENE_FORMAT.md); 1.0 would give a
+      // Schlick r0 of 0 and the OptiX coat would vanish face-on (CUDA used to patch it up at 1.5)
+      const bool is_coat = mat.type == MaterialType::CLEAR_COAT || mat.type == MaterialType::CHAMELEON;
+      mat.refractive_index = parser.getFloat(prefix + ".refractive_index", is_coat ? 1.5f : 1.0f);
       mat.transmission = parser.getFloat(prefix + ".transmission", 0.0f);
       mat.anisotropy = parser.getFloat(prefix + ".anisotropy", 0.0f);
       mat.eta = parser.getVec3(prefix + ".eta", Vec3(0, 0, 0));

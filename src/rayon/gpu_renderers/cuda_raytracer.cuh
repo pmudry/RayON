@@ -610,7 +610,7 @@ __device__ __forceinline__ void apply_material(const CudaScene::Material &mat, h
    }
 }
 
-__device__ inline bool hit_scene(const CudaScene::Scene &scene, const ray_simple &r, float t_min, float t_max,
+__device__ __forceinline__ bool hit_scene(const CudaScene::Scene &scene, const ray_simple &r, float t_min, float t_max,
                                  hit_record_simple &rec)
 {
    hit_record_simple temp_rec;
@@ -863,7 +863,7 @@ __device__ inline float ratio_track_gpu(const hit_record_simple &m, const f3 &p,
 // Transmittance from origin over `dist` units along the unit direction dir: 1 when clear, 0 when
 // an opaque surface is in the way, in between through volumes. Without a volume in the scene
 // this is the plain occlusion test.
-__device__ inline float shadow_transmittance_gpu(const CudaScene::Scene &scene, const f3 &origin, const f3 &dir,
+__device__ __forceinline__ float shadow_transmittance_gpu(const CudaScene::Scene &scene, const f3 &origin, const f3 &dir,
                                                  float dist, curandState *state)
 {
    if (!scene.has_volume)
@@ -1392,8 +1392,12 @@ __device__ __forceinline__ bool scatter_material(const hit_record_simple &rec, c
  *
  * Uses a direct switch for material scatter/emission instead of CRTP template
  * dispatch, reducing register pressure and giving nvcc better optimization control.
+ *
+ * ray_color, hit_scene and shadow_transmittance_gpu are __forceinline__: left to itself nvcc keeps
+ * them as ABI calls (3.8 KB of stack per thread, 2.7 KB of spills in ray_color alone), which made
+ * the CUDA path 2 to 5 times slower than inlined on every scene (measured, images identical).
  */
-__device__ inline f3 ray_color(const ray_simple &r, const CudaScene::Scene &scene, curandState *state, int depth,
+__device__ __forceinline__ f3 ray_color(const ray_simple &r, const CudaScene::Scene &scene, curandState *state, int depth,
                                uint32_t sample_n, uint32_t pixel_hash
 #ifdef DIAGS
                                ,
