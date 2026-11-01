@@ -67,6 +67,7 @@ struct Material
    float metallic;
    float refractive_index;
    float dispersion;    // GLASS: Cauchy B (um^2), > 0 splits white light into a rainbow (spectral.cuh)
+   f3 absorption;       // GLASS: Beer-Lambert absorption per unit length and channel (tinted glass)
    float transmission;
    float anisotropy;    // Anisotropy ratio [0-1]
    f3 eta;              // Complex IOR real part
@@ -89,7 +90,8 @@ struct Material
 
    __host__ __device__ Material()
        : type(MaterialType::LAMBERTIAN), albedo(0, 0, 0), emission(0, 0, 0), roughness(0), metallic(0),
-         refractive_index(1), dispersion(0), transmission(0), anisotropy(0), eta(0, 0, 0), k(0, 0, 0),
+         refractive_index(1), dispersion(0), absorption(0, 0, 0), transmission(0), anisotropy(0), eta(0, 0, 0),
+         k(0, 0, 0),
          texture_id(-1), film_thickness(400.0f), film_ior(1.33f), flip_color(0, 0, 0),
          volume{2.0f, 2.0f, 0.5f, 0.35f, 0.6f, 0.6f, 0, nullptr, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}},
          pattern(ProceduralPattern::NONE), pattern_color(0, 0, 0),

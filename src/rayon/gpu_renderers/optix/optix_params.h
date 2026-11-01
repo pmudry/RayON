@@ -79,6 +79,7 @@ struct OptixMaterialData
    float roughness;
    float refractive_index;
    float dispersion; // GLASS: Cauchy B (um^2), > 0 splits white light into a rainbow (spectral.cuh)
+   float3 absorption; // GLASS: Beer-Lambert absorption per unit length and channel (tinted glass)
 
    // Procedural pattern
    unsigned char pattern; // 0=none, 1=fibonacci_dots

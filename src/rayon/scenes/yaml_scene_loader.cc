@@ -394,6 +394,16 @@ static bool loadMaterials(const SimpleYAMLParser &parser, SceneDescription &scen
       const bool is_coat = mat.type == MaterialType::CLEAR_COAT || mat.type == MaterialType::CHAMELEON;
       mat.refractive_index = parser.getFloat(prefix + ".refractive_index", is_coat ? 1.5f : 1.0f);
       mat.dispersion = parser.getFloat(prefix + ".dispersion", 0.0f);
+      // Beer-Lambert tint: `absorption` per unit length, or the colour `tint` seen through
+      // `tint_depth` units of glass (absorption = -ln(tint) / tint_depth)
+      mat.absorption = parser.getVec3(prefix + ".absorption", Vec3(0, 0, 0));
+      if (parser.hasKey(prefix + ".tint"))
+      {
+         const Vec3   tint  = parser.getVec3(prefix + ".tint", Vec3(1, 1, 1));
+         const double depth = std::max(1e-4f, parser.getFloat(prefix + ".tint_depth", 1.0f));
+         auto         absorb = [&](double c) { return -std::log(std::min(1.0, std::max(c, 1e-4))) / depth; };
+         mat.absorption = Vec3(absorb(tint.x()), absorb(tint.y()), absorb(tint.z()));
+      }
       mat.transmission = parser.getFloat(prefix + ".transmission", 0.0f);
       mat.anisotropy = parser.getFloat(prefix + ".anisotropy", 0.0f);
       mat.eta = parser.getVec3(prefix + ".eta", Vec3(0, 0, 0));
@@ -1024,6 +1034,11 @@ file << "    flip_color: [" << mat.flip_color.x() << ", " << mat.flip_color.y() 
       if (mat.dispersion > 0)
       {
          file << "    dispersion: " << mat.dispersion << "\n";
+      }
+      if (mat.absorption.x() > 0 || mat.absorption.y() > 0 || mat.absorption.z() > 0)
+      {
+         file << "    absorption: [" << mat.absorption.x() << ", " << mat.absorption.y() << ", "
+              << mat.absorption.z() << "]\n";
       }
       if (mat.transmission > 0)
       {

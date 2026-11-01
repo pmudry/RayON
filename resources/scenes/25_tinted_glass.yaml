@@ -1,0 +1,86 @@
+# Tinted glass: Beer-Lambert absorption through the thickness
+#
+# A glass with a `tint` absorbs light along the distance travelled inside it, per colour channel:
+# thin parts (ears, tail, the small sphere) stay pale, thick parts (the body, the big sphere)
+# darken and saturate. `tint` is the colour seen through `tint_depth` units of glass; the loader
+# turns it into an absorption coefficient (-ln(tint) / tint_depth). The caustics on the floor take
+# the colour too (OptiX caustic pass).
+#
+#   ./rayon -m 4 -s 256 --scene ../resources/scenes/25_tinted_glass.yaml
+
+scene:
+  name: "Tinted glass"
+  description: "Dragon and spheres in teal glass: Beer-Lambert absorption darkens the thick parts"
+
+camera:
+  position: [1.45, 0.42, -1.55]
+  look_at: [0.25, -0.55, 0.15]
+  up: [0.0, 1.0, 0.0]
+  fov: 40
+
+settings:
+  tone_mapping: "aces"
+  exposure: 1
+  light_intensity: 1.2
+  light_falloff: 2
+  indirect_clamp: 50
+  background_color: [0.55, 0.62, 0.72]
+  background_intensity: 0.9
+  use_bvh: true
+
+materials:
+  - name: "ground"
+    type: "lambertian"
+    albedo: [0.72, 0.70, 0.66]
+
+  - name: "teal_glass"
+    type: "glass"
+    refractive_index: 1.5
+    tint: [0.25, 0.70, 0.62]     # colour seen through 20 cm of glass
+    tint_depth: 0.2
+
+  - name: "amber_glass"
+    type: "glass"
+    refractive_index: 1.5
+    tint: [0.85, 0.45, 0.10]
+    tint_depth: 0.2
+
+  - name: "panel"
+    type: "light"
+    emission: [14.0, 13.5, 12.5]
+
+geometry:
+  - type: "rectangle"
+    material: "ground"
+    corner: [-50, -1, -50]
+    u: [100, 0, 0]
+    v: [0, 0, 100]
+
+  # Area light above, hidden from the camera
+  - type: "rectangle"
+    material: "panel"
+    corner: [-1.2, 3.0, -1.2]
+    u: [2.4, 0, 0]
+    v: [0, 0, 2.4]
+    visible: false
+
+  # The dragon (xyzrgb_dragon.obj, scaled 1/100): about 1.2 units long
+  - type: "obj"
+    material: "teal_glass"
+    file: "../models/xyzrgb_dragon.obj"
+    position: [0, -0.6, 0]
+    scale: [0.01, 0.01, 0.01]
+
+  # Same glass, growing thickness: 8, 16 and 30 cm radius
+  - type: "sphere"
+    material: "amber_glass"
+    center: [0.95, -0.92, 0.55]
+    radius: 0.08
+  - type: "sphere"
+    material: "amber_glass"
+    center: [1.15, -0.84, 0.95]
+    radius: 0.16
+  - type: "sphere"
+    material: "amber_glass"
+    center: [1.05, -0.70, 1.55]
+    radius: 0.30

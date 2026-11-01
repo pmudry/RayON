@@ -136,7 +136,15 @@ Additional fields: `roughness` [0–1].
 #### `glass` / `dielectric` — refractive glass
 
 Additional fields: `refractive_index` (e.g. 1.5 for borosilicate glass), `transmission`,
-`dispersion` (chromatic dispersion, default 0).
+`dispersion` (chromatic dispersion, default 0), `tint` + `tint_depth` or `absorption` (coloured
+glass, default clear).
+
+**Tinted glass.** `tint` is the colour seen through `tint_depth` units of glass (default 1):
+light travelling a distance d inside is attenuated by tint^(d / tint_depth) per channel
+(Beer-Lambert), so thin edges stay pale and thick parts darken and saturate. `absorption` gives
+the coefficient directly, per scene unit and channel (`absorption = -ln(tint) / tint_depth`).
+Internal reflections add their own segments; the OptiX caustic pass colours the caustics
+(`25_tinted_glass.yaml`).
 
 `dispersion` is the B coefficient of Cauchy's equation n(λ) = n_d + B (1/λ² − 1/λ_d²), in µm²,
 with `refractive_index` the index at the sodium d line (587.6 nm): crown glass is about 0.0045,
@@ -158,6 +166,12 @@ paths, which find the lamp by chance.
   type: "glass"
   refractive_index: 1.5
   dispersion: 0.03
+
+- name: "teal_glass"
+  type: "glass"
+  refractive_index: 1.5
+  tint: [0.25, 0.70, 0.62]   # the colour of 20 cm of this glass
+  tint_depth: 0.2
 ```
 
 #### `light` — emissive surface (area light)

@@ -89,6 +89,7 @@ struct hit_record_simple
    float roughness;
    float refractive_index;  // GLASS
    float dispersion = 0.0f; // GLASS: Cauchy B, > 0 = chromatic dispersion (spectral.cuh)
+   f3 absorption{0.0f, 0.0f, 0.0f}; // GLASS: Beer-Lambert absorption per unit length (tinted glass)
    bool visible;
 
    // Interpolated texture coordinate (set by triangle intersection)
@@ -541,6 +542,7 @@ __device__ __forceinline__ void apply_material(const CudaScene::Material &mat, h
       rec.material = GLASS;
       rec.refractive_index = mat.refractive_index;
       rec.dispersion       = mat.dispersion;
+      rec.absorption       = mat.absorption;
       if (mat.type == MaterialType::GLOW_GLASS)
       {
          rec.glow            = mat.emission;
@@ -1591,6 +1593,14 @@ __device__ __forceinline__ f3 ray_color(const ray_simple &r, const CudaScene::Sc
             const float glow = glow_segment((rec.p - current_ray.orig).length(), rec.glow_absorption, T);
             accumulated_color       = accumulated_color + accumulated_attenuation * rec.glow * (g_light_intensity * glow);
             accumulated_attenuation = accumulated_attenuation * T;
+         }
+         // Tinted glass left through a back face: Beer-Lambert absorption over the segment inside
+         if (rec.material == GLASS && !rec.front_face &&
+             (rec.absorption.x > 0.0f || rec.absorption.y > 0.0f || rec.absorption.z > 0.0f))
+         {
+            const float d = (rec.p - current_ray.orig).length();
+            accumulated_attenuation = accumulated_attenuation * f3(__expf(-rec.absorption.x * d), __expf(-rec.absorption.y * d),
+                                                                   __expf(-rec.absorption.z * d));
          }
 
          f3 attenuation;

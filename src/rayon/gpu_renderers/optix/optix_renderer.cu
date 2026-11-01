@@ -983,6 +983,9 @@ static void buildGAS(const Scene::SceneDescription &scene)
          materials[i].roughness = m.roughness;
          materials[i].refractive_index = m.refractive_index;
          materials[i].dispersion       = m.dispersion;
+         materials[i].absorption       = make_float3(static_cast<float>(m.absorption.x()),
+                                                     static_cast<float>(m.absorption.y()),
+                                                     static_cast<float>(m.absorption.z()));
          materials[i].pattern = static_cast<unsigned char>(m.pattern);
          materials[i].pattern_color = make_float3(static_cast<float>(m.pattern_color.x()),
                                                    static_cast<float>(m.pattern_color.y()),
@@ -1283,6 +1286,7 @@ extern "C" void optixRendererUpdateMaterial(int idx, const Scene::MaterialDesc &
    d.roughness        = m.roughness;
    d.refractive_index = m.refractive_index;
    d.dispersion       = m.dispersion;
+   d.absorption = make_float3((float)m.absorption.x(), (float)m.absorption.y(), (float)m.absorption.z());
    d.anisotropy       = m.anisotropy;
    d.eta = make_float3((float)m.eta.x(), (float)m.eta.y(), (float)m.eta.z());
    d.k   = make_float3((float)m.k.x(), (float)m.k.y(), (float)m.k.z());

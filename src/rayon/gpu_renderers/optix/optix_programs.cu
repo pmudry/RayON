@@ -805,6 +805,20 @@ __device__ __forceinline__ bool is_caustic_specular_optix(OptixMaterialType t)
 
 /// Scattering of the caustic-specular materials, shared by the camera paths (raygen) and the light
 /// paths of the caustic pass. rnd() returns the next uniform variate (Sobol for the camera, PCG for
+/// Tinted glass: a glass-like material with a Beer-Lambert absorption
+__device__ __forceinline__ bool is_tinted_glass_optix(const OptixMaterialData &mat)
+{
+   return (mat.type == OptixMaterialType::GLASS || mat.type == OptixMaterialType::DIELECTRIC ||
+           mat.type == OptixMaterialType::GLOW_GLASS) &&
+          (mat.absorption.x > 0.0f || mat.absorption.y > 0.0f || mat.absorption.z > 0.0f);
+}
+
+/// Transmittance of `d` units of tinted glass (a segment between two faces, entry or internal reflection)
+__device__ __forceinline__ float3 glass_tint_optix(const OptixMaterialData &mat, float d)
+{
+   return make_float3(__expf(-mat.absorption.x * d), __expf(-mat.absorption.y * d), __expf(-mat.absorption.z * d));
+}
+
 /// the light); the draws happen in the same order for both. `lambda` is the path's hero wavelength
 /// (um), 0 until a dispersive glass draws it (see spectral.cuh). Returns false when the path ends.
 template <typename Rng>
@@ -1314,6 +1328,8 @@ extern "C" __global__ void __raygen__rg()
             color      = color + throughput * mat.emission * (params.light_intensity * glow);
             throughput = throughput * T;
          }
+         if (!prd.front_face && is_tinted_glass_optix(mat))
+            throughput = throughput * glass_tint_optix(mat, length3(prd.hit_point - cur_origin));
 
          const int caustic_state_before = caustic_state; // restored when a thin film is passed through
          if (params.caustics_active)
@@ -2028,6 +2044,8 @@ extern "C" __global__ void __raygen__caustics()
       }
       if (!is_caustic_delta_optix(mat))
          return; // anything else (diffuse first, glossy, clear coat, medium...) is the camera paths' job
+      if (!prd.front_face && is_tinted_glass_optix(mat))
+         beta = beta * glass_tint_optix(mat, length3(prd.hit_point - origin)); // the segment inside the glass
 
       float3 scatter_dir, attenuation;
       if (!scatter_specular_optix(mat, prd, dir, [&]() { return rand_float(seed); }, scatter_dir, attenuation, lambda))
