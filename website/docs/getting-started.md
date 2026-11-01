@@ -102,6 +102,18 @@ offline progress bar shows the elapsed time and an estimate of the time left.
 | `--theme <name>` | `nord` | GUI theme: `light`, `classic`, `nord`, `dracula`, `gruvbox`, `catppuccin` |
 | `-h`, `--help` | — | Print the help and exit |
 
+### Turntable (offline modes)
+
+| Flag | Default | Description |
+|---|---|---|
+| `--turntable <frames>` | off | Render that many frames with the camera orbiting its `look_at` point around the up axis, written as `<file>_0000.png`, `<file>_0001.png`, ... (base name from `-o`, default `rendered_images/turntable`) |
+| `--turntable-degrees <d>` | `360` | Extent of the orbit in degrees |
+
+```bash
+./rayon -m 4 -s 256 -r 1080 --scene ../resources/scenes/25_tinted_glass.yaml --turntable 180 -o dragon.png
+ffmpeg -framerate 30 -i dragon_%04d.png -c:v libx264 -pix_fmt yuv420p dragon.mp4
+```
+
 ### MIS / NEE options (all modes)
 
 | Flag | Default | Description |

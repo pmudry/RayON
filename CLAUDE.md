@@ -131,6 +131,8 @@ CPU uses `double` (Vec3), GPU uses `float` — conversion at kernel boundary.
 --no-mis                 # Disable multiple importance sampling
 --motion-gate-mis        # Disable MIS while the camera moves (interactive)
 --nee-stride <N>         # NEE on 1 of every N samples beyond the first bounce (default: 1)
+--turntable <frames>     # Offline modes: render a camera orbit around look_at as <file>_NNNN.png (for ffmpeg)
+--turntable-degrees <d>  # Extent of the orbit (default: 360)
 ```
 
 The target frame rate while moving and the motion quality floors are GUI settings ("Camera Motion"

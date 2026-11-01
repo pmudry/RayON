@@ -83,6 +83,8 @@ struct ProgramArgs
    const char *scene_file = nullptr;
    const char *theme = nullptr;
    const char *output_file = nullptr; // -o: write the image there only (no latest.png, no timestamped copy)
+   int   turntable_frames  = 0;      // --turntable: offline modes render this many frames of a camera orbit
+   float turntable_degrees = 360.0f; // --turntable-degrees: the orbit's extent
 };
 
 void dumpHelp()
@@ -106,6 +108,10 @@ void dumpHelp()
    cout << "  -s <samples>              Samples per pixel (default: " << SAMPLES_PER_PIXEL << ")\n";
    cout << "  -o <file.png>             Write the image to this file only (default: rendered_images/latest.png\n"
            "                            plus a timestamped copy with its render statistics)\n";
+   cout << "  --turntable <frames>      Render that many frames with the camera orbiting its look_at point\n"
+           "                            around the up axis, as <file>_0000.png, <file>_0001.png, ... (from -o;\n"
+           "                            default rendered_images/turntable_NNNN.png), ready for ffmpeg\n";
+   cout << "  --turntable-degrees <d>   Extent of the orbit in degrees (default: 360, a full turn)\n";
    cout << "\n";
    cout << "Interactive rendering (modes 3, 5):\n";
    cout << "  --samples-per-batch <n>   Samples per batch, overrides the scene's settings.samples_per_batch\n"
@@ -262,6 +268,20 @@ ProgramArgs parseInput(int argc, char *argv[])
       else if (strcmp(argv[i], "-o") == 0 && i + 1 < argc)
       {
          args.output_file = argv[++i];
+      }
+      else if (strcmp(argv[i], "--turntable") == 0 && i + 1 < argc)
+      {
+         args.turntable_frames = atoi(argv[++i]);
+         if (args.turntable_frames < 1)
+         {
+            cerr << "Invalid --turntable value: must be >= 1\n";
+            args.samples = -1;
+            return args;
+         }
+      }
+      else if (strcmp(argv[i], "--turntable-degrees") == 0 && i + 1 < argc)
+      {
+         args.turntable_degrees = static_cast<float>(atof(argv[++i]));
       }
       else if (strcmp(argv[i], "--scene") == 0 && i + 1 < argc)
       {
@@ -424,6 +444,41 @@ int main(int argc, char *argv[])
 
    auto render_start = chrono::high_resolution_clock::now();
 
+   // --turntable: the offline modes render a sequence, the camera orbiting its look_at point
+   // around the up axis (Rodrigues' rotation of the offset), one file per frame
+   const bool turntable    = args.turntable_frames > 0 && (renderType == 2 || renderType == 4);
+   const int  frame_count  = turntable ? args.turntable_frames : 1;
+   const Vec3 orbit_pivot  = scene_desc.camera_look_at;
+   const Vec3 orbit_offset = scene_desc.camera_position - scene_desc.camera_look_at;
+   const Vec3 orbit_axis   = unit_vector(scene_desc.camera_up);
+   string     turntable_base = "rendered_images/turntable", turntable_ext = ".png";
+   if (turntable && args.output_file)
+   {
+      const string out(args.output_file);
+      const size_t dot = out.rfind('.');
+      const size_t sep = out.find_last_of("/\\");
+      if (dot != string::npos && (sep == string::npos || dot > sep))
+      {
+         turntable_base = out.substr(0, dot);
+         turntable_ext  = out.substr(dot);
+      }
+      else
+         turntable_base = out;
+   }
+
+   for (int frame = 0; frame < frame_count; ++frame)
+   {
+   if (turntable)
+   {
+      const double theta = (double)args.turntable_degrees * (M_PI / 180.0) * (double)frame / (double)frame_count;
+      const Vec3   k     = orbit_axis;
+      const Vec3   v     = orbit_offset;
+      const Vec3   rot   = v * std::cos(theta) + cross(k, v) * std::sin(theta) + k * (dot(k, v) * (1.0 - std::cos(theta)));
+      camera.look_from   = orbit_pivot + rot;
+      cout << "Turntable frame " << frame + 1 << " / " << frame_count << " (" << (int)std::lround(theta * 180.0 / M_PI)
+           << " degrees)\n";
+   }
+
    switch (renderType)
    {
 #ifdef SDL2_FOUND
@@ -497,7 +552,23 @@ int main(int argc, char *argv[])
    }
    }
 
+   if (turntable)
+   {
+      char num[16];
+      snprintf(num, sizeof(num), "_%04d", frame);
+      utils::FileUtils::writeImage(localImage, camera.image_width, camera.image_height, turntable_base + num + turntable_ext);
+   }
+   } // frames
+
    cout << "\n";
+   if (turntable)
+   {
+      cout << "Turntable: " << frame_count << " frames written as " << turntable_base << "_NNNN" << turntable_ext
+           << "\n"
+           << "  ffmpeg -framerate 30 -i " << turntable_base << "_%04d" << turntable_ext
+           << " -c:v libx264 -pix_fmt yuv420p turntable.mp4\n";
+      return 0;
+   }
 
    auto render_end = chrono::high_resolution_clock::now();
    auto render_duration = render_end - render_start;
