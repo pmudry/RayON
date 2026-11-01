@@ -1415,7 +1415,7 @@ __device__ __forceinline__ bool scatter_material(const hit_record_simple &rec, c
  * the CUDA path 2 to 5 times slower than inlined on every scene (measured, images identical).
  */
 __device__ __forceinline__ f3 ray_color(const ray_simple &r, const CudaScene::Scene &scene, curandState *state, int depth,
-                               uint32_t sample_n, uint32_t pixel_hash
+                               uint32_t sample_n, uint32_t pixel_hash, float &path_cost
 #ifdef DIAGS
                                ,
                                int &local_ray_count
@@ -1435,6 +1435,7 @@ __device__ __forceinline__ f3 ray_color(const ray_simple &r, const CudaScene::Sc
 
    for (int bounce = 0; bounce < depth; bounce++)
    {
+      path_cost += 1.0f; // cost heatmap: one per bounce, one per volume tracking step
 #ifdef DIAGS
       local_ray_count++;
 #endif
@@ -1490,6 +1491,7 @@ __device__ __forceinline__ f3 ray_color(const ray_simple &r, const CudaScene::Sc
                float t = 0.0f;
                for (int k = 0; k < VOLUME_MAX_NULL_STEPS; ++k)
                {
+                  path_cost += 1.0f;
                   {
                      // Jump over the empty space around the shape (no density there to collide with)
                      const f3    pk   = origin + t * dir;

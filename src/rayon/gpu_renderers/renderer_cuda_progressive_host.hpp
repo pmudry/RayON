@@ -199,6 +199,8 @@ class RendererCUDAProgressive : public IRenderer
       const float ADAPTIVE_STOP_PCT = 99.9f; // Stop when this share of pixels has converged
       float convergence_pct = 0.0f;          // % of pixels that have converged (for display)
       bool show_heatmap = false;              // Toggle to display sample count heatmap
+      bool show_cost_heatmap = false;         // Replace the image with the work per sample of each pixel
+      float cost_heatmap_scale = 0.0f;        // Work per sample of the most expensive pixel (yellow)
       int visualization_mode = static_cast<int>(VisualizationMode::NORMAL); // Visualization mode (normal vs show normals)
       bool show_spps_counter = true;          // SDL overlay throughput counter under logo
 
@@ -716,6 +718,12 @@ class RendererCUDAProgressive : public IRenderer
                ::renderSampleHeatmapCUDA(d_pixel_sample_counts, display_img.data(), display_view.width,
                                          display_view.height, display_view.channels, current_samples);
             }
+            else if (show_cost_heatmap)
+            {
+               cost_heatmap_scale = ::renderCostHeatmapCUDA(adaptive_sampling_enabled ? d_pixel_sample_counts : nullptr,
+                                                            display_img.data(), display_view.width, display_view.height,
+                                                            display_view.channels, current_samples);
+            }
 
             // Keep a clean, overlay-free base image for deterministic per-frame compositing.
             base_display_image = display_image;
@@ -790,6 +798,12 @@ class RendererCUDAProgressive : public IRenderer
                ::renderSampleHeatmapCUDA(d_pixel_sample_counts, display_image.data(), image_width, image_height,
                                          image_channels, current_samples);
             }
+            else if (show_cost_heatmap)
+            {
+               cost_heatmap_scale = ::renderCostHeatmapCUDA(adaptive_sampling_enabled ? d_pixel_sample_counts : nullptr,
+                                                            display_image.data(), image_width, image_height,
+                                                            image_channels, current_samples);
+            }
 
             // Keep a clean, overlay-free base image for deterministic per-frame compositing.
             base_display_image = display_image;
@@ -817,6 +831,7 @@ class RendererCUDAProgressive : public IRenderer
          bool old_adaptive = adaptive_sampling_enabled;
          float old_adaptive_thresh = adaptive_threshold;
          bool old_show_heatmap = show_heatmap;
+         bool old_show_cost_heatmap = show_cost_heatmap;
          int old_visualization_mode = visualization_mode;
          int   old_golf_dimple_count  = golf_dimple_count;
          float old_golf_dimple_radius = golf_dimple_radius;
@@ -862,7 +877,8 @@ class RendererCUDAProgressive : public IRenderer
                            volume_mat_idx >= 0 ? &volume_settings : nullptr,
                            &save_camera_request, active_scene.source_file.c_str(), camera_save_status.c_str(),
                            &light_falloff, nullptr, nullptr, &tone_map,
-                           hammered_mat_idx >= 0 ? &hammered_settings : nullptr);
+                           hammered_mat_idx >= 0 ? &hammered_settings : nullptr, &show_cost_heatmap,
+                           cost_heatmap_scale);
          // Display only: no accumulation reset, but the finished image must be converted again (a
          // converged render adds no samples, so nothing else would refresh it)
          if (tone_map.op != displayToneMap().op || tone_map.exposure != displayToneMap().exposure)
@@ -991,7 +1007,7 @@ class RendererCUDAProgressive : public IRenderer
             camera_changed = true;
          }
 
-         if (show_heatmap != old_show_heatmap)
+         if (show_heatmap != old_show_heatmap || show_cost_heatmap != old_show_cost_heatmap)
          {
             // Heatmap is a display overlay; force refresh even when sampling is finished.
             needs_rerender = true;

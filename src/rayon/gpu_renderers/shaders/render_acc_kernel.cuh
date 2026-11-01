@@ -24,6 +24,14 @@ __global__ void gammaCorrectKernel(const float4 *__restrict__ accum_buffer, unsi
 __global__ void sampleHeatmapKernel(const int *pixel_sample_counts, unsigned char *display_image, int width, int height,
                                     int channels, int max_samples_for_scale);
 
+// Cost heatmap: average work per sample of each pixel (bounces + volume tracking steps) on the
+// plasma scale, yellow at the most expensive pixel. costMaxKernel finds that maximum (float bits
+// in an int, atomicMax; zero it before the launch), costHeatmapKernel draws the image.
+__global__ void costMaxKernel(const float *cost, const int *pixel_sample_counts, int num_pixels, int total_samples,
+                              int *d_max_bits);
+__global__ void costHeatmapKernel(const float *cost, const int *pixel_sample_counts, unsigned char *display_image,
+                                  int width, int height, int channels, int total_samples, const int *d_max_bits);
+
 //==============================================================================
 // GPU-side converged pixel counting — warp-shuffle reduction.
 // Replaces host-side countConvergedPixels() which copied the entire buffer
@@ -45,4 +53,4 @@ __global__ void __launch_bounds__(256) renderAccKernel(
     curandState *rand_states, float cam_u_x, float cam_u_y, float cam_u_z, float cam_v_x,
     float cam_v_y, float cam_v_z,
     int *pixel_sample_counts = nullptr, int min_adaptive_samples = 32,
-    float adaptive_threshold = 0.01f);
+    float adaptive_threshold = 0.01f, float *cost_buffer = nullptr);

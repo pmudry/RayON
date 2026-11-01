@@ -88,4 +88,10 @@ extern "C"
    // Render sample count heatmap using Plasma colormap (purple=few samples, yellow=many)
    void renderSampleHeatmapCUDA(void *d_pixel_sample_counts, unsigned char *display_image, int width, int height,
                                 int channels, int max_samples_for_scale);
+
+   // Render the cost heatmap (average bounces + volume steps per sample of each pixel, Plasma colormap);
+   // returns the scale (work per sample of the most expensive pixel), 0 when unavailable.
+   // d_pixel_sample_counts may be null (then every pixel holds total_samples samples).
+   float renderCostHeatmapCUDA(void *d_pixel_sample_counts, unsigned char *display_image, int width, int height,
+                               int channels, int total_samples);
 }

@@ -128,6 +128,8 @@ struct OptixState
    float  adaptive_threshold   = 3.16e-5f;
    int   *d_pixel_sample_counts = nullptr;
    float *d_lum_sq              = nullptr; // per-pixel sum of squared sample luminance (variance)
+   float *d_cost                = nullptr; // per-pixel sum of the samples' work (bounces + volume steps), cost heatmap
+   int   *d_cost_max            = nullptr; // scratch for the cost heatmap scale (float bits, atomicMax)
    unsigned char *d_conv_streak = nullptr; // consecutive checks that passed the stability test
    int   *d_converged_count     = nullptr;
 
@@ -1341,9 +1343,11 @@ extern "C" void optixRendererResetAccum(int width, int height)
       // Adaptive sampling buffers follow the accumulation buffer size
       if (g_state.d_pixel_sample_counts) CUDA_CHECK(cudaFree(g_state.d_pixel_sample_counts));
       if (g_state.d_lum_sq)              CUDA_CHECK(cudaFree(g_state.d_lum_sq));
+      if (g_state.d_cost)                CUDA_CHECK(cudaFree(g_state.d_cost));
       if (g_state.d_conv_streak)         CUDA_CHECK(cudaFree(g_state.d_conv_streak));
       CUDA_CHECK(cudaMalloc(&g_state.d_pixel_sample_counts, (size_t)width * height * sizeof(int)));
       CUDA_CHECK(cudaMalloc(&g_state.d_lum_sq, (size_t)width * height * sizeof(float)));
+      CUDA_CHECK(cudaMalloc(&g_state.d_cost, (size_t)width * height * sizeof(float)));
       CUDA_CHECK(cudaMalloc(&g_state.d_conv_streak, (size_t)width * height));
       if (g_state.d_prior) CUDA_CHECK(cudaFree(g_state.d_prior));
       CUDA_CHECK(cudaMalloc(&g_state.d_prior, (size_t)width * height * sizeof(float4)));
@@ -1366,6 +1370,7 @@ extern "C" void optixRendererResetAccum(int width, int height)
    CUDA_CHECK(cudaMemsetAsync(g_state.d_accum_buffer, 0, n_pixels * sizeof(float4), getOptiXStream()));
    CUDA_CHECK(cudaMemsetAsync(g_state.d_pixel_sample_counts, 0, n_pixels * sizeof(int), getOptiXStream()));
    CUDA_CHECK(cudaMemsetAsync(g_state.d_lum_sq, 0, n_pixels * sizeof(float), getOptiXStream()));
+   CUDA_CHECK(cudaMemsetAsync(g_state.d_cost, 0, n_pixels * sizeof(float), getOptiXStream()));
    CUDA_CHECK(cudaMemsetAsync(g_state.d_conv_streak, 0, n_pixels, getOptiXStream()));
    CUDA_CHECK(cudaMemsetAsync(g_state.d_albedo_accum, 0, n_pixels * sizeof(float4), getOptiXStream()));
    CUDA_CHECK(cudaMemsetAsync(g_state.d_normal_accum, 0, n_pixels * sizeof(float4), getOptiXStream()));
@@ -1545,6 +1550,7 @@ extern "C" bool optixRendererHandoverPrior(int new_width, int new_height, float 
    CUDA_CHECK(cudaMemsetAsync(g_state.d_accum_buffer, 0, n_pixels * sizeof(float4), stream));
    CUDA_CHECK(cudaMemsetAsync(g_state.d_pixel_sample_counts, 0, n_pixels * sizeof(int), stream));
    CUDA_CHECK(cudaMemsetAsync(g_state.d_lum_sq, 0, n_pixels * sizeof(float), stream));
+   CUDA_CHECK(cudaMemsetAsync(g_state.d_cost, 0, n_pixels * sizeof(float), stream));
    CUDA_CHECK(cudaMemsetAsync(g_state.d_conv_streak, 0, n_pixels, stream));
    CUDA_CHECK(cudaMemsetAsync(g_state.d_albedo_accum, 0, n_pixels * sizeof(float4), stream));
    CUDA_CHECK(cudaMemsetAsync(g_state.d_normal_accum, 0, n_pixels * sizeof(float4), stream));
@@ -1587,6 +1593,7 @@ extern "C" unsigned long long optixRendererLaunch(int width, int height, int num
    launch_params.height = height;
    launch_params.pixel_sample_counts = g_state.adaptive_enabled ? g_state.d_pixel_sample_counts : nullptr;
    launch_params.lum_sq_buffer = g_state.d_lum_sq;
+   launch_params.cost_buffer   = g_state.d_cost;
    launch_params.albedo_buffer = g_state.d_albedo_accum;
    launch_params.normal_buffer = g_state.d_normal_accum;
    launch_params.conv_streak = g_state.adaptive_enabled ? g_state.d_conv_streak : nullptr;
@@ -2143,6 +2150,81 @@ extern "C" void optixRendererRenderSampleHeatmap(unsigned char *display_image, i
    memcpy(display_image, g_state.pinned_display, display_size);
 }
 
+// Cost heatmap: the average work per sample of each pixel (path bounces + volume tracking steps)
+// on the plasma scale, yellow at the most expensive pixel. Positive floats compare as their int bits.
+__global__ void optixCostMaxKernel(const float *__restrict__ cost, const int *__restrict__ pixel_sample_counts,
+                                   int num_pixels, int total_samples, int *d_max_bits)
+{
+   int idx = blockIdx.x * blockDim.x + threadIdx.x;
+   float v = 0.0f;
+   if (idx < num_pixels)
+   {
+      const int n = pixel_sample_counts ? abs(pixel_sample_counts[idx]) : total_samples;
+      v = cost[idx] / (float)max(n, 1);
+   }
+   for (int offset = 16; offset > 0; offset >>= 1)
+      v = fmaxf(v, __shfl_down_sync(0xFFFFFFFF, v, offset));
+   if ((threadIdx.x & 31) == 0)
+      atomicMax(d_max_bits, __float_as_int(v));
+}
+
+__global__ void optixCostHeatmapKernel(const float *__restrict__ cost, const int *__restrict__ pixel_sample_counts,
+                                       unsigned char *display_image, int render_width, int render_height, int width,
+                                       int height, int channels, int total_samples, const int *d_max_bits)
+{
+   int x = blockIdx.x * blockDim.x + threadIdx.x;
+   int y = blockIdx.y * blockDim.y + threadIdx.y;
+   if (x >= width || y >= height)
+      return;
+   int rx = (render_width == width) ? x : min(x * render_width / width, render_width - 1);
+   int ry = (render_height == height) ? y : min(y * render_height / height, render_height - 1);
+   const int   i     = ry * render_width + rx;
+   const int   n     = pixel_sample_counts ? abs(pixel_sample_counts[i]) : total_samples;
+   const float scale = __int_as_float(*d_max_bits);
+   const float t     = scale > 0.0f ? fminf(cost[i] / (float)max(n, 1) / scale, 1.0f) : 0.0f;
+   float r, g, b;
+   plasmaColormap(t, r, g, b);
+   int image_idx = (y * width + x) * channels;
+   display_image[image_idx + 0] = (unsigned char)(255.0f * r);
+   display_image[image_idx + 1] = (unsigned char)(255.0f * g);
+   display_image[image_idx + 2] = (unsigned char)(255.0f * b);
+   if (channels == 4)
+      display_image[image_idx + 3] = 255;
+}
+
+// Replace the display image with the cost heatmap; returns the scale (work per sample of the
+// most expensive pixel, the yellow end), or 0 when unavailable
+extern "C" float optixRendererRenderCostHeatmap(unsigned char *display_image, int width, int height, int channels,
+                                                int total_samples)
+{
+   if (!g_state.d_cost || !display_image || g_state.render_width <= 0)
+      return 0.0f;
+   if (!g_state.d_cost_max)
+      CUDA_CHECK(cudaMalloc(&g_state.d_cost_max, sizeof(int)));
+   size_t display_size = (size_t)width * height * channels * sizeof(unsigned char);
+   ensureDisplayBuffers(display_size);
+
+   cudaStream_t stream     = getOptiXStream();
+   const int    num_pixels = g_state.render_width * g_state.render_height;
+   const int   *counts     = g_state.adaptive_enabled ? g_state.d_pixel_sample_counts : nullptr;
+   CUDA_CHECK(cudaMemsetAsync(g_state.d_cost_max, 0, sizeof(int), stream));
+   optixCostMaxKernel<<<(num_pixels + 255) / 256, 256, 0, stream>>>(g_state.d_cost, counts, num_pixels,
+                                                                     total_samples, g_state.d_cost_max);
+   dim3 threads(32, 8);
+   dim3 blocks((width + threads.x - 1) / threads.x, (height + threads.y - 1) / threads.y);
+   optixCostHeatmapKernel<<<blocks, threads, 0, stream>>>(g_state.d_cost, counts, g_state.d_display,
+                                                           g_state.render_width, g_state.render_height, width, height,
+                                                           channels, total_samples, g_state.d_cost_max);
+   int max_bits = 0;
+   cudaMemcpyAsync(&max_bits, g_state.d_cost_max, sizeof(int), cudaMemcpyDeviceToHost, stream);
+   cudaMemcpyAsync(g_state.pinned_display, g_state.d_display, display_size, cudaMemcpyDeviceToHost, stream);
+   cudaStreamSynchronize(stream);
+   memcpy(display_image, g_state.pinned_display, display_size);
+   float scale;
+   memcpy(&scale, &max_bits, sizeof(float));
+   return scale;
+}
+
 static void freeEnvSamplingTables()
 {
    if (g_state.d_env_marginal_cdf)    { cudaFree(g_state.d_env_marginal_cdf);    g_state.d_env_marginal_cdf = nullptr; }
@@ -2341,6 +2423,10 @@ extern "C" void optixRendererCleanup()
       CUDA_CHECK(cudaFree(g_state.d_pixel_sample_counts));
    if (g_state.d_lum_sq)
       CUDA_CHECK(cudaFree(g_state.d_lum_sq));
+   if (g_state.d_cost)
+      CUDA_CHECK(cudaFree(g_state.d_cost));
+   if (g_state.d_cost_max)
+      CUDA_CHECK(cudaFree(g_state.d_cost_max));
    if (g_state.d_conv_streak)
       CUDA_CHECK(cudaFree(g_state.d_conv_streak));
    if (g_state.d_converged_count)

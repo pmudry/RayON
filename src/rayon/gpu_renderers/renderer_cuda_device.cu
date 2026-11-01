@@ -211,6 +211,23 @@ extern "C" void freeDeviceAccumBuffer(void *d_accum_buffer)
    }
 }
 
+// Per-pixel work of the samples (bounces + volume tracking steps) for the GUI's cost heatmap:
+// sized with the render, cleared with the accumulation
+static float *s_cost_buffer = nullptr;
+static int    s_cost_pixels = 0;
+static int   *s_cost_max    = nullptr; // scratch for the heatmap scale (float bits, atomicMax)
+
+static void ensureCostBuffer(int num_pixels)
+{
+   if (s_cost_buffer != nullptr && s_cost_pixels == num_pixels)
+      return;
+   if (s_cost_buffer != nullptr)
+      cudaFree(s_cost_buffer);
+   cudaMalloc(&s_cost_buffer, (size_t)num_pixels * sizeof(float));
+   cudaMemset(s_cost_buffer, 0, (size_t)num_pixels * sizeof(float));
+   s_cost_pixels = num_pixels;
+}
+
 extern "C" void resetDeviceAccumBuffer(void *d_accum_buffer, int num_pixels)
 {
    if (d_accum_buffer != nullptr)
@@ -219,6 +236,8 @@ extern "C" void resetDeviceAccumBuffer(void *d_accum_buffer, int num_pixels)
       // cudaMemset on the default stream (0) races with kernels on non-blocking streams.
       cudaStream_t stream = s_compute_stream ? s_compute_stream : 0;
       cudaMemsetAsync(d_accum_buffer, 0, (size_t)num_pixels * sizeof(float4), stream);
+      if (s_cost_buffer != nullptr && s_cost_pixels == num_pixels)
+         cudaMemsetAsync(s_cost_buffer, 0, (size_t)num_pixels * sizeof(float), stream);
    }
 }
 
@@ -475,6 +494,9 @@ extern "C" unsigned long long renderPixelsCUDAAccumulative(
       ++sequence_seed;
       cudaMemcpyToSymbol(g_sobol_sequence_seed, &sequence_seed, sizeof(uint32_t));
    }
+   ensureCostBuffer(width * height);
+   if (total_samples_so_far == 0)
+      cudaMemsetAsync(s_cost_buffer, 0, (size_t)width * height * sizeof(float), s_compute_stream ? s_compute_stream : 0);
 
    if (need_rand_init)
    {
@@ -505,7 +527,7 @@ extern "C" unsigned long long renderPixelsCUDAAccumulative(
        (float)cam_center_y, (float)cam_center_z, (float)pixel00_x, (float)pixel00_y, (float)pixel00_z, (float)delta_u_x,
        (float)delta_u_y, (float)delta_u_z, (float)delta_v_x, (float)delta_v_y, (float)delta_v_z, d_ray_count,
        d_rand_states, (float)cam_u_x, (float)cam_u_y, (float)cam_u_z, (float)cam_v_x, (float)cam_v_y, (float)cam_v_z,
-       static_cast<int *>(d_pixel_sample_counts), min_adaptive_samples, adaptive_threshold);
+       static_cast<int *>(d_pixel_sample_counts), min_adaptive_samples, adaptive_threshold, s_cost_buffer);
 
    cudaError_t kernel_err = cudaGetLastError();
    if (kernel_err != cudaSuccess)
@@ -709,6 +731,49 @@ extern "C" void renderSampleHeatmapCUDA(void *d_pixel_sample_counts, unsigned ch
       cudaDeviceSynchronize();
       cudaMemcpy(display_image, d_display_heatmap, display_size, cudaMemcpyDeviceToHost);
    }
+}
+
+// Replace the display image with the cost heatmap (average bounces + volume steps per sample of
+// each pixel, plasma scale); returns the scale (the most expensive pixel, yellow), 0 if unavailable
+extern "C" float renderCostHeatmapCUDA(void *d_pixel_sample_counts, unsigned char *display_image, int width, int height,
+                                       int channels, int total_samples)
+{
+   if (s_cost_buffer == nullptr || s_cost_pixels != width * height || display_image == nullptr)
+      return 0.0f;
+   if (s_cost_max == nullptr)
+      cudaMalloc(&s_cost_max, sizeof(int));
+
+   size_t display_size = (size_t)width * height * channels * sizeof(unsigned char);
+   static unsigned char *d_display_cost = nullptr;
+   static size_t         d_display_cost_size = 0;
+   if (d_display_cost == nullptr || d_display_cost_size != display_size)
+   {
+      if (d_display_cost != nullptr)
+         cudaFree(d_display_cost);
+      cudaMalloc(&d_display_cost, display_size);
+      d_display_cost_size = display_size;
+   }
+
+   // The cost buffer is written on the compute stream: wait for it before reading it here
+   cudaStream_t stream = s_display_stream ? s_display_stream : 0;
+   if (s_compute_stream)
+      cudaStreamSynchronize(s_compute_stream);
+   const int  num_pixels = width * height;
+   const int *counts     = static_cast<const int *>(d_pixel_sample_counts);
+   cudaMemsetAsync(s_cost_max, 0, sizeof(int), stream);
+   costMaxKernel<<<(num_pixels + 255) / 256, 256, 0, stream>>>(s_cost_buffer, counts, num_pixels, total_samples,
+                                                                s_cost_max);
+   dim3 threads = getOptimalBlockSize(width, height);
+   dim3 blocks((width + threads.x - 1) / threads.x, (height + threads.y - 1) / threads.y);
+   costHeatmapKernel<<<blocks, threads, 0, stream>>>(s_cost_buffer, counts, d_display_cost, width, height, channels,
+                                                      total_samples, s_cost_max);
+   int max_bits = 0;
+   cudaMemcpyAsync(&max_bits, s_cost_max, sizeof(int), cudaMemcpyDeviceToHost, stream);
+   cudaMemcpyAsync(display_image, d_display_cost, display_size, cudaMemcpyDeviceToHost, stream);
+   cudaStreamSynchronize(stream);
+   float scale;
+   memcpy(&scale, &max_bits, sizeof(float));
+   return scale;
 }
 
 // Use renderPixelsCUDAAccumulative for all rendering (one-shot and progressive).

@@ -81,6 +81,8 @@ extern "C"
    int  optixRendererCountConvergedPixels();
    void optixRendererRenderSampleHeatmap(unsigned char *display_image, int width, int height, int channels,
                                          int max_samples_for_scale);
+   float optixRendererRenderCostHeatmap(unsigned char *display_image, int width, int height, int channels,
+                                        int total_samples);
 }
 
 class RendererOptiXProgressive : public IRenderer
@@ -219,6 +221,8 @@ class RendererOptiXProgressive : public IRenderer
       int visualization_mode = static_cast<int>(VisualizationMode::NORMAL);
       bool show_spps_counter = true;
       bool show_heatmap = false;
+      bool show_cost_heatmap = false;   // replace the image with the work per sample of each pixel
+      float cost_heatmap_scale = 0.0f;  // work per sample of the most expensive pixel (yellow)
       bool adaptive_sampling_enabled = settings_.adaptive_sampling;
       const int min_adaptive_samples = 64;  // Don't check convergence before this many samples
       float adaptive_threshold = sceneAdaptiveThreshold(scene); // Std. error of the pixel mean in display space
@@ -1082,6 +1086,9 @@ class RendererOptiXProgressive : public IRenderer
             if (show_heatmap && config.adaptive)
                ::optixRendererRenderSampleHeatmap(display_image.data(), image_width, image_height, image_channels,
                                                   std::max(1, current_samples));
+            else if (show_cost_heatmap)
+               cost_heatmap_scale = ::optixRendererRenderCostHeatmap(display_image.data(), image_width, image_height,
+                                                                    image_channels, std::max(1, current_samples));
 
 
             if (target.pixels) *target.pixels = display_image;
@@ -1148,7 +1155,8 @@ class RendererOptiXProgressive : public IRenderer
                            volume_mat_idx >= 0 ? &volume_settings : nullptr,
                            &save_camera_request, active_scene.source_file.c_str(), camera_save_status.c_str(),
                            &light_falloff, &indirect_clamp, &caustics, &tone_map,
-                           hammered_mat_idx >= 0 ? &hammered_settings : nullptr);
+                           hammered_mat_idx >= 0 ? &hammered_settings : nullptr, &show_cost_heatmap,
+                           cost_heatmap_scale);
          // Display only: no accumulation reset, but the finished image must be converted again (a
          // converged render adds no samples, so nothing else would refresh it)
          if (tone_map.op != displayToneMap().op || tone_map.exposure != displayToneMap().exposure)

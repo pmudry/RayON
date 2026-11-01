@@ -127,6 +127,12 @@ milliseconds ([Volumes](volumes.md)).
 Pixels lit only by rare bright paths are protected from freezing too early. Disable with
 `--no-adaptive-sampling`.
 
+The **Performance Monitoring** section has a second map, **Show Cost Heatmap**: the work per
+sample of each pixel (path bounces plus volume tracking steps, averaged over its samples), on the
+same Plasma scale with yellow at the most expensive pixel, whose value is printed under the
+checkbox. It shows where the time goes: the inside of a cloud, glass seen through glass, the dark
+corners where paths bounce until the depth limit.
+
 ### MIS / NEE
 
 **Enable MIS** (master toggle for next event estimation and the MIS weights), **NEE stride**

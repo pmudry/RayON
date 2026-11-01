@@ -145,6 +145,43 @@ __global__ void sampleHeatmapKernel(const int *pixel_sample_counts, unsigned cha
       display_image[image_idx + 3] = 255;
 }
 
+__global__ void costMaxKernel(const float *cost, const int *pixel_sample_counts, int num_pixels, int total_samples,
+                              int *d_max_bits)
+{
+   int   idx = blockIdx.x * blockDim.x + threadIdx.x;
+   float v   = 0.0f;
+   if (idx < num_pixels)
+   {
+      const int n = pixel_sample_counts ? abs(pixel_sample_counts[idx]) : total_samples;
+      v = cost[idx] / (float)max(n, 1);
+   }
+   for (int offset = 16; offset > 0; offset >>= 1)
+      v = fmaxf(v, __shfl_down_sync(0xFFFFFFFF, v, offset));
+   if ((threadIdx.x & 31) == 0)
+      atomicMax(d_max_bits, __float_as_int(v)); // positive floats order like their int bits
+}
+
+__global__ void costHeatmapKernel(const float *cost, const int *pixel_sample_counts, unsigned char *display_image,
+                                  int width, int height, int channels, int total_samples, const int *d_max_bits)
+{
+   int x = blockIdx.x * blockDim.x + threadIdx.x;
+   int y = blockIdx.y * blockDim.y + threadIdx.y;
+   if (x >= width || y >= height)
+      return;
+   const int   pixel_idx = y * width + x;
+   const int   n         = pixel_sample_counts ? abs(pixel_sample_counts[pixel_idx]) : total_samples;
+   const float scale     = __int_as_float(*d_max_bits);
+   const float t         = scale > 0.0f ? fminf(cost[pixel_idx] / (float)max(n, 1) / scale, 1.0f) : 0.0f;
+   float r, g, b;
+   plasmaColormap(t, r, g, b);
+   int image_idx = pixel_idx * channels;
+   display_image[image_idx + 0] = (unsigned char)(255.0f * r);
+   display_image[image_idx + 1] = (unsigned char)(255.0f * g);
+   display_image[image_idx + 2] = (unsigned char)(255.0f * b);
+   if (channels == 4)
+      display_image[image_idx + 3] = 255;
+}
+
 //==============================================================================
 // GPU-side converged pixel counting — replaces expensive host-side copy + loop.
 // Uses a single-pass warp-shuffle reduction: each thread checks one pixel,
@@ -186,7 +223,8 @@ __global__ void __launch_bounds__(256) renderAccKernel(float4 *accum_buffer, con
                                 float delta_v_y, float delta_v_z, unsigned long long *ray_count,
                                 curandState *rand_states, float cam_u_x, float cam_u_y, float cam_u_z, float cam_v_x,
                                 float cam_v_y, float cam_v_z,
-                                int *pixel_sample_counts, int min_adaptive_samples, float adaptive_threshold)
+                                int *pixel_sample_counts, int min_adaptive_samples, float adaptive_threshold,
+                                float *cost_buffer)
 {
 #ifdef DIAGS
    // Shared memory for block-level ray counting (only when diagnostics enabled)
@@ -246,6 +284,7 @@ __global__ void __launch_bounds__(256) renderAccKernel(float4 *accum_buffer, con
    float4 acc = accum_buffer[pixel_idx];
    f3 accumulated_color(acc.x, acc.y, acc.z);
    float accumulated_lum_sq = acc.w;
+   float cost_added         = 0.0f; // bounces + volume steps of this batch's samples (cost heatmap)
 
 #ifdef DIAGS
    int local_ray_count = 0;
@@ -296,7 +335,7 @@ __global__ void __launch_bounds__(256) renderAccKernel(float4 *accum_buffer, con
       }
 
       ray_simple r(ray_origin, ray_direction);
-      f3 sample_color = ray_color(r, *scene, local_rand_state, max_depth, sample_n, pixel_hash
+      f3 sample_color = ray_color(r, *scene, local_rand_state, max_depth, sample_n, pixel_hash, cost_added
 #ifdef DIAGS
                                   ,
                                   local_ray_count
@@ -332,6 +371,8 @@ __global__ void __launch_bounds__(256) renderAccKernel(float4 *accum_buffer, con
    // Single coalesced float4 write instead of 3 separate float writes
    accum_buffer[pixel_idx] =
        make_float4(accumulated_color.x, accumulated_color.y, accumulated_color.z, accumulated_lum_sq);
+   if (cost_buffer)
+      cost_buffer[pixel_idx] += cost_added;
 
    // --- Adaptive sampling: check convergence after this batch ---
    if (adaptive_enabled)

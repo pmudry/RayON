@@ -1140,6 +1140,7 @@ extern "C" __global__ void __raygen__rg()
    float3 accumulated = make_float3(acc.x, acc.y, acc.z);
    float  primary_hits = acc.w;
    float  lum_sq_added = 0.0f; // sum of squared sample luminance for this launch (variance estimate)
+   float  cost_added   = 0.0f; // path bounces + volume tracking steps of this launch's samples (cost heatmap)
    // Denoiser guides for this launch: sums of the albedo and camera-space normal seen by each sample
    // (see the guide capture in the bounce loop).
    float3 guide_albedo = make_float3(0.0f, 0.0f, 0.0f);
@@ -1248,6 +1249,7 @@ extern "C" __global__ void __raygen__rg()
       {
          PRDRadiance prd;
          prd.hit = false;
+         cost_added += 1.0f;
 
          trace(params.traversable, cur_origin, cur_direction, 0.001f, 1e16f, &prd);
 
@@ -1423,6 +1425,7 @@ extern "C" __global__ void __raygen__rg()
                         continue;
                      }
                   }
+                  cost_added += 1.0f;
                   t -= logf(1.0f - rand_float(seed)) / sigma_max;
                   if (t >= t_exit)
                      break;
@@ -1842,6 +1845,8 @@ extern "C" __global__ void __raygen__rg()
    params.accum_buffer[pixel_idx] = make_float4(accumulated.x, accumulated.y, accumulated.z, primary_hits);
    if (params.lum_sq_buffer)
       params.lum_sq_buffer[pixel_idx] += lum_sq_added;
+   if (params.cost_buffer)
+      params.cost_buffer[pixel_idx] += cost_added;
    if (params.albedo_buffer)
    {
       float4 ga = params.albedo_buffer[pixel_idx];

@@ -288,7 +288,8 @@ class SDLGuiHandler
                       bool *save_camera_request = nullptr, const char *scene_yaml_path = nullptr,
                       const char *camera_save_status = nullptr, float *light_falloff = nullptr,
                       float *indirect_clamp = nullptr, bool *caustics = nullptr,
-                      ToneMapSettings *tone_map = nullptr, HammeredMaterialSettings *hammered = nullptr)
+                      ToneMapSettings *tone_map = nullptr, HammeredMaterialSettings *hammered = nullptr,
+                      bool *show_cost_heatmap = nullptr, float cost_heatmap_scale = 0.0f)
    {
       SDL_UpdateTexture(texture, nullptr, image.data(), image_width * image_channels);
       SDL_RenderClear(renderer);
@@ -339,6 +340,16 @@ class SDLGuiHandler
                else
                   ImGui::Text("Throughput: %.0f S/s", sps);
                ImGui::Text("Time/Pass: %.3f ms", ms_per_sample);
+
+               if (show_cost_heatmap)
+               {
+                  ImGui::Checkbox("Show Cost Heatmap", show_cost_heatmap);
+                  ImGui::SetItemTooltip("Replaces the image with the work per sample of each pixel:\n"
+                                        "path bounces plus volume tracking steps, averaged over the samples\n"
+                                        "(plasma scale: dark = cheap, yellow = the most expensive pixel).");
+                  if (*show_cost_heatmap)
+                     ImGui::Text("Yellow = %.1f bounces + volume steps / sample", cost_heatmap_scale);
+               }
 
                // Fixed batch size and motion batch cap
                if (samples_per_batch)

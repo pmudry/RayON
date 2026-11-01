@@ -144,6 +144,9 @@ struct OptixLaunchParams
    // Per-pixel running sum of squared sample luminance, kept by raygen so the adaptive pass can
    // estimate each pixel's variance. Always valid (counts stay accurate while adaptive is off).
    float *lum_sq_buffer;
+   // Per-pixel running sum of the work of its samples (path bounces + volume tracking steps),
+   // for the cost heatmap of the GUI. Null when not collected.
+   float *cost_buffer;
    // Denoiser guide layers, accumulated like accum_buffer (sums over samples): albedo and
    // camera-space normal of each sample's first non-specular hit (background: sky colour, zero
    // normal). Null when the guides are not collected.
