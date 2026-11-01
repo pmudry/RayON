@@ -46,6 +46,7 @@ static CudaScene::Material convertMaterial(const MaterialDesc &desc)
    mat.roughness = desc.roughness;
    mat.metallic = desc.metallic;
    mat.refractive_index = desc.refractive_index;
+   mat.dispersion = desc.dispersion;
    mat.transmission = desc.transmission;
    mat.anisotropy = desc.anisotropy;
    mat.eta = f3(static_cast<float>(desc.eta.x()), static_cast<float>(desc.eta.y()),

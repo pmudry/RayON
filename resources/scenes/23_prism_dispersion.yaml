@@ -1,0 +1,114 @@
+# Chromatic dispersion: a glass prism splits a white beam into a rainbow
+#
+# The `dispersion` field of a glass makes its refractive index depend on the wavelength
+# (Cauchy's equation, see resources/scenes/SCENE_FORMAT.md). A thin slit lamp on the left, hidden
+# from the camera, shines through a 6 cm slit cut in a black screen; the thin horizontal beam
+# crosses the prism, bends down through the right face and lands on the floor spread into a
+# spectrum, red the least deviated. The OptiX
+# caustic pass draws the band from the lamp side; the camera paths alone (CUDA, --no-caustics)
+# find it by chance and need many samples. The dispersive glass sphere on the right fringes its
+# caustic with colour. 0.03 um^2 is about six times a flint glass, chosen to be seen.
+#
+#   ./rayon -m 4 -s 512 --scene ../resources/scenes/23_prism_dispersion.yaml
+
+scene:
+  name: "Prism dispersion"
+  description: "A white beam through a dispersive glass prism lands on the floor as a rainbow"
+
+camera:
+  position: [2.9, 1.7, 3.6]
+  look_at: [0.5, 0.45, 0.0]
+  up: [0.0, 1.0, 0.0]
+  fov: 42
+
+settings:
+  tone_mapping: "aces"
+  exposure: 1
+  light_intensity: 1
+  light_falloff: 2
+  indirect_clamp: 50
+  background_color: [0.0, 0.0, 0.0]
+  background_intensity: 0
+  use_bvh: true
+
+materials:
+  - name: "floor"
+    type: "lambertian"
+    albedo: [0.62, 0.62, 0.60]
+  - name: "wall"
+    type: "lambertian"
+    albedo: [0.30, 0.31, 0.34]
+  - name: "flint_glass"
+    type: "glass"
+    refractive_index: 1.5
+    dispersion: 0.03
+  - name: "screen"
+    type: "lambertian"
+    albedo: [0.02, 0.02, 0.02]
+  - name: "slit"
+    type: "light"
+    emission: [3000.0, 3000.0, 3000.0]
+  - name: "bulb"
+    type: "light"
+    emission: [60.0, 58.0, 54.0]
+
+geometry:
+  - type: "rectangle"
+    material: "floor"
+    corner: [-8.0, 0.0, -4.0]
+    u: [16.0, 0.0, 0.0]
+    v: [0.0, 0.0, 10.0]
+  - type: "rectangle"
+    material: "wall"
+    corner: [-8.0, 0.0, -2.5]
+    u: [16.0, 0.0, 0.0]
+    v: [0.0, 5.0, 0.0]
+
+  # The prism: apex up, axis along z, standing on the floor (prism.obj is 2 wide, 1.73 high)
+  - type: "obj"
+    material: "flint_glass"
+    file: "../models/prism.obj"
+    position: [0.0, 0.0, 0.0]
+    scale: [1.0, 1.0, 1.0]
+
+  # Lamp 6 m to the left, facing the prism: a 16 cm by 50 cm strip (normal = u x v = +x)
+  - type: "rectangle"
+    material: "slit"
+    corner: [-6.0, 1.10, -0.25]
+    u: [0.0, 0.16, 0.0]
+    v: [0.0, 0.0, 0.5]
+    visible: false
+
+  # Black screen between the lamp and the prism, cut by a slit 8 cm high and 60 cm wide
+  # (y from 1.14 to 1.22, z from -0.3 to 0.3)
+  - type: "rectangle"
+    material: "screen"
+    corner: [-1.6, 0.0, -1.5]
+    u: [0.0, 1.14, 0.0]
+    v: [0.0, 0.0, 3.0]
+  - type: "rectangle"
+    material: "screen"
+    corner: [-1.6, 1.22, -1.5]
+    u: [0.0, 2.3, 0.0]
+    v: [0.0, 0.0, 3.0]
+  - type: "rectangle"
+    material: "screen"
+    corner: [-1.6, 1.14, -1.5]
+    u: [0.0, 0.08, 0.0]
+    v: [0.0, 0.0, 1.2]
+  - type: "rectangle"
+    material: "screen"
+    corner: [-1.6, 1.14, 0.3]
+    u: [0.0, 0.08, 0.0]
+    v: [0.0, 0.0, 1.2]
+
+  # A dispersive glass sphere under a small bulb: its caustic ring takes colour fringes
+  - type: "sphere"
+    material: "flint_glass"
+    center: [3.4, 0.6, -1.2]
+    radius: 0.6
+  - type: "sphere"
+    material: "bulb"
+    center: [3.4, 3.2, -1.2]
+    radius: 0.08
+    visible: false

@@ -68,6 +68,7 @@ struct MaterialDesc {
     float roughness;          // Surface roughness [0-1]
     float metallic;           // Metallic factor [0-1]
     float refractive_index;   // For glass/dielectric materials
+    float dispersion;         // GLASS: Cauchy B coefficient (um^2), 0 = no chromatic dispersion
     float transmission;       // Transparency [0-1]
     float anisotropy;         // Anisotropy ratio [0-1] (0=isotropic, 1=max stretch)
     Vec3 eta;                 // Complex IOR real part (conductor Fresnel)
@@ -110,6 +111,7 @@ struct MaterialDesc {
         , roughness(0.0f)
         , metallic(0.0f)
         , refractive_index(1.0f)
+        , dispersion(0.0f)
         , transmission(0.0f)
         , anisotropy(0.0f)
         , eta(0, 0, 0)

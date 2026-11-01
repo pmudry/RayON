@@ -8,6 +8,7 @@
 
 #include "optix_params.h"
 #include "../sdf_primitives.cuh"
+#include "spectral.cuh"
 #include "volume_medium.cuh"
 #include "chameleon_paint.cuh"
 #include "glow_glass.cuh"
@@ -804,11 +805,12 @@ __device__ __forceinline__ bool is_caustic_specular_optix(OptixMaterialType t)
 
 /// Scattering of the caustic-specular materials, shared by the camera paths (raygen) and the light
 /// paths of the caustic pass. rnd() returns the next uniform variate (Sobol for the camera, PCG for
-/// the light); the draws happen in the same order for both. Returns false when the path ends.
+/// the light); the draws happen in the same order for both. `lambda` is the path's hero wavelength
+/// (um), 0 until a dispersive glass draws it (see spectral.cuh). Returns false when the path ends.
 template <typename Rng>
 __device__ __forceinline__ bool scatter_specular_optix(const OptixMaterialData &mat, const PRDRadiance &prd,
                                                        const float3 &cur_direction, Rng &&rnd, float3 &scatter_dir,
-                                                       float3 &attenuation)
+                                                       float3 &attenuation, float &lambda)
 {
    bool did_scatter = false;
    if (mat.type == OptixMaterialType::MIRROR)
@@ -840,7 +842,19 @@ __device__ __forceinline__ bool scatter_specular_optix(const OptixMaterialData &
             mat.type == OptixMaterialType::GLOW_GLASS) // the glowing interior is handled by raygen
    {
       attenuation = make_float3(1.0f, 1.0f, 1.0f);
-      float eff_ior = mat.refractive_index * params.glass_ior_multiplier;
+      float eff_ior = mat.refractive_index;
+      if (mat.dispersion > 0.0f)
+      {
+         // Dispersive glass: the path's hero wavelength is drawn at its first such refraction and
+         // weights the throughput by its colour
+         if (lambda <= 0.0f)
+         {
+            lambda = spectral_sample_lambda(rnd());
+            spectral_weight(lambda, attenuation.x, attenuation.y, attenuation.z);
+         }
+         eff_ior = dispersive_ior(eff_ior, mat.dispersion, lambda);
+      }
+      eff_ior *= params.glass_ior_multiplier;
       float ri = prd.front_face ? (1.0f / eff_ior) : eff_ior;
 
       float3 unit_dir = normalize3(cur_direction);
@@ -1214,6 +1228,7 @@ extern "C" __global__ void __raygen__rg()
       int  caustic_state  = 0;
       bool passed_through = false; // the camera ray crossed invisible geometry or a medium first
       bool films_only     = true;  // every vertex so far was a straight pass through a thin film
+      float lambda        = 0.0f;  // hero wavelength (um) once a dispersive glass was met, 0 before
 
       for (int bounce = 0; bounce < params.max_depth; ++bounce)
       {
@@ -1569,7 +1584,7 @@ extern "C" __global__ void __raygen__rg()
                   mat.type == OptixMaterialType::HAMMERED)
          {
             did_scatter = scatter_specular_optix(mat, prd, cur_direction, [&]() { return sobol_rand_float(ss, seed); },
-                                                 scatter_dir, attenuation);
+                                                 scatter_dir, attenuation, lambda);
          }
          else if (is_coated_optix(mat.type))
          {
@@ -1984,6 +1999,7 @@ extern "C" __global__ void __raygen__caustics()
    float3 origin = y, dir = w;
    int    n_delta = 0; // delta vertices passed
    int    n_bent  = 0; // of which change the direction (not a straight pass through a thin film)
+   float  lambda  = 0.0f; // hero wavelength (um) once a dispersive glass was met, 0 before
    bool   fall_pending = true; // light falloff not applied yet
    float  fall_dist    = 0.0f; // distance from the light so far, through thin films
 
@@ -2014,7 +2030,7 @@ extern "C" __global__ void __raygen__caustics()
          return; // anything else (diffuse first, glossy, clear coat, medium...) is the camera paths' job
 
       float3 scatter_dir, attenuation;
-      if (!scatter_specular_optix(mat, prd, dir, [&]() { return rand_float(seed); }, scatter_dir, attenuation))
+      if (!scatter_specular_optix(mat, prd, dir, [&]() { return rand_float(seed); }, scatter_dir, attenuation, lambda))
          return;
       beta = beta * attenuation;
       ++n_delta;

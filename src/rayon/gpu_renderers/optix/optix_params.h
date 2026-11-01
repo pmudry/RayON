@@ -78,6 +78,7 @@ struct OptixMaterialData
    float3 emission;
    float roughness;
    float refractive_index;
+   float dispersion; // GLASS: Cauchy B (um^2), > 0 splits white light into a rainbow (spectral.cuh)
 
    // Procedural pattern
    unsigned char pattern; // 0=none, 1=fibonacci_dots

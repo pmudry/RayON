@@ -1,0 +1,21 @@
+# Triangular prism: equilateral cross-section of side 2 in the XY plane (apex up at y = sqrt 3),
+# extruded along Z from -1 to 1. Faces wound counter-clockwise seen from outside.
+v -1.0 0.0 -1.0
+v  1.0 0.0 -1.0
+v  0.0 1.7320508 -1.0
+v -1.0 0.0  1.0
+v  1.0 0.0  1.0
+v  0.0 1.7320508  1.0
+# front end (+z)
+f 4 5 6
+# back end (-z)
+f 1 3 2
+# bottom (-y)
+f 1 2 5
+f 1 5 4
+# right face
+f 2 3 6
+f 2 6 5
+# left face
+f 3 1 4
+f 3 4 6

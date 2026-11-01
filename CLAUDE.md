@@ -154,4 +154,5 @@ SPHERE, DISPLACED_SPHERE, RECTANGLE, TRIANGLE, OBJ_MESH, CUBE, BVHNODE, SDF_PRIM
 YAML scene files live in `resources/scenes/`. The format is documented in `resources/scenes/SCENE_FORMAT.md`.
 Notable scenes: `default_scene.yaml`, `01_bvh_test_scene.yaml`, `05_material_laboratory.yaml`,
 `11_soap_bubbles.yaml` (thin-film), `12_clearcoat_pokemonball.yaml` (clear-coat),
-`01_anisotropic_showcase.yaml` (anisotropic metals, spun brushing).
+`01_anisotropic_showcase.yaml` (anisotropic metals, spun brushing), `23_prism_dispersion.yaml`
+(glass `dispersion`: a prism splits white light into a rainbow).

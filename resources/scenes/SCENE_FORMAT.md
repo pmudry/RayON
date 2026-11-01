@@ -135,7 +135,17 @@ Additional fields: `roughness` [0–1].
 
 #### `glass` / `dielectric` — refractive glass
 
-Additional fields: `refractive_index` (e.g. 1.5 for borosilicate glass), `transmission`.
+Additional fields: `refractive_index` (e.g. 1.5 for borosilicate glass), `transmission`,
+`dispersion` (chromatic dispersion, default 0).
+
+`dispersion` is the B coefficient of Cauchy's equation n(λ) = n_d + B (1/λ² − 1/λ_d²), in µm²,
+with `refractive_index` the index at the sodium d line (587.6 nm): crown glass is about 0.0045,
+flint 0.013, and 0.02 to 0.03 gives a showy rainbow. A path that refracts through such a glass
+draws one wavelength (380 to 720 nm), keeps it for every later dispersive refraction and is
+weighted by the colour of that wavelength, so white light splits into a spectrum that builds up as
+colour noise and converges with the samples. The OptiX caustic pass traces it from the lamp
+(`23_prism_dispersion.yaml`); in CUDA the rainbow on the floor only comes through the camera
+paths, which find the lamp by chance.
 
 ```yaml
 - name: "glass"
@@ -143,6 +153,11 @@ Additional fields: `refractive_index` (e.g. 1.5 for borosilicate glass), `transm
   albedo: [1.0, 1.0, 1.0]
   refractive_index: 1.52
   transmission: 1.0
+
+- name: "flint_glass"
+  type: "glass"
+  refractive_index: 1.5
+  dispersion: 0.03
 ```
 
 #### `light` — emissive surface (area light)

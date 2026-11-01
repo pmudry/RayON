@@ -393,6 +393,7 @@ static bool loadMaterials(const SimpleYAMLParser &parser, SceneDescription &scen
       // Schlick r0 of 0 and the OptiX coat would vanish face-on (CUDA used to patch it up at 1.5)
       const bool is_coat = mat.type == MaterialType::CLEAR_COAT || mat.type == MaterialType::CHAMELEON;
       mat.refractive_index = parser.getFloat(prefix + ".refractive_index", is_coat ? 1.5f : 1.0f);
+      mat.dispersion = parser.getFloat(prefix + ".dispersion", 0.0f);
       mat.transmission = parser.getFloat(prefix + ".transmission", 0.0f);
       mat.anisotropy = parser.getFloat(prefix + ".anisotropy", 0.0f);
       mat.eta = parser.getVec3(prefix + ".eta", Vec3(0, 0, 0));
@@ -1019,6 +1020,10 @@ file << "    flip_color: [" << mat.flip_color.x() << ", " << mat.flip_color.y() 
       if (mat.refractive_index != 1.0f)
       {
          file << "    refractive_index: " << mat.refractive_index << "\n";
+      }
+      if (mat.dispersion > 0)
+      {
+         file << "    dispersion: " << mat.dispersion << "\n";
       }
       if (mat.transmission > 0)
       {

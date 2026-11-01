@@ -5,6 +5,7 @@
 #include "cuda_utils.cuh"
 #include "microfacet_ggx.cuh"
 #include "sdf_primitives.cuh"
+#include "spectral.cuh"
 #include "volume_medium.cuh"
 #include "chameleon_paint.cuh"
 #include "glow_glass.cuh"
@@ -87,6 +88,7 @@ struct hit_record_simple
    f3 emission;
    float roughness;
    float refractive_index;  // GLASS
+   float dispersion = 0.0f; // GLASS: Cauchy B, > 0 = chromatic dispersion (spectral.cuh)
    bool visible;
 
    // Interpolated texture coordinate (set by triangle intersection)
@@ -538,6 +540,7 @@ __device__ __forceinline__ void apply_material(const CudaScene::Material &mat, h
    case MaterialType::GLOW_GLASS:
       rec.material = GLASS;
       rec.refractive_index = mat.refractive_index;
+      rec.dispersion       = mat.dispersion;
       if (mat.type == MaterialType::GLOW_GLASS)
       {
          rec.glow            = mat.emission;
@@ -1137,7 +1140,7 @@ static __device__ float light_dir_pdf_gpu(const CudaScene::Scene &scene,
 __device__ __forceinline__ bool scatter_material(const hit_record_simple &rec, const ray_simple &current_ray,
                                                  ray_simple &scattered_ray, f3 &attenuation, f3 &emitted,
                                                  curandState *state, uint32_t sample_n, uint32_t pixel_hash,
-                                                 int bounce)
+                                                 int bounce, float &lambda)
 {
    emitted = f3(0.0f, 0.0f, 0.0f);
 
@@ -1187,7 +1190,21 @@ __device__ __forceinline__ bool scatter_material(const hit_record_simple &rec, c
    {
       // Refraction/reflection with Fresnel (Schlick's approximation)
       f3 unit_dir = normalize(current_ray.dir);
-      float ri = rec.refractive_index * g_glass_ior_multiplier; // the material's own index
+      float2 sg = rand_float2(state, sample_n, pixel_hash, (uint32_t)bounce, SOBOL_EFFECT_GLASS);
+      attenuation = f3(1.0f, 1.0f, 1.0f);
+      float ri = rec.refractive_index; // the material's own index
+      if (rec.dispersion > 0.0f)
+      {
+         // Dispersive glass: the path's hero wavelength is drawn at its first such refraction and
+         // weights the throughput by its colour (see spectral.cuh)
+         if (lambda <= 0.0f)
+         {
+            lambda = spectral_sample_lambda(sg.y);
+            spectral_weight(lambda, attenuation.x, attenuation.y, attenuation.z);
+         }
+         ri = dispersive_ior(ri, rec.dispersion, lambda);
+      }
+      ri *= g_glass_ior_multiplier;
       float ratio = rec.front_face ? (1.0f / ri) : ri;
 
       float cos_theta = fminf(dot(-unit_dir, rec.normal), 1.0f);
@@ -1195,7 +1212,6 @@ __device__ __forceinline__ bool scatter_material(const hit_record_simple &rec, c
 
       bool total_internal_reflection = ratio * sin_theta > 1.0f;
 
-      float2 sg = rand_float2(state, sample_n, pixel_hash, (uint32_t)bounce, SOBOL_EFFECT_GLASS);
       f3 direction;
       if (total_internal_reflection || reflectance(cos_theta, ratio) > sg.x)
          direction = reflect(unit_dir, rec.normal);
@@ -1203,7 +1219,6 @@ __device__ __forceinline__ bool scatter_material(const hit_record_simple &rec, c
          direction = refract(unit_dir, rec.normal, ratio);
 
       scattered_ray = ray_simple(rec.p, direction);
-      attenuation = f3(1.0f, 1.0f, 1.0f);
       return true;
    }
    case LIGHT:
@@ -1414,6 +1429,7 @@ __device__ __forceinline__ f3 ray_color(const ray_simple &r, const CudaScene::Sc
    bool  prev_is_delta  = true; // treat camera ray as delta — no prior NEE could target bounce 0
    int   volume_passes  = 0;    // medium back faces passed through (see VOLUME below)
    f3    mis_origin     = r.orig; // where the last direction was sampled (light pdf for MIS)
+   float lambda         = 0.0f; // hero wavelength (um) once a dispersive glass was met, 0 before
 
    for (int bounce = 0; bounce < depth; bounce++)
    {
@@ -1582,7 +1598,7 @@ __device__ __forceinline__ f3 ray_color(const ray_simple &r, const CudaScene::Sc
          f3 emitted;
 
          bool did_scatter = scatter_material(rec, current_ray, scattered_ray, attenuation, emitted, state,
-                                              sample_n, pixel_hash, bounce);
+                                              sample_n, pixel_hash, bounce, lambda);
          // A tilted shading normal (hammer marks) can reflect below the real surface: such a ray
          // would cross the object, so the path ends there
          if (did_scatter && rec.hammered && dot(scattered_ray.dir, rec.geo_normal) <= 0.0f)
