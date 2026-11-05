@@ -370,7 +370,7 @@ outside the surface; the CUDA backend keeps the mesh as the boundary (lumps only
 
 **Room fog.** A uniform medium (`noise_strength: 0`, `edge: 0`) on a box scaled to a whole room
 makes haze: with a lamp seen through an opening, the scattering events along the camera rays
-draw its light shafts (`24_god_rays.yaml`). Put the box's front face between the camera and the
+draw its light shafts. Put the box's front face between the camera and the
 scene, and keep it a little inside the walls: a medium is entered through its boundary, so the
 camera rays get the fog on their way in, while the bounces between surfaces inside the box run
 without it (an approximation that holds for thin fog).

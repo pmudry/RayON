@@ -86,7 +86,12 @@ comments and everything else are kept. This is how the bundled scenes got their 
 ### Performance Monitoring
 
 Samples per pixel so far, throughput in samples per second, time per pass, and a history graph
-of both. A converged-pixel percentage appears when adaptive sampling is on.
+of both. Two diagnostic maps replace the image while checked (one at a time):
+
+| Control | Effect |
+|---|---|
+| **Sample Heatmap** | Plasma colour map of the samples spent per pixel by adaptive sampling (purple = few, yellow = many); greyed out when adaptive sampling is off |
+| **Cost Heatmap** | The work per sample of each pixel (path bounces plus volume tracking steps, averaged over its samples), on the same scale with yellow at the most expensive pixel, whose value is printed under the checkbox. It shows where the time goes: the inside of a cloud, glass seen through glass, the dark corners where paths bounce until the depth limit |
 
 ### Camera Settings
 
@@ -122,16 +127,10 @@ milliseconds ([Volumes](volumes.md)).
 |---|---|---|
 | **Adaptive Sampling** | on | After 32 samples, a pixel whose standard error falls below the threshold stops taking samples |
 | **Threshold** | 0.01 | Standard error of the displayed value, in levels of 255 (about 2.5 levels) |
-| **Show Sample Heatmap** | off | Plasma colour map of the samples spent per pixel (purple = few, yellow = many) |
 
 Pixels lit only by rare bright paths are protected from freezing too early. Disable with
-`--no-adaptive-sampling`.
-
-The **Performance Monitoring** section has a second map, **Show Cost Heatmap**: the work per
-sample of each pixel (path bounces plus volume tracking steps, averaged over its samples), on the
-same Plasma scale with yellow at the most expensive pixel, whose value is printed under the
-checkbox. It shows where the time goes: the inside of a cloud, glass seen through glass, the dark
-corners where paths bounce until the depth limit.
+`--no-adaptive-sampling`. The map of the samples spent per pixel is the **Sample Heatmap** of the
+Performance Monitoring section.
 
 ### MIS / NEE
 

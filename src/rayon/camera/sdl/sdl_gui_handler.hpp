@@ -341,9 +341,26 @@ class SDLGuiHandler
                   ImGui::Text("Throughput: %.0f S/s", sps);
                ImGui::Text("Time/Pass: %.3f ms", ms_per_sample);
 
+               // The two diagnostic maps side by side; they replace the image, so only one at a time
+               if (show_heatmap)
+               {
+                  const bool adaptive_on = adaptive_sampling && *adaptive_sampling;
+                  if (!adaptive_on)
+                     ImGui::BeginDisabled();
+                  if (ImGui::Checkbox("Sample Heatmap", show_heatmap) && *show_heatmap && show_cost_heatmap)
+                     *show_cost_heatmap = false;
+                  if (!adaptive_on)
+                     ImGui::EndDisabled();
+                  ImGui::SetItemTooltip("Replaces the image with the samples spent per pixel by adaptive\n"
+                                        "sampling (plasma scale: dark = few, yellow = many).%s",
+                                        adaptive_on ? "" : "\nNeeds Adaptive Sampling.");
+               }
                if (show_cost_heatmap)
                {
-                  ImGui::Checkbox("Show Cost Heatmap", show_cost_heatmap);
+                  if (show_heatmap)
+                     ImGui::SameLine();
+                  if (ImGui::Checkbox("Cost Heatmap", show_cost_heatmap) && *show_cost_heatmap && show_heatmap)
+                     *show_heatmap = false;
                   ImGui::SetItemTooltip("Replaces the image with the work per sample of each pixel:\n"
                                         "path bounces plus volume tracking steps, averaged over the samples\n"
                                         "(plasma scale: dark = cheap, yellow = the most expensive pixel).");
@@ -519,9 +536,6 @@ class SDLGuiHandler
                         ImGui::SetItemTooltip("Standard error of a pixel's displayed value (in levels of 255)\n"
                                               "below which it stops taking samples. Lower = cleaner, slower.");
                      }
-                     if (show_heatmap)
-                        ImGui::Checkbox("Show Sample Heatmap", show_heatmap);
-
                      ImGui::Text("Converged: %.1f%%", convergence_pct);
 
                      // Visual progress bar for convergence

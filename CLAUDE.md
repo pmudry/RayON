@@ -157,7 +157,5 @@ YAML scene files live in `resources/scenes/`. The format is documented in `resou
 Notable scenes: `default_scene.yaml`, `01_bvh_test_scene.yaml`, `05_material_laboratory.yaml`,
 `11_soap_bubbles.yaml` (thin-film), `12_clearcoat_pokemonball.yaml` (clear-coat),
 `01_anisotropic_showcase.yaml` (anisotropic metals, spun brushing), `23_prism_dispersion.yaml`
-(glass `dispersion`: a prism splits white light into a rainbow), `24_god_rays.yaml` (homogeneous
-`volume` box over a whole room: sun shafts through a window), `25_tinted_glass.yaml` (glass `tint`:
-Beer-Lambert absorption through the thickness), `26_bathroom_window.yaml` (sun through a pane of
-rippled glass from `tools/make_ripples.py`: caustic network on textured tiles).
+(glass `dispersion`: a prism splits white light into a rainbow), `25_tinted_glass.yaml` (glass `tint`:
+Beer-Lambert absorption through the thickness).

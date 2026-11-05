@@ -16,16 +16,16 @@ scene:
   description: "A white beam through a dispersive glass prism lands on the floor as a rainbow"
 
 camera:
-  position: [2.9, 1.7, 3.6]
-  look_at: [0.5, 0.45, 0.0]
+  position: [1.475, 2.47, 5.948]
+  look_at: [1.261, 0.96, 0.306]
   up: [0.0, 1.0, 0.0]
   fov: 42
 
 settings:
   tone_mapping: "aces"
   exposure: 1
-  light_intensity: 1
-  light_falloff: 2
+  light_intensity: 1.2
+  light_falloff: 2.08
   indirect_clamp: 50
   background_color: [0.0, 0.0, 0.0]
   background_intensity: 0

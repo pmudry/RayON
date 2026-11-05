@@ -75,7 +75,7 @@ pixel whose **standard error** in display space falls below the threshold (0.01 
 range, about 2.5 levels of 255, adjustable in the GUI) is flagged as converged and skipped by
 later batches; the GPU counts the converged pixels with a warp-shuffle reduction so only one
 integer comes back to the host. Pixels that are lit only by rare bright paths keep sampling.
-The **Show Sample Heatmap** option paints the samples spent per pixel.
+The **Sample Heatmap** option of the Performance Monitoring section paints the samples spent per pixel.
 
 ---
 
