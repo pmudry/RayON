@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <map>
 #include <cstring>
 #include <fstream>
@@ -283,8 +284,21 @@ static void initializeOptiX()
    // Initialize CUDA
    CUDA_CHECK(cudaFree(0));
 
-   // Initialize OptiX
-   OPTIX_CHECK(optixInit());
+   // Initialize OptiX. A failure here leaves the function table empty, and every later call would
+   // dereference it (segfault), so stop with a message instead. Typical cause: a driver without
+   // OptiX, e.g. WSL2, whose libnvoptix.so.1 is a stub that exports no optixQueryFunctionTable.
+   {
+      const OptixResult res = optixInit();
+      if (res != OPTIX_SUCCESS)
+      {
+         fprintf(stderr,
+                 "OptiX initialisation failed: %s (%s).\n"
+                 "The NVIDIA driver on this machine provides no usable OptiX library (not supported on WSL2, "
+                 "for instance). Use the CUDA backend instead: -m 2 (offline) or -m 3 (interactive).\n",
+                 optixGetErrorName(res), optixGetErrorString(res));
+         std::exit(EXIT_FAILURE);
+      }
+   }
 
    // Create context
    CUcontext cuCtx = 0;

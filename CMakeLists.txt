@@ -226,6 +226,7 @@ set_property(TARGET rayon PROPERTY CUDA_SEPARABLE_COMPILATION ON)
     set(OPTIX_SEARCH_PATHS
         $ENV{OptiX_INSTALL_DIR}
         "$ENV{HOME}/Downloads/NVIDIA-OptiX-SDK-9.0.0-linux64-aarch64"
+        "$ENV{HOME}/Downloads/NVIDIA-OptiX-SDK-9.0.0-linux64-x86_64"
         "$ENV{HOME}/Downloads/NVIDIA-OptiX-SDK-8.0.0-linux64-aarch64"
         "/usr/local/NVIDIA-OptiX-SDK"
         "/opt/optix"
